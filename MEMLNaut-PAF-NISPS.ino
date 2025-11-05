@@ -104,7 +104,8 @@ void setup() {
 
 
   midi_interf = std::make_shared<MIDIInOut>();
-  midi_interf->Setup(0);
+  midi_interf->Setup(PAFSynthAudioApp<>::kN_Params);
+  // midi_interf->Setup(0);
   midi_interf->SetMIDISendChannel(1);
   Serial.println("MIDI setup complete.");
   if (midi_interf) {

@@ -289,6 +289,8 @@ void setup1() {
 
   Serial.println("Finished initialising core 1.");
 }
+
+
 void loop1() {
   // Audio app parameter processing loop
   PERIODIC_RUN_US(

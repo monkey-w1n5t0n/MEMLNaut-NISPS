@@ -14,6 +14,8 @@
 
 #include <span>
 
+#include "voicespaces/VoiceSpaces.hpp"
+
 #include "voicespaces/VoiceSpace1.hpp"
 #include "voicespaces/VoiceSpace2.hpp"
 #include "voicespaces/VoiceSpacePerc.hpp"
@@ -36,15 +38,9 @@ public:
     static constexpr float frequencies[nFREQs] = {100, 200, 400,800, 400, 800, 100,1600,100,400,100,50,1600,200,100,800,400};
     static constexpr size_t nVoiceSpaces=7;
 
-    using VoiceSpaceFn = std::function<void(const std::array<float, NPARAMS>&)>;
-    struct VoiceSpace {
-        char name[16]="default";
-        VoiceSpaceFn mappingFunction = nullptr;
-    };
-
-    std::array<VoiceSpace, nVoiceSpaces> voiceSpaces;
+    std::array<VoiceSpace<NPARAMS>, nVoiceSpaces> voiceSpaces;
     
-    VoiceSpaceFn currentVoiceSpace;
+    VoiceSpaceFn<NPARAMS> currentVoiceSpace;
 
     std::array<String, nVoiceSpaces> getVoiceSpaceNames() {
         std::array<String, nVoiceSpaces> names;

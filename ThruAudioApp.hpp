@@ -54,6 +54,9 @@ public:
 
     __attribute__((hot)) stereosample_t __force_inline Process(const stereosample_t x) override
     {
+        // float y = x.L + x.R;
+        // y = filt.play(y);
+        // return stereosample_t{y, y};
         return x;
     }
 
@@ -61,6 +64,7 @@ public:
     {
         AudioAppBase<NPARAMS>::Setup(sample_rate, interface);
         maxiSettings::sampleRate = sample_rate;
+        filt.set(maxiBiquad::filterTypes::HIGHPASS, 20.f, 0.707f, 0);
     }
 
     __attribute__((always_inline)) void ProcessParams(const std::array<float, NPARAMS>& params)
@@ -70,6 +74,8 @@ public:
     
 
 protected:
+
+    maxiBiquad filt;
 
 };
 

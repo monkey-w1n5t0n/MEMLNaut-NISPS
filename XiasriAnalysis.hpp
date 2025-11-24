@@ -26,6 +26,9 @@ public:
 
     parameters_t Process(const float x);
 
+    // Reinitialize filters after maxiSettings is properly configured
+    void ReinitFilters();
+
 protected:
     const float sample_rate_;
     const float one_over_sample_rate_;

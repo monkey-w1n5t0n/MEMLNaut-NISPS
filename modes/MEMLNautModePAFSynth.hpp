@@ -4,6 +4,8 @@
 #include "../src/memllib/hardware/memlnaut/display/XYPadView.hpp"
 #include "../src/memllib/hardware/memlnaut/MEMLNaut.hpp"
 #include "../PAFSynthAudioApp.hpp"
+#include "../src/memllib/examples/InterfaceRL.hpp"
+#include "../src/memllib/PicoDefs.hpp"
 #include "MEMLNautMode.hpp"
 #include <memory>
 #include <array>
@@ -15,27 +17,36 @@ public:
     inline static PAFSynthAudioApp<> audioAppPAFSynth;
     std::array<String, PAFSynthAudioApp<>::nVoiceSpaces> voiceSpaceList;
 
+    InterfaceRL interface;
+    std::shared_ptr<InterfaceRL> interfacePtr;
+
+    void setupInterface() {
+        interface.setup(kN_InputParams, PAFSynthAudioApp<>::kN_Params);
+        interface.bindInterface(InterfaceRL::INPUT_MODES::JOYSTICK);
+        interfacePtr = make_non_owning(interface);    
+    }
+
     String getHelpTitle() {
         return "PAF Synth Mode";
     }
-    size_t getNParams() {
-        return PAFSynthAudioApp<>::kN_Params;
-    }
+    // size_t getNParams() {
+    //     return PAFSynthAudioApp<>::kN_Params;
+    // }
 
-    void setVoiceSpace(size_t i) {
-        audioAppPAFSynth.setVoiceSpace(i);
-    }
+    // void setVoiceSpace(size_t i) {
+    //     audioAppPAFSynth.setVoiceSpace(i);
+    // }
 
-    std::span<String> getVoiceSpaceList() {
-        return voiceSpaceList;
-    }
+    // std::span<String> getVoiceSpaceList() {
+    //     return voiceSpaceList;
+    // }
 
     __force_inline stereosample_t process(stereosample_t x) {
         return audioAppPAFSynth.Process(x);
     }
 
-    void Setup(float sample_rate, std::shared_ptr<InterfaceBase> interface) {
-        audioAppPAFSynth.Setup(sample_rate, interface);
+    void setupAudio(float sample_rate) {
+        audioAppPAFSynth.Setup(sample_rate, interfacePtr);
         voiceSpaceList = audioAppPAFSynth.getVoiceSpaceNames();
     }
 
@@ -47,6 +58,10 @@ public:
 
     void setupMIDI(std::shared_ptr<MIDIInOut> new_midi_interf) {
       midi_interf = new_midi_interf;
+      midi_interf->Setup(16);
+      midi_interf->SetMIDISendChannel(1);
+      interface.bindMIDI(midi_interf);
+
       midi_interf->SetNoteCallback([this](bool noteon, uint8_t note_number, uint8_t vel_value) {
         if (noteon) {
           uint8_t midimsg[2] = { note_number, vel_value };
@@ -61,6 +76,17 @@ public:
     }
 
     void addViews() {
+        std::shared_ptr<VoiceSpaceSelectView> voiceSpaceSelectView;
+        voiceSpaceSelectView = std::make_shared<VoiceSpaceSelectView>("Voice Spaces");
+
+        MEMLNaut::Instance()->disp->InsertViewAfter(interface.rlStatsView, voiceSpaceSelectView);
+        voiceSpaceSelectView->setOptions(voiceSpaceList);  //set by core 1 on startup
+        voiceSpaceSelectView->setNewVoiceCallback(
+            [this](size_t idx) {
+                audioAppPAFSynth.setVoiceSpace(idx);
+            });
+
+
       std::shared_ptr<XYPadView> noteTrigView = std::make_shared<XYPadView>("Play", TFT_SILVER);
 
       // Cache MIDI notes being echoed
@@ -92,10 +118,10 @@ public:
       MEMLNaut::Instance()->disp->AddView(noteTrigView);
     };
 
-    size_t getNMIDICtrlOutputs() {
-        return 16;
-    }
+    // size_t getNMIDICtrlOutputs() {
+    //     return 16;
+    // }
 
-    inline void processAnalysisParams(std::shared_ptr<InterfaceBase> interface) {}
+    inline void processAnalysisParams() {}
 
 };

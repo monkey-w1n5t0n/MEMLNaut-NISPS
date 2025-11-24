@@ -13,7 +13,7 @@
 #include "ChannelStripAudioApp.hpp"
 
 //interface
-#include "src/memllib/examples/InterfaceRL.hpp"
+// #include "src/memllib/examples/InterfaceRL.hpp"
 #include "src/memllib/hardware/memlnaut/display/XYPadView.hpp"
 #include "src/memllib/hardware/memlnaut/display/MessageView.hpp"
 #include "src/memllib/hardware/memlnaut/display/VoiceSpaceSelectView.hpp"
@@ -24,7 +24,7 @@
 #include "modes/MEMLNautModeChannelStrip.hpp"
 #include "modes/MEMLNautModeSoundAnalysisMIDI.hpp"
 
-#define INTERFACE_TYPE InterfaceRL
+// #define INTERFACE_TYPE InterfaceRL
 
 #define MEMLNAUT_MODE_TYPE MEMLNautModeSoundAnalysisMIDI
 
@@ -54,7 +54,7 @@ uint32_t get_rosc_entropy_seed(int bits) {
 
 
 // Global objects
-std::shared_ptr<INTERFACE_TYPE> APP_SRAM interface;
+// std::shared_ptr<INTERFACE_TYPE> APP_SRAM interface;
 
 std::shared_ptr<MIDIInOut> APP_SRAM midi_interf;
 
@@ -99,32 +99,32 @@ void setup() {
   MEMLNaut::Initialize();
   pinMode(33, OUTPUT);
 
-  {
-    auto temp_interface = std::make_shared<INTERFACE_TYPE>();
+  // {
+  //   auto temp_interface = std::make_shared<INTERFACE_TYPE>();
 
-    // temp_interface->setup(kN_InputParams, PAFSynthAudioApp<>::kN_Params);
-    // temp_interface->setup(kN_InputParams, ChannelStripAudioApp<>::kN_Params);
-    temp_interface->setup(currentMode->kN_InputParams, currentMode->getNParams());
+  //   // temp_interface->setup(kN_InputParams, PAFSynthAudioApp<>::kN_Params);
+  //   // temp_interface->setup(kN_InputParams, ChannelStripAudioApp<>::kN_Params);
+  //   temp_interface->setup(currentMode->kN_InputParams, currentMode->getNParams());
 
 
-    MEMORY_BARRIER();
-    interface = temp_interface;
-    MEMORY_BARRIER();
-  }
+  //   MEMORY_BARRIER();
+  //   interface = temp_interface;
+  //   MEMORY_BARRIER();
+  // }
+  currentMode->setupInterface();
   // Setup interface with memory barrier protection
   WRITE_VOLATILE(interface_ready, true);
   // Bind interface after ensuring it's fully initialized
-  interface->bindInterface(true);
+   //TODO: control this from the mode
+  // interface->bindInterface(true);
   Serial.println("Bound interface to MEMLNaut.");
 
 
   midi_interf = std::make_shared<MIDIInOut>();
-  midi_interf->Setup(currentMode->getNMIDICtrlOutputs());
-  midi_interf->SetMIDISendChannel(1);
   Serial.println("MIDI setup complete.");
   if (midi_interf) {
     currentMode->setupMIDI(midi_interf);
-    interface->bindMIDI(midi_interf);
+    // interface->bindMIDI(midi_interf);
   }
 
 
@@ -135,26 +135,10 @@ void setup() {
     delay(1);
   }
 
-  std::shared_ptr<VoiceSpaceSelectView> voiceSpaceSelectView;
-  voiceSpaceSelectView = std::make_shared<VoiceSpaceSelectView>("Voice Spaces");
-
-  MEMLNaut::Instance()->disp->InsertViewAfter(interface->rlStatsView, voiceSpaceSelectView);
-  // voiceSpaceSelectView->setOptions(voiceSpaceList); //set by core 1 on startup
-  // voiceSpaceSelectView->setOptions(voiceSpaceList_chstrip); //set by core 1 on startup
-  voiceSpaceSelectView->setOptions(currentMode->getVoiceSpaceList());  //set by core 1 on startup
-  voiceSpaceSelectView->setNewVoiceCallback(
-    [](size_t idx) {
-      // Serial.println(idx);
-      // audio_app_chstrip->setVoiceSpace(idx);
-      // audioAppChannelStrip.setVoiceSpace(idx);
-      // audio_app->setVoiceSpace(idx);
-      currentMode->setVoiceSpace(idx);
-    });
 
   currentMode->addViews();
 
   std::shared_ptr<MessageView> helpView = std::make_shared<MessageView>("Help");
-  // helpView->post("PAF synth NISPS");
   String title = currentMode->getHelpTitle();
   helpView->post(title);
   helpView->post("TA: Down: Clear replay memory");
@@ -181,7 +165,8 @@ void loop() {
 
   PERIODIC_RUN_US(
     PERF_BEGIN(MLSTATS);
-    currentMode->processAnalysisParams(interface);
+    // currentMode->processAnalysisParams(interface);
+    currentMode->processAnalysisParams();
     MEMLNaut::Instance()->loop();
     PERF_END(MLSTATS);
     , ML_INFERENCE_PERIOD_US)
@@ -219,6 +204,10 @@ void AUDIO_FUNC(audio_block_callback)(float in[][kBufferSize], float out[][kBuff
     out[0][i] = y.L;
     out[1][i] = y.R;
 
+      // PERIODIC_RUN(
+      //   Serial.printf("x: %f\n", x.L + x.R);
+      //   , 100);
+
     currentMode->analyse(x);
   }
 }
@@ -236,40 +225,12 @@ void setup1() {
   }
 
 
-  // Create audio app with memory barrier protection
-  {
-    // PAFSynthAudioApp<>* audio_raw = new (audio_app_mem) PAFSynthAudioApp<>();
-    // audio_raw->Setup(AudioDriver::GetSampleRate(), interface);
-
-    // // shared_ptr with custom deleter calling only the destructor (control block still allocates)
-    // auto audio_deleter = [](PAFSynthAudioApp<>* p) {
-    //   if (p) p->~PAFSynthAudioApp<>();
-    // };
-    // std::shared_ptr<PAFSynthAudioApp<>> temp_audio_app(audio_raw, audio_deleter);
-    // ChannelStripAudioApp<>* audio_raw = new (audio_app_mem_chstrip) ChannelStripAudioApp<>();
-    // audio_raw->Setup(AudioDriver::GetSampleRate(), interface);
-
-    // // shared_ptr with custom deleter calling only the destructor (control block still allocates)
-    // auto audio_deleter = [](ChannelStripAudioApp<>* p) {
-    //   if (p) p->~ChannelStripAudioApp<>();
-    // };
-    // std::shared_ptr<ChannelStripAudioApp<>> temp_audio_app(audio_raw, audio_deleter);
-
-    // MEMORY_BARRIER();
-    // audio_app_chstrip = temp_audio_app;
-    // MEMORY_BARRIER();
-  }
-  // audioAppChannelStrip.Setup(AudioDriver::GetSampleRate(), interface);
-  currentMode->Setup(AudioDriver::GetSampleRate(), interface);
+  currentMode->setupAudio(AudioDriver::GetSampleRate());
 
   AudioDriver::SetBlockCallback(audio_block_callback);
-  // AudioDriver::SetBlockCallback(currentMode->getAudioCallBack());
+
   // Start audio driver
   AudioDriver::Setup();
-  // AudioDriver::SetBlockCallback(audio_block_callback);
-  // voiceSpaceList = audio_app->getVoiceSpaceNames();
-  // voiceSpaceList_chstrip = audio_app_chstrip->getVoiceSpaceNames();
-  // voiceSpaceList_chstrip = audioAppChannelStrip.getVoiceSpaceNames();
 
   WRITE_VOLATILE(core_1_ready, true);
   while (!READ_VOLATILE(core_0_ready)) {

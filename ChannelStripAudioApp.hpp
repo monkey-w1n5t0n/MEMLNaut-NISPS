@@ -494,30 +494,43 @@ public:
     __attribute__((hot)) stereosample_t __force_inline Process(const stereosample_t x) override
     {
         float y = x[0];
+        float y1 = x[1];
         if (!bypassAll) {
 
             if (!bypassPrePostGain) {
                 y = tanhf(y * preGain);
+                y1 = tanhf(y1 * preGain);
             }
             if (!bypassInFilters)
             {
                 y = inLowPass.loresChamberlain(y, inLowPassCutoff, 1.f);
                 y = inHighPass.hiresChamberlain(y, inHighPassCutoff, 1.f);
+
+                y1 = inLowPass1.loresChamberlain(y1, inLowPassCutoff, 1.f);
+                y1 = inHighPass1.hiresChamberlain(y1, inHighPassCutoff, 1.f);
             }
             if (!bypassEQ) {
                 y = peak0.play(y);
                 y = peak1.play(y);
                 y = lowshelf.play(y);
                 y = highshelf.play(y);
+
+                y1 = peak0_1.play(y1);
+                y1 = peak1_1.play(y1);
+                y1 = lowshelf1.play(y1);
+                // y1 = highshelf1.play(y1);
+
             }
             if (!bypassComp) {
                 y = dyn.compress(y, compThreshold, compRatio, 0.f);
+                y1 = dyn1.compress(y1, compThreshold, compRatio, 0.f);
             }
             if (!bypassPrePostGain) {
                 y = tanhf(y * postGain);
+                y1 = tanhf(y1 * postGain);
             }
         }
-        stereosample_t ret { y, y};
+        stereosample_t ret { y, y1};
         return ret;
     }
 
@@ -562,6 +575,13 @@ public:
         peak1.set(maxiBiquad::PEAK, peak1Freq, peak1Q, peak1Gain);
         lowshelf.set(maxiBiquad::LOWSHELF, 100.f, 2.f, 3.f);
         highshelf.set(maxiBiquad::HIGHSHELF, 1000.f, 2.f, 3.f);
+
+        dyn1.setAttackHigh(compAttack);
+        dyn1.setReleaseHigh(compRelease);
+        peak0_1.set(maxiBiquad::PEAK, peak0Freq, peak0Q, peak0Gain);
+        peak1_1.set(maxiBiquad::PEAK, peak1Freq, peak1Q, peak1Gain);
+        lowshelf1.set(maxiBiquad::LOWSHELF, 100.f, 2.f, 3.f);
+        highshelf1.set(maxiBiquad::HIGHSHELF, 1000.f, 2.f, 3.f);
     }
     
 
@@ -573,6 +593,7 @@ protected:
     float postGain=1.f;
 
     maxiFilter inHighPass, inLowPass;
+    maxiFilter inHighPass1, inLowPass1;
 
     float inLowPassCutoff=200.f;
     float inHighPassCutoff=2000.f;
@@ -604,13 +625,17 @@ protected:
     bool bypassPrePostGain = false;
     bool bypassInFilters = false;
 
-    maxiDynamicsLite dyn;
+    maxiDynamicsLite dyn,   dyn1;
 
     maxiBiquad lowshelf;
     maxiBiquad peak0;
     maxiBiquad peak1;
     maxiBiquad highshelf;
 
+    maxiBiquad lowshelf1;
+    maxiBiquad peak0_1;
+    maxiBiquad peak1_1;
+    maxiBiquad highshelf1;
 };
 
 #endif  

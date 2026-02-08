@@ -1,9 +1,9 @@
 /**
  * @file simple_mapping.cpp
- * @brief Simple example of using NISPS Core for parameter mapping
+ * @brief Example of using NISPS Core for parameter mapping
  *
- * This example shows how to use NISPS Core to map 2D joystick input
- * to synthesizer parameters through interactive training.
+ * Demonstrates creating a network, adding training examples
+ * programmatically, training, and using inference.
  *
  * Compile: g++ -std=c++20 -I../include simple_mapping.cpp -o simple_mapping
  */
@@ -12,119 +12,147 @@
 #include <iostream>
 #include <iomanip>
 
-void print_separator() {
-    std::cout << "\n" << std::string(60, '=') << "\n\n";
-}
-
 void demo_inference() {
-    std::cout << "=== NISPS Core Demo: Inference Mode ===\n\n";
+    std::cout << "=== Demo 1: Untrained Inference ===\n\n";
 
-    // Create IML with 2 inputs (x, y), 4 outputs (filter, resonance, attack, release)
-    // Hidden layers: [8, 8] - smaller network for faster training
+    // Create IML: 2 inputs (x, y) -> 4 outputs (filter, resonance, attack, release)
     nisps::IML<float> iml(2, 4, {8, 8}, 2000, 0.5f, 0.0001f);
 
-    std::cout << "Created IML with:\n";
-    std::cout << "  Inputs:  " << iml.num_inputs() << " (x, y joystick)\n";
-    std::cout << "  Outputs: " << iml.num_outputs() << " (filter, resonance, attack, release)\n";
-    std::cout << "  Hidden:  [8, 8]\n";
+    std::cout << "Created IML with " << iml.num_inputs() << " inputs, "
+              << iml.num_outputs() << " outputs\n\n";
 
-    print_separator();
-
-    // Test some input positions
-    std::cout << "Testing inference (untrained network):\n\n";
-    std::cout << std::fixed << std::setprecision(3);
-
-    struct TestPoint {
-        float x, y;
-        const char* description;
-    };
-
-    TestPoint test_points[] = {
-        {0.0f, 0.0f, "Bottom-left corner"},
-        {1.0f, 0.0f, "Bottom-right corner"},
-        {0.0f, 1.0f, "Top-left corner"},
-        {1.0f, 1.0f, "Top-right corner"},
+    // Untrained network produces random-ish outputs
+    struct TestPoint { float x, y; const char* label; };
+    TestPoint points[] = {
+        {0.0f, 0.0f, "Bottom-left"},
+        {1.0f, 1.0f, "Top-right"},
         {0.5f, 0.5f, "Center"},
     };
 
-    for (const auto& point : test_points) {
-        iml.set_input(0, point.x);
-        iml.set_input(1, point.y);
+    std::cout << std::fixed << std::setprecision(3);
+    for (const auto& p : points) {
+        iml.set_input(0, p.x);
+        iml.set_input(1, p.y);
         iml.process();
-
-        const float* outputs = iml.get_outputs();
-
-        std::cout << point.description << " (" << point.x << ", " << point.y << "):\n";
-        std::cout << "  Filter:    " << outputs[0] << "\n";
-        std::cout << "  Resonance: " << outputs[1] << "\n";
-        std::cout << "  Attack:    " << outputs[2] << "\n";
-        std::cout << "  Release:   " << outputs[3] << "\n\n";
+        const float* out = iml.get_outputs();
+        std::cout << "  " << p.label << " (" << p.x << ", " << p.y << ") -> ["
+                  << out[0] << ", " << out[1] << ", " << out[2] << ", " << out[3] << "]\n";
     }
-
-    print_separator();
-    std::cout << "Note: Untrained networks produce random-ish outputs.\n";
-    std::cout << "In a real application, you would:\n";
-    std::cout << "  1. Enter training mode\n";
-    std::cout << "  2. Move joystick to various positions\n";
-    std::cout << "  3. Adjust output parameters to desired values\n";
-    std::cout << "  4. Call save_example() to store each mapping\n";
-    std::cout << "  5. Exit training mode to train the network\n";
-    std::cout << "  6. Use the trained network for real-time control\n";
+    std::cout << "\n";
 }
 
 void demo_training() {
-    std::cout << "\n=== NISPS Core Demo: Training Workflow ===\n\n";
+    std::cout << "=== Demo 2: Training a Mapping ===\n\n";
 
-    // Create a simple 2-input, 1-output network
-    nisps::IML<float> iml(2, 1, {4}, 1000, 1.0f, 0.001f);
-
-    // Set up logging
+    // 2 inputs -> 2 outputs, small network
+    nisps::IML<float> iml(2, 2, {8, 8}, 3000, 1.0f, 0.00001f);
     iml.set_logger([](const char* msg) {
-        std::cout << "[IML] " << msg << "\n";
+        std::cout << "  [nisps] " << msg << "\n";
     });
 
-    std::cout << "Teaching the network: output = 1 when both inputs > 0.5\n";
-    std::cout << "(Similar to AND gate, but with gradual transitions)\n\n";
+    // Goal: teach the network a cross-mapping
+    //   (low,  low)  -> (low output1,  high output2)
+    //   (high, high) -> (high output1, low output2)
+    std::cout << "Teaching cross-mapping:\n";
+    std::cout << "  (low, low)   -> (low,  high)\n";
+    std::cout << "  (high, high) -> (high, low)\n\n";
 
-    // Enter training mode
     iml.set_mode(nisps::IML<float>::Mode::Training);
 
-    // In a real interactive system, the user would:
-    // 1. Move joystick to a position
-    // 2. Call save_example() - this stops inference
-    // 3. Manually adjust output to desired value
-    // 4. Call save_example() again - this stores the mapping
+    // Add examples using the programmatic API
+    float in1[] = {0.1f, 0.1f}; float out1[] = {0.1f, 0.9f};
+    float in2[] = {0.9f, 0.9f}; float out2[] = {0.9f, 0.1f};
+    float in3[] = {0.5f, 0.5f}; float out3[] = {0.5f, 0.5f};
+    float in4[] = {0.1f, 0.9f}; float out4[] = {0.3f, 0.7f};
+    float in5[] = {0.9f, 0.1f}; float out5[] = {0.7f, 0.3f};
 
-    // For this demo, we'll simulate the workflow by directly
-    // manipulating the dataset (this is not the normal API usage)
+    iml.add_example(in1, 2, out1, 2);
+    iml.add_example(in2, 2, out2, 2);
+    iml.add_example(in3, 2, out3, 2);
+    iml.add_example(in4, 2, out4, 2);
+    iml.add_example(in5, 2, out5, 2);
 
-    std::cout << "Adding training examples...\n";
-    std::cout << "(In a real system, the user would demonstrate these interactively)\n\n";
+    std::cout << "Added 5 training examples.\n";
 
-    // Note: In actual usage, you'd call save_example() twice per example
-    // and the user would position the outputs between calls.
-    // Here we're just demonstrating the concept.
-
-    // Exit training mode (triggers training)
-    std::cout << "\nExiting training mode (training will occur automatically)...\n";
+    // Switching to inference triggers training
+    std::cout << "Training...\n";
     iml.set_mode(nisps::IML<float>::Mode::Inference);
 
-    print_separator();
-    std::cout << "Demo complete!\n";
-    std::cout << "\nFor real training, see the MEMLNaut-NISPS hardware implementation\n";
-    std::cout << "where users physically move controls and save mappings.\n";
+    // Now test: the network should have learned the mapping
+    std::cout << "\nResults after training:\n";
+    std::cout << std::fixed << std::setprecision(3);
+
+    struct TestCase { float in[2]; float expected[2]; const char* label; };
+    TestCase tests[] = {
+        {{0.1f, 0.1f}, {0.1f, 0.9f}, "Trained point"},
+        {{0.9f, 0.9f}, {0.9f, 0.1f}, "Trained point"},
+        {{0.5f, 0.5f}, {0.5f, 0.5f}, "Trained point"},
+        {{0.3f, 0.3f}, {0.0f, 0.0f}, "Interpolated"},  // Not trained on this
+    };
+
+    for (const auto& t : tests) {
+        iml.set_input(0, t.in[0]);
+        iml.set_input(1, t.in[1]);
+        iml.process();
+        const float* out = iml.get_outputs();
+        std::cout << "  (" << t.in[0] << ", " << t.in[1] << ") -> ("
+                  << out[0] << ", " << out[1] << ")";
+        if (t.expected[0] > 0.0f) {
+            std::cout << "  expected ~(" << t.expected[0] << ", " << t.expected[1] << ")";
+        }
+        std::cout << "  [" << t.label << "]\n";
+    }
+    std::cout << "\n";
+}
+
+void demo_interactive_workflow() {
+    std::cout << "=== Demo 3: Interactive Workflow (simulated) ===\n\n";
+
+    // This demonstrates the two-step save_example() workflow
+    // used in the original MEMLNaut hardware
+    nisps::IML<float> iml(1, 1, {4}, 2000, 1.0f, 0.001f);
+    iml.set_logger([](const char* msg) {
+        std::cout << "  [nisps] " << msg << "\n";
+    });
+
+    iml.set_mode(nisps::IML<float>::Mode::Training);
+
+    // Simulate the interactive workflow:
+    // 1. Set input position
+    // 2. save_example() -> stops inference
+    // 3. set_output() -> user positions the desired output
+    // 4. save_example() -> stores the mapping
+
+    struct Demo { float in; float out; };
+    Demo demos[] = {{0.2f, 0.2f}, {0.5f, 0.5f}, {0.8f, 0.8f}};
+
+    for (const auto& d : demos) {
+        iml.set_input(0, d.in);
+        iml.save_example();        // Step 1: stop inference
+        iml.set_output(0, d.out);  // Step 2: user sets desired output
+        iml.save_example();        // Step 3: store the mapping
+        std::cout << "  Saved: " << d.in << " -> " << d.out << "\n";
+    }
+
+    std::cout << "\nSwitching to inference (triggers training)...\n";
+    iml.set_mode(nisps::IML<float>::Mode::Inference);
+
+    std::cout << std::fixed << std::setprecision(3);
+    for (float x = 0.0f; x <= 1.0f; x += 0.25f) {
+        iml.set_input(0, x);
+        iml.process();
+        std::cout << "  " << x << " -> " << iml.get_outputs()[0] << "\n";
+    }
+    std::cout << "\n";
 }
 
 int main() {
-    std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════╗\n";
-    std::cout << "║                   NISPS Core Examples                    ║\n";
-    std::cout << "║  Neural Interactive Shaping of Parameter Spaces         ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════╝\n";
+    std::cout << "\nNISPS Core - Parameter Mapping Examples\n";
+    std::cout << std::string(45, '=') << "\n\n";
 
     demo_inference();
     demo_training();
+    demo_interactive_workflow();
 
-    std::cout << "\n";
     return 0;
 }

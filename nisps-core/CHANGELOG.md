@@ -4,6 +4,24 @@ All notable changes to NISPS Core will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.2.0] - 2026-02-08
+
+### Added
+- `set_output()` / `set_outputs()` methods for programmatic output control
+- `add_example()` method for adding training pairs without interactive workflow
+- Real training convergence tests (identity mapping, multi-output)
+- Working example with actual training (`examples/simple_mapping.cpp`)
+
+### Fixed
+- Release build crash: loss function pointer not initialized due to side effect inside `assert()` (mlp_impl.hpp)
+- Removed ARM CMSIS-DSP conditional code from node.hpp (`ARM_MATH_CM33`)
+- Removed XMOS `__XS3A__` conditional attributes from utils.hpp and loss.hpp
+- Removed `std::printf` logging from dataset_impl.hpp (use IML logger callback instead)
+
+### Changed
+- README updated to document new APIs and remove false claims
+- CHANGELOG rewritten to accurately reflect library state
+
 ## [0.1.0] - 2026-02-08
 
 ### Added
@@ -15,38 +33,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Training and inference modes
 - Logging callback support
 - CMake build system for tests
-- Basic XOR test example
-- Comprehensive README documentation
 
 ### Changed
 - Converted from Arduino/RP2040 embedded code to platform-agnostic C++
-- Updated from C++17 to C++20 (required for std::span)
-- Removed all platform-specific code (Serial, SD card, Pico SDK)
+- Updated to C++20 (required for std::span)
 - Converted to header-only implementation pattern
 - Added `nisps` namespace to all code
-- Changed file extensions from .h/.cpp to .hpp
 
 ### Removed
 - Arduino and RP2040 dependencies
 - Serial debugging (replaced with optional callbacks)
 - SD card save/load functionality
-- Binary serialization (temporarily disabled)
 - Audio synthesis code (nisps-core is control-only)
-
-### Technical Details
-- **Language**: C++20
-- **Dependencies**: None (pure standard library)
-- **Architecture**: Header-only library
-- **Lines of code**: ~3,500
-- **Build system**: CMake 3.14+
-- **Optimizer**: RMSProp with gradient clipping
-- **Activation functions**: Sigmoid, ReLU, tanh, linear, hardsigmoid, hardswish, hardtanh
-- **Loss functions**: MSE, categorical cross-entropy
-
-### Known Issues
-- Binary serialization methods commented out (not needed for basic functionality)
-- No example for actual training workflow yet (requires interactive I/O)
-- Documentation references parent project URLs (MEMLNaut-NISPS)
 
 ### Migration from MEMLNaut-NISPS
 If you're using the old embedded IMLInterface class:
@@ -57,5 +55,3 @@ IMLInterface iml(n_inputs, n_outputs);
 // New (nisps-core):
 nisps::IML<float> iml(n_inputs, n_outputs);
 ```
-
-All method names remain the same, just add the namespace.

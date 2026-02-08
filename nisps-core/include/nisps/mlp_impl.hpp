@@ -92,7 +92,9 @@ void MLP<T>::CreateMLP(const std::vector<size_t> & layers_nodes,
     // Loss function selection
     loss::LossFunctionsManager<T> loss_mgr =
         loss::LossFunctionsManager<T>::Singleton();
-    assert(loss_mgr.GetLossFunction(loss_function, &(this->loss_fn_)));
+    bool loss_ok = loss_mgr.GetLossFunction(loss_function, &(this->loss_fn_));
+    assert(loss_ok);
+    (void)loss_ok;
 
     for (size_t i = 0; i < m_layers_nodes.size() - 1; i++) {
         m_layers.emplace_back(Layer<T>(m_layers_nodes[i],

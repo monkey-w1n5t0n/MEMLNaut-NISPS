@@ -11,7 +11,6 @@
 #ifndef NISPS_DATASET_IMPL_HPP
 #define NISPS_DATASET_IMPL_HPP
 
-#include <cstdio>
 #include <cassert>
 #include <random>
 #include <algorithm>
@@ -42,7 +41,6 @@ inline bool Dataset::Add(const std::vector<float> &feature, const std::vector<fl
     if (data_size_ > 0) {
         if ((feature.size() != data_size_) ||
             (label.size() != output_size_)) {
-            std::printf("Dataset- Wrong example size.\n");
             return false;
         }
     }
@@ -51,7 +49,6 @@ inline bool Dataset::Add(const std::vector<float> &feature, const std::vector<fl
         if (replay_memory_enabled_) {
             RemoveOneExcessExample();
         } else {
-            std::printf("Dataset- Max dataset size of %zu exceeded.\n", max_examples_);
             return false;
         }
     }
@@ -61,8 +58,6 @@ inline bool Dataset::Add(const std::vector<float> &feature, const std::vector<fl
     timestamps_.push_back(current_timestamp_);
     current_timestamp_++;
 
-    std::printf("Dataset- Added example.\n");
-    std::printf("Dataset- Feature size %zu, label size %zu.\n", features_.size(), labels_.size());
     _AdjustSizes();
     return true;
 }
@@ -115,7 +110,6 @@ inline void Dataset::RemoveOneExcessExample() {
     features_.erase(features_.begin() + index_to_remove);
     labels_.erase(labels_.begin() + index_to_remove);
     timestamps_.erase(timestamps_.begin() + index_to_remove);
-    std::printf("Dataset- Memory full, removing example at index %zu (mode %d).\n", index_to_remove, forget_mode_);
 }
 
 inline void Dataset::Clear()
@@ -178,17 +172,12 @@ inline void Dataset::_AdjustSizes()
 inline void Dataset::ReplayMemory(bool enabled)
 {
     replay_memory_enabled_ = enabled;
-    if (replay_memory_enabled_) {
-        std::printf("Replay memory functionality enabled.\n");
-    } else {
-        std::printf("Replay memory functionality disabled.\n");
-    }
+    (void)replay_memory_enabled_;
 }
 
 inline void Dataset::SetForgetMode(ForgetMode mode)
 {
     forget_mode_ = mode;
-    std::printf("Forget mode set to %d.\n", mode);
 }
 
 inline void Dataset::SetMaxExamples(size_t max)
@@ -206,7 +195,6 @@ inline void Dataset::SetMaxExamples(size_t max)
             break;
         }
     }
-    std::printf("Max examples set to %zu.\n", max_examples_);
 }
 
 inline std::pair<Dataset::DatasetVector, Dataset::DatasetVector> Dataset::Sample(bool with_bias)

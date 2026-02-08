@@ -13,9 +13,9 @@ NISPS core is a **parameter mapping engine**, not a synthesizer. It takes N inpu
 ## Features
 
 - **Header-only**: No compilation needed, just include and use
-- **Platform-agnostic**: Pure C++20, works anywhere
-- **No dependencies**: Only standard library
+- **Platform-agnostic**: Pure C++20 with standard library only
 - **Interactive learning**: Train by demonstration, not by code
+- **Programmatic training**: `add_example()` API for non-interactive use
 - **Lightweight**: ~3,500 lines of optimized neural network code
 - **Flexible**: Map 1-100 inputs to 1-100 outputs
 
@@ -55,25 +55,35 @@ void update(float x, float y) {
 }
 ```
 
-### Training Workflow
+### Programmatic Training
 
 ```cpp
 // 1. Enter training mode
 iml.set_mode(nisps::IML<float>::Mode::Training);
 
-// 2. Set input position
+// 2. Add examples directly
+float in1[] = {0.1f, 0.1f}; float out1[] = {0.9f, 0.1f, 0.5f, 0.8f};
+float in2[] = {0.9f, 0.9f}; float out2[] = {0.1f, 0.9f, 0.2f, 0.3f};
+iml.add_example(in1, 2, out1, 4);
+iml.add_example(in2, 2, out2, 4);
+
+// 3. Exit training mode (automatically trains the network)
+iml.set_mode(nisps::IML<float>::Mode::Inference);
+```
+
+### Interactive Training (hardware/UI)
+
+```cpp
+// For interactive systems with physical controls:
+iml.set_mode(nisps::IML<float>::Mode::Training);
+
 iml.set_input(0, 0.3f);
 iml.set_input(1, 0.7f);
+iml.save_example();      // Stops inference
+// ... user adjusts output controls ...
+iml.set_output(0, 0.8f); // Or read from hardware
+iml.save_example();       // Stores the input->output mapping
 
-// 3. Save example (call twice per example)
-iml.save_example();  // First call: stops inference, user positions output
-// ... user adjusts outputs manually to desired values ...
-iml.save_example();  // Second call: stores the input->output mapping
-
-// 4. Repeat for multiple input positions
-// ... add more examples ...
-
-// 5. Exit training mode (automatically trains the network)
 iml.set_mode(nisps::IML<float>::Mode::Inference);
 ```
 
@@ -97,6 +107,8 @@ nisps::IML<Float>(
 ```cpp
 void set_input(size_t index, Float value);     // Set single input (0-1 range)
 void set_inputs(const Float* values, size_t count);  // Set multiple inputs
+void set_output(size_t index, Float value);    // Set single output (for training)
+void set_outputs(const Float* values, size_t count); // Set multiple outputs
 const Float* get_outputs() const;              // Get output array
 void process();                                // Run inference
 ```
@@ -106,7 +118,9 @@ void process();                                // Run inference
 ```cpp
 enum class Mode { Inference, Training };
 void set_mode(Mode mode);                      // Switch modes
-void save_example();                           // Store input->output pair
+void add_example(const Float* in, size_t n_in, // Add training pair directly
+                 const Float* out, size_t n_out);
+void save_example();                           // Interactive: store input->output pair
 void clear_dataset();                          // Clear training data
 void randomise_weights();                      // Randomize for exploration
 ```
@@ -152,20 +166,14 @@ ctest --output-on-failure
 4. **RMSProp optimizer**: Fast convergence for interactive training
 5. **Gradient clipping**: Prevents numerical instability
 
-## Performance
-
-Typical performance on modern hardware:
-- **Inference**: 1-10 µs for small networks (2-10-10-4)
-- **Training**: 10-100 ms for 100 examples, 1000 iterations
-- **Memory**: ~1 KB per hidden neuron
-
 ## Examples
 
-See `test/main.cpp` for a complete example. More examples coming soon:
-- Audio synthesis control
-- Game parameter mapping
-- Sensor fusion for robotics
-- MIDI controller mapping
+See `examples/simple_mapping.cpp` for a complete working example that demonstrates:
+- Untrained inference
+- Programmatic training with `add_example()`
+- Interactive training workflow with `save_example()` + `set_output()`
+
+See `test/main.cpp` for tests including convergence verification.
 
 ## Origin
 
@@ -207,4 +215,4 @@ https://musicallyembodiedml.github.io/memlnaut/approaches/nisps
 
 - **Issues**: File at parent project (MEMLNaut-NISPS repo)
 - **Docs**: https://musicallyembodiedml.github.io/memlnaut/
-- **Examples**: See `examples/` directory (coming soon)
+- **Examples**: See `examples/` directory

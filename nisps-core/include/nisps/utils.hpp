@@ -37,12 +37,7 @@ enum ACTIVATION_FUNCTIONS {
     HARDTANH
 };
 
-#if defined(__XS3A__)
-#define MLP_ACTIVATION_FN __attribute__(( fptrgroup("mlp_activation") ))
-#else
-//#pragma message ( "PC compiler definitions enabled - check this is OK" )
 #define MLP_ACTIVATION_FN
-#endif
 
 /**
  * @namespace utils

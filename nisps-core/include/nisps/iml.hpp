@@ -31,6 +31,10 @@ public:
     size_t num_inputs() const { return n_inputs_; }
     size_t num_outputs() const { return n_outputs_; }
 
+    // Set outputs directly (for programmatic training without hardware)
+    void set_output(size_t index, Float value);
+    void set_outputs(const Float* values, size_t count);
+
     // Runtime
     void process();
 
@@ -38,6 +42,7 @@ public:
     void set_mode(Mode mode);
     Mode get_mode() const { return mode_; }
     void save_example();
+    void add_example(const Float* inputs, size_t n_in, const Float* outputs, size_t n_out);
     void clear_dataset();
     void randomise_weights();
 

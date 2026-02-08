@@ -20,16 +20,7 @@
 // #include <string>
 
 
-#if defined(__XS3A__)
-
-#define MLP_LOSS_FN __attribute__(( fptrgroup("mlp_loss") ))
-
-#else
-
-//#pragma message ( "PC compiler definitions enabled - check this is OK" )
 #define MLP_LOSS_FN
-
-#endif
 
 namespace nisps {
 

@@ -66,6 +66,21 @@ const Float* IML<Float>::get_outputs() const {
 }
 
 template<typename Float>
+void IML<Float>::set_output(size_t index, Float value) {
+    if (index >= n_outputs_) return;
+    if (value < 0) value = 0;
+    if (value > 1) value = 1;
+    output_state_[index] = value;
+}
+
+template<typename Float>
+void IML<Float>::set_outputs(const Float* values, size_t count) {
+    for (size_t i = 0; i < count && i < n_outputs_; ++i) {
+        set_output(i, values[i]);
+    }
+}
+
+template<typename Float>
 void IML<Float>::process() {
     if (!perform_inference_ || !input_updated_) return;
 
@@ -110,6 +125,15 @@ void IML<Float>::save_example() {
     output_state_ = output;
 
     log("Example saved.");
+}
+
+template<typename Float>
+void IML<Float>::add_example(const Float* inputs, size_t n_in, const Float* outputs, size_t n_out) {
+    std::vector<Float> in_vec(inputs, inputs + std::min(n_in, n_inputs_));
+    in_vec.resize(n_inputs_, static_cast<Float>(0));
+    std::vector<Float> out_vec(outputs, outputs + std::min(n_out, n_outputs_));
+    out_vec.resize(n_outputs_, static_cast<Float>(0));
+    dataset_->Add(in_vec, out_vec);
 }
 
 template<typename Float>

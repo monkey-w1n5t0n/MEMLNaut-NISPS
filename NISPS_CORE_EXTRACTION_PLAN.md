@@ -1,6 +1,8 @@
 # NISPS Core Extraction Plan
 
-Extract a platform-agnostic C++17 controller library from MEMLNaut-NISPS. This is **not** a synth or audio engine - it's a parameter mapping engine: control data in → ML → control data out. Use it to drive synths, effects, lights, robots, whatever.
+Extract a platform-agnostic C++20 controller library from MEMLNaut-NISPS. This is **not** a synth or audio engine - it's a parameter mapping engine: control data in → ML → control data out. Use it to drive synths, effects, lights, robots, whatever.
+
+> **Note**: Originally planned as C++17, upgraded to C++20 during implementation to use `std::span` for efficient array views.
 
 ## What This Is
 

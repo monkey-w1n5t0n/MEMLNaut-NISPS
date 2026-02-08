@@ -8,6 +8,22 @@ MEMLNaut-NISPS (Neural Interactive Shaping of Parameter Spaces) is firmware for 
 
 Project documentation: https://musicallyembodiedml.github.io/memlnaut/approaches/nisps
 
+## NISPS Core Library
+
+The `nisps-core/` directory contains a platform-agnostic C++20 extraction of the interactive ML engine. This header-only library can be used in any C++ project for neural network-based parameter mapping.
+
+**Key differences from firmware**:
+- ✅ Platform-agnostic (no Arduino/RP2040 dependencies)
+- ✅ Header-only (just include and use)
+- ✅ C++20 (uses std::span)
+- ✅ Namespaced (`nisps::`)
+- ❌ No audio synthesis (use it to *control* your synth)
+- ❌ No hardware drivers
+
+**Use case**: Control synthesizers, effects, lights, game parameters, or any system that responds to continuous parameters.
+
+See `nisps-core/README.md` for complete documentation and examples.
+
 ## Build System
 
 This is an Arduino project targeting Raspberry Pi Pico. Build and upload using Arduino IDE or arduino-cli with the earlephilhower/pico board package.

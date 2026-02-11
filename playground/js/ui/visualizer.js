@@ -1,5 +1,5 @@
 // Flow field particle system with Canvas2D
-// Controlled by 15 output parameters from the IML network
+// Controlled by 17 output parameters from the IML network
 
 // Simple value noise (no dependencies)
 const PERM = new Uint8Array(512);
@@ -70,6 +70,8 @@ export class FlowFieldVisualizer {
       particleLifetime: 220, // p12: average frames before respawn
       respawnStyle: 0.0,    // p13: 0=random, 1=edge, 2=center-burst
       advectionMode: 0.0,   // p14: flow->orbit->radial blend
+      inertia: 0.2,         // p15: velocity memory
+      drag: 0.02,           // p16: velocity damping
     };
 
     this.resize();
@@ -103,6 +105,8 @@ export class FlowFieldVisualizer {
       id,
       age: Math.floor(Math.random() * this.params.particleLifetime),
       life: this.computeLifetime(),
+      vx: 0,
+      vy: 0,
     };
   }
 
@@ -122,16 +126,26 @@ export class FlowFieldVisualizer {
       if (side === 1) { p.x = width; p.y = Math.random() * height; }
       if (side === 2) { p.x = Math.random() * width; p.y = height; }
       if (side === 3) { p.x = 0; p.y = Math.random() * height; }
+      // Give edge spawns an inward impulse.
+      const towardCenterX = width * 0.5 - p.x;
+      const towardCenterY = height * 0.5 - p.y;
+      const inwardDist = Math.hypot(towardCenterX, towardCenterY) + 1e-6;
+      p.vx = (towardCenterX / inwardDist) * 2.0;
+      p.vy = (towardCenterY / inwardDist) * 2.0;
     } else if (mode === 2) {
       // Center-burst respawn
       const angle = Math.random() * TWO_PI;
       const r = Math.random() * Math.min(width, height) * 0.08;
       p.x = width * 0.5 + Math.cos(angle) * r;
       p.y = height * 0.5 + Math.sin(angle) * r;
+      p.vx = Math.cos(angle) * 2.5;
+      p.vy = Math.sin(angle) * 2.5;
     } else {
       // Random respawn
       p.x = Math.random() * width;
       p.y = Math.random() * height;
+      p.vx = (Math.random() * 2 - 1) * 0.5;
+      p.vy = (Math.random() * 2 - 1) * 0.5;
     }
 
     p.age = 0;
@@ -140,7 +154,7 @@ export class FlowFieldVisualizer {
 
   // Set parameters from IML output (all values 0-1)
   setParams(outputs) {
-    if (!outputs || outputs.length < 15) return;
+    if (!outputs || outputs.length < 17) return;
     this.params.angleOffset = outputs[0] * TWO_PI;
     this.params.scale = 0.001 + outputs[1] * 0.009;
     this.params.speed = 0.5 + outputs[2] * 4.5;
@@ -156,6 +170,8 @@ export class FlowFieldVisualizer {
     this.params.particleLifetime = 30 + outputs[12] * 470;
     this.params.respawnStyle = outputs[13];
     this.params.advectionMode = outputs[14];
+    this.params.inertia = outputs[15] * 0.98;
+    this.params.drag = outputs[16] * 0.35;
   }
 
   draw() {
@@ -192,17 +208,21 @@ export class FlowFieldVisualizer {
       const radialVy = radialY * params.speed;
 
       const modeBlend = params.advectionMode * 2;
-      let vx;
-      let vy;
+      let targetVx;
+      let targetVy;
       if (modeBlend < 1) {
-        vx = lerp(flowVx, orbitVx, modeBlend);
-        vy = lerp(flowVy, orbitVy, modeBlend);
+        targetVx = lerp(flowVx, orbitVx, modeBlend);
+        targetVy = lerp(flowVy, orbitVy, modeBlend);
       } else {
-        vx = lerp(orbitVx, radialVx, modeBlend - 1);
-        vy = lerp(orbitVy, radialVy, modeBlend - 1);
+        targetVx = lerp(orbitVx, radialVx, modeBlend - 1);
+        targetVy = lerp(orbitVy, radialVy, modeBlend - 1);
       }
-      let nextX = p.x + vx;
-      let nextY = p.y + vy;
+      p.vx = p.vx * params.inertia + targetVx * (1 - params.inertia);
+      p.vy = p.vy * params.inertia + targetVy * (1 - params.inertia);
+      p.vx *= (1 - params.drag);
+      p.vy *= (1 - params.drag);
+      let nextX = p.x + p.vx;
+      let nextY = p.y + p.vy;
 
       // Central attractor keeps trajectories from sticking to the outer edges.
       const dx = cx - nextX;

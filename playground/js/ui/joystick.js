@@ -16,8 +16,11 @@ export class VirtualJoystick {
     this.x = 0.5;
     this.y = 0.5;
     this.touching = false;
+    this.followMode = false;
     this.springBack = options.springBack ?? false;
+    this.trackpadScale = Math.max(1, options.trackpadScale || 1);
     this.onChange = options.onChange || (() => {});
+    this.onFollowModeChange = options.onFollowModeChange || (() => {});
 
     // Touch events
     this.canvas.addEventListener('touchstart', this._onTouch.bind(this), { passive: false });
@@ -27,14 +30,27 @@ export class VirtualJoystick {
 
     // Mouse fallback
     this.canvas.addEventListener('mousedown', (e) => {
+      if (this.followMode) {
+        this._updateFromEvent(e);
+        return;
+      }
       this.touching = true;
       this._updateFromEvent(e);
     });
     window.addEventListener('mousemove', (e) => {
-      if (this.touching) this._updateFromEvent(e);
+      if (this.followMode) {
+        this._updateFromEvent(e, true);
+      } else if (this.touching) {
+        this._updateFromEvent(e);
+      }
     });
     window.addEventListener('mouseup', () => {
-      if (this.touching) this._onRelease();
+      if (this.touching && !this.followMode) this._onRelease();
+    });
+    this.canvas.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      this.setFollowMode(!this.followMode);
+      this._updateFromEvent(e, true);
     });
 
     this.draw();
@@ -44,28 +60,64 @@ export class VirtualJoystick {
     e.preventDefault();
     const touch = e.touches[0];
     this.touching = true;
+    this._updateFromClient(touch.clientX, touch.clientY);
+  }
+
+  _getTrackingRect() {
     const rect = this.canvas.getBoundingClientRect();
-    this.x = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
-    this.y = Math.max(0, Math.min(1, (touch.clientY - rect.top) / rect.height));
+    const w = rect.width * this.trackpadScale;
+    const h = rect.height * this.trackpadScale;
+    return {
+      left: rect.left - (w - rect.width) * 0.5,
+      top: rect.top - (h - rect.height) * 0.5,
+      width: w,
+      height: h,
+    };
+  }
+
+  _updateFromClient(clientX, clientY) {
+    const rect = this._getTrackingRect();
+    this.x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    this.y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
     this.onChange(this.x, this.y);
     this.draw();
   }
 
-  _updateFromEvent(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    this.x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    this.y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
-    this.onChange(this.x, this.y);
-    this.draw();
+  _isInsideTrackingRect(clientX, clientY) {
+    const rect = this._getTrackingRect();
+    return clientX >= rect.left && clientX <= rect.left + rect.width &&
+      clientY >= rect.top && clientY <= rect.top + rect.height;
+  }
+
+  _updateFromEvent(e, requireInside = false) {
+    if (requireInside && !this._isInsideTrackingRect(e.clientX, e.clientY)) return;
+    this._updateFromClient(e.clientX, e.clientY);
   }
 
   _onRelease() {
+    if (this.followMode) return;
     this.touching = false;
     if (this.springBack) {
       this.x = 0.5;
       this.y = 0.5;
       this.onChange(this.x, this.y);
     }
+    this.draw();
+  }
+
+  setPosition(x, y, options = {}) {
+    const { emit = true, touching = false } = options;
+    this.x = Math.max(0, Math.min(1, x));
+    this.y = Math.max(0, Math.min(1, y));
+    this.touching = touching;
+    if (emit) this.onChange(this.x, this.y);
+    this.draw();
+  }
+
+  setFollowMode(enabled) {
+    this.followMode = !!enabled;
+    this.touching = this.followMode || this.touching;
+    this.onFollowModeChange(this.followMode);
     this.draw();
   }
 
@@ -77,7 +129,7 @@ export class VirtualJoystick {
     // Background circle
     ctx.beginPath();
     ctx.arc(r, r, r - 4, 0, Math.PI * 2);
-    ctx.strokeStyle = '#333';
+    ctx.strokeStyle = this.followMode ? '#00cc6a' : '#333';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -121,8 +173,10 @@ export class VirtualJoystick {
     ctx.fill();
 
     // Position text
-    ctx.fillStyle = '#555';
+    ctx.fillStyle = this.followMode ? '#00cc6a' : '#555';
     ctx.font = '10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(this.followMode ? 'FOLLOW' : 'HOLD', 8, s - 6);
     ctx.textAlign = 'right';
     ctx.fillText(`${this.x.toFixed(2)}, ${this.y.toFixed(2)}`, s - 8, s - 6);
   }

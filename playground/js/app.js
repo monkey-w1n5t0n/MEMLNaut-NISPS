@@ -24,6 +24,7 @@ let gamepadIndex = -1;
 let gamepadButtonsPrev = [];
 let gamepadConnected = false;
 let gamepadLastAxes = [0.5, 0.5];
+let followMode = false;
 
 // --- Init ---
 function init() {
@@ -37,8 +38,13 @@ function init() {
   // Joystick
   joystick = new VirtualJoystick(document.getElementById('joystick-container'), {
     size: 160,
+    trackpadScale: 2,
     springBack: false,
     onChange: onJoystickMove,
+    onFollowModeChange: (enabled) => {
+      followMode = enabled;
+      refreshDashboard();
+    },
   });
 
   // Parameter display
@@ -71,6 +77,7 @@ function init() {
 
   window.addEventListener('gamepadconnected', () => refreshDashboard());
   window.addEventListener('gamepaddisconnected', () => refreshDashboard());
+  window.addEventListener('keydown', onKeyDown);
 
   // Run initial inference to populate outputs
   iml.setInput(0, 0.5);
@@ -207,6 +214,17 @@ function onModeChange(mode) {
   refreshDashboard();
 }
 
+function onKeyDown(e) {
+  if (!followMode || learningMode !== 'rl' || e.repeat) return;
+  if (e.key === '1' || e.code === 'Numpad1') {
+    e.preventDefault();
+    onThumbsDown();
+  } else if (e.key === '2' || e.code === 'Numpad2') {
+    e.preventDefault();
+    onThumbsUp();
+  }
+}
+
 // --- Presets ---
 window.loadPreset = function(name) {
   iml.clearDataset();
@@ -317,6 +335,7 @@ function refreshDashboard() {
     bestLoss: iml.bestLoss,
     totalTrainingIterations: iml.totalTrainingIterations,
     gamepadConnected,
+    followMode,
   });
 }
 

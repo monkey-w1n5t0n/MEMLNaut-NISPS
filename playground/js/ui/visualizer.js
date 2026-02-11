@@ -1,5 +1,5 @@
 // Flow field particle system with Canvas2D
-// Controlled by 12 output parameters from the IML network
+// Controlled by 14 output parameters from the IML network
 
 // Simple value noise (no dependencies)
 const PERM = new Uint8Array(512);
@@ -67,6 +67,8 @@ export class FlowFieldVisualizer {
       attractRadius: 200,   // p9: radius where attraction is strongest
       dispersionRate: 2.0,  // p10: speed of outward dispersion pulses
       dispersionAmount: 1.0, // p11: strength of outward dispersion
+      particleLifetime: 220, // p12: average frames before respawn
+      respawnStyle: 0.0,    // p13: 0=random, 1=edge, 2=center-burst
     };
 
     this.resize();
@@ -86,20 +88,58 @@ export class FlowFieldVisualizer {
   initParticles() {
     this.particles = [];
     for (let i = 0; i < this.numParticles; i++) {
-      this.particles.push({
-        x: Math.random() * this.width,
-        y: Math.random() * this.height,
-        id: i,
-      });
+      this.particles.push(this.makeParticle(i));
     }
     // Clear canvas to black
     this.ctx.fillStyle = '#0d0d0d';
     this.ctx.fillRect(0, 0, this.width, this.height);
   }
 
+  makeParticle(id) {
+    return {
+      x: Math.random() * this.width,
+      y: Math.random() * this.height,
+      id,
+      age: Math.floor(Math.random() * this.params.particleLifetime),
+      life: this.computeLifetime(),
+    };
+  }
+
+  computeLifetime() {
+    const variance = 0.65 + Math.random() * 0.7;
+    return Math.max(10, Math.floor(this.params.particleLifetime * variance));
+  }
+
+  respawnParticle(p) {
+    const mode = Math.min(2, Math.floor(this.params.respawnStyle * 2.999));
+    const { width, height } = this;
+
+    if (mode === 1) {
+      // Edge respawn
+      const side = Math.floor(Math.random() * 4);
+      if (side === 0) { p.x = Math.random() * width; p.y = 0; }
+      if (side === 1) { p.x = width; p.y = Math.random() * height; }
+      if (side === 2) { p.x = Math.random() * width; p.y = height; }
+      if (side === 3) { p.x = 0; p.y = Math.random() * height; }
+    } else if (mode === 2) {
+      // Center-burst respawn
+      const angle = Math.random() * TWO_PI;
+      const r = Math.random() * Math.min(width, height) * 0.08;
+      p.x = width * 0.5 + Math.cos(angle) * r;
+      p.y = height * 0.5 + Math.sin(angle) * r;
+    } else {
+      // Random respawn
+      p.x = Math.random() * width;
+      p.y = Math.random() * height;
+    }
+
+    p.age = 0;
+    p.life = this.computeLifetime();
+  }
+
   // Set parameters from IML output (all values 0-1)
   setParams(outputs) {
-    if (!outputs || outputs.length < 12) return;
+    if (!outputs || outputs.length < 14) return;
     this.params.angleOffset = outputs[0] * TWO_PI;
     this.params.scale = 0.001 + outputs[1] * 0.009;
     this.params.speed = 0.5 + outputs[2] * 4.5;
@@ -112,6 +152,8 @@ export class FlowFieldVisualizer {
     this.params.attractRadius = 40 + outputs[9] * 420;
     this.params.dispersionRate = 0.2 + outputs[10] * 8;
     this.params.dispersionAmount = outputs[11] * 3;
+    this.params.particleLifetime = 30 + outputs[12] * 470;
+    this.params.respawnStyle = outputs[13];
   }
 
   draw() {
@@ -162,6 +204,9 @@ export class FlowFieldVisualizer {
       if (p.x > width) p.x -= width;
       if (p.y < 0) p.y += height;
       if (p.y > height) p.y -= height;
+
+      p.age += 1;
+      if (p.age >= p.life) this.respawnParticle(p);
 
       // Color based on particle id + hue params
       const hue = (params.hueBase + (p.id / this.numParticles) * params.hueSpread) % 360;

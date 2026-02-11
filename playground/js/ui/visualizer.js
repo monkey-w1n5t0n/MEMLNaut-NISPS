@@ -1,5 +1,5 @@
 // Flow field particle system with Canvas2D
-// Controlled by 17 output parameters from the IML network
+// Controlled by 20 output parameters from the IML network
 
 // Simple value noise (no dependencies)
 const PERM = new Uint8Array(512);
@@ -72,6 +72,9 @@ export class FlowFieldVisualizer {
       advectionMode: 0.0,   // p14: flow->orbit->radial blend
       inertia: 0.2,         // p15: velocity memory
       drag: 0.02,           // p16: velocity damping
+      repulsorStrength: 0.0, // p17: repulsor force amount
+      repulsorCount: 0,      // p18: number of active repulsors
+      repulsorOrbitRate: 0.8, // p19: repulsor orbital speed
     };
 
     this.resize();
@@ -154,7 +157,7 @@ export class FlowFieldVisualizer {
 
   // Set parameters from IML output (all values 0-1)
   setParams(outputs) {
-    if (!outputs || outputs.length < 17) return;
+    if (!outputs || outputs.length < 20) return;
     this.params.angleOffset = outputs[0] * TWO_PI;
     this.params.scale = 0.001 + outputs[1] * 0.009;
     this.params.speed = 0.5 + outputs[2] * 4.5;
@@ -172,6 +175,9 @@ export class FlowFieldVisualizer {
     this.params.advectionMode = outputs[14];
     this.params.inertia = outputs[15] * 0.98;
     this.params.drag = outputs[16] * 0.35;
+    this.params.repulsorStrength = outputs[17] * 4.5;
+    this.params.repulsorCount = Math.floor(outputs[18] * 4.999);
+    this.params.repulsorOrbitRate = 0.1 + outputs[19] * 2.9;
   }
 
   draw() {
@@ -240,6 +246,22 @@ export class FlowFieldVisualizer {
       const dispersionForce = params.dispersionAmount * dispersionPulse * falloff;
       nextX -= nxCenter * dispersionForce;
       nextY -= nyCenter * dispersionForce;
+
+      // Orbiting repulsor points carve dynamic voids and bursts.
+      const repulsorRadius = Math.min(width, height) * 0.28;
+      for (let r = 0; r < params.repulsorCount; r++) {
+        const phase = this.time * params.repulsorOrbitRate + (r / 4) * TWO_PI;
+        const wobble = 0.6 + 0.15 * r;
+        const rx = cx + Math.cos(phase * (1.0 + wobble)) * repulsorRadius;
+        const ry = cy + Math.sin(phase * (1.3 + wobble)) * repulsorRadius;
+        const repulseDx = nextX - rx;
+        const repulseDy = nextY - ry;
+        const distSq = repulseDx * repulseDx + repulseDy * repulseDy + 160;
+        const distInv = 1 / Math.sqrt(distSq);
+        const force = params.repulsorStrength * (650 / distSq);
+        nextX += repulseDx * distInv * force;
+        nextY += repulseDy * distInv * force;
+      }
 
       p.x = nextX;
       p.y = nextY;

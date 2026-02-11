@@ -1,5 +1,5 @@
 // Flow field particle system with Canvas2D
-// Controlled by 14 output parameters from the IML network
+// Controlled by 15 output parameters from the IML network
 
 // Simple value noise (no dependencies)
 const PERM = new Uint8Array(512);
@@ -69,6 +69,7 @@ export class FlowFieldVisualizer {
       dispersionAmount: 1.0, // p11: strength of outward dispersion
       particleLifetime: 220, // p12: average frames before respawn
       respawnStyle: 0.0,    // p13: 0=random, 1=edge, 2=center-burst
+      advectionMode: 0.0,   // p14: flow->orbit->radial blend
     };
 
     this.resize();
@@ -139,7 +140,7 @@ export class FlowFieldVisualizer {
 
   // Set parameters from IML output (all values 0-1)
   setParams(outputs) {
-    if (!outputs || outputs.length < 14) return;
+    if (!outputs || outputs.length < 15) return;
     this.params.angleOffset = outputs[0] * TWO_PI;
     this.params.scale = 0.001 + outputs[1] * 0.009;
     this.params.speed = 0.5 + outputs[2] * 4.5;
@@ -154,6 +155,7 @@ export class FlowFieldVisualizer {
     this.params.dispersionAmount = outputs[11] * 3;
     this.params.particleLifetime = 30 + outputs[12] * 470;
     this.params.respawnStyle = outputs[13];
+    this.params.advectionMode = outputs[14];
   }
 
   draw() {
@@ -165,21 +167,44 @@ export class FlowFieldVisualizer {
     ctx.fillRect(0, 0, width, height);
 
     for (const p of this.particles) {
+      const cx = width * 0.5;
+      const cy = height * 0.5;
+
       // Sample flow field
       const nx = p.x * params.scale;
       const ny = p.y * params.scale;
       const angle = noise2D(nx + this.time, ny) * TWO_PI + params.angleOffset;
       const curl = noise2D(nx + 100, ny + 100 + this.time * 0.5) * params.turbulence;
 
-      // Move particle
-      const vx = Math.cos(angle + curl) * params.speed;
-      const vy = Math.sin(angle + curl) * params.speed;
+      // Mix between three advection fields for larger visual mode changes.
+      const flowVx = Math.cos(angle + curl) * params.speed;
+      const flowVy = Math.sin(angle + curl) * params.speed;
+      const fromCenterX = p.x - cx;
+      const fromCenterY = p.y - cy;
+      const centerDist = Math.hypot(fromCenterX, fromCenterY) + 1e-6;
+      const radialX = fromCenterX / centerDist;
+      const radialY = fromCenterY / centerDist;
+      const orbitX = -radialY;
+      const orbitY = radialX;
+      const orbitVx = orbitX * params.speed;
+      const orbitVy = orbitY * params.speed;
+      const radialVx = radialX * params.speed;
+      const radialVy = radialY * params.speed;
+
+      const modeBlend = params.advectionMode * 2;
+      let vx;
+      let vy;
+      if (modeBlend < 1) {
+        vx = lerp(flowVx, orbitVx, modeBlend);
+        vy = lerp(flowVy, orbitVy, modeBlend);
+      } else {
+        vx = lerp(orbitVx, radialVx, modeBlend - 1);
+        vy = lerp(orbitVy, radialVy, modeBlend - 1);
+      }
       let nextX = p.x + vx;
       let nextY = p.y + vy;
 
       // Central attractor keeps trajectories from sticking to the outer edges.
-      const cx = width * 0.5;
-      const cy = height * 0.5;
       const dx = cx - nextX;
       const dy = cy - nextY;
       const dist = Math.hypot(dx, dy) + 1e-6;

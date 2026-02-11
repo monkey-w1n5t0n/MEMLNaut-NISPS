@@ -24,6 +24,17 @@ The `nisps-core/` directory contains a platform-agnostic C++20 extraction of the
 
 See `nisps-core/README.md` for complete documentation and examples.
 
+## Web Playground
+
+The `playground/` directory contains a browser-based interactive demo of the NISPS ML engine. It's a faithful JavaScript port of nisps-core's MLP + IML, with no build step or dependencies.
+
+- **2 inputs** (virtual joystick X/Y) mapped through a `[3, 10, 10, 14, 8]` MLP to **8 outputs** controlling a Canvas2D flow-field particle system
+- **Two learning modes**: Examples (set slider targets, add examples, train) and RL Feedback (thumbs up/down with exploration noise)
+- **Serve statically**: `cd playground && python3 -m http.server`
+- **Mobile-first**: designed for touch/foldable phone use
+
+Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls), `js/app.js` (wiring).
+
 ## Build System
 
 This is an Arduino project targeting Raspberry Pi Pico. Build and upload using Arduino IDE or arduino-cli with the earlephilhower/pico board package.

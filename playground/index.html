@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>NISPS Playground</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <!-- Header -->
+    <div class="header">
+      <h1>NISPS Playground</h1>
+      <button id="help-btn" title="Help">?</button>
+    </div>
+
+    <!-- Visual output -->
+    <div class="visual-container">
+      <canvas id="visual-canvas"></canvas>
+      <div class="presets">
+        <button class="preset-pill" onclick="loadPreset('calm-to-chaotic')">Calm/Chaos</button>
+        <button class="preset-pill" onclick="loadPreset('rainbow-sweep')">Rainbow</button>
+        <button class="preset-pill" onclick="loadPreset('vortex')">Vortex</button>
+      </div>
+    </div>
+
+    <!-- Parameter bars -->
+    <div class="param-container" id="param-display"></div>
+
+    <!-- Joystick + Controls -->
+    <div class="controls-area">
+      <div id="joystick-container"></div>
+      <div id="controls-container"></div>
+    </div>
+
+    <!-- Help overlay -->
+    <div class="help-overlay hidden" id="help-overlay">
+      <div class="help-content" onclick="event.stopPropagation()">
+        <h2>NISPS Playground</h2>
+        <p>Train a neural network to map joystick positions to visual parameters using interactive machine learning.</p>
+
+        <h3>Examples Mode</h3>
+        <ol>
+          <li>Move the joystick to a position</li>
+          <li>Drag the parameter bars to set desired visual output</li>
+          <li>Press <strong>Add Example</strong> to save this mapping</li>
+          <li>Repeat for different joystick positions</li>
+          <li>Press <strong>Train</strong> &mdash; the network learns to interpolate between your examples</li>
+          <li>Move the joystick &mdash; visuals respond through the learned mapping</li>
+        </ol>
+
+        <h3>RL Feedback Mode</h3>
+        <ol>
+          <li>Move the joystick around &mdash; the network produces different visual outputs</li>
+          <li>See something you like? Press <strong>+</strong> (thumbs up)</li>
+          <li>Don't like it? Press <strong>&minus;</strong> (thumbs down) to explore more</li>
+          <li>The network learns from your preferences over time</li>
+        </ol>
+
+        <h3>Tips</h3>
+        <p>Try the preset buttons above the visuals for instant demos. Your training data auto-saves to your browser.</p>
+        <p style="margin-top: 16px; text-align: center; color: #444;">Tap anywhere outside to close</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

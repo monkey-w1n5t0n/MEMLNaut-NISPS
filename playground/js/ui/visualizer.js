@@ -1,5 +1,5 @@
 // Flow field particle system with Canvas2D
-// Controlled by 8 output parameters from the IML network
+// Controlled by 12 output parameters from the IML network
 
 // Simple value noise (no dependencies)
 const PERM = new Uint8Array(512);
@@ -63,6 +63,10 @@ export class FlowFieldVisualizer {
       particleSize: 3,   // p5: dot radius
       fadeRate: 0.05,     // p6: trail length
       turbulence: 1,     // p7: chaos
+      attractStrength: 0.8, // p8: pull toward screen center
+      attractRadius: 200,   // p9: radius where attraction is strongest
+      dispersionRate: 2.0,  // p10: speed of outward dispersion pulses
+      dispersionAmount: 1.0, // p11: strength of outward dispersion
     };
 
     this.resize();
@@ -95,7 +99,7 @@ export class FlowFieldVisualizer {
 
   // Set parameters from IML output (all values 0-1)
   setParams(outputs) {
-    if (!outputs || outputs.length < 8) return;
+    if (!outputs || outputs.length < 12) return;
     this.params.angleOffset = outputs[0] * TWO_PI;
     this.params.scale = 0.001 + outputs[1] * 0.009;
     this.params.speed = 0.5 + outputs[2] * 4.5;
@@ -104,6 +108,10 @@ export class FlowFieldVisualizer {
     this.params.particleSize = 1 + outputs[5] * 5;
     this.params.fadeRate = 0.01 + outputs[6] * 0.14;
     this.params.turbulence = outputs[7] * 2;
+    this.params.attractStrength = 0.1 + outputs[8] * 2.9;
+    this.params.attractRadius = 40 + outputs[9] * 420;
+    this.params.dispersionRate = 0.2 + outputs[10] * 8;
+    this.params.dispersionAmount = outputs[11] * 3;
   }
 
   draw() {
@@ -124,8 +132,30 @@ export class FlowFieldVisualizer {
       // Move particle
       const vx = Math.cos(angle + curl) * params.speed;
       const vy = Math.sin(angle + curl) * params.speed;
-      p.x += vx;
-      p.y += vy;
+      let nextX = p.x + vx;
+      let nextY = p.y + vy;
+
+      // Central attractor keeps trajectories from sticking to the outer edges.
+      const cx = width * 0.5;
+      const cy = height * 0.5;
+      const dx = cx - nextX;
+      const dy = cy - nextY;
+      const dist = Math.hypot(dx, dy) + 1e-6;
+      const nxCenter = dx / dist;
+      const nyCenter = dy / dist;
+      const normalizedDist = Math.min(dist / params.attractRadius, 2);
+      const falloff = 1 / (1 + normalizedDist * normalizedDist);
+      nextX += nxCenter * params.attractStrength * falloff;
+      nextY += nyCenter * params.attractStrength * falloff;
+
+      // Time-varying dispersion pushes particles outward near the center.
+      const dispersionPulse = 0.5 + 0.5 * Math.sin(this.time * params.dispersionRate + p.id * 0.07);
+      const dispersionForce = params.dispersionAmount * dispersionPulse * falloff;
+      nextX -= nxCenter * dispersionForce;
+      nextY -= nyCenter * dispersionForce;
+
+      p.x = nextX;
+      p.y = nextY;
 
       // Wrap around edges
       if (p.x < 0) p.x += width;

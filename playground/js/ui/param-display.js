@@ -1,11 +1,11 @@
 // Parameter bar display
-// Shows 8 output parameters as horizontal bars, draggable in examples mode
+// Shows output parameters as horizontal bars, draggable in examples mode
 
-const PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb'];
-const PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366'];
+const PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt'];
+const PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff'];
 
 export class ParamDisplay {
-  constructor(container, numParams = 8) {
+  constructor(container, numParams = 12) {
     this.container = container;
     this.numParams = numParams;
     this.values = new Array(numParams).fill(0.5);

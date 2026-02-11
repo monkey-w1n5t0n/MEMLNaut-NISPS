@@ -48,6 +48,9 @@ export class IML {
     this.storedWeights = null;
     this.weightsRandomised = false;
     this.lastLoss = null;
+    this.bestLoss = null;
+    this.lossHistory = [];
+    this.totalTrainingIterations = 0;
     this.logFn = null;
   }
 
@@ -162,7 +165,7 @@ export class IML {
     this.process();
   }
 
-  train() {
+  train(options = {}) {
     // Restore weights if randomised
     if (this.weightsRandomised && this.storedWeights) {
       this.mlp.setWeights(this.storedWeights);
@@ -183,8 +186,20 @@ export class IML {
       labels,
       this.learningRate,
       this.maxIterations,
-      this.convergenceThreshold
+      this.convergenceThreshold,
+      options
     );
+
+    const latestHistory = this.mlp.lastTrainingHistory || [];
+    if (latestHistory.length > 0) {
+      this.lossHistory.push(...latestHistory);
+      this.totalTrainingIterations += latestHistory.length;
+      if (this.lossHistory.length > 1200) {
+        this.lossHistory = this.lossHistory.slice(this.lossHistory.length - 1200);
+      }
+      const runBest = Math.min(...latestHistory);
+      this.bestLoss = this.bestLoss === null ? runBest : Math.min(this.bestLoss, runBest);
+    }
 
     // Run inference after training
     const inputWithBias = [...this.inputState, 1.0];

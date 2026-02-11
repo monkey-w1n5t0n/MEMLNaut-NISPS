@@ -67,9 +67,11 @@ export class MLP {
   }
 
   // Per-sample SGD training (Train method from C++)
-  train(features, labels, learningRate, maxIterations = 1000, minError = 0.00001) {
+  train(features, labels, learningRate, maxIterations = 1000, minError = 0.00001, options = {}) {
     const sampleSizeRecip = 1 / features.length;
     let loss = 0;
+    const history = [];
+    const onIteration = typeof options.onIteration === 'function' ? options.onIteration : null;
 
     for (let iter = 0; iter < maxIterations; iter++) {
       loss = 0;
@@ -89,6 +91,9 @@ export class MLP {
       }
 
       loss *= sampleSizeRecip;
+      history.push(loss);
+
+      if (onIteration) onIteration(iter, loss);
 
       if (this.progressCallback && (iter & 0x1F) === 0) {
         this.progressCallback(iter, loss);
@@ -97,14 +102,17 @@ export class MLP {
       if (loss < minError) break;
     }
 
+    this.lastTrainingHistory = history;
     return loss;
   }
 
   // Batch training with RMSProp (TrainBatch from C++)
-  trainBatch(features, labels, learningRate, maxIterations = 1000, batchSize = 8, minError = 0.00001) {
+  trainBatch(features, labels, learningRate, maxIterations = 1000, batchSize = 8, minError = 0.00001, options = {}) {
     const nSamples = features.length;
     const nBatches = Math.ceil(nSamples / batchSize);
     let epochLoss = 0;
+    const history = [];
+    const onIteration = typeof options.onIteration === 'function' ? options.onIteration : null;
 
     for (let iter = 0; iter < maxIterations; iter++) {
       epochLoss = 0;
@@ -164,6 +172,8 @@ export class MLP {
       }
 
       epochLoss /= nBatches;
+      history.push(epochLoss);
+      if (onIteration) onIteration(iter, epochLoss);
 
       if (this.progressCallback) {
         this.progressCallback(iter, epochLoss);
@@ -172,6 +182,7 @@ export class MLP {
       if (epochLoss < minError) break;
     }
 
+    this.lastTrainingHistory = history;
     return epochLoss;
   }
 

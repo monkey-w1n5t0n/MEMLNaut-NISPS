@@ -37,6 +37,15 @@ html, body {
   margin: 0 auto;
 }
 
+.header,
+.visual-container,
+.param-container,
+.controls-area,
+.presets,
+.expand-visual-btn {
+  transition: all 0.2s ease;
+}
+
 /* Header */
 .header {
   display: flex;
@@ -68,6 +77,30 @@ html, body {
 .visual-container {
   position: relative;
   min-height: 0;
+}
+
+.expand-visual-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  background: rgba(26, 26, 26, 0.82);
+  border: 1px solid #333;
+  color: #9f9f9f;
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.expand-visual-btn:active,
+.expand-visual-btn[aria-pressed="true"] {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: rgba(0, 255, 136, 0.15);
 }
 
 .visual-container canvas {
@@ -169,6 +202,97 @@ html, body {
   padding: 10px 12px;
   background: var(--bg-surface);
   border-top: 1px solid #222;
+}
+
+.app.expanded {
+  grid-template-rows: auto minmax(0, 1fr) 58px 102px 0;
+}
+
+.app.expanded .header {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.app.expanded .header h1 {
+  font-size: 13px;
+  color: #9a9a9a;
+}
+
+.app.expanded .presets {
+  top: 6px;
+  left: 6px;
+  gap: 4px;
+}
+
+.app.expanded .preset-pill {
+  font-size: 10px;
+  padding: 3px 7px;
+  color: #868686;
+}
+
+.app.expanded .param-container {
+  padding: 4px 10px;
+  overflow: hidden;
+  opacity: 0.78;
+}
+
+.app.expanded .param-row {
+  height: 17px;
+}
+
+.app.expanded .param-track {
+  height: 5px;
+}
+
+.app.expanded .draggable .param-track {
+  height: 9px;
+}
+
+.app.expanded .param-label,
+.app.expanded .param-value {
+  font-size: 9px;
+}
+
+.app.expanded .controls-area {
+  padding: 6px 10px;
+  gap: 8px;
+  overflow: hidden;
+  opacity: 0.82;
+}
+
+.app.expanded #joystick-container {
+  width: 94px;
+  height: 94px;
+  overflow: hidden;
+}
+
+.app.expanded #joystick-container canvas {
+  transform: scale(0.58);
+  transform-origin: top left;
+}
+
+.app.expanded .controls-mode-toggle,
+.app.expanded .controls-actions {
+  margin-bottom: 4px;
+}
+
+.app.expanded .btn,
+.app.expanded .mode-btn {
+  font-size: 10px;
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+
+.app.expanded .btn-good,
+.app.expanded .btn-bad {
+  font-size: 14px;
+  padding: 5px 12px;
+}
+
+.app.expanded .controls-status,
+.app.expanded .metrics-grid,
+.app.expanded .loss-plot-wrap {
+  display: none;
 }
 
 #joystick-container {

@@ -25,6 +25,9 @@ let gamepadButtonsPrev = [];
 let gamepadConnected = false;
 let gamepadLastAxes = [0.5, 0.5];
 let followMode = false;
+let visualExpanded = false;
+let appRoot;
+let expandVisualBtn;
 
 // --- Init ---
 function init() {
@@ -32,6 +35,9 @@ function init() {
   iml.setLogger(msg => console.log('[NISPS]', msg));
 
   // Visualizer
+  appRoot = document.querySelector('.app');
+  expandVisualBtn = document.getElementById('expand-visual-btn');
+
   const canvas = document.getElementById('visual-canvas');
   visualizer = new FlowFieldVisualizer(canvas);
 
@@ -63,9 +69,13 @@ function init() {
 
   // Resize handling
   window.addEventListener('resize', () => {
-    visualizer.resize();
-    visualizer.initParticles();
+    resizeVisualizerSurface();
   });
+
+  if (expandVisualBtn) {
+    expandVisualBtn.addEventListener('click', () => setVisualExpanded(!visualExpanded));
+    updateExpandButtonState();
+  }
 
   // Help overlay
   const helpBtn = document.getElementById('help-btn');
@@ -215,6 +225,11 @@ function onModeChange(mode) {
 }
 
 function onKeyDown(e) {
+  if (e.key === 'Escape' && visualExpanded) {
+    setVisualExpanded(false);
+    return;
+  }
+
   if (!followMode || learningMode !== 'rl' || e.repeat) return;
   if (e.key === '1' || e.code === 'Numpad1') {
     e.preventDefault();
@@ -223,6 +238,33 @@ function onKeyDown(e) {
     e.preventDefault();
     onThumbsUp();
   }
+}
+
+function resizeVisualizerSurface() {
+  visualizer.resize();
+  visualizer.initParticles();
+}
+
+function updateExpandButtonState() {
+  if (!expandVisualBtn) return;
+  expandVisualBtn.textContent = visualExpanded ? 'Collapse' : 'Expand';
+  expandVisualBtn.title = visualExpanded ? 'Collapse visual area' : 'Expand visual area';
+  expandVisualBtn.setAttribute('aria-pressed', visualExpanded ? 'true' : 'false');
+}
+
+function setVisualExpanded(expanded) {
+  visualExpanded = expanded;
+  if (appRoot) {
+    appRoot.classList.toggle('expanded', visualExpanded);
+  }
+  updateExpandButtonState();
+
+  // Let CSS layout settle before resizing the drawing surface.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      resizeVisualizerSurface();
+    });
+  });
 }
 
 // --- Presets ---

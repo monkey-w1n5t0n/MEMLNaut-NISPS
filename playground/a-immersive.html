@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>NISPS Immersive</title>
+  <link rel="stylesheet" href="css/a-immersive.css">
+</head>
+<body>
+  <!-- Back button -->
+  <a href="designs.html" class="back-btn" title="Back to designs">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 2L4 8l6 6"/>
+    </svg>
+  </a>
+
+  <!-- Synth quick controls (play button + drawer, next to back button) -->
+  <div class="synth-quick-controls hidden" id="synth-quick-controls">
+    <button class="play-btn" id="quick-play" title="Start audio + arpeggiator">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" id="quick-play-icon"><path d="M4 2l10 6-10 6z"/></svg>
+    </button>
+    <div class="play-drawer" id="play-drawer">
+      <label>Vol <input type="range" id="quick-vol" min="0" max="1" step="0.01" value="0.5"></label>
+      <label>BPM <input type="range" id="quick-bpm" min="40" max="240" step="1" value="120"><span id="quick-bpm-val">120</span></label>
+    </div>
+  </div>
+
+  <!-- Fullscreen flow field canvas -->
+  <canvas id="vis-canvas"></canvas>
+
+  <!-- Synth visualization canvas -->
+  <canvas id="synth-vis-canvas"></canvas>
+
+  <!-- Heatmap strip (top) -->
+  <div class="heatmap-strip" id="heatmap-strip">
+    <div class="heatmap-cells" id="heatmap-cells"></div>
+    <div class="heatmap-tooltip" id="heatmap-tooltip"></div>
+  </div>
+
+  <!-- Floating joystick with integrated map -->
+  <div class="joystick-container" id="joystick-container">
+    <div class="joystick-glow" id="joystick-glow"></div>
+    <canvas id="joy-map" width="160" height="160"></canvas>
+    <div class="noise-ring" id="noise-ring"></div>
+    <div class="follow-badge hidden" id="follow-badge">FOLLOW</div>
+  </div>
+
+  <!-- RL floating buttons -->
+  <div class="rl-buttons" id="rl-buttons">
+    <button class="rl-btn rl-down" id="btn-thumbsdown" title="Explore more">&minus; <span class="key-num">1</span></button>
+    <button class="rl-btn rl-up" id="btn-thumbsup" title="Keep this">+ <span class="key-num">2</span></button>
+  </div>
+
+  <!-- Bottom sheet -->
+  <div class="bottom-sheet collapsed" id="bottom-sheet">
+    <!-- Floating mode bar (sticky inside sheet) -->
+    <div class="floating-bar" id="floating-bar">
+      <div class="pill-toggle" id="learning-toggle">
+        <button class="pill-opt" data-mode="examples">Examples</button>
+        <button class="pill-opt active" data-mode="rl">RL</button>
+      </div>
+      <button class="float-btn" id="btn-randomize-bar" title="Randomize weights">Randomize</button>
+      <button class="follow-pill" id="follow-pill" title="Toggle follow mode">Follow</button>
+      <button class="chevron-btn" id="chevron-btn" title="Expand panel">&#9650;</button>
+    </div>
+
+    <!-- Status line -->
+    <div class="sheet-status" id="sheet-status">
+      <span id="status-text">0 examples &middot; untrained</span>
+    </div>
+
+    <!-- Sheet content -->
+    <div class="sheet-content" id="sheet-content">
+      <!-- Output mode toggle -->
+      <div class="mode-row">
+        <div class="pill-toggle" id="output-toggle">
+          <button class="pill-opt active" data-mode="visual">Visual</button>
+          <button class="pill-opt" data-mode="synth">Synth</button>
+        </div>
+      </div>
+
+      <!-- Examples mode actions -->
+      <div class="action-row" id="examples-actions" style="display:none;">
+        <button class="action-btn" id="btn-add-example">Add Example</button>
+        <button class="action-btn accent" id="btn-train">Train</button>
+        <button class="action-btn dim" id="btn-clear">Clear</button>
+        <button class="action-btn dim" id="btn-randomize">Randomize</button>
+      </div>
+
+      <!-- Preset palette -->
+      <div class="preset-row" id="preset-row" style="display:none;">
+        <span class="preset-label">Presets</span>
+        <button class="preset-chip" data-preset="calm-to-chaotic">Calm/Chaos</button>
+        <button class="preset-chip" data-preset="rainbow-sweep">Rainbow</button>
+        <button class="preset-chip" data-preset="vortex">Vortex</button>
+        <button class="preset-chip" data-preset="spiral">Spiral</button>
+        <button class="preset-chip" data-preset="embers">Embers</button>
+      </div>
+
+      <!-- Synth controls -->
+      <div class="synth-panel hidden" id="synth-panel">
+        <div class="synth-row">
+          <button class="action-btn accent" id="synth-start">Start Audio</button>
+          <span class="synth-status" id="synth-status">Stopped</span>
+        </div>
+        <div class="synth-row">
+          <label>Volume</label>
+          <input type="range" id="synth-volume" min="0" max="1" step="0.01" value="0.5">
+        </div>
+        <div class="synth-row">
+          <label>Arpeggiator</label>
+          <button class="action-btn" id="arp-toggle">Play</button>
+        </div>
+        <div class="synth-row">
+          <label>Progression</label>
+          <select id="arp-progression">
+            <option value="I-vi-IV-V">I-vi-IV-V</option>
+            <option value="I-IV-vi-V">I-IV-vi-V</option>
+            <option value="i-VI-III-VII">i-VI-III-VII</option>
+            <option value="I-V-vi-IV">I-V-vi-IV</option>
+          </select>
+        </div>
+        <div class="synth-row">
+          <label>Tempo <span id="tempo-val">120</span></label>
+          <input type="range" id="arp-tempo" min="40" max="240" step="1" value="120">
+        </div>
+        <div class="synth-row">
+          <label>Octaves <span id="octaves-val">2</span></label>
+          <input type="range" id="arp-octaves" min="1" max="5" step="1" value="2">
+        </div>
+        <div class="synth-row">
+          <label>Oct Offset <span id="offset-val">0</span></label>
+          <input type="range" id="arp-offset" min="-2" max="3" step="1" value="0">
+        </div>
+      </div>
+
+      <!-- Loss plot -->
+      <div class="loss-section">
+        <label>Loss History</label>
+        <canvas id="loss-canvas" width="280" height="80"></canvas>
+      </div>
+
+      <!-- Advanced: raw param sliders -->
+      <details class="advanced-section">
+        <summary>Advanced: Raw Parameters</summary>
+        <div class="raw-params" id="raw-params"></div>
+      </details>
+    </div>
+  </div>
+
+  <script type="module" src="js/a-app.js"></script>
+</body>
+</html>

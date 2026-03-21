@@ -1,0 +1,999 @@
+/* NISPS Journey — Design C */
+/* Phases that dissolve: Explore -> Teach -> Perform */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --bg: #0d0d0d;
+  --glass-bg: rgba(13, 13, 13, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-blur: 16px;
+  --accent: #00ff88;
+  --accent-dim: rgba(0, 255, 136, 0.2);
+  --accent-glow: rgba(0, 255, 136, 0.4);
+  --danger: #ff4466;
+  --text: #e0e0e0;
+  --text-dim: rgba(255, 255, 255, 0.45);
+  --text-muted: rgba(255, 255, 255, 0.25);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 20px;
+  --transition: 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  --transition-fast: 200ms ease-out;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================================
+   Canvas
+   ============================================================ */
+#vis-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  transition: height var(--transition);
+}
+
+.app.phase-teach #vis-canvas,
+.app.phase-teach #synth-vis-canvas {
+  height: 40vh;
+}
+
+/* Synth visualizer canvas */
+#synth-vis-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  transition: height var(--transition);
+}
+
+/* ============================================================
+   Phase dots (top-center)
+   ============================================================ */
+.phase-dots {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  transition: opacity var(--transition);
+}
+
+.phase-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.phase-dot.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.phase-dot:hover {
+  border-color: var(--text);
+}
+
+/* ============================================================
+   Heatmap strip
+   ============================================================ */
+.heatmap-strip {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  transition: opacity var(--transition);
+  cursor: pointer;
+}
+
+.heatmap-cells {
+  display: flex;
+  gap: 1px;
+  height: 16px;
+}
+
+.heatmap-cell {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 16px;
+  background: #1a1a1a;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.heatmap-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 50%;
+  transition: width 0.1s ease-out;
+  border-radius: 2px;
+}
+
+.heatmap-strip.wide .heatmap-cell {
+  width: 3px;
+  height: 16px;
+}
+
+.heatmap-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  min-width: 16px;
+  text-align: right;
+}
+
+.heatmap-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.heatmap-tooltip.show {
+  opacity: 1;
+}
+
+/* ============================================================
+   Mode pill (top-left)
+   ============================================================ */
+.mode-pill {
+  position: fixed;
+  top: 12px;
+  left: 56px;
+  z-index: 100;
+  display: flex;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  transition: opacity var(--transition);
+}
+
+.mode-opt {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-opt.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ============================================================
+   Explore phase prompts
+   ============================================================ */
+.explore-prompt {
+  position: fixed;
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  text-align: center;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+.prompt-text {
+  font-size: 18px;
+  color: var(--text-dim);
+  animation: fadeSlideIn 800ms ease-out forwards;
+  opacity: 0;
+  animation-delay: 1s;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.explore-ctas {
+  position: fixed;
+  bottom: calc(180px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  gap: 12px;
+  transition: opacity var(--transition);
+}
+
+.cta-pill {
+  padding: 10px 22px;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.cta-pill:hover, .cta-pill:active {
+  border-color: var(--text-dim);
+}
+
+.cta-pill.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cta-pill.primary:hover, .cta-pill.primary:active {
+  background: rgba(0, 255, 136, 0.3);
+}
+
+/* ============================================================
+   Joystick
+   ============================================================ */
+.joystick-area {
+  position: fixed;
+  z-index: 85;
+  width: 150px;
+  height: 150px;
+  transition: all var(--transition);
+}
+
+/* Phase 1: bottom-center */
+.app.phase-explore .joystick-area {
+  bottom: calc(24px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: 150px;
+  height: 150px;
+  opacity: 1;
+}
+
+/* Phase 2: left side, smaller */
+.app.phase-teach .joystick-area {
+  bottom: auto;
+  top: calc(40vh + 16px);
+  left: 16px;
+  transform: none;
+  width: 120px;
+  height: 120px;
+  opacity: 1;
+}
+
+/* Phase 2 RL: left side, same as examples */
+.app.phase-teach[data-teach-mode="rl"] .joystick-area {
+  left: 16px;
+  transform: none;
+  top: calc(40vh + 16px);
+}
+
+/* Phase 3: ghost, bottom-center, smaller */
+.app.phase-perform .joystick-area {
+  bottom: calc(60px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 120px;
+  opacity: 0.55;
+}
+
+.joystick-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  touch-action: none;
+}
+
+/* Noise ring for RL mode */
+.noise-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: all var(--transition-fast);
+}
+
+.app[data-teach-mode="rl"] .noise-ring {
+  opacity: 0.5;
+}
+
+/* ============================================================
+   Teach panel
+   ============================================================ */
+.teach-panel {
+  position: fixed;
+  top: 40vh;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  background: var(--bg);
+  border-top: 1px solid var(--glass-border);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px 24px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(20px);
+  transition: opacity var(--transition), transform var(--transition);
+}
+
+.app.phase-teach .teach-panel {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* Teach tabs */
+.teach-tabs {
+  display: flex;
+  gap: 0;
+  margin: 12px 0;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+}
+
+.teach-tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.teach-tab.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* Teach content sections */
+.teach-content {
+  transition: opacity var(--transition-fast);
+}
+
+.teach-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 136px; /* room for joystick on left */
+}
+
+.app.phase-teach[data-teach-mode="rl"] .teach-layout {
+  padding-left: 136px;
+}
+
+/* Preset grid */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.preset-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1.5px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.preset-thumb.selected {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.preset-thumb:hover {
+  border-color: var(--text-dim);
+}
+
+.preset-canvas {
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+/* Teach actions */
+.teach-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Minimap */
+.minimap {
+  width: 120px;
+  height: 120px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  align-self: center;
+}
+
+/* Fine-tune */
+.fine-tune {
+  margin-top: 4px;
+}
+
+.fine-tune summary {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.param-sliders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.param-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.param-slider-row label {
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 50px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.param-slider-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  outline: none;
+}
+
+.param-slider-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* RL sub-mode */
+#teach-rl {
+  padding-left: 136px;
+}
+
+.rl-hint {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 12px 0;
+}
+
+.thumb-icon {
+  font-size: 16px;
+}
+
+.rl-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 16px;
+}
+
+.rl-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  font-size: 28px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rl-btn.up:hover, .rl-btn.up:active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.rl-btn.down:hover, .rl-btn.down:active {
+  border-color: var(--danger);
+  background: rgba(255, 68, 102, 0.15);
+}
+
+/* Synth section */
+.synth-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--glass-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.synth-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.synth-row label {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 80px;
+}
+
+.synth-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  outline: none;
+}
+
+.synth-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.synth-row select {
+  flex: 1;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.synth-status {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* Teach status bar */
+.teach-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 8px;
+  border-top: 1px solid var(--glass-border);
+}
+
+/* Done button */
+.done-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.done-btn:hover, .done-btn:active {
+  background: #33ffaa;
+}
+
+/* ============================================================
+   Buttons (shared)
+   ============================================================ */
+.action-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.action-btn:hover, .action-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-dim);
+}
+
+.action-btn.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.action-btn.primary:hover {
+  background: rgba(0, 255, 136, 0.3);
+}
+
+.action-btn.accent {
+  background: rgba(0, 255, 136, 0.12);
+  border-color: rgba(0, 255, 136, 0.3);
+  color: var(--accent);
+}
+
+.action-btn.accent:hover {
+  background: rgba(0, 255, 136, 0.2);
+}
+
+.action-btn.dim {
+  color: var(--text-dim);
+  border-color: transparent;
+  background: transparent;
+}
+
+.action-btn.small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+/* Train button pulse animation */
+.action-btn.accent.pulse {
+  animation: trainPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes trainPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50%      { box-shadow: 0 0 12px 4px var(--accent-glow); }
+}
+
+/* ============================================================
+   Edit pill (Phase 3)
+   ============================================================ */
+.edit-pill-wrap {
+  position: fixed;
+  bottom: calc(16px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition);
+}
+
+.app.phase-perform .edit-pill-wrap {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.edit-pill {
+  padding: 10px 28px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.edit-pill:hover {
+  border-color: var(--text-dim);
+}
+
+/* Audio control (Phase 3, synth mode) */
+.audio-control {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  transition: opacity var(--transition);
+}
+
+.audio-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.audio-vol {
+  width: 60px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  outline: none;
+}
+
+.audio-vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* ============================================================
+   Phase visibility rules
+   ============================================================ */
+
+/* Explore: show prompts, CTAs; hide teach panel, edit pill */
+.app.phase-explore .teach-panel,
+.app.phase-explore .edit-pill-wrap,
+.app.phase-explore .audio-control { opacity: 0; pointer-events: none; }
+
+/* Teach: hide prompts, CTAs, edit pill */
+.app.phase-teach .explore-prompt,
+.app.phase-teach .explore-ctas,
+.app.phase-teach .edit-pill-wrap,
+.app.phase-teach .audio-control { opacity: 0; pointer-events: none; }
+
+/* Perform: hide prompts, CTAs, teach panel */
+.app.phase-perform .explore-prompt,
+.app.phase-perform .explore-ctas,
+.app.phase-perform .teach-panel { opacity: 0; pointer-events: none; }
+
+/* Perform phase: auto-fade idle elements */
+.app.phase-perform.idle .edit-pill-wrap {
+  opacity: 0.1;
+}
+.app.phase-perform.idle .heatmap-strip {
+  opacity: 0.15;
+}
+.app.phase-perform.idle .phase-dots {
+  opacity: 0.15;
+}
+.app.phase-perform.idle .mode-pill {
+  opacity: 0.15;
+}
+
+/* ============================================================
+   Back button
+   ============================================================ */
+.back-btn {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 110;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: 50%;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 18px;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+
+.back-btn:hover {
+  border-color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ============================================================
+   RL key hints
+   ============================================================ */
+.rl-key-hints {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 6px;
+}
+
+.key-hint {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  color: #555;
+  width: 64px;
+  text-align: center;
+}
+
+/* ============================================================
+   Follow mode
+   ============================================================ */
+.follow-indicator {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--accent);
+  text-shadow: 0 0 8px var(--accent-glow);
+  pointer-events: none;
+}
+
+.follow-pill {
+  position: absolute;
+  bottom: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.follow-pill:hover {
+  border-color: var(--text-dim);
+}
+
+.follow-pill.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ============================================================
+   Hidden utility
+   ============================================================ */
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (min-width: 600px) {
+  .teach-layout {
+    padding-left: 140px;
+  }
+
+  .preset-grid {
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 400px;
+  }
+
+  .rl-buttons {
+    gap: 60px;
+  }
+}
+
+@media (max-width: 380px) {
+  .preset-canvas {
+    width: 44px;
+    height: 44px;
+  }
+
+  .teach-layout {
+    padding-left: 110px;
+  }
+
+  .cta-pill {
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+}

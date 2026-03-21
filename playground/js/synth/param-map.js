@@ -4,35 +4,42 @@
 //           envelope modulation depths, discrete switches, dangerous volume/pitch controls
 //
 // Grouped by synthesis section for readability:
-//   Envelopes (20) → Oscillators (10) → Shapers (12) → Filters (25) →
+//   Envelopes (20) → Oscillators (10) → Shapers (12) → Filters (24) →
 //   Feedback Mixer (9) → Output Mixer (14) → Cabinet (8) →
 //   Flanger (13) → Echo (7) → Reverb (6) → Unison (3) → Mono (1)
+//
+// safeMin/safeMax: when the tame parameter > 0, the ML output range is
+// interpolated from [0,1] toward [safeMin,safeMax]. This prevents:
+//   - Volume spikes (drive/level params capped)
+//   - Silence (output levels kept above minimum)
+//   - Voice buildup / wall of sound (envelope release/decay times capped,
+//     reverb size and echo feedback limited)
 
 export const SYNTH_PARAM_MAP = [
   // --- Envelope A (7) ---
   { id:   0, name: 'Env_A_Att',               label: 'EnvA Att',         defaultValue: 0,      bipolar: false },
   { id:   2, name: 'Env_A_Dec_1',             label: 'EnvA Dec1',        defaultValue: 0.59,   bipolar: false },
   { id:   4, name: 'Env_A_BP',                label: 'EnvA BP',          defaultValue: 0.5,    bipolar: false },
-  { id:   6, name: 'Env_A_Dec_2',             label: 'EnvA Dec2',        defaultValue: 0.79,   bipolar: false },
+  { id:   6, name: 'Env_A_Dec_2',             label: 'EnvA Dec2',        defaultValue: 0.79,   bipolar: false, safeMax: 0.85 },
   { id:   8, name: 'Env_A_Sus',               label: 'EnvA Sus',         defaultValue: 0,      bipolar: false },
-  { id:  10, name: 'Env_A_Rel',               label: 'EnvA Rel',         defaultValue: 0.53,   bipolar: false },
-  { id:  12, name: 'Env_A_Gain',              label: 'EnvA Gain',        defaultValue: 0,      bipolar: true },
+  { id:  10, name: 'Env_A_Rel',               label: 'EnvA Rel',         defaultValue: 0.53,   bipolar: false, safeMax: 0.7 },
+  { id:  12, name: 'Env_A_Gain',              label: 'EnvA Gain',        defaultValue: 0,      bipolar: true,  safeMin: 0.2, safeMax: 0.8 },
 
   // --- Envelope B (7) ---
   { id:  19, name: 'Env_B_Att',               label: 'EnvB Att',         defaultValue: 0,      bipolar: false },
   { id:  21, name: 'Env_B_Dec_1',             label: 'EnvB Dec1',        defaultValue: 0.59,   bipolar: false },
   { id:  23, name: 'Env_B_BP',                label: 'EnvB BP',          defaultValue: 0.5,    bipolar: false },
-  { id:  25, name: 'Env_B_Dec_2',             label: 'EnvB Dec2',        defaultValue: 0.79,   bipolar: false },
+  { id:  25, name: 'Env_B_Dec_2',             label: 'EnvB Dec2',        defaultValue: 0.79,   bipolar: false, safeMax: 0.85 },
   { id:  27, name: 'Env_B_Sus',               label: 'EnvB Sus',         defaultValue: 0,      bipolar: false },
-  { id:  29, name: 'Env_B_Rel',               label: 'EnvB Rel',         defaultValue: 0.53,   bipolar: false },
-  { id:  31, name: 'Env_B_Gain',              label: 'EnvB Gain',        defaultValue: 0,      bipolar: true },
+  { id:  29, name: 'Env_B_Rel',               label: 'EnvB Rel',         defaultValue: 0.53,   bipolar: false, safeMax: 0.7 },
+  { id:  31, name: 'Env_B_Gain',              label: 'EnvB Gain',        defaultValue: 0,      bipolar: true,  safeMin: 0.2, safeMax: 0.8 },
 
   // --- Envelope C (6) ---
   { id:  38, name: 'Env_C_Att',               label: 'EnvC Att',         defaultValue: 0,      bipolar: false },
   { id:  40, name: 'Env_C_Dec_1',             label: 'EnvC Dec1',        defaultValue: 0.59,   bipolar: false },
   { id:  42, name: 'Env_C_BP',                label: 'EnvC BP',          defaultValue: 0.5,    bipolar: true },
-  { id:  44, name: 'Env_C_Dec_2',             label: 'EnvC Dec2',        defaultValue: 0.79,   bipolar: false },
-  { id:  46, name: 'Env_C_Rel',               label: 'EnvC Rel',         defaultValue: 0.53,   bipolar: false },
+  { id:  44, name: 'Env_C_Dec_2',             label: 'EnvC Dec2',        defaultValue: 0.79,   bipolar: false, safeMax: 0.85 },
+  { id:  46, name: 'Env_C_Rel',               label: 'EnvC Rel',         defaultValue: 0.53,   bipolar: false, safeMax: 0.7 },
   { id: 297, name: 'Env_C_Sus',               label: 'EnvC Sus',         defaultValue: 0,      bipolar: true },
 
   // --- Oscillator A (5) ---
@@ -50,7 +57,7 @@ export const SYNTH_PARAM_MAP = [
   { id: 302, name: 'Osc_B_Phase',             label: 'OscB Phase',       defaultValue: 0,      bipolar: true },
 
   // --- Shaper A (6) ---
-  { id:  71, name: 'Shp_A_Drive',             label: 'ShpA Drive',       defaultValue: 0.2,    bipolar: false },
+  { id:  71, name: 'Shp_A_Drive',             label: 'ShpA Drive',       defaultValue: 0.2,    bipolar: false, safeMax: 0.6 },
   { id:  74, name: 'Shp_A_Fold',              label: 'ShpA Fold',        defaultValue: 0.5,    bipolar: false },
   { id:  75, name: 'Shp_A_Asym',              label: 'ShpA Asym',        defaultValue: 0,      bipolar: false },
   { id:  76, name: 'Shp_A_Mix',               label: 'ShpA Mix',         defaultValue: 0,      bipolar: true },
@@ -58,14 +65,14 @@ export const SYNTH_PARAM_MAP = [
   { id:  81, name: 'Shp_A_Ring_Mod',          label: 'ShpA Ring',        defaultValue: 0,      bipolar: false },
 
   // --- Shaper B (6) ---
-  { id: 101, name: 'Shp_B_Drive',             label: 'ShpB Drive',       defaultValue: 0.2,    bipolar: false },
+  { id: 101, name: 'Shp_B_Drive',             label: 'ShpB Drive',       defaultValue: 0.2,    bipolar: false, safeMax: 0.6 },
   { id: 104, name: 'Shp_B_Fold',              label: 'ShpB Fold',        defaultValue: 0.5,    bipolar: false },
   { id: 105, name: 'Shp_B_Asym',              label: 'ShpB Asym',        defaultValue: 0,      bipolar: false },
   { id: 106, name: 'Shp_B_Mix',               label: 'ShpB Mix',         defaultValue: 0,      bipolar: true },
   { id: 108, name: 'Shp_B_FB_Mix',            label: 'ShpB FB Mix',      defaultValue: 0,      bipolar: false },
   { id: 111, name: 'Shp_B_Ring_Mod',          label: 'ShpB Ring',        defaultValue: 0,      bipolar: false },
 
-  // --- Comb Filter (9) ---
+  // --- Comb Filter (8) ---
   { id: 113, name: 'Comb_Flt_In_A_B',         label: 'Comb In A/B',      defaultValue: 0,      bipolar: false },
   { id: 115, name: 'Comb_Flt_Pitch',          label: 'Comb Pitch',       defaultValue: 0.5,    bipolar: false },
   { id: 119, name: 'Comb_Flt_Decay',          label: 'Comb Decay',       defaultValue: 0,      bipolar: true },
@@ -99,30 +106,30 @@ export const SYNTH_PARAM_MAP = [
   { id: 158, name: 'FB_Mix_SVF',              label: 'FB SVF',           defaultValue: 0,      bipolar: true },
   { id: 160, name: 'FB_Mix_FX',               label: 'FB FX',            defaultValue: 0,      bipolar: true },
   { id: 162, name: 'FB_Mix_Rvb',              label: 'FB Reverb',        defaultValue: 0.5,    bipolar: false },
-  { id: 164, name: 'FB_Mix_Drive',            label: 'FB Drive',         defaultValue: 0.286,  bipolar: false },
+  { id: 164, name: 'FB_Mix_Drive',            label: 'FB Drive',         defaultValue: 0.286,  bipolar: false, safeMax: 0.5 },
   { id: 166, name: 'FB_Mix_Fold',             label: 'FB Fold',          defaultValue: 0.5,    bipolar: false },
   { id: 167, name: 'FB_Mix_Asym',             label: 'FB Asym',          defaultValue: 0,      bipolar: false },
   { id: 299, name: 'FB_Mix_Lvl',              label: 'FB Level',         defaultValue: 0.38,   bipolar: false },
   { id: 346, name: 'FB_Mix_Osc',              label: 'FB Osc',           defaultValue: 0,      bipolar: true },
 
   // --- Output Mixer (14) ---
-  { id: 169, name: 'Out_Mix_A_Lvl',           label: 'Out A Lvl',        defaultValue: 0.75,   bipolar: true },
+  { id: 169, name: 'Out_Mix_A_Lvl',           label: 'Out A Lvl',        defaultValue: 0.75,   bipolar: true,  safeMin: 0.15, safeMax: 0.85 },
   { id: 171, name: 'Out_Mix_A_Pan',           label: 'Out A Pan',        defaultValue: 0,      bipolar: true },
-  { id: 172, name: 'Out_Mix_B_Lvl',           label: 'Out B Lvl',        defaultValue: 0,      bipolar: true },
+  { id: 172, name: 'Out_Mix_B_Lvl',           label: 'Out B Lvl',        defaultValue: 0,      bipolar: true,  safeMin: 0.15, safeMax: 0.85 },
   { id: 174, name: 'Out_Mix_B_Pan',           label: 'Out B Pan',        defaultValue: 0,      bipolar: true },
-  { id: 175, name: 'Out_Mix_Comb_Lvl',        label: 'Out Comb Lvl',     defaultValue: 0,      bipolar: true },
+  { id: 175, name: 'Out_Mix_Comb_Lvl',        label: 'Out Comb Lvl',     defaultValue: 0,      bipolar: true,  safeMin: 0.15, safeMax: 0.85 },
   { id: 177, name: 'Out_Mix_Comb_Pan',        label: 'Out Comb Pan',     defaultValue: 0,      bipolar: true },
-  { id: 178, name: 'Out_Mix_SVF_Lvl',         label: 'Out SVF Lvl',      defaultValue: 0,      bipolar: true },
+  { id: 178, name: 'Out_Mix_SVF_Lvl',         label: 'Out SVF Lvl',      defaultValue: 0,      bipolar: true,  safeMin: 0.15, safeMax: 0.85 },
   { id: 180, name: 'Out_Mix_SVF_Pan',         label: 'Out SVF Pan',      defaultValue: 0,      bipolar: true },
-  { id: 181, name: 'Out_Mix_Drive',            label: 'Out Drive',        defaultValue: 0,      bipolar: false },
+  { id: 181, name: 'Out_Mix_Drive',            label: 'Out Drive',        defaultValue: 0,      bipolar: false, safeMax: 0.5 },
   { id: 183, name: 'Out_Mix_Fold',             label: 'Out Fold',         defaultValue: 0.5,    bipolar: false },
   { id: 184, name: 'Out_Mix_Asym',             label: 'Out Asym',         defaultValue: 0,      bipolar: false },
-  { id: 185, name: 'Out_Mix_Lvl',              label: 'Out Level',        defaultValue: 0.38,   bipolar: false },
+  { id: 185, name: 'Out_Mix_Lvl',              label: 'Out Level',        defaultValue: 0.38,   bipolar: false, safeMin: 0.15, safeMax: 0.75 },
   { id: 187, name: 'Out_Mix_Key_Pan',          label: 'Out KeyPan',       defaultValue: 0,      bipolar: false },
   { id: 362, name: 'Out_Mix_To_FX',            label: 'Out ToFX',         defaultValue: 0,      bipolar: false },
 
   // --- Cabinet (8) ---
-  { id: 188, name: 'Cabinet_Drive',            label: 'Cab Drive',        defaultValue: 0.4,    bipolar: false },
+  { id: 188, name: 'Cabinet_Drive',            label: 'Cab Drive',        defaultValue: 0.4,    bipolar: false, safeMax: 0.6 },
   { id: 190, name: 'Cabinet_Fold',             label: 'Cab Fold',         defaultValue: 0.25,   bipolar: false },
   { id: 191, name: 'Cabinet_Asym',             label: 'Cab Asym',         defaultValue: 0.25,   bipolar: false },
   { id: 192, name: 'Cabinet_Tilt',             label: 'Cab Tilt',         defaultValue: 0.5,    bipolar: true },
@@ -149,14 +156,14 @@ export const SYNTH_PARAM_MAP = [
   // --- Echo (7) ---
   { id: 225, name: 'Echo_Time',                label: 'Echo Time',        defaultValue: 0.433,  bipolar: false },
   { id: 227, name: 'Echo_Stereo',              label: 'Echo Stereo',      defaultValue: 0,      bipolar: true },
-  { id: 229, name: 'Echo_Feedback',            label: 'Echo FB',          defaultValue: 0.5,    bipolar: false },
+  { id: 229, name: 'Echo_Feedback',            label: 'Echo FB',          defaultValue: 0.5,    bipolar: false, safeMax: 0.75 },
   { id: 231, name: 'Echo_Cross_FB',            label: 'Echo XFB',         defaultValue: 0.5,    bipolar: false },
   { id: 232, name: 'Echo_Hi_Cut',              label: 'Echo HiCut',       defaultValue: 0.75,   bipolar: false },
   { id: 233, name: 'Echo_Mix',                 label: 'Echo Mix',         defaultValue: 0,      bipolar: false },
   { id: 342, name: 'Echo_Send',                label: 'Echo Send',        defaultValue: 1,      bipolar: false },
 
   // --- Reverb (6) ---
-  { id: 235, name: 'Reverb_Size',              label: 'Verb Size',        defaultValue: 0.33,   bipolar: false },
+  { id: 235, name: 'Reverb_Size',              label: 'Verb Size',        defaultValue: 0.33,   bipolar: false, safeMax: 0.7 },
   { id: 237, name: 'Reverb_Pre_Dly',           label: 'Verb PreDly',      defaultValue: 0.33,   bipolar: false },
   { id: 238, name: 'Reverb_Color',             label: 'Verb Color',       defaultValue: 0.5,    bipolar: false },
   { id: 240, name: 'Reverb_Chorus',            label: 'Verb Chorus',      defaultValue: 0.25,   bipolar: false },
@@ -196,8 +203,8 @@ function generateParamColors() {
     ...hslRange(320, 75, 55, 6),
     // Shaper B (6) - rose
     ...hslRange(340, 70, 55, 6),
-    // Comb Filter (9) - cyan
-    ...hslRange(180, 70, 50, 9, true),
+    // Comb Filter (8) - cyan
+    ...hslRange(180, 70, 50, 8, true),
     // State Variable Filter (9) - blue
     ...hslRange(210, 75, 55, 9, true),
     // Gap Filter (6) - teal
@@ -235,3 +242,27 @@ function hslRange(hue, sat, lightBase, count, varyHue = false) {
 }
 
 export const SYNTH_PARAM_COLORS = generateParamColors();
+
+// --- Tame parameter: constrain ML outputs to safe ranges ---
+// tameLevel 0 = no constraint (full 0-1), 1 = maximum constraint (safeMin-safeMax)
+// Params without safeMin/safeMax are unaffected.
+
+/**
+ * Apply tame-level range constraining to a raw ML output value.
+ * @param {number} rawValue - ML output in [0, 1]
+ * @param {object} paramEntry - entry from SYNTH_PARAM_MAP
+ * @param {number} tameLevel - 0 (no mitigation) to 1 (strongest)
+ * @returns {number} constrained value in [0, 1]
+ */
+export function applyTame(rawValue, paramEntry, tameLevel) {
+  if (tameLevel <= 0) return rawValue;
+  const lo = paramEntry.safeMin;
+  const hi = paramEntry.safeMax;
+  if (lo === undefined && hi === undefined) return rawValue;
+
+  // Interpolate range bounds toward safe limits based on tameLevel
+  const effectiveMin = lo !== undefined ? lo * tameLevel : 0;
+  const effectiveMax = hi !== undefined ? 1 - (1 - hi) * tameLevel : 1;
+
+  return effectiveMin + rawValue * (effectiveMax - effectiveMin);
+}

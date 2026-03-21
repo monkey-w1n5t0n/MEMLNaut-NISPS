@@ -129,8 +129,17 @@ export class C15Bridge {
       this.masterGain = this.audioContext.createGain();
       this.masterGain.gain.value = 0.5;
 
+      // Limiter: always-on compressor configured as a brick-wall limiter
+      this.limiter = this.audioContext.createDynamicsCompressor();
+      this.limiter.threshold.value = -6;   // dB — start limiting at -6dB
+      this.limiter.knee.value = 3;         // dB — soft knee for less pumping
+      this.limiter.ratio.value = 20;       // near-infinite ratio = limiter
+      this.limiter.attack.value = 0.002;   // 2ms — fast attack catches transients
+      this.limiter.release.value = 0.05;   // 50ms — quick release, less pumping
+
       this.workletNode.connect(this.masterGain);
-      this.masterGain.connect(this.audioContext.destination);
+      this.masterGain.connect(this.limiter);
+      this.limiter.connect(this.audioContext.destination);
 
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();

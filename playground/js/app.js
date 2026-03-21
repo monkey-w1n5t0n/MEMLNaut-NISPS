@@ -8,7 +8,7 @@ import { Controls } from './ui/controls.js';
 import { ParamDisplay } from './ui/param-display.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
-import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS } from './synth/param-map.js';
+import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame } from './synth/param-map.js';
 
 const N_INPUTS = 2;
 const N_VISUAL_OUTPUTS = 20;
@@ -42,6 +42,14 @@ let expandVisualBtn;
 // Synth state
 let c15 = null;
 let arpeggiator = null;
+
+// Devmode: tame level (0 = no mitigation, 1 = strongest)
+// Set via URL ?tame=0.7 or window.setTameLevel(0.7)
+let tameLevel = parseFloat(new URLSearchParams(location.search).get('tame') ?? '0.7');
+if (isNaN(tameLevel)) tameLevel = 0.7;
+tameLevel = Math.max(0, Math.min(1, tameLevel));
+window.setTameLevel = (v) => { tameLevel = Math.max(0, Math.min(1, v)); console.log(`[NISPS] tame=${tameLevel}`); };
+window.getTameLevel = () => tameLevel;
 
 // --- Init ---
 function init() {
@@ -207,10 +215,11 @@ function routeOutputs(outputs) {
   // Always update visualizer (it's always visible)
   visualizer.setParams(outputs);
 
-  // If in synth mode, also send to C15
+  // If in synth mode, also send to C15 with tame-level constraining
   if (outputMode === 'synth' && c15 && c15.running) {
     for (let i = 0; i < outputs.length && i < SYNTH_PARAM_MAP.length; i++) {
-      c15.setParameter(SYNTH_PARAM_MAP[i].id, outputs[i]);
+      const value = applyTame(outputs[i], SYNTH_PARAM_MAP[i], tameLevel);
+      c15.setParameter(SYNTH_PARAM_MAP[i].id, value);
     }
   }
 }

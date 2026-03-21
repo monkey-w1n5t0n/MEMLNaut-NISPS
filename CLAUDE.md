@@ -28,12 +28,32 @@ See `nisps-core/README.md` for complete documentation and examples.
 
 The `playground/` directory contains a browser-based interactive demo of the NISPS ML engine. It's a faithful JavaScript port of nisps-core's MLP + IML, with no build step or dependencies.
 
-- **2 inputs** (virtual joystick X/Y) mapped through a `[3, 10, 10, 14, 20]` MLP to **20 outputs** controlling a Canvas2D flow-field particle system
+- **2 inputs** (virtual joystick X/Y) mapped through a `[3, 32, 48, 64, 126]` MLP to **126 outputs**
+- **Two output modes**:
+  - **Visual**: first 20 outputs control a Canvas2D flow-field particle system
+  - **Synth (C15)**: all 126 outputs control the C15 WASM synthesizer — every sonically meaningful continuous parameter across envelopes, oscillators, shapers, filters, feedback/output mixers, cabinet, and effects
 - **Two learning modes**: Examples (set slider targets, add examples, train) and RL Feedback (thumbs up/down with exploration noise)
 - **Serve statically**: `cd playground && python3 -m http.server`
 - **Mobile-first**: designed for touch/foldable phone use
 
-Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls), `js/app.js` (wiring).
+Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls), `js/synth/` (C15 bridge, param map, arpeggiator), `js/app.js` (wiring).
+
+### C15 Parameter Map
+
+The 126 synth parameters in `js/synth/param-map.js` were curated from the C15's 287 total parameters. Excluded categories:
+
+| Excluded | Count | Reason |
+|----------|-------|--------|
+| Hardware Amount/Source | 56 | No physical MIDI hardware in browser |
+| Macro Controls/Times | 12 | Meta-routing layer conflicts with direct ML control |
+| Scale offsets | 13 | Microtuning would break pitch unpredictably |
+| Key tracking (`*_KT`) | 11 | Pitch-dependent scaling needs calibrated defaults |
+| Velocity (`*_Vel`) | 11 | Velocity-dependent, ML can't observe key velocity |
+| Envelope mod depths (`*_Env_A/B/C`) | 19 | Multiplicative interaction with envelope shapes makes space too hard to learn |
+| Discrete/structural | 15 | Osc Pitch (full sweep), Master Vol/Tune, Voice Mute/Fade, Unison Voices, Mono modes, Split, Osc Reset |
+| Secondary config | 7 | Att Curve, Elevate, Chirp, Decay Gate, Retrigger |
+| PM shaper blend | 4 | Secondary routing params |
+| FB Mix source selects | 4 | Discrete A/B selectors |
 
 ## Build System
 

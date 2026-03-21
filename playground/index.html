@@ -11,16 +11,84 @@
 <body>
   <div class="app">
 
+    <!-- Side Panel (collapsible) -->
+    <div class="side-panel" id="side-panel">
+      <div class="side-panel-header">
+        <span class="side-panel-title">Mode</span>
+        <button class="side-panel-close" id="side-panel-close">&times;</button>
+      </div>
+
+      <div class="side-panel-tabs">
+        <button class="sp-tab active" data-mode="visual">Visual</button>
+        <button class="sp-tab" data-mode="synth">Synth</button>
+      </div>
+
+      <!-- Synth controls (shown when synth mode active) -->
+      <div class="synth-controls hidden" id="synth-controls">
+        <div class="synth-section">
+          <label class="synth-label">Engine</label>
+          <button class="btn btn-primary synth-start-btn" id="synth-start">Start Audio</button>
+          <div class="synth-status" id="synth-status">Stopped</div>
+        </div>
+
+        <div class="synth-section">
+          <label class="synth-label">Volume</label>
+          <input type="range" class="synth-slider" id="synth-volume" min="0" max="1" step="0.01" value="0.5">
+        </div>
+
+        <div class="synth-section">
+          <label class="synth-label">Arpeggiator</label>
+          <button class="btn synth-arp-btn" id="arp-toggle">Play</button>
+        </div>
+
+        <div class="synth-section">
+          <label class="synth-label">Progression</label>
+          <select class="synth-select" id="arp-progression">
+            <option value="I-vi-IV-V">I-vi-IV-V</option>
+            <option value="I-IV-vi-V">I-IV-vi-V</option>
+            <option value="i-VI-III-VII">i-VI-III-VII</option>
+            <option value="I-V-vi-IV">I-V-vi-IV</option>
+          </select>
+        </div>
+
+        <div class="synth-section">
+          <label class="synth-label">Tempo <span id="tempo-val">120</span> BPM</label>
+          <input type="range" class="synth-slider" id="arp-tempo" min="40" max="240" step="1" value="120">
+        </div>
+
+        <div class="synth-section">
+          <label class="synth-label">Octaves <span id="octaves-val">2</span></label>
+          <input type="range" class="synth-slider" id="arp-octaves" min="1" max="5" step="1" value="2">
+        </div>
+
+        <div class="synth-section">
+          <label class="synth-label">Oct Offset <span id="offset-val">0</span></label>
+          <input type="range" class="synth-slider" id="arp-offset" min="-2" max="3" step="1" value="0">
+        </div>
+      </div>
+
+      <!-- Visual mode info (shown when visual mode active) -->
+      <div class="visual-info" id="visual-info">
+        <p class="sp-hint">Move the joystick and train the neural network to map positions to visual parameters.</p>
+      </div>
+    </div>
+
+    <!-- Side panel toggle tab (always visible) -->
+    <button class="side-panel-toggle" id="side-panel-toggle" title="Open mode panel">&#9776;</button>
+
     <!-- Header -->
     <div class="header">
       <h1>NISPS Playground</h1>
-      <button id="help-btn" title="Help">?</button>
+      <div class="header-right">
+        <span class="mode-badge" id="mode-badge">Visual</span>
+        <button id="help-btn" title="Help">?</button>
+      </div>
     </div>
 
     <!-- Visual output -->
     <div class="visual-container">
       <canvas id="visual-canvas"></canvas>
-      <div class="presets">
+      <div class="presets" id="presets-visual">
         <button class="preset-pill" onclick="loadPreset('calm-to-chaotic')">Calm/Chaos</button>
         <button class="preset-pill" onclick="loadPreset('rainbow-sweep')">Rainbow</button>
         <button class="preset-pill" onclick="loadPreset('vortex')">Vortex</button>
@@ -37,35 +105,43 @@
       <div id="controls-container"></div>
     </div>
 
+    <!-- Side panel backdrop -->
+    <div class="side-panel-backdrop hidden" id="side-panel-backdrop"></div>
+
     <!-- Help overlay -->
     <div class="help-overlay hidden" id="help-overlay">
       <div class="help-content" onclick="event.stopPropagation()">
         <h2>NISPS Playground</h2>
-        <p>Train a neural network to map joystick positions to visual parameters using interactive machine learning.</p>
+        <p>Train a neural network to map joystick positions to output parameters using interactive machine learning.</p>
+
+        <h3>Modes</h3>
+        <p>Open the side panel (&#9776;) to switch between <strong>Visual</strong> and <strong>Synth</strong> modes.</p>
+
+        <h3>Visual Mode</h3>
+        <p>20 outputs control a flow-field particle system.</p>
+
+        <h3>Synth Mode</h3>
+        <p>20 outputs control a C15 synthesizer engine. Use the arpeggiator for automatic note playback.</p>
 
         <h3>Examples Mode</h3>
         <ol>
           <li>Move the joystick to a position</li>
-          <li>Drag the parameter bars to set desired visual output</li>
+          <li>Drag the parameter bars to set desired output</li>
           <li>Press <strong>Add Example</strong> to save this mapping</li>
           <li>Repeat for different joystick positions</li>
           <li>Press <strong>Train</strong> &mdash; the network learns to interpolate between your examples</li>
-          <li>Move the joystick &mdash; visuals respond through the learned mapping</li>
         </ol>
 
         <h3>RL Feedback Mode</h3>
         <ol>
-          <li>Move the joystick around &mdash; the network produces different visual outputs</li>
+          <li>Move the joystick &mdash; the network produces outputs</li>
           <li>See something you like? Press <strong>+</strong> (thumbs up)</li>
           <li>Don't like it? Press <strong>&minus;</strong> (thumbs down) to explore more</li>
-          <li>Double-click the joystick to toggle <strong>Follow</strong> mode (no hold needed)</li>
-          <li>In Follow mode: keyboard <strong>2</strong> = thumbs up, <strong>1</strong> = thumbs down</li>
-          <li>With a gamepad: <strong>RB</strong> = thumbs up, <strong>LB</strong> = thumbs down</li>
-          <li>The network learns from your preferences over time</li>
+          <li>Double-click the joystick to toggle <strong>Follow</strong> mode</li>
         </ol>
 
         <h3>Tips</h3>
-        <p>Try the preset buttons above the visuals for instant demos. Your training data auto-saves to your browser.</p>
+        <p>Your training data auto-saves to your browser. Gamepad supported (LB/RB for RL feedback).</p>
         <p style="margin-top: 16px; text-align: center; color: #444;">Tap anywhere outside to close</p>
       </div>
     </div>

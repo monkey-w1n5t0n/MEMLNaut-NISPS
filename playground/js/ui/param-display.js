@@ -1,8 +1,8 @@
 // Parameter bar display
 // Shows output parameters as horizontal bars, draggable in examples mode
 
-const PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn', 'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'];
-const PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
+const DEFAULT_PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn', 'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'];
+const DEFAULT_PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
 
 export class ParamDisplay {
   constructor(container, numParams = 20) {
@@ -12,6 +12,8 @@ export class ParamDisplay {
     this.draggable = false;
     this.onChange = null;
     this.activeBar = -1;
+    this.paramNames = [...DEFAULT_PARAM_NAMES];
+    this.paramColors = [...DEFAULT_PARAM_COLORS];
     this.build();
   }
 
@@ -25,7 +27,7 @@ export class ParamDisplay {
 
       const label = document.createElement('span');
       label.className = 'param-label';
-      label.textContent = PARAM_NAMES[i] || `p${i}`;
+      label.textContent = this.paramNames[i] || `p${i}`;
 
       const track = document.createElement('div');
       track.className = 'param-track';
@@ -33,7 +35,7 @@ export class ParamDisplay {
 
       const fill = document.createElement('div');
       fill.className = 'param-fill';
-      fill.style.background = PARAM_COLORS[i] || '#888';
+      fill.style.background = this.paramColors[i] || '#888';
       fill.style.width = '50%';
 
       const val = document.createElement('span');
@@ -105,5 +107,18 @@ export class ParamDisplay {
   setDraggable(draggable) {
     this.draggable = draggable;
     this.container.classList.toggle('draggable', draggable);
+  }
+
+  setNamesAndColors(names, colors) {
+    this.paramNames = names || DEFAULT_PARAM_NAMES;
+    this.paramColors = colors || DEFAULT_PARAM_COLORS;
+    // Update existing bars in-place
+    for (let i = 0; i < this.numParams; i++) {
+      if (!this.bars[i]) continue;
+      const row = this.bars[i].fill.closest('.param-row');
+      const label = row?.querySelector('.param-label');
+      if (label) label.textContent = this.paramNames[i] || `p${i}`;
+      this.bars[i].fill.style.background = this.paramColors[i] || '#888';
+    }
   }
 }

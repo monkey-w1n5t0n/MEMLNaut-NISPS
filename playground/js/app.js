@@ -1,14 +1,21 @@
 // NISPS Playground - Main application
-// Wires IML engine to visual system with joystick input and dual learning modes
+// Wires IML engine to visual system OR C15 synth with joystick input and dual learning modes
 
 import { IML } from './nisps/iml.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { VirtualJoystick } from './ui/joystick.js';
 import { Controls } from './ui/controls.js';
 import { ParamDisplay } from './ui/param-display.js';
+import { C15Bridge } from './synth/c15-bridge.js';
+import { Arpeggiator } from './synth/arpeggiator.js';
+import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS } from './synth/param-map.js';
 
 const N_INPUTS = 2;
 const N_OUTPUTS = 20;
+
+// Visual mode param display config
+const VISUAL_PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn', 'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'];
+const VISUAL_PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
 
 // --- State ---
 let iml;
@@ -17,6 +24,7 @@ let joystick;
 let controls;
 let paramDisplay;
 let learningMode = 'examples'; // 'examples' | 'rl'
+let outputMode = 'visual';    // 'visual' | 'synth'
 let noiseLevel = 0.05;
 let rlExplorationDecay = 0.97;
 let animating = true;
@@ -28,6 +36,10 @@ let followMode = false;
 let visualExpanded = false;
 let appRoot;
 let expandVisualBtn;
+
+// Synth state
+let c15 = null;
+let arpeggiator = null;
 
 // --- Init ---
 function init() {
@@ -85,6 +97,21 @@ function init() {
     helpOverlay.addEventListener('click', () => helpOverlay.classList.add('hidden'));
   }
 
+  // Side panel
+  initSidePanel();
+
+  // Init synth
+  c15 = new C15Bridge();
+  c15.onStatusChange = (msg) => {
+    const el = document.getElementById('synth-status');
+    if (el) el.textContent = msg;
+  };
+  c15.loadParams();
+  arpeggiator = new Arpeggiator(c15);
+
+  // Wire synth controls
+  initSynthControls();
+
   window.addEventListener('gamepadconnected', () => refreshDashboard());
   window.addEventListener('gamepaddisconnected', () => refreshDashboard());
   window.addEventListener('keydown', onKeyDown);
@@ -106,6 +133,149 @@ function init() {
   loadState();
 }
 
+// --- Side Panel ---
+function initSidePanel() {
+  const panel = document.getElementById('side-panel');
+  const toggle = document.getElementById('side-panel-toggle');
+  const close = document.getElementById('side-panel-close');
+  const backdrop = document.getElementById('side-panel-backdrop');
+
+  const openPanel = () => {
+    panel.classList.add('open');
+    backdrop.classList.remove('hidden');
+  };
+  const closePanel = () => {
+    panel.classList.remove('open');
+    backdrop.classList.add('hidden');
+  };
+
+  toggle.addEventListener('click', openPanel);
+  close.addEventListener('click', closePanel);
+  backdrop.addEventListener('click', closePanel);
+
+  // Tab switching
+  panel.querySelectorAll('.sp-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      const mode = tab.dataset.mode;
+      setOutputMode(mode);
+
+      panel.querySelectorAll('.sp-tab').forEach(t => t.classList.toggle('active', t === tab));
+    });
+  });
+}
+
+function setOutputMode(mode) {
+  outputMode = mode;
+
+  const synthControls = document.getElementById('synth-controls');
+  const visualInfo = document.getElementById('visual-info');
+  const presetsVisual = document.getElementById('presets-visual');
+  const modeBadge = document.getElementById('mode-badge');
+  const paramContainer = document.getElementById('param-display');
+
+  if (mode === 'synth') {
+    synthControls.classList.remove('hidden');
+    visualInfo.classList.add('hidden');
+    presetsVisual.classList.add('hidden');
+    modeBadge.textContent = 'Synth';
+    modeBadge.classList.add('synth');
+    paramContainer.classList.add('synth-mode');
+
+    // Rebuild param display with synth labels/colors
+    paramDisplay.setNamesAndColors(SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS);
+  } else {
+    synthControls.classList.add('hidden');
+    visualInfo.classList.remove('hidden');
+    presetsVisual.classList.remove('hidden');
+    modeBadge.textContent = 'Visual';
+    modeBadge.classList.remove('synth');
+    paramContainer.classList.remove('synth-mode');
+
+    // Restore visual param labels/colors
+    paramDisplay.setNamesAndColors(VISUAL_PARAM_NAMES, VISUAL_PARAM_COLORS);
+  }
+
+  // Re-run inference and route outputs
+  routeOutputs(iml.getOutputs());
+}
+
+function routeOutputs(outputs) {
+  // Always update visualizer (it's always visible)
+  visualizer.setParams(outputs);
+
+  // If in synth mode, also send to C15
+  if (outputMode === 'synth' && c15 && c15.running) {
+    for (let i = 0; i < outputs.length && i < SYNTH_PARAM_MAP.length; i++) {
+      c15.setParameter(SYNTH_PARAM_MAP[i].id, outputs[i]);
+    }
+  }
+}
+
+// --- Synth Controls ---
+function initSynthControls() {
+  const startBtn = document.getElementById('synth-start');
+  const volumeSlider = document.getElementById('synth-volume');
+  const arpToggle = document.getElementById('arp-toggle');
+  const arpProgression = document.getElementById('arp-progression');
+  const arpTempo = document.getElementById('arp-tempo');
+  const arpOctaves = document.getElementById('arp-octaves');
+  const arpOffset = document.getElementById('arp-offset');
+
+  startBtn.addEventListener('click', async () => {
+    if (c15.running) {
+      arpeggiator.stop();
+      arpToggle.textContent = 'Play';
+      arpToggle.classList.remove('playing');
+      await c15.stop();
+      startBtn.textContent = 'Start Audio';
+    } else {
+      await c15.start();
+      startBtn.textContent = 'Stop Audio';
+      // Send current NISPS outputs to synth
+      routeOutputs(iml.getOutputs());
+    }
+  });
+
+  volumeSlider.addEventListener('input', (e) => {
+    c15.setMasterVolume(parseFloat(e.target.value));
+  });
+
+  arpToggle.addEventListener('click', () => {
+    if (!c15.running) return;
+    if (arpeggiator.playing) {
+      arpeggiator.stop();
+      arpToggle.textContent = 'Play';
+      arpToggle.classList.remove('playing');
+    } else {
+      arpeggiator.start();
+      arpToggle.textContent = 'Stop';
+      arpToggle.classList.add('playing');
+    }
+  });
+
+  arpProgression.addEventListener('change', (e) => {
+    arpeggiator.progression = e.target.value;
+  });
+
+  arpTempo.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    arpeggiator.bpm = val;
+    document.getElementById('tempo-val').textContent = val;
+  });
+
+  arpOctaves.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    arpeggiator.octaves = val;
+    document.getElementById('octaves-val').textContent = val;
+  });
+
+  arpOffset.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value);
+    arpeggiator.octaveOffset = val;
+    document.getElementById('offset-val').textContent = val;
+  });
+}
+
 // --- Animation loop ---
 function animate() {
   if (!animating) return;
@@ -121,7 +291,7 @@ function onJoystickMove(x, y) {
   iml.process();
 
   const outputs = iml.getOutputs();
-  visualizer.setParams(outputs);
+  routeOutputs(outputs);
 
   // Only update param display from network in inference (not when user is dragging)
   if (learningMode !== 'examples' || paramDisplay.activeBar < 0) {
@@ -147,7 +317,7 @@ function onTrain() {
   if (loss !== null) {
     // After training, switch back to inference and update display
     const outputs = iml.getOutputs();
-    visualizer.setParams(outputs);
+    routeOutputs(outputs);
     paramDisplay.update(outputs);
     controls.updateStatus(iml.exampleCount, loss, noiseLevel);
     controls.updateLossPlot(iml.lossHistory);
@@ -159,7 +329,7 @@ function onTrain() {
 function onRandomize() {
   iml.randomiseWeights();
   const outputs = iml.getOutputs();
-  visualizer.setParams(outputs);
+  routeOutputs(outputs);
   paramDisplay.update(outputs);
   noiseLevel = 0.05; // reset noise
   controls.updateStatus(iml.exampleCount, iml.lastLoss, noiseLevel);
@@ -206,7 +376,7 @@ function onThumbsDown() {
   iml.moveWeights(noiseLevel);
 
   const outputs = iml.getOutputs();
-  visualizer.setParams(outputs);
+  routeOutputs(outputs);
   paramDisplay.update(outputs);
   controls.updateStatus(iml.exampleCount, iml.lastLoss, noiseLevel);
   refreshDashboard();
@@ -292,7 +462,7 @@ window.loadPreset = function(name) {
 
   const loss = trainModel();
   const outputs = iml.getOutputs();
-  visualizer.setParams(outputs);
+  routeOutputs(outputs);
   paramDisplay.update(outputs);
   controls.updateStatus(iml.exampleCount, loss, noiseLevel);
   controls.updateLossPlot(iml.lossHistory);
@@ -319,7 +489,7 @@ function loadState() {
       }
       trainModel();
       const outputs = iml.getOutputs();
-      visualizer.setParams(outputs);
+      routeOutputs(outputs);
       paramDisplay.update(outputs);
       controls.updateStatus(iml.exampleCount, iml.lastLoss, noiseLevel);
       controls.updateLossPlot(iml.lossHistory);

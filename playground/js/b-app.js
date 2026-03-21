@@ -906,6 +906,16 @@ function setOutputMode(mode) {
   document.getElementById('toggle-visual').classList.toggle('active', mode === 'visual');
   document.getElementById('toggle-synth').classList.toggle('active', mode === 'synth');
 
+  // Resize the now-visible canvas so it picks up correct dimensions
+  if (mode === 'visual') {
+    requestAnimationFrame(() => {
+      visualizer.resize();
+      visualizer.initParticles();
+    });
+  } else if (synthVisualizer) {
+    requestAnimationFrame(() => synthVisualizer._resize());
+  }
+
   buildParamGroups();
   const outputs = iml.getOutputs();
   updateAllParamBars(outputs);

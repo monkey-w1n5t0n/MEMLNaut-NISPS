@@ -2,7 +2,7 @@
 // Shows output parameters as horizontal bars, draggable in examples mode
 
 const DEFAULT_PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn', 'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'];
-const DEFAULT_PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
+const DEFAULT_PARAM_COLORS = ['#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
 
 export class ParamDisplay {
   constructor(container, numParams = 20) {

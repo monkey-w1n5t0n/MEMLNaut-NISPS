@@ -129,7 +129,7 @@ export class VirtualJoystick {
     // Background circle
     ctx.beginPath();
     ctx.arc(r, r, r - 4, 0, Math.PI * 2);
-    ctx.strokeStyle = this.followMode ? '#00cc6a' : '#333';
+    ctx.strokeStyle = this.followMode ? '#cc5500' : '#333';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -159,21 +159,21 @@ export class VirtualJoystick {
     // Glow
     if (this.touching) {
       const grad = ctx.createRadialGradient(tx, ty, 0, tx, ty, 24);
-      grad.addColorStop(0, 'rgba(0, 255, 136, 0.3)');
-      grad.addColorStop(1, 'rgba(0, 255, 136, 0)');
+      grad.addColorStop(0, 'rgba(255, 106, 0, 0.3)');
+      grad.addColorStop(1, 'rgba(255, 106, 0, 0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.arc(tx, ty, 24, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    ctx.fillStyle = this.touching ? '#00ff88' : '#666';
+    ctx.fillStyle = this.touching ? '#ff6a00' : '#666';
     ctx.beginPath();
     ctx.arc(tx, ty, 14, 0, Math.PI * 2);
     ctx.fill();
 
     // Position text
-    ctx.fillStyle = this.followMode ? '#00cc6a' : '#555';
+    ctx.fillStyle = this.followMode ? '#cc5500' : '#555';
     ctx.font = '10px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(this.followMode ? 'FOLLOW' : 'HOLD', 8, s - 6);

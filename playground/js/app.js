@@ -17,7 +17,7 @@ const N_OUTPUTS = N_SYNTH_OUTPUTS; // MLP always produces full output; visual us
 
 // Visual mode param display config
 const VISUAL_PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn', 'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'];
-const VISUAL_PARAM_COLORS = ['#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
+const VISUAL_PARAM_COLORS = ['#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00', '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff', '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f', '#ffc15f', '#ff8a3d'];
 
 // --- State ---
 let iml;
@@ -45,9 +45,13 @@ let arpeggiator = null;
 
 // Devmode: tame level (0 = no mitigation, 1 = strongest)
 // Set via URL ?tame=0.7 or window.setTameLevel(0.7)
-let tameLevel = parseFloat(new URLSearchParams(location.search).get('tame') ?? '0.7');
+const _urlParams = new URLSearchParams(location.search);
+let tameLevel = parseFloat(_urlParams.get('tame') ?? '0.7');
 if (isNaN(tameLevel)) tameLevel = 0.7;
 tameLevel = Math.max(0, Math.min(1, tameLevel));
+let spreadLevel = parseFloat(_urlParams.get('spread') ?? '0');
+if (isNaN(spreadLevel)) spreadLevel = 0.6;
+spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 window.setTameLevel = (v) => { tameLevel = Math.max(0, Math.min(1, v)); console.log(`[NISPS] tame=${tameLevel}`); };
 window.getTameLevel = () => tameLevel;
 
@@ -340,7 +344,7 @@ function onTrain() {
 }
 
 function onRandomize() {
-  iml.randomiseWeights();
+  iml.randomiseWeights(spreadLevel);
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   paramDisplay.update(outputs);

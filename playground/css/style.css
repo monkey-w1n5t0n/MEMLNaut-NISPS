@@ -6,12 +6,12 @@
   --bg-elevated: #252525;
   --text: #ccc;
   --text-dim: #666;
-  --accent: #00ff88;
-  --accent-dim: #00cc6a;
+  --accent: #ff6a00;
+  --accent-dim: #cc5500;
   --danger: #ff3366;
-  --good: #00ff88;
-  --bad: #ff6644;
-  --synth-accent: #ff6b35;
+  --good: #ff8c00;
+  --bad: #ff4444;
+  --synth-accent: #ff8c00;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,8 +19,8 @@
 html, body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
   height: 100%;
   overflow: hidden;
   touch-action: manipulation;

@@ -2,152 +2,210 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NISPS Playground</title>
-  <link rel="stylesheet" href="css/style.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111;
+      --border: #1e1e1e;
+      --accent: #ff6a00;
+      --accent-dim: rgba(255, 106, 0, 0.12);
+      --text: #c8c8c8;
+      --text-dim: #606060;
+      --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      min-height: 100vh;
+    }
+
+    /* Faint grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,106,0,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,106,0,0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 56px 24px 80px;
+    }
+
+    /* Header */
+    .header {
+      margin-bottom: 48px;
+    }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+      line-height: 1.2;
+    }
+
+    h1 span {
+      color: var(--text-dim);
+      font-weight: 400;
+      font-size: 13px;
+      display: block;
+      margin-top: 6px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .intro {
+      margin-top: 20px;
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.7;
+      max-width: 560px;
+    }
+
+    /* Cards */
+    .cards {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      display: grid;
+      grid-template-columns: 1fr;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+
+    .card:hover {
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(255, 106, 0, 0.06), inset 0 0 20px rgba(255, 106, 0, 0.02);
+    }
+
+    .preview {
+      width: 100%;
+      height: 220px;
+      overflow: hidden;
+      position: relative;
+      background: #080808;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .preview iframe {
+      width: 200%;
+      height: 200%;
+      transform: scale(0.5);
+      transform-origin: top left;
+      border: none;
+      pointer-events: none;
+    }
+
+    .card-body {
+      padding: 16px 20px 20px;
+    }
+
+    .card-body h2 {
+      font-family: var(--mono);
+      font-size: 16px;
+      font-weight: 700;
+      color: #e0e0e0;
+      margin-bottom: 6px;
+    }
+
+    .card-body p {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .card:hover .card-body h2 {
+      color: var(--accent);
+    }
+
+    /* Desktop: horizontal row */
+    @media (min-width: 860px) {
+      .cards {
+        flex-direction: row;
+        gap: 12px;
+      }
+      .card {
+        flex: 1;
+      }
+      .preview {
+        height: 240px;
+      }
+    }
+
+    /* Large: more breathing room */
+    @media (min-width: 1100px) {
+      .page { max-width: 1100px; }
+      .preview { height: 280px; }
+    }
+  </style>
 </head>
 <body>
-  <div class="app">
-
-    <!-- Side Panel (collapsible) -->
-    <div class="side-panel" id="side-panel">
-      <div class="side-panel-header">
-        <span class="side-panel-title">Mode</span>
-        <button class="side-panel-close" id="side-panel-close">&times;</button>
-      </div>
-
-      <div class="side-panel-tabs">
-        <button class="sp-tab active" data-mode="visual">Visual</button>
-        <button class="sp-tab" data-mode="synth">Synth</button>
-      </div>
-
-      <!-- Synth controls (shown when synth mode active) -->
-      <div class="synth-controls hidden" id="synth-controls">
-        <div class="synth-section">
-          <label class="synth-label">Engine</label>
-          <button class="btn btn-primary synth-start-btn" id="synth-start">Start Audio</button>
-          <div class="synth-status" id="synth-status">Stopped</div>
-        </div>
-
-        <div class="synth-section">
-          <label class="synth-label">Volume</label>
-          <input type="range" class="synth-slider" id="synth-volume" min="0" max="1" step="0.01" value="0.5">
-        </div>
-
-        <div class="synth-section">
-          <label class="synth-label">Arpeggiator</label>
-          <button class="btn synth-arp-btn" id="arp-toggle">Play</button>
-        </div>
-
-        <div class="synth-section">
-          <label class="synth-label">Progression</label>
-          <select class="synth-select" id="arp-progression">
-            <option value="I-vi-IV-V">I-vi-IV-V</option>
-            <option value="I-IV-vi-V">I-IV-vi-V</option>
-            <option value="i-VI-III-VII">i-VI-III-VII</option>
-            <option value="I-V-vi-IV">I-V-vi-IV</option>
-          </select>
-        </div>
-
-        <div class="synth-section">
-          <label class="synth-label">Tempo <span id="tempo-val">120</span> BPM</label>
-          <input type="range" class="synth-slider" id="arp-tempo" min="40" max="240" step="1" value="120">
-        </div>
-
-        <div class="synth-section">
-          <label class="synth-label">Octaves <span id="octaves-val">2</span></label>
-          <input type="range" class="synth-slider" id="arp-octaves" min="1" max="5" step="1" value="2">
-        </div>
-
-        <div class="synth-section">
-          <label class="synth-label">Oct Offset <span id="offset-val">0</span></label>
-          <input type="range" class="synth-slider" id="arp-offset" min="-2" max="3" step="1" value="0">
-        </div>
-      </div>
-
-      <!-- Visual mode info (shown when visual mode active) -->
-      <div class="visual-info" id="visual-info">
-        <p class="sp-hint">Move the joystick and train the neural network to map positions to visual parameters.</p>
-      </div>
-    </div>
-
-    <!-- Side panel toggle tab (always visible) -->
-    <button class="side-panel-toggle" id="side-panel-toggle" title="Open mode panel">&#9776;</button>
-
-    <!-- Header -->
+  <div class="page">
     <div class="header">
-      <h1>NISPS Playground</h1>
-      <div class="header-right">
-        <span class="mode-badge" id="mode-badge">Visual</span>
-        <button id="help-btn" title="Help">?</button>
-      </div>
+      <h1>NISPS Playground
+        <span>Neural Interactive Shaping of Parameter Spaces</span>
+      </h1>
+      <p class="intro">Map a 2D joystick to 126 synthesizer parameters through a neural network. Two learning modes: show examples of what you want, or give thumbs up/down feedback. The network learns to interpolate the space between them.</p>
     </div>
 
-    <!-- Visual output -->
-    <div class="visual-container">
-      <canvas id="visual-canvas"></canvas>
-      <div class="presets" id="presets-visual">
-        <button class="preset-pill" onclick="loadPreset('calm-to-chaotic')">Calm/Chaos</button>
-        <button class="preset-pill" onclick="loadPreset('rainbow-sweep')">Rainbow</button>
-        <button class="preset-pill" onclick="loadPreset('vortex')">Vortex</button>
-      </div>
-      <button id="expand-visual-btn" class="expand-visual-btn" type="button" title="Expand visual area" aria-pressed="false">Expand</button>
+    <div class="cards">
+      <a class="card" href="a-immersive.html">
+        <div class="preview">
+          <iframe src="a-immersive.html" loading="lazy" tabindex="-1"></iframe>
+        </div>
+        <div class="card-body">
+          <h2>Immersive</h2>
+          <p>Full-screen canvas with floating controls. The visualization is the interface.</p>
+        </div>
+      </a>
+
+      <a class="card" href="b-workbench.html">
+        <div class="preview">
+          <iframe src="b-workbench.html" loading="lazy" tabindex="-1"></iframe>
+        </div>
+        <div class="card-body">
+          <h2>Workbench</h2>
+          <p>Dashboard layout with a 2D heatmap. Built for understanding the mapping.</p>
+        </div>
+      </a>
+
+      <a class="card" href="c-journey.html">
+        <div class="preview">
+          <iframe src="c-journey.html" loading="lazy" tabindex="-1"></iframe>
+        </div>
+        <div class="card-body">
+          <h2>Journey</h2>
+          <p>Three phases that dissolve as you master the mapping. The UI fades away.</p>
+        </div>
+      </a>
     </div>
-
-    <!-- Parameter bars -->
-    <div class="param-container" id="param-display"></div>
-
-    <!-- Joystick + Controls -->
-    <div class="controls-area">
-      <div id="joystick-container"></div>
-      <div id="controls-container"></div>
-    </div>
-
-    <!-- Side panel backdrop -->
-    <div class="side-panel-backdrop hidden" id="side-panel-backdrop"></div>
-
-    <!-- Help overlay -->
-    <div class="help-overlay hidden" id="help-overlay">
-      <div class="help-content" onclick="event.stopPropagation()">
-        <h2>NISPS Playground</h2>
-        <p>Train a neural network to map joystick positions to output parameters using interactive machine learning.</p>
-
-        <h3>Modes</h3>
-        <p>Open the side panel (&#9776;) to switch between <strong>Visual</strong> and <strong>Synth</strong> modes.</p>
-
-        <h3>Visual Mode</h3>
-        <p>20 outputs control a flow-field particle system.</p>
-
-        <h3>Synth Mode</h3>
-        <p>20 outputs control a C15 synthesizer engine. Use the arpeggiator for automatic note playback.</p>
-
-        <h3>Examples Mode</h3>
-        <ol>
-          <li>Move the joystick to a position</li>
-          <li>Drag the parameter bars to set desired output</li>
-          <li>Press <strong>Add Example</strong> to save this mapping</li>
-          <li>Repeat for different joystick positions</li>
-          <li>Press <strong>Train</strong> &mdash; the network learns to interpolate between your examples</li>
-        </ol>
-
-        <h3>RL Feedback Mode</h3>
-        <ol>
-          <li>Move the joystick &mdash; the network produces outputs</li>
-          <li>See something you like? Press <strong>+</strong> (thumbs up)</li>
-          <li>Don't like it? Press <strong>&minus;</strong> (thumbs down) to explore more</li>
-          <li>Double-click the joystick to toggle <strong>Follow</strong> mode</li>
-        </ol>
-
-        <h3>Tips</h3>
-        <p>Your training data auto-saves to your browser. Gamepad supported (LB/RB for RL feedback).</p>
-        <p style="margin-top: 16px; text-align: center; color: #444;">Tap anywhere outside to close</p>
-      </div>
-    </div>
-
   </div>
-
-  <script type="module" src="js/app.js"></script>
 </body>
 </html>

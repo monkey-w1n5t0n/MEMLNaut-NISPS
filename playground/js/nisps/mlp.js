@@ -204,13 +204,18 @@ export class MLP {
     }
   }
 
-  // DrawWeights - randomize all weights uniformly in [-1, 1]
-  drawWeights(scale = 1) {
-    for (const layer of this.layers) {
-      for (const node of layer.nodes) {
+  // DrawWeights - randomize all weights
+  // spread: 0 = uniform [-1,1] (polarised sigmoid outputs), 1 = Xavier-scaled (centered outputs)
+  drawWeights(spread = 0) {
+    for (let l = 0; l < this.layers.length; l++) {
+      const fanIn = this.layersNodes[l];
+      const xavierScale = 1 / Math.sqrt(fanIn);
+      const scale = 1 * (1 - spread) + xavierScale * spread;
+      for (const node of this.layers[l].nodes) {
         for (let j = 0; j < node.weights.length; j++) {
           node.weights[j] = (Math.random() * 2 - 1) * scale;
         }
+        node.bias = 0;
       }
     }
   }

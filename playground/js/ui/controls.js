@@ -160,14 +160,14 @@ export class Controls {
     const plotW = width - leftPad - rightPad;
     const plotH = height - topPad - bottomPad;
 
-    ctx.strokeStyle = '#243523';
+    ctx.strokeStyle = '#352418';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(leftPad, topPad + plotH / 2);
     ctx.lineTo(width - rightPad, topPad + plotH / 2);
     ctx.stroke();
 
-    ctx.strokeStyle = '#00ff88';
+    ctx.strokeStyle = '#ff6a00';
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     for (let i = 0; i < points.length; i++) {

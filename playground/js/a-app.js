@@ -20,7 +20,7 @@ const VISUAL_PARAM_NAMES = [
   'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate',
 ];
 const VISUAL_PARAM_COLORS = [
-  '#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
+  '#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
   '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff',
   '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f',
   '#ffc15f', '#ff8a3d',
@@ -67,6 +67,7 @@ let arpeggiator = null;
 let learningMode = 'rl';
 let outputMode = 'visual';
 let tameLevel = 0;
+let spreadLevel = 0.6;
 let noiseLevel = 0.05;
 const rlExplorationDecay = 0.97;
 
@@ -254,7 +255,7 @@ class SynthVisualizer {
     const dpr = window.devicePixelRatio || 1;
     const fontSize = 9 * dpr;
     ctx.save();
-    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
     ctx.fillStyle = color + '88';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
@@ -360,6 +361,9 @@ function init() {
   // Parse ?tame URL param
   const urlParams = new URLSearchParams(window.location.search);
   tameLevel = parseFloat(urlParams.get('tame') ?? '0');
+  spreadLevel = parseFloat(urlParams.get('spread') ?? '0');
+  if (isNaN(spreadLevel)) spreadLevel = 0;
+  spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 
   // IML — fresh random weights each boot, no state restoration
   iml = new IML(N_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
@@ -557,9 +561,9 @@ function drawJoyMap() {
   const py = (1 - joyY) * h;
 
   // Glow
-  ctx.shadowColor = 'rgba(0, 255, 136, 0.6)';
+  ctx.shadowColor = 'rgba(255, 106, 0, 0.6)';
   ctx.shadowBlur = 12;
-  ctx.fillStyle = 'rgba(0, 255, 136, 0.9)';
+  ctx.fillStyle = 'rgba(255, 106, 0, 0.9)';
   ctx.beginPath();
   ctx.arc(px, py, 8, 0, Math.PI * 2);
   ctx.fill();
@@ -572,7 +576,7 @@ function drawJoyMap() {
   ctx.fill();
 
   // Crosshair
-  ctx.strokeStyle = 'rgba(0, 255, 136, 0.2)';
+  ctx.strokeStyle = 'rgba(255, 106, 0, 0.2)';
   ctx.lineWidth = 0.5;
   ctx.shadowBlur = 0;
   ctx.beginPath();
@@ -864,7 +868,7 @@ function onTrain() {
 }
 
 function onRandomize() {
-  iml.randomiseWeights();
+  iml.randomiseWeights(spreadLevel);
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   updateHeatmap(outputs);
@@ -982,7 +986,7 @@ function drawLossPlot() {
   const maxLoss = Math.max(...history.slice(-200)) || 1;
   const points = history.slice(-200);
 
-  ctx.strokeStyle = 'rgba(0, 255, 136, 0.6)';
+  ctx.strokeStyle = 'rgba(255, 106, 0, 0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
 

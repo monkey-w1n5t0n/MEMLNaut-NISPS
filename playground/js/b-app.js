@@ -20,7 +20,7 @@ const VISUAL_PARAM_NAMES = [
   'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'
 ];
 const VISUAL_PARAM_COLORS = [
-  '#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
+  '#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
   '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff',
   '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f',
   '#ffc15f', '#ff8a3d'
@@ -91,6 +91,7 @@ function heatmapColor(t) {
 // --- Tame URL param ---
 const _urlParams = new URLSearchParams(window.location.search);
 const tameLevel = parseFloat(_urlParams.get('tame') ?? '0');
+const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') ?? '0') || 0));
 
 // --- State ---
 let iml;
@@ -402,7 +403,7 @@ class MappingView {
     // Current joystick position as crosshair
     const px = joyX * w;
     const py = joyY * h;
-    const accent = outputMode === 'synth' ? '#ff6b35' : '#00ff88';
+    const accent = outputMode === 'synth' ? '#ff8c00' : '#ff6a00';
 
     ctx.strokeStyle = accent;
     ctx.lineWidth = 1;
@@ -498,7 +499,7 @@ function drawLossPlot(canvas, history) {
   for (const v of history) if (v > maxLoss) maxLoss = v;
   if (maxLoss === 0) maxLoss = 1;
 
-  const accent = outputMode === 'synth' ? '#ff6b35' : '#00ff88';
+  const accent = outputMode === 'synth' ? '#ff8c00' : '#ff6a00';
 
   // Draw line
   ctx.strokeStyle = accent;
@@ -734,7 +735,7 @@ function onTrain() {
 }
 
 function onRandomize() {
-  iml.randomiseWeights();
+  iml.randomiseWeights(spreadLevel);
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   updateAllParamBars(outputs);

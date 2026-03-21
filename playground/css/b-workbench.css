@@ -16,12 +16,12 @@
   --text: #e0e0e0;
   --text-dim: #888;
   --text-muted: #555;
-  --accent-visual: #00ff88;
-  --accent-synth: #ff6b35;
+  --accent-visual: #ff6a00;
+  --accent-synth: #ff8c00;
   --accent: var(--accent-visual);
   --danger: #ff4444;
-  --good: #00cc66;
-  --bad: #ff6644;
+  --good: #ff8c00;
+  --bad: #ff4444;
   --radius: 8px;
   --radius-sm: 4px;
   --transition: 0.2s ease;
@@ -43,7 +43,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 13px;
   line-height: 1.4;
   overflow-x: hidden;
@@ -575,29 +575,48 @@ body.synth-mode {
 .wb-btn-danger:hover { background: var(--danger); color: var(--bg); }
 
 .wb-btn-good {
-  background: var(--good);
-  color: var(--bg);
-  border-color: var(--good);
+  background: rgba(0, 200, 160, 0.12);
+  color: #00c8a0;
+  border-color: rgba(0, 200, 160, 0.4);
   font-weight: 600;
 }
+.wb-btn-good:hover {
+  background: rgba(0, 200, 160, 0.25);
+}
 .wb-btn-bad {
-  background: var(--bad);
-  color: var(--bg);
-  border-color: var(--bad);
+  background: rgba(220, 60, 20, 0.12);
+  color: #dc3c14;
+  border-color: rgba(220, 60, 20, 0.4);
   font-weight: 600;
+}
+.wb-btn-bad:hover {
+  background: rgba(220, 60, 20, 0.25);
 }
 
 .wb-btn.flash {
   filter: brightness(1.8);
 }
 
+.wb-btn-bad,
+.wb-btn-good {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding-top: 4px;
+  padding-bottom: 3px;
+}
+
+.wb-btn-label {
+  font-weight: 600;
+}
+
 .wb-key-hint {
-  font-size: 10px;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
-  color: #555;
+  font-size: 11px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.5);
   text-align: center;
   line-height: 1;
-  flex-shrink: 0;
 }
 
 /* Synth controls */

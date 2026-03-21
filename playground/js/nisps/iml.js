@@ -144,9 +144,9 @@ export class IML {
     this.log('Dataset cleared.');
   }
 
-  randomiseWeights() {
+  randomiseWeights(spread = 0) {
     this.storedWeights = this.mlp.getWeights();
-    this.mlp.drawWeights();
+    this.mlp.drawWeights(spread);
     this.weightsRandomised = true;
 
     // Run inference to show effect

@@ -24,7 +24,7 @@ const VISUAL_PARAM_NAMES = [
   'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate',
 ];
 const VISUAL_PARAM_COLORS = [
-  '#00ff88', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
+  '#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
   '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff',
   '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f',
   '#ffc15f', '#ff8a3d',
@@ -49,6 +49,7 @@ const PRESETS = [
 // --- Tame URL param ---
 const _urlParams = new URLSearchParams(window.location.search);
 const tameLevel = parseFloat(_urlParams.get('tame') ?? '0');
+const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') ?? '0') || 0));
 
 // ============================================================
 // State
@@ -180,7 +181,7 @@ class SynthVisualizer {
       // Section label
       const sectionWidth = barWidth * section.count;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.font = '9px -apple-system, sans-serif';
+      ctx.font = '9px 'JetBrains Mono', monospace';
       ctx.textAlign = 'center';
       ctx.fillText(section.name, x + sectionWidth / 2, h - 6);
 
@@ -410,7 +411,7 @@ function buildHeatmap() {
     cell.dataset.index = i;
     const bar = document.createElement('div');
     bar.className = 'heatmap-bar';
-    bar.style.backgroundColor = currentParamColors[i] || '#00ff88';
+    bar.style.backgroundColor = currentParamColors[i] || '#ff6a00';
     bar.style.width = '50%';
     cell.appendChild(bar);
     container.appendChild(cell);
@@ -628,7 +629,7 @@ function wireTeachActions() {
 
   document.getElementById('btn-clear')?.addEventListener('click', () => {
     iml.clearDataset();
-    iml.randomiseWeights();
+    iml.randomiseWeights(spreadLevel);
     selectedPreset = -1;
     document.querySelectorAll('.preset-thumb').forEach(b => b.classList.remove('selected'));
     updateTeachStatus();
@@ -637,7 +638,7 @@ function wireTeachActions() {
   });
 
   document.getElementById('btn-randomize')?.addEventListener('click', () => {
-    iml.randomiseWeights();
+    iml.randomiseWeights(spreadLevel);
     iml.setInput(0, joystickX);
     iml.setInput(1, joystickY);
     iml.process();
@@ -912,16 +913,16 @@ function drawJoystick() {
 
   ctx.beginPath();
   ctx.arc(knobX, knobY, knobRadius, 0, TWO_PI);
-  ctx.fillStyle = 'rgba(0, 255, 136, 0.7)';
+  ctx.fillStyle = 'rgba(255, 106, 0, 0.7)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
+  ctx.strokeStyle = 'rgba(255, 106, 0, 0.4)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
   // Glow
   const glow = ctx.createRadialGradient(knobX, knobY, 0, knobX, knobY, knobRadius * 2.5);
-  glow.addColorStop(0, 'rgba(0, 255, 136, 0.15)');
-  glow.addColorStop(1, 'rgba(0, 255, 136, 0)');
+  glow.addColorStop(0, 'rgba(255, 106, 0, 0.15)');
+  glow.addColorStop(1, 'rgba(255, 106, 0, 0)');
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(knobX, knobY, knobRadius * 2.5, 0, TWO_PI);
@@ -999,7 +1000,7 @@ function drawMinimap() {
     if (!f || f.length < 2) continue;
     const x = f[0] * w;
     const y = f[1] * h;
-    ctx.fillStyle = 'rgba(0, 255, 136, 0.8)';
+    ctx.fillStyle = 'rgba(255, 106, 0, 0.8)';
     ctx.beginPath();
     ctx.arc(x, y, 3, 0, TWO_PI);
     ctx.fill();

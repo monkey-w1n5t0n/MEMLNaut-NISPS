@@ -397,9 +397,34 @@ html, body {
   flex-shrink: 0;
 }
 
+.param-container.synth-mode {
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #444 #1a1a1a;
+}
+
+.param-container.synth-mode .param-row {
+  height: 16px;
+}
+
 .param-container.synth-mode .param-label {
-  width: 72px;
+  width: 82px;
+  font-size: 9px;
   color: #886644;
+}
+
+.param-container.synth-mode .param-track {
+  height: 6px;
+}
+
+.param-container.synth-mode .param-value {
+  font-size: 8px;
+  min-width: 24px;
+}
+
+.param-container.synth-mode.draggable .param-track {
+  height: 10px;
 }
 
 .param-track {

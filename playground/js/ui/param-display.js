@@ -121,4 +121,13 @@ export class ParamDisplay {
       this.bars[i].fill.style.background = this.paramColors[i] || '#888';
     }
   }
+
+  rebuild(numParams, names, colors) {
+    this.numParams = numParams;
+    this.values = new Array(numParams).fill(0.5);
+    this.paramNames = names || DEFAULT_PARAM_NAMES;
+    this.paramColors = colors || DEFAULT_PARAM_COLORS;
+    this.activeBar = -1;
+    this.build();
+  }
 }

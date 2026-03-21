@@ -11,7 +11,9 @@ import { Arpeggiator } from './synth/arpeggiator.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS } from './synth/param-map.js';
 
 const N_INPUTS = 2;
-const N_OUTPUTS = 20;
+const N_VISUAL_OUTPUTS = 20;
+const N_SYNTH_OUTPUTS = SYNTH_PARAM_MAP.length; // 126
+const N_OUTPUTS = N_SYNTH_OUTPUTS; // MLP always produces full output; visual uses first 20
 
 // Visual mode param display config
 const VISUAL_PARAM_NAMES = ['Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb', 'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn', 'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate'];
@@ -43,7 +45,7 @@ let arpeggiator = null;
 
 // --- Init ---
 function init() {
-  iml = new IML(N_INPUTS, N_OUTPUTS, [10, 10, 14], 1000, 1.0, 0.00001);
+  iml = new IML(N_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
   iml.setLogger(msg => console.log('[NISPS]', msg));
 
   // Visualizer
@@ -65,8 +67,8 @@ function init() {
     },
   });
 
-  // Parameter display
-  paramDisplay = new ParamDisplay(document.getElementById('param-display'), N_OUTPUTS);
+  // Parameter display (start in visual mode with 20 params)
+  paramDisplay = new ParamDisplay(document.getElementById('param-display'), N_VISUAL_OUTPUTS);
 
   // Controls
   controls = new Controls(document.getElementById('controls-container'), {
@@ -181,8 +183,9 @@ function setOutputMode(mode) {
     modeBadge.classList.add('synth');
     paramContainer.classList.add('synth-mode');
 
-    // Rebuild param display with synth labels/colors
-    paramDisplay.setNamesAndColors(SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS);
+    // Rebuild param display with all synth params
+    paramDisplay.rebuild(N_SYNTH_OUTPUTS, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS);
+    paramDisplay.setDraggable(learningMode === 'examples');
   } else {
     synthControls.classList.add('hidden');
     visualInfo.classList.remove('hidden');
@@ -191,8 +194,9 @@ function setOutputMode(mode) {
     modeBadge.classList.remove('synth');
     paramContainer.classList.remove('synth-mode');
 
-    // Restore visual param labels/colors
-    paramDisplay.setNamesAndColors(VISUAL_PARAM_NAMES, VISUAL_PARAM_COLORS);
+    // Rebuild param display with visual params (first 20)
+    paramDisplay.rebuild(N_VISUAL_OUTPUTS, VISUAL_PARAM_NAMES, VISUAL_PARAM_COLORS);
+    paramDisplay.setDraggable(learningMode === 'examples');
   }
 
   // Re-run inference and route outputs
@@ -438,26 +442,33 @@ function setVisualExpanded(expanded) {
 }
 
 // --- Presets ---
+// Pad a 20-element visual preset array to N_OUTPUTS with 0.5 defaults
+function padPreset(values20) {
+  const padded = new Array(N_OUTPUTS).fill(0.5);
+  for (let i = 0; i < values20.length; i++) padded[i] = values20[i];
+  return padded;
+}
+
 window.loadPreset = function(name) {
   iml.clearDataset();
 
   if (name === 'calm-to-chaotic') {
     // Bottom-left: slow, smooth, cool; top-right: fast, turbulent, warm
-    iml.addExample([0.1, 0.9], [0.25, 0.3, 0.1, 0.55, 0.2, 0.3, 0.02, 0.05, 0.9, 0.45, 0.25, 0.2, 0.9, 0.0, 0.0, 0.2, 0.05, 0.0, 0.0, 0.2]);
-    iml.addExample([0.9, 0.1], [0.75, 0.7, 0.9, 0.05, 0.8, 0.7, 0.9, 0.95, 0.3, 0.2, 0.85, 0.7, 0.25, 0.55, 1.0, 0.92, 0.02, 0.95, 0.8, 0.85]);
-    iml.addExample([0.5, 0.5], [0.5, 0.5, 0.5, 0.3, 0.5, 0.5, 0.4, 0.5, 0.7, 0.6, 0.5, 0.45, 0.55, 0.9, 0.5, 0.65, 0.08, 0.45, 0.4, 0.5]);
+    iml.addExample([0.1, 0.9], padPreset([0.25, 0.3, 0.1, 0.55, 0.2, 0.3, 0.02, 0.05, 0.9, 0.45, 0.25, 0.2, 0.9, 0.0, 0.0, 0.2, 0.05, 0.0, 0.0, 0.2]));
+    iml.addExample([0.9, 0.1], padPreset([0.75, 0.7, 0.9, 0.05, 0.8, 0.7, 0.9, 0.95, 0.3, 0.2, 0.85, 0.7, 0.25, 0.55, 1.0, 0.92, 0.02, 0.95, 0.8, 0.85]));
+    iml.addExample([0.5, 0.5], padPreset([0.5, 0.5, 0.5, 0.3, 0.5, 0.5, 0.4, 0.5, 0.7, 0.6, 0.5, 0.45, 0.55, 0.9, 0.5, 0.65, 0.08, 0.45, 0.4, 0.5]));
   } else if (name === 'rainbow-sweep') {
     // Left to right sweeps through hues
-    iml.addExample([0.0, 0.5], [0.5, 0.5, 0.4, 0.0, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.4, 0.3, 0.8, 0.0, 0.0, 0.45, 0.08, 0.2, 0.25, 0.45]);
-    iml.addExample([0.5, 0.5], [0.5, 0.5, 0.4, 0.5, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.55, 0.35, 0.7, 0.0, 0.4, 0.45, 0.08, 0.45, 0.4, 0.6]);
-    iml.addExample([1.0, 0.5], [0.5, 0.5, 0.4, 1.0, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.75, 0.45, 0.6, 0.0, 0.8, 0.45, 0.08, 0.7, 0.55, 0.75]);
+    iml.addExample([0.0, 0.5], padPreset([0.5, 0.5, 0.4, 0.0, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.4, 0.3, 0.8, 0.0, 0.0, 0.45, 0.08, 0.2, 0.25, 0.45]));
+    iml.addExample([0.5, 0.5], padPreset([0.5, 0.5, 0.4, 0.5, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.55, 0.35, 0.7, 0.0, 0.4, 0.45, 0.08, 0.45, 0.4, 0.6]));
+    iml.addExample([1.0, 0.5], padPreset([0.5, 0.5, 0.4, 1.0, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.75, 0.45, 0.6, 0.0, 0.8, 0.45, 0.08, 0.7, 0.55, 0.75]));
   } else if (name === 'vortex') {
     // Center: tight spiral, edges: wide flow
-    iml.addExample([0.5, 0.5], [0.0, 0.8, 0.8, 0.6, 0.1, 0.15, 0.02, 1.0, 1.0, 0.3, 0.95, 0.85, 0.25, 1.0, 0.5, 0.95, 0.01, 1.0, 1.0, 1.0]);
-    iml.addExample([0.0, 0.0], [0.5, 0.2, 0.3, 0.8, 0.9, 0.6, 0.08, 0.1, 0.35, 0.8, 0.25, 0.15, 0.8, 0.5, 0.2, 0.35, 0.2, 0.15, 0.2, 0.25]);
-    iml.addExample([1.0, 1.0], [0.5, 0.2, 0.3, 0.2, 0.9, 0.6, 0.08, 0.1, 0.35, 0.8, 0.25, 0.15, 0.8, 0.5, 0.8, 0.35, 0.2, 0.15, 0.2, 0.25]);
-    iml.addExample([0.0, 1.0], [0.3, 0.4, 0.5, 0.4, 0.5, 0.4, 0.05, 0.5, 0.65, 0.5, 0.55, 0.45, 0.45, 0.2, 0.4, 0.7, 0.1, 0.5, 0.4, 0.55]);
-    iml.addExample([1.0, 0.0], [0.7, 0.4, 0.5, 0.0, 0.5, 0.4, 0.05, 0.5, 0.65, 0.5, 0.55, 0.45, 0.45, 0.2, 0.9, 0.7, 0.1, 0.5, 0.4, 0.55]);
+    iml.addExample([0.5, 0.5], padPreset([0.0, 0.8, 0.8, 0.6, 0.1, 0.15, 0.02, 1.0, 1.0, 0.3, 0.95, 0.85, 0.25, 1.0, 0.5, 0.95, 0.01, 1.0, 1.0, 1.0]));
+    iml.addExample([0.0, 0.0], padPreset([0.5, 0.2, 0.3, 0.8, 0.9, 0.6, 0.08, 0.1, 0.35, 0.8, 0.25, 0.15, 0.8, 0.5, 0.2, 0.35, 0.2, 0.15, 0.2, 0.25]));
+    iml.addExample([1.0, 1.0], padPreset([0.5, 0.2, 0.3, 0.2, 0.9, 0.6, 0.08, 0.1, 0.35, 0.8, 0.25, 0.15, 0.8, 0.5, 0.8, 0.35, 0.2, 0.15, 0.2, 0.25]));
+    iml.addExample([0.0, 1.0], padPreset([0.3, 0.4, 0.5, 0.4, 0.5, 0.4, 0.05, 0.5, 0.65, 0.5, 0.55, 0.45, 0.45, 0.2, 0.4, 0.7, 0.1, 0.5, 0.4, 0.55]));
+    iml.addExample([1.0, 0.0], padPreset([0.7, 0.4, 0.5, 0.0, 0.5, 0.4, 0.05, 0.5, 0.65, 0.5, 0.55, 0.45, 0.45, 0.2, 0.9, 0.7, 0.1, 0.5, 0.4, 0.55]));
   }
 
   const loss = trainModel();
@@ -485,7 +496,12 @@ function loadState() {
     const data = JSON.parse(localStorage.getItem('nisps-playground'));
     if (data && data.features && data.features.length > 0) {
       for (let i = 0; i < data.features.length; i++) {
-        iml.addExample(data.features[i], data.labels[i]);
+        // Pad old saves (20 outputs) to current N_OUTPUTS with 0.5 defaults
+        const labels = data.labels[i];
+        if (labels.length < N_OUTPUTS) {
+          while (labels.length < N_OUTPUTS) labels.push(0.5);
+        }
+        iml.addExample(data.features[i], labels);
       }
       trainModel();
       const outputs = iml.getOutputs();

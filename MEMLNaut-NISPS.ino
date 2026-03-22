@@ -1,3 +1,8 @@
+//machine config
+
+#define JOYSTICK_IS_4D false
+#define MEMLNAUT_ANALOG_INPUTS 3 + (JOYSTICK_IS_4D ? 1 : 0)
+#define MEMLNAUT_INPUT_MODE InterfaceRL::INPUT_MODES::JOYSTICK
 
 //hardware
 #include "src/memllib/utils/perf.hpp"
@@ -23,12 +28,18 @@
 #include "modes/MEMLNautModeChannelStrip.hpp"
 #include "modes/MEMLNautModeSoundAnalysisMIDI.hpp"
 #include "modes/MEMLNautModeXIASRI.hpp"
+#include "modes/MEMLNautModeBreakOr.hpp"
+#include "modes/MEMLNautModeVerbFX.hpp"
+#include "modes/MEMLNautModeElysiamorfs.hpp"
 
-//hook up the memlnaut mode 
+//hook up the memlnaut mode
 
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeSoundAnalysisMIDI
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeXIASRI
-#define MEMLNAUT_MODE_TYPE MEMLNautModeChannelStrip
+#define MEMLNAUT_MODE_TYPE MEMLNautModeVerbFX
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeBreakOr
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeElysiamorfs
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeChannelStrip
 // #define MEMLNAUT_MODE_TYPE MEMLNautModePAFSynth
 
 MEMLNAUT_MODE_TYPE AUDIO_MEM MEMLNautModeHub;
@@ -86,6 +97,9 @@ void setup() {
   uint32_t seed = get_rosc_entropy_seed(32);
   srand(seed);
 
+  midi_interf = std::make_shared<MIDIInOut>();
+  // Serial.println("MIDI setup complete.");
+
   Serial.begin(115200);
   // while (!Serial) {}
   Serial.println("Serial initialised.");
@@ -101,11 +115,6 @@ void setup() {
   WRITE_VOLATILE(interface_ready, true);
   Serial.println("Bound interface to MEMLNaut.");
 
-  midi_interf = std::make_shared<MIDIInOut>();
-  Serial.println("MIDI setup complete.");
-  if (midi_interf) {
-    currentMode->setupMIDI(midi_interf);
-  }
 
   WRITE_VOLATILE(core_0_ready, true);
   while (!READ_VOLATILE(core_1_ready)) {
@@ -162,6 +171,8 @@ void loop() {
       digitalWrite(33, LOW);
     },
     100000)
+
+  currentMode->loopCore0();
 }
 
 
@@ -200,6 +211,9 @@ void setup1() {
     delay(1);
   }
 
+  if (midi_interf) {
+    currentMode->setupMIDI(midi_interf);
+  }
 
   currentMode->setupAudio(AudioDriver::GetSampleRate());
 
@@ -226,5 +240,5 @@ void loop1() {
 
   PERIODIC_RUN_US(
     midi_interf->Poll();
-    , 10000)
+    , 1000)
 }

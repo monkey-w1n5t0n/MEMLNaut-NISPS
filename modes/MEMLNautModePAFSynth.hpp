@@ -12,7 +12,7 @@
 
 class MEMLNautModePAFSynth {
 public:
-    constexpr static size_t kN_InputParams = 3; // joystick x, y, rotate
+    constexpr static size_t kN_InputParams = 4; // joystick x, y, rotate
 
     inline static PAFSynthAudioApp<> audioAppPAFSynth;
     std::array<String, PAFSynthAudioApp<>::nVoiceSpaces> voiceSpaceList;
@@ -22,24 +22,13 @@ public:
 
     void setupInterface() {
         interface.setup(kN_InputParams, PAFSynthAudioApp<>::kN_Params);
-        interface.bindInterface(InterfaceRL::INPUT_MODES::JOYSTICK);
+        interface.bindInterface(InterfaceRL::INPUT_MODES::JOYSTICK, true);
         interfacePtr = make_non_owning(interface);    
     }
 
     String getHelpTitle() {
         return "PAF Synth Mode";
     }
-    // size_t getNParams() {
-    //     return PAFSynthAudioApp<>::kN_Params;
-    // }
-
-    // void setVoiceSpace(size_t i) {
-    //     audioAppPAFSynth.setVoiceSpace(i);
-    // }
-
-    // std::span<String> getVoiceSpaceList() {
-    //     return voiceSpaceList;
-    // }
 
     __force_inline stereosample_t process(stereosample_t x) {
         return audioAppPAFSynth.Process(x);
@@ -125,5 +114,7 @@ public:
     inline void processAnalysisParams() {}
 
     void analyse(stereosample_t) {}
+
+    void loopCore0() {}
 
 };

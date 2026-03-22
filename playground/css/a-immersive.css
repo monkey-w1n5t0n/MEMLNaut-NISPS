@@ -38,7 +38,7 @@ html, body {
 /* ---- Back button ---- */
 .back-btn {
   position: fixed;
-  top: 30px;
+  top: 45px;
   left: 8px;
   z-index: 30;
   width: 36px;
@@ -702,10 +702,32 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Tooltip for raw param sliders */
+.raw-param {
+  position: relative;
+}
+
+.raw-param[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+}
+
 /* ---- Synth quick controls (play button next to back) ---- */
 .synth-quick-controls {
   position: fixed;
-  top: 30px;
+  top: 45px;
   left: 52px;
   z-index: 30;
   display: flex;
@@ -740,6 +762,23 @@ html, body {
   border-color: rgba(255, 106, 0, 0.4);
   color: var(--accent);
   background: rgba(255, 106, 0, 0.12);
+}
+
+.play-btn.audio-needs-init {
+  animation: audioInitPulse 2s ease-in-out infinite;
+}
+
+@keyframes audioInitPulse {
+  0%, 100% {
+    border-color: rgba(255, 106, 0, 0.3);
+    box-shadow: 0 0 6px rgba(255, 106, 0, 0.15);
+    color: var(--accent);
+  }
+  50% {
+    border-color: rgba(255, 106, 0, 0.6);
+    box-shadow: 0 0 14px rgba(255, 106, 0, 0.3);
+    color: #ffaa55;
+  }
 }
 
 .play-drawer {
@@ -786,6 +825,258 @@ html, body {
 /* ---- Utility ---- */
 .hidden {
   display: none !important;
+}
+
+/* ---- Group Override Drawer ---- */
+.group-drawer {
+  position: fixed;
+  z-index: 50;
+  width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: rgba(13, 13, 13, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.group-drawer.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.group-drawer-header {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.group-drawer-body {
+  padding: 6px 8px 8px;
+}
+
+/* Group curve row */
+.gd-curve-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.gd-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 34px;
+  flex-shrink: 0;
+}
+
+.gd-curve-canvas {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.gd-val {
+  font-size: 10px;
+  color: var(--text-dim);
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* Per-param row */
+.gd-param-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+  min-height: 28px;
+}
+
+.gd-param-name {
+  font-size: 9px;
+  color: var(--text-dim);
+  min-width: 52px;
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Per-param curve mini-canvas */
+.gd-param-curve-canvas {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+/* Dual-range slider wrapper */
+.gd-range-wrap {
+  position: relative;
+  flex: 1;
+  height: 16px;
+  min-width: 0;
+}
+
+.gd-range-fill {
+  position: absolute;
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.gd-range-input {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  left: 0;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+
+.gd-range-input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: transparent;
+  border-radius: 2px;
+}
+
+.gd-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  margin-top: -3.5px;
+}
+
+.gd-range-min::-webkit-slider-thumb {
+  background: #4488ff;
+}
+
+.gd-range-max::-webkit-slider-thumb {
+  background: #ff6a00;
+}
+
+/* Firefox dual-range */
+.gd-range-input::-moz-range-track {
+  height: 3px;
+  background: transparent;
+  border: none;
+}
+
+.gd-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+}
+
+.gd-range-min::-moz-range-thumb {
+  background: #4488ff;
+}
+
+.gd-range-max::-moz-range-thumb {
+  background: #ff6a00;
+}
+
+/* Value slider (shown when muted) */
+.gd-val-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: #888;
+  height: 3px;
+  display: none;
+}
+
+/* Mute button */
+.gd-mute-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 18px;
+  text-align: center;
+  transition: all 0.1s;
+}
+
+.gd-mute-btn:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.gd-mute-btn.muted {
+  background: rgba(255, 60, 60, 0.2);
+  border-color: rgba(255, 60, 60, 0.4);
+  color: #ff5555;
+}
+
+/* Muted param row: hide curve + range, show value slider */
+.gd-param-row.gd-muted .gd-param-curve-canvas,
+.gd-param-row.gd-muted .gd-range-wrap {
+  display: none;
+}
+
+.gd-param-row.gd-muted .gd-val-slider {
+  display: block;
+}
+
+.gd-param-row.gd-muted .gd-param-name {
+  color: rgba(255, 255, 255, 0.2);
+  text-decoration: line-through;
+}
+
+/* Drawer scrollbar */
+.group-drawer::-webkit-scrollbar {
+  width: 3px;
+}
+
+.group-drawer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.group-drawer::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
 }
 
 /* ---- Scrollbar styling ---- */

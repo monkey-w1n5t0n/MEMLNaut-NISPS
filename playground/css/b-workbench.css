@@ -537,6 +537,21 @@ body.synth-mode {
 }
 .wb-btn-primary:hover { filter: brightness(1.15); }
 
+.wb-btn-primary.audio-needs-init {
+  animation: audioInitPulse 2s ease-in-out infinite;
+}
+
+@keyframes audioInitPulse {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(255, 106, 0, 0.2);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(255, 106, 0, 0.4);
+    filter: brightness(1.15);
+  }
+}
+
 .wb-btn-accent {
   border-color: var(--accent);
   color: var(--accent);

@@ -6,7 +6,7 @@ import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
-import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame } from './synth/param-map.js';
+import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame, applyCurve, applyGroupOverride } from './synth/param-map.js';
 import { GamepadInput } from './ui/gamepad.js';
 
 // ---- Constants ----
@@ -122,6 +122,53 @@ const SYNTH_SECTIONS = [
   { name: 'Mono', count: 1, color: '#999999' },
 ];
 
+// ---- Group Overrides: per-group curve + per-param min/max/curve/mute ----
+// groupOverrides[sectionIndex] = { curve: 0.5, params: [{ min, max, curve, muted, fixedValue }, ...] }
+const groupOverrides = SYNTH_SECTIONS.map(sec => ({
+  curve: 0.5,
+  params: new Array(sec.count).fill(null).map(() => ({
+    min: 0, max: 1, curve: 0.5, muted: false, fixedValue: 0.5,
+  })),
+}));
+
+// Build a flat lookup: paramIndex -> { sectionIndex, localIndex }
+const paramToSection = [];
+{
+  let idx = 0;
+  for (let si = 0; si < SYNTH_SECTIONS.length; si++) {
+    for (let li = 0; li < SYNTH_SECTIONS[si].count; li++) {
+      paramToSection.push({ si, li });
+      idx++;
+    }
+  }
+  // Pad for any params beyond sections
+  while (paramToSection.length < N_SYNTH_OUTPUTS) {
+    paramToSection.push(null);
+  }
+}
+
+/**
+ * Apply group overrides (per-param curve + min/max) to a single ML output value.
+ * Returns the remapped value, or fixedValue if the param is muted.
+ */
+function applyGroupOverrides(rawValue, paramIndex) {
+  const mapping = paramToSection[paramIndex];
+  if (!mapping) return rawValue;
+  const ov = groupOverrides[mapping.si];
+  const p = ov.params[mapping.li];
+  if (p.muted) return p.fixedValue;
+  // Per-param curve overrides group curve (if param curve != 0.5, use it; else use group curve)
+  const curve = p.curve !== 0.5 ? p.curve : ov.curve;
+  return applyGroupOverride(rawValue, curve, p.min, p.max);
+}
+
+/** Check if param at given index is muted */
+function isParamMuted(paramIndex) {
+  const mapping = paramToSection[paramIndex];
+  if (!mapping) return false;
+  return groupOverrides[mapping.si].params[mapping.li].muted;
+}
+
 // ---- SynthVisualizer class ----
 class SynthVisualizer {
   constructor(canvas) {
@@ -138,6 +185,10 @@ class SynthVisualizer {
     this._dragBarIndex = -1;
     this._interactionEnabled = false;
 
+    // Hover tooltip state
+    this._hoveredBar = -1;
+    this._tooltipEl = null;
+
     // Build section map
     this.sectionMap = [];
     let idx = 0;
@@ -150,6 +201,21 @@ class SynthVisualizer {
     while (this.sectionMap.length < N_OUTPUTS) {
       this.sectionMap.push({ name: 'Other', count: 1, color: '#666666' });
     }
+
+    // Always-on hover tracking for tooltip (independent of enableInteraction)
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (this._dragging) return; // interaction handler takes over
+      const idx = this.hitTest(e.clientX, e.clientY);
+      this._hoveredBar = idx;
+      // Store mouse position in canvas pixels for tooltip
+      const rect = this.canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      this._mouseCanvasX = (e.clientX - rect.left) * dpr;
+      this._mouseCanvasY = (e.clientY - rect.top) * dpr;
+    });
+    this.canvas.addEventListener('pointerleave', () => {
+      this._hoveredBar = -1;
+    });
 
     this.resize();
   }
@@ -183,50 +249,81 @@ class SynthVisualizer {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, W, H);
 
-    // Calculate section gap positions
+    // Build list of visible (non-muted) param indices
+    const visibleIndices = [];
+    for (let i = 0; i < n; i++) {
+      if (!isParamMuted(i)) visibleIndices.push(i);
+    }
+    const nVisible = visibleIndices.length || 1;
+
+    // Calculate section gap positions (among visible params only)
     const sectionGaps = new Set();
-    let ci = 0;
-    for (const sec of SYNTH_SECTIONS) {
-      ci += sec.count;
-      if (ci < n) sectionGaps.add(ci);
+    let prevSi = -1;
+    for (const vi of visibleIndices) {
+      const mapping = paramToSection[vi];
+      const curSi = mapping ? mapping.si : -1;
+      if (prevSi >= 0 && curSi !== prevSi) {
+        sectionGaps.add(vi);
+      }
+      prevSi = curSi;
     }
 
     const topPad = this.topPadding * dpr;
     const bottomPad = this.bottomPadding * dpr;
     const totalGapPx = sectionGaps.size * 2 * dpr;
     const barAreaWidth = W - totalGapPx;
-    const barWidth = barAreaWidth / n;
+    const barWidth = barAreaWidth / nVisible;
     const usableHeight = H - topPad - bottomPad;
     const maxBarHeight = usableHeight;
 
     // Store layout for interaction hit-testing
-    this._layout = { W, H, n, barWidth, totalGapPx, sectionGaps, topPad, bottomPad, usableHeight, dpr };
+    this._layout = { W, H, n, barWidth, totalGapPx, sectionGaps, topPad, bottomPad, usableHeight, dpr, visibleIndices };
 
     // Draw bars
     let x = 0;
-    let prevSection = this.sectionMap[0];
+    let prevSection = null;
     let sectionStartX = 0;
-    // Store bar x positions for hit testing
-    this._barXPositions = [];
+    let sectionIndex = -1;
+    // Store bar x positions for hit testing (indexed by original param index)
+    this._barXPositions = new Array(n).fill(-1);
+    this._barWidths = new Array(n).fill(0);
+    // Store section label regions (in CSS pixels) for drawer hit testing
+    this._sectionLabelRegions = [];
 
-    for (let i = 0; i < n; i++) {
+    for (let vi = 0; vi < visibleIndices.length; vi++) {
+      const i = visibleIndices[vi];
       const sec = this.sectionMap[i];
+      const mapping = paramToSection[i];
+      const curSi = mapping ? mapping.si : -1;
 
       // Section divider gap
       if (sectionGaps.has(i)) {
         // Draw section label for the previous section at top
-        this._drawSectionLabel(ctx, prevSection.name, sectionStartX, x, topPad, prevSection.color);
+        if (prevSection) {
+          this._drawSectionLabel(ctx, prevSection.name, sectionStartX, x, topPad, prevSection.color);
+          this._sectionLabelRegions.push({
+            index: sectionIndex,
+            left: sectionStartX / dpr,
+            right: x / dpr,
+            top: 0,
+            bottom: topPad / dpr,
+            name: prevSection.name,
+          });
+        }
+        sectionIndex = curSi;
         x += 2 * dpr;
         sectionStartX = x;
         prevSection = sec;
       }
 
-      if (i === 0) {
+      if (vi === 0) {
         sectionStartX = x;
         prevSection = sec;
+        sectionIndex = curSi;
       }
 
       this._barXPositions[i] = x;
+      this._barWidths[i] = barWidth;
 
       const val = this.displayParams[i];
       const barH = val * maxBarHeight;
@@ -246,7 +343,18 @@ class SynthVisualizer {
     // Draw final section label at top
     if (prevSection) {
       this._drawSectionLabel(ctx, prevSection.name, sectionStartX, x, topPad, prevSection.color);
+      this._sectionLabelRegions.push({
+        index: sectionIndex,
+        left: sectionStartX / dpr,
+        right: x / dpr,
+        top: 0,
+        bottom: topPad / dpr,
+        name: prevSection.name,
+      });
     }
+
+    // Draw tooltip for hovered bar
+    this._drawTooltip(ctx, dpr);
   }
 
   _drawSectionLabel(ctx, name, startX, endX, topPad, color) {
@@ -262,6 +370,20 @@ class SynthVisualizer {
     ctx.restore();
   }
 
+  // Returns section region at client coordinates, or null
+  hitTestSection(clientX, clientY) {
+    if (!this._sectionLabelRegions) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    for (const region of this._sectionLabelRegions) {
+      if (px >= region.left && px <= region.right && py >= region.top && py <= region.bottom) {
+        return region;
+      }
+    }
+    return null;
+  }
+
   // Returns bar index at canvas-relative pixel x, or -1
   hitTest(clientX, clientY) {
     if (!this._barXPositions || !this._layout) return -1;
@@ -269,11 +391,12 @@ class SynthVisualizer {
     const dpr = this._layout.dpr;
     const px = (clientX - rect.left) * dpr;
     const n = this._layout.n;
-    const barWidth = this._layout.barWidth;
 
     for (let i = 0; i < n; i++) {
       const bx = this._barXPositions[i];
-      if (px >= bx && px < bx + barWidth) return i;
+      if (bx < 0) continue; // muted
+      const bw = this._barWidths[i] || this._layout.barWidth;
+      if (px >= bx && px < bx + bw) return i;
     }
     return -1;
   }
@@ -336,6 +459,7 @@ class SynthVisualizer {
       this.canvas.style.cursor = '';
       this._dragging = false;
       this._dragBarIndex = -1;
+      this._hoveredBar = -1;
       if (this._onPointerDown) {
         this.canvas.removeEventListener('pointerdown', this._onPointerDown);
         this.canvas.removeEventListener('pointermove', this._onPointerMove);
@@ -343,6 +467,75 @@ class SynthVisualizer {
         this.canvas.removeEventListener('pointercancel', this._onPointerUp);
       }
     }
+  }
+
+  _drawTooltip(ctx, dpr) {
+    const i = this._hoveredBar;
+    if (i < 0 || !this._layout) return;
+    if (this._barXPositions[i] < 0) return; // muted
+
+    const name = SYNTH_PARAM_NAMES[i] || `p${i}`;
+    const val = this.displayParams[i];
+    const mapping = paramToSection[i];
+    let rangeStr = '0.00 – 1.00';
+    let curveStr = '0.50';
+    if (mapping) {
+      const ov = groupOverrides[mapping.si];
+      const p = ov.params[mapping.li];
+      rangeStr = `${p.min.toFixed(2)} – ${p.max.toFixed(2)}`;
+      const curve = p.curve !== 0.5 ? p.curve : ov.curve;
+      curveStr = curve.toFixed(2);
+    }
+
+    const lines = [name, `Val: ${val.toFixed(2)}`, `Range: ${rangeStr}`, `Curve: ${curveStr}`];
+    const fontSize = 10 * dpr;
+    const lineHeight = fontSize * 1.4;
+    const padX = 8 * dpr;
+    const padY = 6 * dpr;
+
+    ctx.save();
+    ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+
+    // Measure text
+    let maxW = 0;
+    for (const line of lines) {
+      const m = ctx.measureText(line);
+      if (m.width > maxW) maxW = m.width;
+    }
+    const boxW = maxW + padX * 2;
+    const boxH = lines.length * lineHeight + padY * 2;
+
+    // Position near the mouse cursor
+    const mx = this._mouseCanvasX || 0;
+    const my = this._mouseCanvasY || 0;
+    const offset = 12 * dpr;
+    let tx = mx + offset;
+    let ty = my - boxH - offset;
+    // Clamp to canvas
+    if (tx + boxW > this._layout.W - 2 * dpr) tx = mx - boxW - offset;
+    if (ty < 2 * dpr) ty = my + offset;
+    if (tx < 2 * dpr) tx = 2 * dpr;
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    const r = 4 * dpr;
+    ctx.beginPath();
+    ctx.roundRect(tx, ty, boxW, boxH, r);
+    ctx.fill();
+    ctx.stroke();
+
+    // Text
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (let li = 0; li < lines.length; li++) {
+      ctx.fillStyle = li === 0 ? '#ffffff' : 'rgba(255,255,255,0.6)';
+      if (li === 0) ctx.font = `bold ${fontSize}px 'JetBrains Mono', monospace`;
+      else ctx.font = `${fontSize}px 'JetBrains Mono', monospace`;
+      ctx.fillText(lines[li], tx + padX, ty + padY + li * lineHeight);
+    }
+    ctx.restore();
   }
 }
 
@@ -426,6 +619,7 @@ function init() {
   wireGamepad();
   wireKeyboard();
   wireQuickPlayControls();
+  wireGroupDrawer();
 
   // Resize
   window.addEventListener('resize', onResize);
@@ -703,10 +897,15 @@ function onJoystickMove() {
 function routeOutputs(outputs) {
   if (outputMode === 'synth') {
     // Synth mode: synth visualizer + C15
-    synthVisualizer.setParams(outputs);
+    // Apply group overrides before visualization and C15
+    const overridden = new Array(outputs.length);
+    for (let i = 0; i < outputs.length; i++) {
+      overridden[i] = applyGroupOverrides(outputs[i], i);
+    }
+    synthVisualizer.setParams(overridden);
     if (c15 && c15.running) {
-      for (let i = 0; i < outputs.length && i < SYNTH_PARAM_MAP.length; i++) {
-        const tamed = applyTame(outputs[i], SYNTH_PARAM_MAP[i], tameLevel);
+      for (let i = 0; i < overridden.length && i < SYNTH_PARAM_MAP.length; i++) {
+        const tamed = applyTame(overridden[i], SYNTH_PARAM_MAP[i], tameLevel);
         c15.setParameter(SYNTH_PARAM_MAP[i].id, tamed);
       }
     }
@@ -775,6 +974,7 @@ function syncOutputToggles(mode) {
 
 function setOutputMode(mode) {
   outputMode = mode;
+  hideGroupDrawer();
   buildHeatmap();
   updateHeatmap(iml.getOutputs());
 
@@ -788,6 +988,9 @@ function setOutputMode(mode) {
     heatmapStrip.classList.add('hidden');
     synthQuickControls.classList.remove('hidden');
     synthVisualizer.enableInteraction(true);
+    // Pulse play button if audio not yet started
+    const qp = document.getElementById('quick-play');
+    if (qp) qp.classList.toggle('audio-needs-init', !(c15 && c15.running));
   } else {
     $synthPanel.classList.add('hidden');
     $canvas.classList.remove('hidden-canvas');
@@ -990,6 +1193,7 @@ function buildRawParams() {
   for (let i = 0; i < count; i++) {
     const row = document.createElement('div');
     row.className = 'raw-param';
+    row.dataset.tooltip = `${names[i]}: ${rawParamValues[i].toFixed(2)}`;
 
     const label = document.createElement('span');
     label.className = 'raw-param-label';
@@ -1011,6 +1215,7 @@ function buildRawParams() {
       const idx = parseInt(slider.dataset.index);
       rawParamValues[idx] = parseFloat(slider.value);
       val.textContent = rawParamValues[idx].toFixed(2);
+      row.dataset.tooltip = `${names[idx]}: ${rawParamValues[idx].toFixed(2)}`;
       routeOutputs(rawParamValues);
       updateHeatmap(rawParamValues);
     });
@@ -1024,11 +1229,16 @@ function buildRawParams() {
 
 function syncRawParamsFromOutputs(outputs) {
   rawParamValues = [...outputs];
-  const sliders = $rawParams.querySelectorAll('input[type="range"]');
-  sliders.forEach((s, i) => {
+  const rows = $rawParams.querySelectorAll('.raw-param');
+  rows.forEach((row, i) => {
     if (i < outputs.length) {
-      s.value = outputs[i];
-      s.nextElementSibling.textContent = outputs[i].toFixed(2);
+      const s = row.querySelector('input[type="range"]');
+      if (s) {
+        s.value = outputs[i];
+        s.nextElementSibling.textContent = outputs[i].toFixed(2);
+      }
+      const name = row.querySelector('.raw-param-label')?.textContent || `p${i}`;
+      row.dataset.tooltip = `${name}: ${outputs[i].toFixed(2)}`;
     }
   });
 }
@@ -1044,14 +1254,17 @@ function wireSynthControls() {
   const arpOffset = document.getElementById('arp-offset');
 
   startBtn.addEventListener('click', async () => {
+    const quickPlay = document.getElementById('quick-play');
     if (c15.running) {
       arpeggiator.stop();
       arpToggle.textContent = 'Play';
       await c15.stop();
       startBtn.textContent = 'Start Audio';
+      if (quickPlay) quickPlay.classList.add('audio-needs-init');
     } else {
       await c15.start();
       startBtn.textContent = 'Stop Audio';
+      if (quickPlay) quickPlay.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
     }
   });
@@ -1205,6 +1418,7 @@ function wireQuickPlayControls() {
     const isPlaying = c15 && c15.running;
     quickPlayIcon.innerHTML = isPlaying ? pauseIconSVG : playIconSVG;
     quickPlay.classList.toggle('playing', isPlaying);
+    quickPlay.classList.toggle('audio-needs-init', !isPlaying);
   }
 
   quickPlay.addEventListener('click', async () => {
@@ -1248,8 +1462,327 @@ function wireQuickPlayControls() {
   });
 }
 
+// ---- Group Override Drawer ----
+let $groupDrawer = null;
+let activeDrawerSection = -1;
+let drawerHideTimer = null;
+
+function wireGroupDrawer() {
+  // Create the drawer DOM element once
+  $groupDrawer = document.createElement('div');
+  $groupDrawer.className = 'group-drawer';
+  $groupDrawer.innerHTML = '<div class="group-drawer-header"></div><div class="group-drawer-body"></div>';
+  document.body.appendChild($groupDrawer);
+
+  // Keep drawer open while hovering over it
+  $groupDrawer.addEventListener('pointerenter', () => {
+    clearTimeout(drawerHideTimer);
+  });
+  $groupDrawer.addEventListener('pointerleave', () => {
+    drawerHideTimer = setTimeout(() => hideGroupDrawer(), 300);
+  });
+
+  // Detect hover over section labels on the synth vis canvas
+  $synthVisCanvas.addEventListener('pointermove', (e) => {
+    if (outputMode !== 'synth') return;
+    const region = synthVisualizer.hitTestSection(e.clientX, e.clientY);
+    if (region) {
+      clearTimeout(drawerHideTimer);
+      if (activeDrawerSection !== region.index) {
+        showGroupDrawer(region);
+      }
+    } else {
+      // Leaving section label area, delay hide
+      if (activeDrawerSection >= 0) {
+        drawerHideTimer = setTimeout(() => hideGroupDrawer(), 300);
+      }
+    }
+  });
+
+  // Also handle click for mobile
+  $synthVisCanvas.addEventListener('pointerdown', (e) => {
+    if (outputMode !== 'synth') return;
+    const region = synthVisualizer.hitTestSection(e.clientX, e.clientY);
+    if (region) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearTimeout(drawerHideTimer);
+      if (activeDrawerSection === region.index) {
+        hideGroupDrawer();
+      } else {
+        showGroupDrawer(region);
+      }
+    }
+  }, true); // capture phase so it fires before bar interaction
+}
+
+function showGroupDrawer(region) {
+  activeDrawerSection = region.index;
+  const sec = SYNTH_SECTIONS[region.index];
+  const ov = groupOverrides[region.index];
+
+  // Find global param start index for this section
+  let paramStart = 0;
+  for (let i = 0; i < region.index; i++) paramStart += SYNTH_SECTIONS[i].count;
+
+  // Header with section name
+  const header = $groupDrawer.querySelector('.group-drawer-header');
+  header.textContent = sec.name;
+  header.style.color = sec.color;
+
+  // Body: group curve + per-param rows
+  const body = $groupDrawer.querySelector('.group-drawer-body');
+  body.innerHTML = '';
+
+  // -- Group master curve (draggable canvas) --
+  const curveRow = document.createElement('div');
+  curveRow.className = 'gd-curve-row';
+
+  const curveLabel = document.createElement('span');
+  curveLabel.className = 'gd-label';
+  curveLabel.textContent = 'Group';
+
+  const curveCanvas = document.createElement('canvas');
+  curveCanvas.className = 'gd-curve-canvas';
+  curveCanvas.width = 48;
+  curveCanvas.height = 48;
+
+  const curveVal = document.createElement('span');
+  curveVal.className = 'gd-val';
+  curveVal.textContent = ov.curve.toFixed(2);
+
+  function drawGroupCurvePreview() {
+    _drawCurveOnCanvas(curveCanvas, ov.curve, sec.color);
+  }
+
+  // Vertical drag on group curve — applies relative delta to all param curves
+  {
+    let dragging = false, startY = 0, startGroupCurve = 0, startParamCurves = [];
+    curveCanvas.style.cursor = 'ns-resize';
+    curveCanvas.style.touchAction = 'none';
+    curveCanvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dragging = true;
+      startY = e.clientY;
+      startGroupCurve = ov.curve;
+      startParamCurves = ov.params.map(p => p.curve);
+      curveCanvas.setPointerCapture(e.pointerId);
+    });
+    curveCanvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const dy = e.clientY - startY;
+      const delta = dy / 80;
+      const newGroup = Math.max(0, Math.min(1, startGroupCurve + delta));
+      ov.curve = newGroup;
+      curveVal.textContent = newGroup.toFixed(2);
+      // Apply same delta to each param, preserving relative offsets
+      for (let i = 0; i < ov.params.length; i++) {
+        ov.params[i].curve = Math.max(0, Math.min(1, startParamCurves[i] + delta));
+      }
+      drawGroupCurvePreview();
+      body.querySelectorAll('.gd-param-curve-canvas').forEach(c => {
+        if (c._redraw) c._redraw();
+      });
+      routeOutputs(iml.getOutputs());
+    });
+    curveCanvas.addEventListener('pointerup', () => { dragging = false; });
+    curveCanvas.addEventListener('pointercancel', () => { dragging = false; });
+  }
+
+  curveRow.appendChild(curveLabel);
+  curveRow.appendChild(curveCanvas);
+  curveRow.appendChild(curveVal);
+  body.appendChild(curveRow);
+  drawGroupCurvePreview();
+
+  // -- Per-param rows --
+  for (let li = 0; li < sec.count; li++) {
+    const pi = paramStart + li;
+    if (pi >= SYNTH_PARAM_MAP.length) break;
+    const param = SYNTH_PARAM_MAP[pi];
+    const pov = ov.params[li];
+
+    const row = document.createElement('div');
+    row.className = 'gd-param-row';
+    if (pov.muted) row.classList.add('gd-muted');
+
+    // Name
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'gd-param-name';
+    nameSpan.textContent = param.label;
+
+    // Per-param curve canvas (vertically draggable, no slider)
+    const pCurveCanvas = document.createElement('canvas');
+    pCurveCanvas.className = 'gd-param-curve-canvas';
+    pCurveCanvas.width = 28;
+    pCurveCanvas.height = 28;
+    pCurveCanvas._redraw = () => _drawCurveOnCanvas(pCurveCanvas, pov.curve, sec.color);
+
+    _wireCurveDrag(pCurveCanvas, () => pov.curve, (v) => {
+      pov.curve = v;
+      pCurveCanvas._redraw();
+      routeOutputs(iml.getOutputs());
+    });
+    pCurveCanvas._redraw();
+
+    // Dual-range slider (min/max as two overlapping range inputs)
+    const rangeWrap = document.createElement('div');
+    rangeWrap.className = 'gd-range-wrap';
+
+    const rangeFill = document.createElement('div');
+    rangeFill.className = 'gd-range-fill';
+
+    const minSlider = document.createElement('input');
+    minSlider.type = 'range'; minSlider.min = '0'; minSlider.max = '1'; minSlider.step = '0.01';
+    minSlider.value = pov.min;
+    minSlider.className = 'gd-range-input gd-range-min';
+
+    const maxSlider = document.createElement('input');
+    maxSlider.type = 'range'; maxSlider.min = '0'; maxSlider.max = '1'; maxSlider.step = '0.01';
+    maxSlider.value = pov.max;
+    maxSlider.className = 'gd-range-input gd-range-max';
+
+    // Value slider (shown when muted)
+    const valSlider = document.createElement('input');
+    valSlider.type = 'range'; valSlider.min = '0'; valSlider.max = '1'; valSlider.step = '0.01';
+    valSlider.value = pov.fixedValue;
+    valSlider.className = 'gd-val-slider';
+
+    function updateRangeFill() {
+      rangeFill.style.left = `${pov.min * 100}%`;
+      rangeFill.style.width = `${(pov.max - pov.min) * 100}%`;
+    }
+    updateRangeFill();
+
+    minSlider.addEventListener('input', () => {
+      pov.min = parseFloat(minSlider.value);
+      if (pov.min > pov.max) { pov.max = pov.min; maxSlider.value = pov.max; }
+      updateRangeFill();
+      routeOutputs(iml.getOutputs());
+    });
+    maxSlider.addEventListener('input', () => {
+      pov.max = parseFloat(maxSlider.value);
+      if (pov.max < pov.min) { pov.min = pov.max; minSlider.value = pov.min; }
+      updateRangeFill();
+      routeOutputs(iml.getOutputs());
+    });
+    valSlider.addEventListener('input', () => {
+      pov.fixedValue = parseFloat(valSlider.value);
+      routeOutputs(iml.getOutputs());
+    });
+
+    rangeWrap.appendChild(rangeFill);
+    rangeWrap.appendChild(minSlider);
+    rangeWrap.appendChild(maxSlider);
+
+    // Mute toggle
+    const muteBtn = document.createElement('button');
+    muteBtn.className = 'gd-mute-btn' + (pov.muted ? ' muted' : '');
+    muteBtn.textContent = pov.muted ? 'M' : 'M';
+    muteBtn.title = pov.muted ? 'Unmute (re-enable NISPS control)' : 'Mute (remove from NISPS)';
+
+    muteBtn.addEventListener('click', () => {
+      pov.muted = !pov.muted;
+      muteBtn.classList.toggle('muted', pov.muted);
+      muteBtn.title = pov.muted ? 'Unmute (re-enable NISPS control)' : 'Mute (remove from NISPS)';
+      row.classList.toggle('gd-muted', pov.muted);
+      routeOutputs(iml.getOutputs());
+    });
+
+    row.appendChild(nameSpan);
+    row.appendChild(pCurveCanvas);
+    row.appendChild(rangeWrap);
+    row.appendChild(valSlider);
+    row.appendChild(muteBtn);
+    body.appendChild(row);
+  }
+
+  // Position the drawer below the section label
+  const canvasRect = $synthVisCanvas.getBoundingClientRect();
+  const centerX = (region.left + region.right) / 2 + canvasRect.left;
+  const topY = region.bottom + canvasRect.top + 4;
+
+  const drawerWidth = 320;
+  let left = centerX - drawerWidth / 2;
+  left = Math.max(4, Math.min(left, window.innerWidth - drawerWidth - 4));
+
+  $groupDrawer.style.left = `${left}px`;
+  $groupDrawer.style.top = `${topY}px`;
+  $groupDrawer.classList.add('visible');
+}
+
+/** Draw a curve preview on a canvas element */
+function _drawCurveOnCanvas(canvas, curveFactor, color) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Linear reference
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  ctx.lineTo(w, 0);
+  ctx.stroke();
+
+  // Curve
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.min(2, w / 16);
+  ctx.beginPath();
+  const steps = 30;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const v = applyCurve(t, curveFactor);
+    const px = t * w;
+    const py = (1 - v) * h;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+
+/** Wire vertical drag on a canvas to control a curve factor */
+function _wireCurveDrag(canvas, getter, setter) {
+  let dragging = false;
+  let startY = 0;
+  let startVal = 0;
+
+  canvas.style.cursor = 'ns-resize';
+  canvas.style.touchAction = 'none';
+
+  canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = true;
+    startY = e.clientY;
+    startVal = getter();
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    // Drag down = more exponential (higher curve), drag up = more logarithmic (lower curve)
+    const dy = e.clientY - startY;
+    const newVal = Math.max(0, Math.min(1, startVal + dy / 80));
+    setter(newVal);
+  });
+  canvas.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('pointercancel', () => { dragging = false; });
+}
+
+function hideGroupDrawer() {
+  activeDrawerSection = -1;
+  if ($groupDrawer) $groupDrawer.classList.remove('visible');
+}
+
 // ---- Resize ----
 function onResize() {
+  hideGroupDrawer();
   visualizer.resize();
   visualizer.initParticles();
   synthVisualizer.resize();
@@ -1292,6 +1825,7 @@ function saveState() {
       outputMode,
       joyX,
       joyY,
+      groupOverrides,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -1318,6 +1852,24 @@ function loadState() {
     if (typeof state.noiseLevel === 'number') noiseLevel = state.noiseLevel;
     if (typeof state.joyX === 'number') joyX = state.joyX;
     if (typeof state.joyY === 'number') joyY = state.joyY;
+
+    // Restore group overrides
+    if (state.groupOverrides && Array.isArray(state.groupOverrides)) {
+      for (let si = 0; si < state.groupOverrides.length && si < groupOverrides.length; si++) {
+        const saved = state.groupOverrides[si];
+        if (typeof saved.curve === 'number') groupOverrides[si].curve = saved.curve;
+        if (Array.isArray(saved.params)) {
+          for (let li = 0; li < saved.params.length && li < groupOverrides[si].params.length; li++) {
+            const sp = saved.params[li], gp = groupOverrides[si].params[li];
+            if (typeof sp.min === 'number') gp.min = sp.min;
+            if (typeof sp.max === 'number') gp.max = sp.max;
+            if (typeof sp.curve === 'number') gp.curve = sp.curve;
+            if (typeof sp.muted === 'boolean') gp.muted = sp.muted;
+            if (typeof sp.fixedValue === 'number') gp.fixedValue = sp.fixedValue;
+          }
+        }
+      }
+    }
 
     // Restore output mode
     if (state.outputMode && state.outputMode !== outputMode) {

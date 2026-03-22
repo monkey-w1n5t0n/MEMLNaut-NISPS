@@ -685,6 +685,22 @@ html, body {
   background: rgba(255, 106, 0, 0.2);
 }
 
+.action-btn.accent.audio-needs-init,
+.audio-btn.audio-needs-init {
+  animation: audioInitPulse 2s ease-in-out infinite;
+}
+
+@keyframes audioInitPulse {
+  0%, 100% {
+    border-color: rgba(255, 106, 0, 0.3);
+    box-shadow: 0 0 6px rgba(255, 106, 0, 0.15);
+  }
+  50% {
+    border-color: rgba(255, 106, 0, 0.6);
+    box-shadow: 0 0 14px rgba(255, 106, 0, 0.3);
+  }
+}
+
 .action-btn.dim {
   color: var(--text-dim);
   border-color: transparent;

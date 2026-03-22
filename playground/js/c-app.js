@@ -501,6 +501,10 @@ function setOutputMode(mode) {
     currentParamNames = SYNTH_PARAM_NAMES;
     currentParamColors = SYNTH_PARAM_COLORS;
     document.getElementById('synth-section')?.classList.remove('hidden');
+    // Pulse audio buttons if audio not yet started
+    const needsInit = !(c15 && c15.running);
+    document.getElementById('synth-start')?.classList.toggle('audio-needs-init', needsInit);
+    document.getElementById('audio-toggle')?.classList.toggle('audio-needs-init', needsInit);
     // Toggle canvases
     visC?.classList.add('hidden');
     synthC?.classList.remove('hidden');
@@ -741,9 +745,13 @@ function wireSynthControls() {
       document.getElementById('arp-toggle').textContent = 'Play';
       await c15.stop();
       startBtn.textContent = 'Start Audio';
+      startBtn.classList.add('audio-needs-init');
+      document.getElementById('audio-toggle')?.classList.add('audio-needs-init');
     } else {
       await c15.start();
       startBtn.textContent = 'Stop Audio';
+      startBtn.classList.remove('audio-needs-init');
+      document.getElementById('audio-toggle')?.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
     }
   });
@@ -781,10 +789,14 @@ function wireSynthControls() {
       arpeggiator.stop();
       await c15.stop();
       btn.textContent = '\u25B6';
+      btn.classList.add('audio-needs-init');
+      document.getElementById('synth-start')?.classList.add('audio-needs-init');
     } else {
       await c15.start();
       arpeggiator.start();
       btn.textContent = '\u23F8';
+      btn.classList.remove('audio-needs-init');
+      document.getElementById('synth-start')?.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
     }
   });

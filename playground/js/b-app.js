@@ -898,6 +898,9 @@ function setOutputMode(mode) {
     // Show synth canvas, hide visual canvas
     visualCanvas.classList.add('hidden');
     synthVisCanvas.classList.remove('hidden');
+    // Pulse Start Audio button if audio not yet started
+    const startBtn = document.getElementById('synth-start');
+    if (startBtn) startBtn.classList.toggle('audio-needs-init', !(c15 && c15.running));
   } else {
     document.body.classList.remove('synth-mode');
     badge.textContent = 'Visual';
@@ -987,9 +990,11 @@ function initSynthControls() {
       arpToggleBtn.textContent = 'Arp: Play';
       await c15.stop();
       startBtn.textContent = 'Start Audio';
+      startBtn.classList.add('audio-needs-init');
     } else {
       await c15.start();
       startBtn.textContent = 'Stop Audio';
+      startBtn.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
     }
   });

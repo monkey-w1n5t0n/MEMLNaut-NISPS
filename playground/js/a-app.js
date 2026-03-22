@@ -1176,6 +1176,10 @@ function wireKeyboard() {
       }
     }
 
+    // Don't intercept keys when an input/select has focus
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
     if (e.key === '1' || e.code === 'Numpad1') {
       e.preventDefault();
       onThumbsDown();

@@ -268,6 +268,8 @@ function init() {
   // Keyboard shortcuts for RL (work in all phases)
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (e.key === '1' || e.code === 'Numpad1') {
       e.preventDefault();
       onThumbsDown();

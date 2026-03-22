@@ -1130,13 +1130,13 @@ function clearState() {
 // ============================
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   // RL shortcuts: 1=negative, 2=positive
   if (e.key === '1' || e.code === 'Numpad1') { e.preventDefault(); onThumbsDown(); }
   if (e.key === '2' || e.code === 'Numpad2') { e.preventDefault(); onThumbsUp(); }
   // Follow mode toggle: f
   if (e.key === 'f' || e.key === 'F') {
-    // Don't toggle if user is typing in an input
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
     e.preventDefault();
     toggleFollowMode();
   }

@@ -48,8 +48,8 @@ const PRESETS = [
 
 // --- Tame URL param ---
 const _urlParams = new URLSearchParams(window.location.search);
-const tameLevel = parseFloat(_urlParams.get('tame') ?? '0');
-const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') ?? '0') || 0));
+const tameLevel = parseFloat(_urlParams.get('tame') ?? '1');
+const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') ?? '0.6') || 0.6));
 
 // ============================================================
 // State
@@ -630,6 +630,10 @@ function wireTeachActions() {
   document.getElementById('btn-clear')?.addEventListener('click', () => {
     iml.clearDataset();
     iml.randomiseWeights(spreadLevel);
+    iml.setInput(0, joystickX);
+    iml.setInput(1, joystickY);
+    iml.process();
+    routeOutputs(iml.getOutputs());
     selectedPreset = -1;
     document.querySelectorAll('.preset-thumb').forEach(b => b.classList.remove('selected'));
     updateTeachStatus();
@@ -688,8 +692,9 @@ function onThumbsUp() {
 }
 
 function onThumbsDown() {
-  noiseLevel = Math.min(0.3, noiseLevel * 1.5);
-  iml.moveWeights(noiseLevel);
+  const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
+  noiseLevel = Math.min(noiseCap, noiseLevel * 1.5);
+  iml.moveWeights(noiseLevel, spreadLevel);
   iml.setInput(0, joystickX);
   iml.setInput(1, joystickY);
   iml.process();

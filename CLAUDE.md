@@ -38,6 +38,27 @@ The `playground/` directory contains a browser-based interactive demo of the NIS
 
 Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls), `js/synth/` (C15 bridge, param map, arpeggiator), `js/app.js` (wiring).
 
+### URL Parameters
+
+| Param | Range | Default | Effect |
+|-------|-------|---------|--------|
+| `tame` | 0–1 | 1 | Constrains synth output ranges toward safe limits |
+| `spread` | 0–1 | 0.6 | Controls weight initialization, RL noise scaling, and weight decay (see below) |
+
+#### `spread` — sigmoid saturation control
+
+The MLP uses ReLU hidden layers with a sigmoid output layer. With uniform [-1,1] weights, the sum of many weighted inputs at each layer drives sigmoid pre-activations far from zero (std dev ≈ √fan_in), causing outputs to saturate near 0 or 1. The `spread` parameter addresses this:
+
+- **`spread=0`** (polarised): Weights drawn from uniform [-1,1]. RL noise cap = 0.3. Noise applied uniformly across layers. Outputs cluster at extremes — good for exploration of radical mappings.
+- **`spread=1`** (centered): Weights scaled by 1/√fan_in per layer (Xavier initialization). RL noise cap = 0.05. Noise also scaled per-layer. Weight decay prevents magnitude drift. Outputs spread across the full [0,1] range — better for fine-grained RL shaping.
+- **Intermediate values** interpolate linearly between these two regimes.
+
+Affects four code paths:
+1. **`drawWeights(spread)`** — initial randomisation weight scale
+2. **`moveWeights(speed, spread)`** — RL exploration noise scale per layer
+3. **Weight decay in `moveWeights`** — each call decays weights by `10% * spread` before adding noise, preventing unbounded magnitude drift from repeated thumbs-down. At spread=0 there is no decay (original behavior). At spread=1, weights decay ~10% per call, creating a natural equilibrium where exploration noise and decay balance out rather than weights growing until sigmoid permanently saturates.
+4. **Noise cap** in thumbs-down handler — `0.3*(1-spread) + 0.05*spread`
+
 ### C15 Parameter Map
 
 The 126 synth parameters in `js/synth/param-map.js` were curated from the C15's 287 total parameters. Excluded categories:

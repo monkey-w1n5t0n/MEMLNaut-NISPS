@@ -46,10 +46,10 @@ let arpeggiator = null;
 // Devmode: tame level (0 = no mitigation, 1 = strongest)
 // Set via URL ?tame=0.7 or window.setTameLevel(0.7)
 const _urlParams = new URLSearchParams(location.search);
-let tameLevel = parseFloat(_urlParams.get('tame') ?? '0.7');
-if (isNaN(tameLevel)) tameLevel = 0.7;
+let tameLevel = parseFloat(_urlParams.get('tame') ?? '1');
+if (isNaN(tameLevel)) tameLevel = 1;
 tameLevel = Math.max(0, Math.min(1, tameLevel));
-let spreadLevel = parseFloat(_urlParams.get('spread') ?? '0');
+let spreadLevel = parseFloat(_urlParams.get('spread') ?? '0.6');
 if (isNaN(spreadLevel)) spreadLevel = 0.6;
 spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 window.setTameLevel = (v) => { tameLevel = Math.max(0, Math.min(1, v)); console.log(`[NISPS] tame=${tameLevel}`); };
@@ -345,6 +345,9 @@ function onTrain() {
 
 function onRandomize() {
   iml.randomiseWeights(spreadLevel);
+  iml.setInput(0, joystick.x);
+  iml.setInput(1, joystick.y);
+  iml.process();
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   paramDisplay.update(outputs);
@@ -387,10 +390,12 @@ function onThumbsUp() {
 
 function onThumbsDown() {
   // Increase noise for more exploration
-  noiseLevel = Math.min(noiseLevel * 1.5, 0.3);
+  // spread reduces the noise cap: at spread=1 cap is 0.05 (vs 0.3 at spread=0)
+  const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
+  noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
 
-  // Perturb weights
-  iml.moveWeights(noiseLevel);
+  // Perturb weights (spread scales noise per-layer by 1/sqrt(fan_in))
+  iml.moveWeights(noiseLevel, spreadLevel);
 
   const outputs = iml.getOutputs();
   routeOutputs(outputs);

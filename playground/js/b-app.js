@@ -90,8 +90,8 @@ function heatmapColor(t) {
 
 // --- Tame URL param ---
 const _urlParams = new URLSearchParams(window.location.search);
-const tameLevel = parseFloat(_urlParams.get('tame') ?? '0');
-const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') ?? '0') || 0));
+const tameLevel = parseFloat(_urlParams.get('tame') ?? '1');
+const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') ?? '0.6') || 0.6));
 
 // --- State ---
 let iml;
@@ -736,6 +736,9 @@ function onTrain() {
 
 function onRandomize() {
   iml.randomiseWeights(spreadLevel);
+  iml.setInput(0, joyX);
+  iml.setInput(1, joyY);
+  iml.process();
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   updateAllParamBars(outputs);
@@ -772,8 +775,9 @@ function onThumbsUp() {
 }
 
 function onThumbsDown() {
-  noiseLevel = Math.min(noiseLevel * 1.5, 0.3);
-  iml.moveWeights(noiseLevel);
+  const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
+  noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
+  iml.moveWeights(noiseLevel, spreadLevel);
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   updateAllParamBars(outputs);

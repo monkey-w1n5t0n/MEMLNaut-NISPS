@@ -360,9 +360,9 @@ function padPresetOutputs(outputs) {
 function init() {
   // Parse ?tame URL param
   const urlParams = new URLSearchParams(window.location.search);
-  tameLevel = parseFloat(urlParams.get('tame') ?? '0');
-  spreadLevel = parseFloat(urlParams.get('spread') ?? '0');
-  if (isNaN(spreadLevel)) spreadLevel = 0;
+  tameLevel = parseFloat(urlParams.get('tame') ?? '1');
+  spreadLevel = parseFloat(urlParams.get('spread') ?? '0.6');
+  if (isNaN(spreadLevel)) spreadLevel = 0.6;
   spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 
   // IML — fresh random weights each boot, no state restoration
@@ -754,11 +754,18 @@ function wireControls() {
     });
   });
 
-  // Output mode toggle
+  // Output mode toggle (sheet)
   document.querySelectorAll('#output-toggle .pill-opt').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('#output-toggle .pill-opt').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      syncOutputToggles(btn.dataset.mode);
+      setOutputMode(btn.dataset.mode);
+    });
+  });
+
+  // Output mode toggle (floating)
+  document.querySelectorAll('#output-toggle-float .otf-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      syncOutputToggles(btn.dataset.mode);
       setOutputMode(btn.dataset.mode);
     });
   });
@@ -798,6 +805,11 @@ function updateModeUI() {
   if (outputMode === 'synth') {
     synthVisualizer.enableInteraction(learningMode === 'examples');
   }
+}
+
+function syncOutputToggles(mode) {
+  document.querySelectorAll('#output-toggle .pill-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  document.querySelectorAll('#output-toggle-float .otf-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
 }
 
 function setOutputMode(mode) {
@@ -869,6 +881,9 @@ function onTrain() {
 
 function onRandomize() {
   iml.randomiseWeights(spreadLevel);
+  iml.setInput(0, joyX);
+  iml.setInput(1, joyY);
+  iml.process();
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
   updateHeatmap(outputs);
@@ -908,9 +923,10 @@ function onThumbsUp() {
 }
 
 function onThumbsDown() {
-  noiseLevel = Math.min(noiseLevel * 1.5, 0.3);
+  const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
+  noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
 
-  iml.moveWeights(noiseLevel);
+  iml.moveWeights(noiseLevel, spreadLevel);
 
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
@@ -1340,9 +1356,7 @@ function loadState() {
     // Restore output mode
     if (state.outputMode && state.outputMode !== outputMode) {
       setOutputMode(state.outputMode);
-      document.querySelectorAll('#output-toggle .pill-opt').forEach(b => {
-        b.classList.toggle('active', b.dataset.mode === outputMode);
-      });
+      syncOutputToggles(outputMode);
     }
 
     console.log(`[NISPS] Restored ${state.features?.length || 0} examples from storage`);

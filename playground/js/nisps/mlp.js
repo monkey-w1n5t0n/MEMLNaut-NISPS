@@ -221,16 +221,29 @@ export class MLP {
   }
 
   // MoveWeights - add Gaussian noise (port of gen_randn)
-  moveWeights(speed) {
-    for (const layer of this.layers) {
-      for (const node of layer.nodes) {
+  // spread: 0 = flat noise across all layers (original), 1 = scale noise by 1/sqrt(fan_in)
+  // per layer so perturbations stay proportional to Xavier-scale weights and don't
+  // saturate sigmoid outputs.
+  // Weight decay (proportional to spread) shrinks weights toward zero before adding noise,
+  // preventing unbounded magnitude drift from repeated thumbs-down. At spread=0 there is
+  // no decay (original behavior). At spread=1 each call decays weights by ~10%, creating
+  // a natural equilibrium where exploration can't permanently saturate sigmoid.
+  moveWeights(speed, spread = 0) {
+    const decay = 1 - 0.1 * spread; // spread=0 → 1.0 (no decay), spread=1 → 0.9
+    for (let l = 0; l < this.layers.length; l++) {
+      const fanIn = this.layersNodes[l];
+      const xavierScale = 1 / Math.sqrt(fanIn);
+      const layerScale = 1 * (1 - spread) + xavierScale * spread;
+      for (const node of this.layers[l].nodes) {
         for (let j = 0; j < node.weights.length; j++) {
+          // Decay toward zero to prevent magnitude drift
+          node.weights[j] *= decay;
           // gen_randn: sum of 3 uniform randoms * kN_times * stddev + mean
           let accum = 0;
           for (let n = 0; n < 3; n++) {
             accum += Math.random() * 2 - 1; // gen_rand with range 2.0
           }
-          node.weights[j] = 3 * accum * speed + node.weights[j];
+          node.weights[j] += 3 * accum * speed * layerScale;
         }
       }
     }

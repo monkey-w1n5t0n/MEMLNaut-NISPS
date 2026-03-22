@@ -158,8 +158,9 @@ export class IML {
   }
 
   // Add Gaussian noise to weights (for RL exploration)
-  moveWeights(speed) {
-    this.mlp.moveWeights(speed);
+  // spread: 0 = flat noise, 1 = Xavier-scaled per layer
+  moveWeights(speed, spread = 0) {
+    this.mlp.moveWeights(speed, spread);
     // Run inference to show effect
     this.inputUpdated = true;
     this.process();

@@ -30,12 +30,6 @@
     </div>
   </div>
 
-  <!-- Output mode toggle (floating, top-right) -->
-  <div class="output-toggle-float" id="output-toggle-float">
-    <button class="otf-opt active" data-mode="visual">Visual</button>
-    <button class="otf-opt" data-mode="synth">Synth</button>
-  </div>
-
   <!-- Fullscreen flow field canvas -->
   <canvas id="vis-canvas"></canvas>
 
@@ -67,6 +61,10 @@
   <div class="bottom-sheet collapsed" id="bottom-sheet">
     <!-- Floating mode bar (sticky inside sheet) -->
     <div class="floating-bar" id="floating-bar">
+      <div class="pill-toggle pill-toggle-sm" id="output-toggle-float">
+        <button class="pill-opt active" data-mode="visual">Visual</button>
+        <button class="pill-opt" data-mode="synth">Synth</button>
+      </div>
       <button class="float-btn accent" id="btn-train-bar" title="Train on examples">Train</button>
       <button class="float-btn" id="btn-randomize-bar" title="Randomize weights">Randomize</button>
       <button class="float-btn" id="btn-clear-examples-bar" title="Clear examples">Clear Ex</button>
@@ -81,14 +79,6 @@
 
     <!-- Sheet content -->
     <div class="sheet-content" id="sheet-content">
-      <!-- Output mode toggle -->
-      <div class="mode-row">
-        <div class="pill-toggle" id="output-toggle">
-          <button class="pill-opt active" data-mode="visual">Visual</button>
-          <button class="pill-opt" data-mode="synth">Synth</button>
-        </div>
-      </div>
-
       <!-- Examples mode actions -->
       <div class="action-row" id="examples-actions">
         <button class="action-btn" id="btn-add-example">Add Example</button>

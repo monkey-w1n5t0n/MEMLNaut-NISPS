@@ -738,16 +738,8 @@ function wireBottomSheet() {
 
 // ---- Controls wiring ----
 function wireControls() {
-  // Output mode toggle (sheet)
-  document.querySelectorAll('#output-toggle .pill-opt').forEach(btn => {
-    btn.addEventListener('click', () => {
-      syncOutputToggles(btn.dataset.mode);
-      setOutputMode(btn.dataset.mode);
-    });
-  });
-
-  // Output mode toggle (floating)
-  document.querySelectorAll('#output-toggle-float .otf-opt').forEach(btn => {
+  // Output mode toggle (floating bar)
+  document.querySelectorAll('#output-toggle-float .pill-opt').forEach(btn => {
     btn.addEventListener('click', () => {
       syncOutputToggles(btn.dataset.mode);
       setOutputMode(btn.dataset.mode);
@@ -778,8 +770,7 @@ function wireControls() {
 }
 
 function syncOutputToggles(mode) {
-  document.querySelectorAll('#output-toggle .pill-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-  document.querySelectorAll('#output-toggle-float .otf-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  document.querySelectorAll('#output-toggle-float .pill-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
 }
 
 function setOutputMode(mode) {

@@ -620,6 +620,7 @@ function init() {
   wireKeyboard();
   wireQuickPlayControls();
   wireGroupDrawer();
+  wireHelp();
 
   // Resize
   window.addEventListener('resize', onResize);
@@ -1803,6 +1804,25 @@ function onResize() {
     $joyMap.height = size;
     drawJoyMap();
   }
+}
+
+// ---- Help modal ----
+function wireHelp() {
+  const overlay = document.getElementById('help-overlay');
+  const btnOpen = document.getElementById('help-btn');
+  const btnClose = document.getElementById('help-close');
+  const btnGotIt = document.getElementById('help-got-it');
+
+  function show() { overlay.classList.remove('hidden'); }
+  function hide() { overlay.classList.add('hidden'); localStorage.setItem('nisps-help-seen', '1'); }
+
+  btnOpen.addEventListener('click', show);
+  btnClose.addEventListener('click', hide);
+  btnGotIt.addEventListener('click', hide);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) hide(); });
+
+  // Show on first visit
+  if (!localStorage.getItem('nisps-help-seen')) show();
 }
 
 // ---- Animation ----

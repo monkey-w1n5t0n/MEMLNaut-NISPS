@@ -157,6 +157,76 @@
     </div>
   </div>
 
+  <!-- Help button -->
+  <button class="help-btn" id="help-btn" title="Help">?</button>
+
+  <!-- Help modal -->
+  <div class="help-overlay hidden" id="help-overlay">
+    <div class="help-modal" id="help-modal">
+      <button class="help-close" id="help-close">&times;</button>
+      <h2>Welcome to NISPS</h2>
+      <p class="help-subtitle">Neural Interactive Shaping of Parameter Spaces</p>
+
+      <div class="help-section">
+        <h3>What is this?</h3>
+        <p>NISPS lets you <strong>teach a neural network</strong> how to map a 2D joystick position to a rich set of visual or audio parameters. Move the joystick, shape the outputs you want, and the network learns your preferences in real time.</p>
+      </div>
+
+      <div class="help-section">
+        <h3>How it works</h3>
+        <p>A small neural network takes your joystick X/Y position as input and produces dozens of output parameters. You teach it by either:</p>
+        <ul>
+          <li><strong>Examples</strong> &mdash; set the parameter sliders to what you want at a given joystick position, add the example, then hit Train. Do this a few times from different positions and the network interpolates between them.</li>
+          <li><strong>Feedback (RL)</strong> &mdash; move the joystick around. If you like what you see/hear, press <strong>+</strong> (keep this). If you don't, press <strong>&minus;</strong> (explore more). The network gradually learns what you prefer.</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <h3>What to expect</h3>
+        <ul>
+          <li><strong>Moving the joystick</strong> changes all outputs in real time through the network</li>
+          <li><strong>Randomize</strong> shuffles the network weights &mdash; instant new mapping</li>
+          <li><strong>Train</strong> fits the network to your saved examples</li>
+          <li><strong>+ / &minus; feedback</strong> nudges the network: + reinforces the current mapping, &minus; adds exploration noise</li>
+          <li>Switch between <strong>Visual</strong> (particle flow field) and <strong>Synth</strong> (C15 synthesizer) output modes</li>
+          <li>The <strong>heatmap bar</strong> at the top shows all output parameters at a glance</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <h3>Controls</h3>
+        <table class="help-keys">
+          <tr><th colspan="2">Touch / Mouse</th></tr>
+          <tr><td>Drag joystick</td><td>Move through parameter space</td></tr>
+          <tr><td>+ / &minus; buttons</td><td>Positive / negative feedback</td></tr>
+          <tr><td>Bottom bar</td><td>Train, Randomize, Clear, Follow mode</td></tr>
+          <tr><th colspan="2">Keyboard</th></tr>
+          <tr><td><kbd>1</kbd></td><td>Negative feedback (&minus;)</td></tr>
+          <tr><td><kbd>2</kbd></td><td>Positive feedback (+)</td></tr>
+          <tr><th colspan="2">Gamepad (Steam Deck, Xbox, etc.)</th></tr>
+          <tr><td>Left stick</td><td>Joystick control</td></tr>
+          <tr><td>LB (left bumper)</td><td>Negative feedback</td></tr>
+          <tr><td>RB (right bumper)</td><td>Positive feedback</td></tr>
+          <tr><td>A</td><td>Train</td></tr>
+          <tr><td>X</td><td>Randomize</td></tr>
+          <tr><td>B</td><td>Clear examples</td></tr>
+        </table>
+      </div>
+
+      <div class="help-section">
+        <h3>Tips</h3>
+        <ul>
+          <li>Start with <strong>Randomize</strong> a few times to hear/see different mappings, then use feedback to refine</li>
+          <li>Use <strong>Follow</strong> mode to let the joystick wander automatically while you give feedback</li>
+          <li>In Synth mode, press the <strong>play button</strong> (top left) to start audio, then explore</li>
+          <li>Tap a heatmap cell to see which parameter it controls</li>
+        </ul>
+      </div>
+
+      <button class="help-got-it" id="help-got-it">Got it</button>
+    </div>
+  </div>
+
   <script type="module" src="js/a-app.js"></script>
 </body>
 </html>

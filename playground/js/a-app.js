@@ -6,7 +6,7 @@ import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
-import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame, applyCurve, applyGroupOverride } from './synth/param-map.js';
+import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
 import { GamepadInput } from './ui/gamepad.js';
 
 // ---- Constants ----
@@ -68,7 +68,7 @@ let arpeggiator = null;
 let midiInput = null;
 
 let outputMode = 'visual';
-let tameLevel = 0;
+// tame level is now baked into groupOverrides defaults at init time (see ?tame URL param)
 let spreadLevel = 0.6;
 let noiseLevel = 0.05;
 const rlExplorationDecay = 0.97;
@@ -111,8 +111,9 @@ const SYNTH_SECTIONS = [
   { name: 'Shp A', count: 6, color: '#ff4466' },
   { name: 'Shp B', count: 6, color: '#ff4466' },
   { name: 'Comb', count: 8, color: '#44ddaa' },
-  { name: 'SVF', count: 7, color: '#44ddaa' },
-  { name: 'FB Mix', count: 10, color: '#ddaa44' },
+  { name: 'SVF', count: 9, color: '#44ddaa' },
+  { name: 'Gap', count: 6, color: '#44bbaa' },
+  { name: 'FB Mix', count: 9, color: '#ddaa44' },
   { name: 'Out Mix', count: 14, color: '#ddaa44' },
   { name: 'Cabinet', count: 8, color: '#aa88dd' },
   { name: 'Flanger', count: 13, color: '#dd88aa' },
@@ -124,12 +125,30 @@ const SYNTH_SECTIONS = [
 
 // ---- Group Overrides: per-group curve + per-param min/max/curve/mute ----
 // groupOverrides[sectionIndex] = { curve: 0.5, params: [{ min, max, curve, muted, fixedValue }, ...] }
-const groupOverrides = SYNTH_SECTIONS.map(sec => ({
-  curve: 0.5,
-  params: new Array(sec.count).fill(null).map(() => ({
-    min: 0, max: 1, curve: 0.5, muted: false, fixedValue: 0.5,
-  })),
-}));
+// Defaults are seeded from safeMin/safeMax in SYNTH_PARAM_MAP, scaled by the
+// ?tame URL parameter (0 = unconstrained, 1 = full safe limits).
+// localStorage overrides on load.
+const groupOverrides = (() => {
+  const urlTame = parseFloat(new URLSearchParams(window.location.search).get('tame') ?? '1');
+  const t = isNaN(urlTame) ? 1 : Math.max(0, Math.min(1, urlTame));
+  let flatIdx = 0;
+  return SYNTH_SECTIONS.map(sec => ({
+    curve: 0.5,
+    params: new Array(sec.count).fill(null).map(() => {
+      const p = SYNTH_PARAM_MAP[flatIdx++];
+      // Interpolate: at tame=0 use full [0,1]; at tame=1 use [safeMin, safeMax]
+      const safeMin = p?.safeMin ?? 0;
+      const safeMax = p?.safeMax ?? 1;
+      return {
+        min: safeMin * t,
+        max: 1 - (1 - safeMax) * t,
+        curve: 0.5,
+        muted: false,
+        fixedValue: 0.5,
+      };
+    }),
+  }));
+})();
 
 // Build a flat lookup: paramIndex -> { sectionIndex, localIndex }
 const paramToSection = [];
@@ -550,7 +569,7 @@ function padPresetOutputs(outputs) {
 function init() {
   // Parse ?tame URL param
   const urlParams = new URLSearchParams(window.location.search);
-  tameLevel = parseFloat(urlParams.get('tame') ?? '1');
+  // tame is handled at groupOverrides init time, no longer needed here
   spreadLevel = parseFloat(urlParams.get('spread') ?? '0.6');
   if (isNaN(spreadLevel)) spreadLevel = 0.6;
   spreadLevel = Math.max(0, Math.min(1, spreadLevel));
@@ -906,8 +925,7 @@ function routeOutputs(outputs) {
     synthVisualizer.setParams(overridden);
     if (c15 && c15.running) {
       for (let i = 0; i < overridden.length && i < SYNTH_PARAM_MAP.length; i++) {
-        const tamed = applyTame(overridden[i], SYNTH_PARAM_MAP[i], tameLevel);
-        c15.setParameter(SYNTH_PARAM_MAP[i].id, tamed);
+        c15.setParameter(SYNTH_PARAM_MAP[i].id, overridden[i]);
       }
     }
   } else {
@@ -1272,6 +1290,8 @@ function wireSynthControls() {
 
   volumeSlider.addEventListener('input', (e) => {
     c15.setMasterVolume(parseFloat(e.target.value));
+    const quickVol = document.getElementById('quick-vol');
+    if (quickVol) quickVol.value = e.target.value;
   });
 
   arpToggle.addEventListener('click', () => {
@@ -1293,6 +1313,10 @@ function wireSynthControls() {
     const val = parseInt(e.target.value);
     arpeggiator.bpm = val;
     document.getElementById('tempo-val').textContent = val;
+    const quickBpm = document.getElementById('quick-bpm');
+    const quickBpmVal = document.getElementById('quick-bpm-val');
+    if (quickBpm) quickBpm.value = val;
+    if (quickBpmVal) quickBpmVal.textContent = val;
   });
 
   arpOctaves.addEventListener('input', (e) => {

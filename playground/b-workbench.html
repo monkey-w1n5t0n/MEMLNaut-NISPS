@@ -85,25 +85,15 @@
           <span class="wb-panel-title">Controls</span>
         </div>
 
-        <!-- Learning mode toggle -->
-        <div class="wb-mode-toggle">
-          <button class="wb-mode-btn" id="mode-examples">Examples</button>
-          <button class="wb-mode-btn active" id="mode-rl">RL</button>
-        </div>
-
-        <!-- Examples mode controls -->
-        <div class="wb-action-group hidden" id="examples-controls">
+        <!-- Unified controls -->
+        <div class="wb-action-group" id="controls">
+          <button class="wb-btn wb-btn-bad" id="btn-thumbsdown"><span class="wb-btn-label">&minus; Explore</span><span class="wb-key-hint">1</span></button>
+          <button class="wb-btn wb-btn-good" id="btn-thumbsup"><span class="wb-btn-label">+ Good</span><span class="wb-key-hint">2</span></button>
           <button class="wb-btn wb-btn-primary" id="btn-add">Add Example</button>
           <button class="wb-btn wb-btn-accent" id="btn-train">Train</button>
           <button class="wb-btn" id="btn-randomize">Randomize</button>
-          <button class="wb-btn wb-btn-danger" id="btn-clear">Clear</button>
-        </div>
-
-        <!-- RL mode controls -->
-        <div class="wb-action-group" id="rl-controls">
-          <button class="wb-btn wb-btn-bad" id="btn-thumbsdown"><span class="wb-btn-label">&minus; Explore</span><span class="wb-key-hint">1</span></button>
-          <button class="wb-btn wb-btn-good" id="btn-thumbsup"><span class="wb-btn-label">+ Good</span><span class="wb-key-hint">2</span></button>
-          <button class="wb-btn" id="btn-randomize-rl">Randomize</button>
+          <button class="wb-btn" id="btn-clear-examples">Clear Examples</button>
+          <button class="wb-btn wb-btn-danger" id="btn-clear">Clear All</button>
         </div>
 
         <!-- Synth controls (shown in synth mode) -->
@@ -137,6 +127,14 @@
             <label>Offset <span id="offset-val">0</span></label>
             <input type="range" id="arp-offset" min="-2" max="3" step="1" value="0">
           </div>
+          <div class="wb-synth-row" id="midi-row" style="display:none">
+            <label>MIDI</label>
+            <button class="wb-btn" id="midi-toggle">Enable</button>
+            <select id="midi-select" style="flex:1;min-width:0"></select>
+          </div>
+          <div class="wb-synth-row" id="midi-status-row" style="display:none">
+            <span class="wb-synth-status" id="midi-status"></span>
+          </div>
         </div>
 
         <!-- Loss plot -->
@@ -151,6 +149,7 @@
           <div class="wb-metric"><span class="wb-metric-label">Loss</span><span class="wb-metric-value" id="metric-loss">&mdash;</span></div>
           <div class="wb-metric"><span class="wb-metric-label">Noise</span><span class="wb-metric-value" id="metric-noise">0.050</span></div>
           <div class="wb-metric"><span class="wb-metric-label">Joy X,Y</span><span class="wb-metric-value" id="metric-joy">0.50, 0.50</span></div>
+          <div class="wb-metric"><span class="wb-metric-value" id="gamepad-status" style="color: #ff6a00; font-size: 0.7rem;"></span></div>
         </div>
       </section>
 
@@ -166,19 +165,12 @@
         <p>Train a neural network to map 2D joystick positions to output parameters using interactive machine learning.</p>
         <h3>Input Space</h3>
         <p>The heatmap shows what the network has learned across the input space. Bright dots show training examples. Drag anywhere on the map to move the input position. Double-click or press Follow to toggle follow mode.</p>
-        <h3>Examples Mode</h3>
-        <ol>
-          <li>Drag on the input space to a position</li>
-          <li>Expand a parameter group and drag bars to set desired outputs</li>
-          <li>Press <strong>Add Example</strong></li>
-          <li>Repeat, then <strong>Train</strong></li>
-        </ol>
-        <h3>RL Mode</h3>
-        <ol>
-          <li>Move around the input space &mdash; the network produces outputs</li>
-          <li>Like it? Press <strong>+ Good</strong></li>
-          <li>Not quite? Press <strong>&minus; Explore</strong> for variation</li>
-        </ol>
+        <h3>Learning</h3>
+        <p>Both approaches can be freely mixed:</p>
+        <ul>
+          <li><strong>RL Feedback</strong>: Press <strong>+ Good</strong> to reinforce the current mapping, or <strong>&minus; Explore</strong> to add noise and try variations.</li>
+          <li><strong>Supervised</strong>: Drag param bars to set desired outputs, then <strong>Add Example</strong> and <strong>Train</strong>.</li>
+        </ul>
         <h3>Output Modes</h3>
         <p><strong>Visual</strong>: 20 params control the flow-field particle system. <strong>Synth</strong>: 126 params control a C15 synthesizer engine.</p>
         <p style="margin-top:16px;text-align:center;color:#555;">Tap outside to close</p>

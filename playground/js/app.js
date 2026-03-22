@@ -1,5 +1,5 @@
 // NISPS Playground - Main application
-// Wires IML engine to visual system OR C15 synth with joystick input and dual learning modes
+// Wires IML engine to visual system OR C15 synth with joystick input and unified learning controls
 
 import { IML } from './nisps/iml.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
@@ -9,6 +9,7 @@ import { ParamDisplay } from './ui/param-display.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame } from './synth/param-map.js';
+import { GamepadInput } from './ui/gamepad.js';
 
 const N_INPUTS = 2;
 const N_VISUAL_OUTPUTS = 20;
@@ -25,15 +26,12 @@ let visualizer;
 let joystick;
 let controls;
 let paramDisplay;
-let learningMode = 'examples'; // 'examples' | 'rl'
 let outputMode = 'visual';    // 'visual' | 'synth'
 let noiseLevel = 0.05;
 let rlExplorationDecay = 0.97;
 let animating = true;
-let gamepadIndex = -1;
-let gamepadButtonsPrev = [];
+let gamepad;
 let gamepadConnected = false;
-let gamepadLastAxes = [0.5, 0.5];
 let followMode = false;
 let visualExpanded = false;
 let appRoot;
@@ -88,9 +86,9 @@ function init() {
     onTrain,
     onRandomize,
     onClear,
+    onClearExamples,
     onThumbsUp,
     onThumbsDown,
-    onModeChange,
   });
 
   // Resize handling
@@ -126,8 +124,21 @@ function init() {
   // Wire synth controls
   initSynthControls();
 
-  window.addEventListener('gamepadconnected', () => refreshDashboard());
-  window.addEventListener('gamepaddisconnected', () => refreshDashboard());
+  gamepad = new GamepadInput({
+    onMove: (x, y) => {
+      if (paramDisplay.activeBar < 0) {
+        joystick.setPosition(x, y, { emit: true, touching: true });
+      }
+    },
+    onButton: (btn) => {
+      if (btn === 'rb') onThumbsUp();
+      if (btn === 'lb') onThumbsDown();
+    },
+    onConnectionChange: (connected) => {
+      gamepadConnected = connected;
+      refreshDashboard();
+    },
+  });
   window.addEventListener('keydown', onKeyDown);
 
   // Run initial inference to populate outputs
@@ -197,7 +208,7 @@ function setOutputMode(mode) {
 
     // Rebuild param display with all synth params
     paramDisplay.rebuild(N_SYNTH_OUTPUTS, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS);
-    paramDisplay.setDraggable(learningMode === 'examples');
+    paramDisplay.setDraggable(true);
   } else {
     synthControls.classList.add('hidden');
     visualInfo.classList.remove('hidden');
@@ -208,7 +219,7 @@ function setOutputMode(mode) {
 
     // Rebuild param display with visual params (first 20)
     paramDisplay.rebuild(N_VISUAL_OUTPUTS, VISUAL_PARAM_NAMES, VISUAL_PARAM_COLORS);
-    paramDisplay.setDraggable(learningMode === 'examples');
+    paramDisplay.setDraggable(true);
   }
 
   // Re-run inference and route outputs
@@ -296,7 +307,7 @@ function initSynthControls() {
 // --- Animation loop ---
 function animate() {
   if (!animating) return;
-  pollGamepad();
+  gamepad.poll();
   visualizer.draw();
   requestAnimationFrame(animate);
 }
@@ -311,7 +322,7 @@ function onJoystickMove(x, y) {
   routeOutputs(outputs);
 
   // Only update param display from network in inference (not when user is dragging)
-  if (learningMode !== 'examples' || paramDisplay.activeBar < 0) {
+  if (paramDisplay.activeBar < 0) {
     paramDisplay.update(outputs);
   }
 
@@ -356,6 +367,12 @@ function onRandomize() {
   refreshDashboard();
 }
 
+function onClearExamples() {
+  iml.clearDataset();
+  controls.updateStatus(0, iml.lastLoss, noiseLevel);
+  refreshDashboard();
+}
+
 function onClear() {
   iml.clearDataset();
   iml.lossHistory = [];
@@ -377,6 +394,9 @@ function onThumbsUp() {
 
   // Retrain incrementally
   trainModel();
+  const trainedOutputs = iml.getOutputs();
+  routeOutputs(trainedOutputs);
+  paramDisplay.update(trainedOutputs);
 
   // Decay noise - more positive examples = less exploration
   noiseLevel *= rlExplorationDecay;
@@ -405,24 +425,13 @@ function onThumbsDown() {
   flash('btn-thumbsdown');
 }
 
-function onModeChange(mode) {
-  learningMode = mode;
-  if (mode === 'examples') {
-    paramDisplay.setDraggable(true);
-  } else {
-    paramDisplay.setDraggable(false);
-  }
-  controls.updateStatus(iml.exampleCount, iml.lastLoss, noiseLevel);
-  refreshDashboard();
-}
-
 function onKeyDown(e) {
   if (e.key === 'Escape' && visualExpanded) {
     setVisualExpanded(false);
     return;
   }
 
-  if (!followMode || learningMode !== 'rl' || e.repeat) return;
+  if (!followMode || e.repeat) return;
   if (e.key === '1' || e.code === 'Numpad1') {
     e.preventDefault();
     onThumbsDown();
@@ -573,7 +582,6 @@ function refreshDashboard() {
   variance /= Math.max(outputs.length, 1);
 
   controls.updateMetrics({
-    mode: learningMode,
     joystickX: joystick.x,
     joystickY: joystick.y,
     outputMean: mean,
@@ -585,66 +593,9 @@ function refreshDashboard() {
   });
 }
 
-function pollGamepad() {
-  if (!navigator.getGamepads) return;
-  const gamepads = navigator.getGamepads();
-  let gp = null;
-
-  if (gamepadIndex >= 0 && gamepads[gamepadIndex] && gamepads[gamepadIndex].connected) {
-    gp = gamepads[gamepadIndex];
-  } else {
-    gamepadIndex = -1;
-    for (let i = 0; i < gamepads.length; i++) {
-      if (gamepads[i] && gamepads[i].connected) {
-        gp = gamepads[i];
-        gamepadIndex = i;
-        break;
-      }
-    }
-  }
-
-  const wasConnected = gamepadConnected;
-  gamepadConnected = !!gp;
-  if (wasConnected !== gamepadConnected) refreshDashboard();
-  if (!gp) {
-    gamepadButtonsPrev = [];
-    return;
-  }
-
-  const deadzone = 0.08;
-  const rawX = gp.axes[0] || 0;
-  const rawY = gp.axes[1] || 0;
-  const axisX = Math.abs(rawX) < deadzone ? 0 : rawX;
-  const axisY = Math.abs(rawY) < deadzone ? 0 : rawY;
-  const mappedX = (axisX + 1) * 0.5;
-  const mappedY = (axisY + 1) * 0.5;
-
-  const moved = Math.abs(mappedX - gamepadLastAxes[0]) > 0.002 || Math.abs(mappedY - gamepadLastAxes[1]) > 0.002;
-  if (moved && paramDisplay.activeBar < 0) {
-    gamepadLastAxes = [mappedX, mappedY];
-    joystick.setPosition(mappedX, mappedY, { emit: true, touching: true });
-  } else if (!moved && joystick.touching) {
-    joystick.setPosition(joystick.x, joystick.y, { emit: false, touching: false });
-  }
-
-  // Standard gamepad mapping: LB=4, RB=5
-  const lbPressed = !!gp.buttons[4]?.pressed;
-  const rbPressed = !!gp.buttons[5]?.pressed;
-  const lbPrev = !!gamepadButtonsPrev[4];
-  const rbPrev = !!gamepadButtonsPrev[5];
-
-  if (learningMode === 'rl') {
-    if (rbPressed && !rbPrev) onThumbsUp();
-    if (lbPressed && !lbPrev) onThumbsDown();
-  }
-
-  gamepadButtonsPrev[4] = lbPressed;
-  gamepadButtonsPrev[5] = rbPressed;
-}
-
 // --- Start ---
 document.addEventListener('DOMContentLoaded', () => {
   init();
-  // Start in examples mode with draggable params
+  // Always enable param dragging
   paramDisplay.setDraggable(true);
 });

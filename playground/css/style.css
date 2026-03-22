@@ -538,13 +538,11 @@ html, body {
   transform-origin: top left;
 }
 
-.app.expanded .controls-mode-toggle,
 .app.expanded .controls-actions {
   margin-bottom: 4px;
 }
 
-.app.expanded .btn,
-.app.expanded .mode-btn {
+.app.expanded .btn {
   font-size: 10px;
   padding: 5px 10px;
   border-radius: 6px;
@@ -569,30 +567,6 @@ html, body {
 #controls-container {
   flex: 1;
   min-width: 0;
-}
-
-.controls-mode-toggle {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.mode-btn {
-  flex: 1;
-  padding: 6px 0;
-  background: var(--bg-elevated);
-  border: 1px solid #333;
-  color: var(--text-dim);
-  font-size: 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.mode-btn.active {
-  background: rgba(0, 255, 136, 0.1);
-  border-color: var(--accent-dim);
-  color: var(--accent);
 }
 
 .controls-actions {

@@ -63,19 +63,22 @@
       <div class="follow-indicator hidden" id="follow-indicator">FOLLOW</div>
       <!-- Follow mode toggle pill -->
       <button class="follow-pill" id="follow-pill" title="Toggle follow mode (double-click joystick)">Follow</button>
+      <!-- Gamepad status -->
+      <div id="gamepad-status" style="color: #ff6a00; font-size: 0.65rem; text-align: center; margin-top: 4px; min-height: 1em;"></div>
     </div>
 
     <!-- Teach phase panel -->
     <div class="teach-panel" id="teach-panel">
-      <!-- Teaching mode tabs -->
-      <div class="teach-tabs">
-        <button class="teach-tab" data-tab="examples">Examples</button>
-        <button class="teach-tab active" data-tab="rl">RL Feedback</button>
-      </div>
 
-      <!-- Examples sub-mode -->
-      <div class="teach-content hidden" id="teach-examples">
+      <!-- Unified teaching controls -->
+      <div class="teach-content" id="teach-unified">
         <div class="teach-layout">
+          <!-- RL feedback buttons -->
+          <div class="rl-buttons">
+            <button class="rl-btn down" id="btn-thumbs-down" title="Explore more"><span class="rl-icon">&#128078;</span><span class="key-hint">1</span></button>
+            <button class="rl-btn up" id="btn-thumbs-up" title="Keep this"><span class="rl-icon">&#128077;</span><span class="key-hint">2</span></button>
+          </div>
+
           <!-- Preset grid -->
           <div class="preset-grid" id="preset-grid">
             <button class="preset-thumb" data-preset="0">
@@ -121,15 +124,6 @@
         </div>
       </div>
 
-      <!-- RL sub-mode -->
-      <div class="teach-content" id="teach-rl">
-        <p class="rl-hint" id="rl-hint">Like what you see? <span class="thumb-icon">&#128077;</span>  Want something different? <span class="thumb-icon">&#128078;</span></p>
-        <div class="rl-buttons">
-          <button class="rl-btn down" id="btn-thumbs-down" title="Explore more"><span class="rl-icon">&#128078;</span><span class="key-hint">1</span></button>
-          <button class="rl-btn up" id="btn-thumbs-up" title="Keep this"><span class="rl-icon">&#128077;</span><span class="key-hint">2</span></button>
-        </div>
-      </div>
-
       <!-- Synth controls section (shown when synth mode active) -->
       <div class="synth-section hidden" id="synth-section">
         <div class="synth-row">
@@ -157,13 +151,22 @@
           <label>Tempo <span id="tempo-val">120</span></label>
           <input type="range" id="arp-tempo" min="40" max="240" step="1" value="120">
         </div>
+        <div class="synth-row" id="midi-row" style="display:none">
+          <label>MIDI Input</label>
+          <button class="action-btn" id="midi-toggle">Enable</button>
+          <select id="midi-select" style="flex:1;min-width:0"></select>
+        </div>
+        <div class="synth-row" id="midi-status-row" style="display:none">
+          <span class="synth-status" id="midi-status"></span>
+        </div>
       </div>
 
       <!-- Status bar -->
       <div class="teach-status" id="teach-status">
         <span id="status-text">0 examples</span>
         <button class="action-btn dim small" id="btn-randomize">Randomize</button>
-        <button class="action-btn dim small" id="btn-clear">Clear</button>
+        <button class="action-btn dim small" id="btn-clear-examples">Clear Examples</button>
+        <button class="action-btn dim small" id="btn-clear">Clear All</button>
       </div>
 
       <!-- Done button -->

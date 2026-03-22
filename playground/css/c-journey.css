@@ -327,13 +327,6 @@ html, body {
   opacity: 1;
 }
 
-/* Phase 2 RL: left side, same as examples */
-.app.phase-teach[data-teach-mode="rl"] .joystick-area {
-  left: 16px;
-  transform: none;
-  top: calc(40vh + 16px);
-}
-
 /* Phase 3: ghost, bottom-center, smaller */
 .app.phase-perform .joystick-area {
   bottom: calc(60px + var(--safe-bottom));
@@ -360,10 +353,6 @@ html, body {
   opacity: 0;
   pointer-events: none;
   transition: all var(--transition-fast);
-}
-
-.app[data-teach-mode="rl"] .noise-ring {
-  opacity: 0.5;
 }
 
 /* ============================================================
@@ -393,33 +382,6 @@ html, body {
   transform: translateY(0);
 }
 
-/* Teach tabs */
-.teach-tabs {
-  display: flex;
-  gap: 0;
-  margin: 12px 0;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  border: 1px solid var(--glass-border);
-}
-
-.teach-tab {
-  flex: 1;
-  padding: 8px 0;
-  font-size: 13px;
-  color: var(--text-dim);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.teach-tab.active {
-  color: var(--accent);
-  background: var(--accent-dim);
-}
-
 /* Teach content sections */
 .teach-content {
   transition: opacity var(--transition-fast);
@@ -430,10 +392,6 @@ html, body {
   flex-direction: column;
   gap: 12px;
   padding-left: 136px; /* room for joystick on left */
-}
-
-.app.phase-teach[data-teach-mode="rl"] .teach-layout {
-  padding-left: 136px;
 }
 
 /* Preset grid */
@@ -546,22 +504,7 @@ html, body {
   cursor: pointer;
 }
 
-/* RL sub-mode */
-#teach-rl {
-  padding-left: 136px;
-}
-
-.rl-hint {
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 13px;
-  margin: 12px 0;
-}
-
-.thumb-icon {
-  font-size: 16px;
-}
-
+/* RL buttons (now part of unified teach panel) */
 .rl-buttons {
   display: flex;
   justify-content: center;

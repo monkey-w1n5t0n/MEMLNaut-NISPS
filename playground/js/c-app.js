@@ -5,7 +5,9 @@ import { IML } from './nisps/iml.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
+import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame } from './synth/param-map.js';
+import { GamepadInput } from './ui/gamepad.js';
 
 // ============================================================
 // Constants
@@ -58,10 +60,11 @@ let iml;
 let visualizer;
 let c15 = null;
 let arpeggiator = null;
+let midiInput = null;
 
 let phase = 'explore'; // 'explore' | 'teach' | 'perform'
 let outputMode = 'visual'; // 'visual' | 'synth'
-let teachMode = 'rl'; // 'examples' | 'rl'
+// teachMode removed — Examples and RL controls are always visible together
 let selectedPreset = -1;
 let noiseLevel = 0.05;
 let animating = true;
@@ -69,8 +72,9 @@ let joystickX = 0.5;
 let joystickY = 0.5;
 let joystickActive = false;
 let joystickInteractionTime = 0;
+let gamepad;
 let ctasShown = false;
-let rlHintShown = false;
+// rlHintShown removed — no separate RL mode hint needed
 let idleTimer = null;
 let currentParamNames = VISUAL_PARAM_NAMES;
 let currentParamColors = VISUAL_PARAM_COLORS;
@@ -238,6 +242,8 @@ function init() {
   };
   c15.loadParams();
   arpeggiator = new Arpeggiator(c15);
+  midiInput = new MIDIInput(c15);
+  initMIDIControls();
 
   // Build heatmap cells
   buildHeatmap();
@@ -251,7 +257,6 @@ function init() {
   // Wire events
   wirePhaseNav();
   wireModeToggle();
-  wireTeachTabs();
   wirePresetGrid();
   wireTeachActions();
   wireRLButtons();
@@ -271,6 +276,22 @@ function init() {
       e.preventDefault();
       onThumbsUp();
     }
+  });
+
+  // Gamepad
+  gamepad = new GamepadInput({
+    onMove: (x, y) => {
+      updateJoystick(x, y);
+      drawJoystick();
+    },
+    onButton: (btn) => {
+      if (btn === 'rb') onThumbsUp();
+      if (btn === 'lb') onThumbsDown();
+    },
+    onConnectionChange: (connected) => {
+      const el = document.getElementById('gamepad-status');
+      if (el) el.textContent = connected ? 'Gamepad connected' : '';
+    },
   });
 
   // Follow mode wiring
@@ -303,7 +324,7 @@ function init() {
 function setPhase(p) {
   phase = p;
   app.className = `app phase-${p}`;
-  if (teachMode) app.dataset.teachMode = teachMode;
+  delete app.dataset.teachMode;
 
   // Update dots
   document.querySelectorAll('.phase-dot').forEach(dot => {
@@ -506,27 +527,7 @@ function setOutputMode(mode) {
   if (audioCtrl) audioCtrl.classList.toggle('hidden', mode !== 'synth' || phase !== 'perform');
 }
 
-// ============================================================
-// Teach tabs
-// ============================================================
-function wireTeachTabs() {
-  document.querySelectorAll('.teach-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      teachMode = tab.dataset.tab;
-      document.querySelectorAll('.teach-tab').forEach(t => t.classList.toggle('active', t === tab));
-      document.getElementById('teach-examples').classList.toggle('hidden', teachMode !== 'examples');
-      document.getElementById('teach-rl').classList.toggle('hidden', teachMode !== 'rl');
-      app.dataset.teachMode = teachMode;
-
-      // Show RL hint only first time
-      if (teachMode === 'rl' && !rlHintShown) {
-        rlHintShown = true;
-      } else if (teachMode === 'rl') {
-        document.getElementById('rl-hint')?.classList.add('hidden');
-      }
-    });
-  });
-}
+// Teach tabs removed — unified teaching panel shows all controls together
 
 // ============================================================
 // Preset grid
@@ -627,6 +628,12 @@ function wireTeachActions() {
     }, 50);
   });
 
+  document.getElementById('btn-clear-examples')?.addEventListener('click', () => {
+    iml.clearDataset();
+    updateTeachStatus();
+    drawMinimap();
+  });
+
   document.getElementById('btn-clear')?.addEventListener('click', () => {
     iml.clearDataset();
     iml.randomiseWeights(spreadLevel);
@@ -710,11 +717,15 @@ function wireRLButtons() {
 function updateNoiseRing() {
   const ring = document.getElementById('noise-ring');
   if (!ring) return;
-  const thickness = 2 + noiseLevel * 20;
-  const opacity = 0.2 + noiseLevel * 1.2;
-  ring.style.borderWidth = `${thickness}px`;
-  ring.style.opacity = Math.min(1, opacity);
-  ring.style.inset = `${-(8 + thickness)}px`;
+  if (noiseLevel > 0.01) {
+    const thickness = 2 + noiseLevel * 20;
+    const opacity = 0.2 + noiseLevel * 1.2;
+    ring.style.borderWidth = `${thickness}px`;
+    ring.style.opacity = Math.min(1, opacity);
+    ring.style.inset = `${-(8 + thickness)}px`;
+  } else {
+    ring.style.opacity = '0';
+  }
 }
 
 // ============================================================
@@ -778,6 +789,55 @@ function wireSynthControls() {
 
   document.getElementById('audio-vol')?.addEventListener('input', (e) => {
     c15.setMasterVolume(parseFloat(e.target.value));
+  });
+}
+
+// ============================================================
+// MIDI Input
+// ============================================================
+async function initMIDIControls() {
+  const row = document.getElementById('midi-row');
+  const statusRow = document.getElementById('midi-status-row');
+  const toggle = document.getElementById('midi-toggle');
+  const select = document.getElementById('midi-select');
+  const statusEl = document.getElementById('midi-status');
+  if (!row || !toggle || !select) return;
+
+  const available = await midiInput.init();
+  if (!available) return;
+
+  row.style.display = '';
+
+  function populateInputs() {
+    const inputs = midiInput.getInputs();
+    select.innerHTML = '<option value="">All Inputs</option>' +
+      inputs.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+  }
+
+  populateInputs();
+  midiInput.onInputsChange = () => populateInputs();
+
+  midiInput.onStatusChange = (msg) => {
+    if (statusEl) {
+      statusEl.textContent = msg;
+      statusRow.style.display = '';
+    }
+  };
+
+  midiInput.onCC = (cc, value) => {
+    if (cc === 1) updateJoystick(value, joystickY);
+    if (cc === 2) updateJoystick(joystickX, value);
+  };
+
+  toggle.addEventListener('click', () => {
+    if (!c15.running) return;
+    midiInput.toggle();
+    toggle.textContent = midiInput.enabled ? 'Disable' : 'Enable';
+    toggle.classList.toggle('playing', midiInput.enabled);
+  });
+
+  select.addEventListener('change', (e) => {
+    midiInput.selectInput(e.target.value || null);
   });
 }
 
@@ -1079,6 +1139,7 @@ function onResize() {
 // ============================================================
 function animate() {
   if (!animating) return;
+  if (gamepad) gamepad.poll();
 
   if (outputMode === 'synth') {
     synthVisualizer.draw();
@@ -1087,7 +1148,7 @@ function animate() {
   }
 
   // Keep minimap updated if in teach phase
-  if (phase === 'teach' && teachMode === 'examples') {
+  if (phase === 'teach') {
     // Only redraw minimap occasionally
     if (Math.random() < 0.05) drawMinimap();
   }

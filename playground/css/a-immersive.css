@@ -399,6 +399,11 @@ html, body {
   color: var(--accent);
 }
 
+.float-btn.accent {
+  border-color: rgba(255, 106, 0, 0.3);
+  color: var(--accent);
+}
+
 .follow-pill {
   padding: 4px 12px;
   border-radius: 6px;

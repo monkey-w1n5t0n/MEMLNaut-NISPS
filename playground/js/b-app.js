@@ -5,7 +5,9 @@ import { IML } from './nisps/iml.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
+import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyTame } from './synth/param-map.js';
+import { GamepadInput } from './ui/gamepad.js';
 
 // --- Constants ---
 const N_INPUTS = 2;
@@ -96,7 +98,6 @@ const spreadLevel = Math.max(0, Math.min(1, parseFloat(_urlParams.get('spread') 
 // --- State ---
 let iml;
 let visualizer;
-let learningMode = 'rl';
 let outputMode = 'visual';
 let noiseLevel = 0.05;
 const rlExplorationDecay = 0.97;
@@ -109,9 +110,13 @@ let joyDragging = false;
 // Follow mode
 let followMode = false;
 
+// Gamepad
+let gamepad;
+
 // Synth
 let c15 = null;
 let arpeggiator = null;
+let midiInput = null;
 let synthVisualizer = null;
 
 // Current param values (for dragging)
@@ -586,7 +591,6 @@ function buildParamGroups() {
 
     // Dragging on param tracks
     paramsDiv.addEventListener('pointerdown', (e) => {
-      if (learningMode !== 'examples') return;
       const track = e.target.closest('.wb-param-track');
       if (!track) return;
       e.preventDefault();
@@ -693,14 +697,7 @@ function onJoystickMove() {
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
 
-  // In examples mode, only update bars from network if user isn't dragging
-  if (learningMode !== 'examples') {
-    updateAllParamBars(outputs);
-  } else {
-    // Still update param values for display but allow overrides
-    // Only update non-dragged params
-    updateAllParamBars(outputs);
-  }
+  updateAllParamBars(outputs);
 
   const constellationN = outputMode === 'synth' ? N_SYNTH_OUTPUTS : N_VISUAL_OUTPUTS;
   drawConstellation(constellationCanvas, outputs, constellationN);
@@ -749,6 +746,12 @@ function onRandomize() {
   updateMetrics();
 }
 
+function onClearExamples() {
+  iml.clearDataset();
+  mappingView.update();
+  updateMetrics();
+}
+
 function onClear() {
   iml.clearDataset();
   iml.lossHistory = [];
@@ -766,6 +769,9 @@ function onThumbsUp() {
   const outputs = [...iml.getOutputs()];
   iml.addExample(inputs, outputs);
   trainModel();
+  const trainedOutputs = iml.getOutputs();
+  routeOutputs(trainedOutputs);
+  updateAllParamBars(trainedOutputs);
   noiseLevel *= rlExplorationDecay;
   noiseLevel = Math.max(noiseLevel, 0.005);
   drawLossPlot(lossCanvas, iml.lossHistory);
@@ -931,17 +937,6 @@ function setOutputMode(mode) {
 }
 
 // ============================
-// Learning mode switching
-// ============================
-function setLearningMode(mode) {
-  learningMode = mode;
-  document.getElementById('mode-examples').classList.toggle('active', mode === 'examples');
-  document.getElementById('mode-rl').classList.toggle('active', mode === 'rl');
-  document.getElementById('examples-controls').classList.toggle('hidden', mode !== 'examples');
-  document.getElementById('rl-controls').classList.toggle('hidden', mode !== 'rl');
-}
-
-// ============================
 // Presets
 // ============================
 function loadPreset(name) {
@@ -1052,6 +1047,53 @@ function saveState() {
   }
 }
 
+// ---- MIDI Input ----
+async function initMIDIControls() {
+  const row = document.getElementById('midi-row');
+  const statusRow = document.getElementById('midi-status-row');
+  const toggle = document.getElementById('midi-toggle');
+  const select = document.getElementById('midi-select');
+  const statusEl = document.getElementById('midi-status');
+  if (!row || !toggle || !select) return;
+
+  const available = await midiInput.init();
+  if (!available) return;
+
+  row.style.display = '';
+
+  function populateInputs() {
+    const inputs = midiInput.getInputs();
+    select.innerHTML = '<option value="">All Inputs</option>' +
+      inputs.map(i => `<option value="${i.id}">${i.name}</option>`).join('');
+  }
+
+  populateInputs();
+  midiInput.onInputsChange = () => populateInputs();
+
+  midiInput.onStatusChange = (msg) => {
+    if (statusEl) {
+      statusEl.textContent = msg;
+      statusRow.style.display = '';
+    }
+  };
+
+  midiInput.onCC = (cc, value) => {
+    if (cc === 1) { joyX = value; onJoystickMove(); }
+    if (cc === 2) { joyY = value; onJoystickMove(); }
+  };
+
+  toggle.addEventListener('click', () => {
+    if (!c15.running) return;
+    midiInput.toggle();
+    toggle.textContent = midiInput.enabled ? 'MIDI: On' : 'Enable';
+    toggle.classList.toggle('wb-btn-primary', midiInput.enabled);
+  });
+
+  select.addEventListener('change', (e) => {
+    midiInput.selectInput(e.target.value || null);
+  });
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1067,6 +1109,7 @@ function loadState() {
       iml.addExample(data.features[i], labels);
     }
     trainModel();
+    routeOutputs(iml.getOutputs());
     return true;
   } catch (e) {
     console.warn('[NISPS] loadState failed:', e);
@@ -1088,10 +1131,8 @@ function clearState() {
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   // RL shortcuts: 1=negative, 2=positive
-  if (learningMode === 'rl') {
-    if (e.key === '1' || e.code === 'Numpad1') { e.preventDefault(); onThumbsDown(); }
-    if (e.key === '2' || e.code === 'Numpad2') { e.preventDefault(); onThumbsUp(); }
-  }
+  if (e.key === '1' || e.code === 'Numpad1') { e.preventDefault(); onThumbsDown(); }
+  if (e.key === '2' || e.code === 'Numpad2') { e.preventDefault(); onThumbsUp(); }
   // Follow mode toggle: f
   if (e.key === 'f' || e.key === 'F') {
     // Don't toggle if user is typing in an input
@@ -1106,6 +1147,7 @@ window.addEventListener('keydown', (e) => {
 // ============================
 function animate() {
   if (!animating) return;
+  if (gamepad) gamepad.poll();
   if (outputMode === 'visual') {
     visualizer.draw();
   } else if (synthVisualizer) {
@@ -1146,13 +1188,9 @@ function init() {
   document.getElementById('btn-train').addEventListener('click', onTrain);
   document.getElementById('btn-randomize').addEventListener('click', onRandomize);
   document.getElementById('btn-clear').addEventListener('click', onClear);
+  document.getElementById('btn-clear-examples').addEventListener('click', onClearExamples);
   document.getElementById('btn-thumbsup').addEventListener('click', onThumbsUp);
   document.getElementById('btn-thumbsdown').addEventListener('click', onThumbsDown);
-  document.getElementById('btn-randomize-rl').addEventListener('click', onRandomize);
-
-  // Learning mode — RL is default
-  document.getElementById('mode-examples').addEventListener('click', () => setLearningMode('examples'));
-  document.getElementById('mode-rl').addEventListener('click', () => setLearningMode('rl'));
 
   // Output mode
   document.getElementById('toggle-visual').addEventListener('click', () => setOutputMode('visual'));
@@ -1185,7 +1223,27 @@ function init() {
   };
   c15.loadParams();
   arpeggiator = new Arpeggiator(c15);
+  midiInput = new MIDIInput(c15);
   initSynthControls();
+  initMIDIControls();
+
+  // Gamepad
+  gamepad = new GamepadInput({
+    onMove: (x, y) => {
+      joyX = x;
+      joyY = y;
+      onJoystickMove();
+      mappingView.drawOverlay();
+    },
+    onButton: (btn) => {
+      if (btn === 'rb') onThumbsUp();
+      if (btn === 'lb') onThumbsDown();
+    },
+    onConnectionChange: (connected) => {
+      const el = document.getElementById('gamepad-status');
+      if (el) el.textContent = connected ? 'Gamepad connected' : '';
+    },
+  });
 
   // Resize
   window.addEventListener('resize', () => {

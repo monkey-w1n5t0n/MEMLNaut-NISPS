@@ -218,8 +218,24 @@
         <ul>
           <li>Start with <strong>Randomize</strong> a few times to hear/see different mappings, then use feedback to refine</li>
           <li>Use <strong>Follow</strong> mode to let the joystick wander automatically while you give feedback</li>
-          <li>In Synth mode, press the <strong>play button</strong> (top left) to start audio, then explore</li>
+          <li>In Synth mode, press the <strong>play button</strong> (top left, pulses orange when audio is off) to start audio, then explore</li>
           <li>Tap a heatmap cell to see which parameter it controls</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <h3>Synth Controls</h3>
+        <ul>
+          <li><strong>Hover any bar</strong> in the synth visualizer to see parameter name, current value, range, and curve</li>
+          <li><strong>Hover a group name</strong> (e.g. "Env A", "Osc B") at the top to open its control drawer:</li>
+          <ul>
+            <li><strong>Group curve</strong> &mdash; drag the top graph vertically to shape the response curve for the whole group (adjusts all param curves relatively)</li>
+            <li><strong>Per-param curve</strong> &mdash; drag each small graph to shape that parameter individually (down&nbsp;=&nbsp;exponential, up&nbsp;=&nbsp;logarithmic)</li>
+            <li><strong>Min/Max range</strong> &mdash; dual-thumb slider constrains the parameter's output range</li>
+            <li><strong>Mute (M)</strong> &mdash; removes the parameter from NISPS control; its bar disappears and you get a manual value slider instead</li>
+          </ul>
+          <li><strong>MIDI input</strong> &mdash; connect a MIDI controller and it will be detected automatically; MIDI notes trigger the synth directly</li>
+          <li><strong>Arpeggiator</strong> &mdash; expand the bottom bar to access the built-in arpeggiator with tempo, octave range, offset, and chord progression controls; press Pause to stop it</li>
         </ul>
       </div>
 

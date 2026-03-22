@@ -8,6 +8,7 @@ import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
 import { GamepadInput } from './ui/gamepad.js';
+import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
 
 // ---- Constants ----
 const N_INPUTS = 2;
@@ -128,9 +129,13 @@ const SYNTH_SECTIONS = [
 // Defaults are seeded from safeMin/safeMax in SYNTH_PARAM_MAP, scaled by the
 // ?tame URL parameter (0 = unconstrained, 1 = full safe limits).
 // localStorage overrides on load.
+
+// Module-level tame so applyPreset() can use it
+const _urlTame = parseFloat(new URLSearchParams(window.location.search).get('tame') ?? '1');
+const tameLevel = isNaN(_urlTame) ? 1 : Math.max(0, Math.min(1, _urlTame));
+
 const groupOverrides = (() => {
-  const urlTame = parseFloat(new URLSearchParams(window.location.search).get('tame') ?? '1');
-  const t = isNaN(urlTame) ? 1 : Math.max(0, Math.min(1, urlTame));
+  const t = tameLevel;
   let flatIdx = 0;
   return SYNTH_SECTIONS.map(sec => ({
     curve: 0.5,
@@ -149,6 +154,13 @@ const groupOverrides = (() => {
     }),
   }));
 })();
+
+// Lookup: param name -> flat index (for preset application)
+const paramNameToIndex = new Map();
+SYNTH_PARAM_MAP.forEach((p, i) => paramNameToIndex.set(p.name, i));
+
+// Currently active synth preset id (null = no preset / manual)
+let activeSynthPresetId = null;
 
 // Build a flat lookup: paramIndex -> { sectionIndex, localIndex }
 const paramToSection = [];
@@ -186,6 +198,93 @@ function isParamMuted(paramIndex) {
   const mapping = paramToSection[paramIndex];
   if (!mapping) return false;
   return groupOverrides[mapping.si].params[mapping.li].muted;
+}
+
+// ---- Synth Preset Application ----
+
+/**
+ * Apply a synth preset by id.
+ * Sets groupOverrides (muted/active, min/max/curve/fixedValue) for all 126 params,
+ * re-routes outputs, saves state, and updates the UI dropdown.
+ */
+function applyPreset(presetId) {
+  const preset = SYNTH_PRESETS.find(p => p.id === presetId);
+  if (!preset) {
+    console.warn(`[NISPS] Unknown preset: ${presetId}`);
+    return;
+  }
+
+  const t = tameLevel;
+  const allActive = preset.active === null; // null = all params active (Tier 4)
+  const activeSet = allActive ? null : new Set(preset.active);
+  const overrides = preset.overrides || {};
+  const mutedOv = preset.mutedOverrides || {};
+
+  for (let i = 0; i < N_SYNTH_OUTPUTS; i++) {
+    const param = SYNTH_PARAM_MAP[i];
+    const mapping = paramToSection[i];
+    if (!mapping) continue;
+    const gp = groupOverrides[mapping.si].params[mapping.li];
+    const paramName = param.name;
+
+    // Tame-derived defaults for this param
+    const safeMin = param.safeMin ?? 0;
+    const safeMax = param.safeMax ?? 1;
+    const tameMin = safeMin * t;
+    const tameMax = 1 - (1 - safeMax) * t;
+
+    const isActive = allActive || activeSet.has(paramName);
+
+    if (isActive) {
+      gp.muted = false;
+      const ov = overrides[paramName];
+      if (ov) {
+        gp.min = ov.min !== undefined ? ov.min : tameMin;
+        gp.max = ov.max !== undefined ? ov.max : tameMax;
+        gp.curve = ov.curve !== undefined ? ov.curve : 0.5;
+        gp.fixedValue = ov.fixedValue !== undefined ? ov.fixedValue : param.defaultValue;
+      } else {
+        gp.min = tameMin;
+        gp.max = tameMax;
+        gp.curve = 0.5;
+        gp.fixedValue = param.defaultValue;
+      }
+    } else {
+      gp.muted = true;
+      const mov = mutedOv[paramName];
+      gp.fixedValue = (mov && mov.fixedValue !== undefined) ? mov.fixedValue : param.defaultValue;
+      // Keep tame-derived ranges for manual unmuting
+      gp.min = tameMin;
+      gp.max = tameMax;
+      gp.curve = 0.5;
+    }
+  }
+
+  // Apply group curves
+  for (let si = 0; si < SYNTH_SECTIONS.length; si++) {
+    const gc = preset.groupCurves || {};
+    const secName = SYNTH_SECTIONS[si].name;
+    groupOverrides[si].curve = (gc[secName] !== undefined) ? gc[secName] : 0.5;
+  }
+
+  activeSynthPresetId = presetId;
+
+  // Close the group drawer if open
+  hideGroupDrawer();
+
+  // Re-route outputs through updated overrides
+  if (iml) {
+    routeOutputs(iml.getOutputs());
+  }
+
+  // Update the preset dropdown
+  const $presetSelect = document.getElementById('synth-preset-select');
+  if ($presetSelect) $presetSelect.value = presetId;
+
+  // Save to storage
+  saveState();
+
+  console.log(`[NISPS] Applied synth preset: ${preset.name}`);
 }
 
 // ---- SynthVisualizer class ----
@@ -647,6 +746,19 @@ function init() {
 
   // Restore saved state (if any)
   loadState();
+
+  // Wire synth preset selector
+  wireSynthPresets();
+
+  // Check URL ?preset param (overrides localStorage)
+  const urlPreset = urlParams.get('preset');
+  if (urlPreset && SYNTH_PRESETS.some(p => p.id === urlPreset)) {
+    applyPreset(urlPreset);
+  } else if (activeSynthPresetId) {
+    // Restored from localStorage — sync the dropdown
+    const $ps = document.getElementById('synth-preset-select');
+    if ($ps) $ps.value = activeSynthPresetId;
+  }
 
   // Initial inference
   iml.setInput(0, joyX);
@@ -1438,6 +1550,22 @@ function wireKeyboard() {
 }
 
 // ---- Quick play controls ----
+// ---- Synth Preset Selector ----
+function wireSynthPresets() {
+  const $select = document.getElementById('synth-preset-select');
+  if (!$select) return;
+  $select.addEventListener('change', () => {
+    const val = $select.value;
+    if (val === '') {
+      // "Manual" selected — clear preset tracking but don't change overrides
+      activeSynthPresetId = null;
+      saveState();
+    } else {
+      applyPreset(val);
+    }
+  });
+}
+
 function wireQuickPlayControls() {
   const quickPlay = document.getElementById('quick-play');
   const quickPlayIcon = document.getElementById('quick-play-icon');
@@ -1879,6 +2007,7 @@ function saveState() {
       joyX,
       joyY,
       groupOverrides,
+      synthPresetId: activeSynthPresetId,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -1922,6 +2051,11 @@ function loadState() {
           }
         }
       }
+    }
+
+    // Restore synth preset id (just track it, don't re-apply — groupOverrides already restored above)
+    if (typeof state.synthPresetId === 'string') {
+      activeSynthPresetId = state.synthPresetId;
     }
 
     // Restore output mode

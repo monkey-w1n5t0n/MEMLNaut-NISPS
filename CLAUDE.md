@@ -44,6 +44,7 @@ Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls)
 |-------|-------|---------|--------|
 | `tame` | 0–1 | 1 | Constrains synth output ranges toward safe limits |
 | `spread` | 0–1 | 0.6 | Controls weight initialization, RL noise scaling, and weight decay (see below) |
+| `preset` | preset id | _(none)_ | Auto-loads a synth parameter preset on first visit (e.g. `?preset=beginner-1`) |
 
 #### `spread` — sigmoid saturation control
 
@@ -75,6 +76,21 @@ The 126 synth parameters in `js/synth/param-map.js` were curated from the C15's 
 | Secondary config | 7 | Att Curve, Elevate, Chirp, Decay Gate, Retrigger |
 | PM shaper blend | 4 | Secondary routing params |
 | FB Mix source selects | 4 | Discrete A/B selectors |
+
+### Synth Presets
+
+Presets (`js/synth/presets.js`) control which parameters the ML engine can modify, with unselected params muted at safe defaults. Each preset defines per-param `{ muted, fixedValue, min, max, curve }` — no training examples or model weights.
+
+4 tiers of progressive complexity:
+
+| Tier | Presets | Active params | What's exposed |
+|------|---------|---------------|----------------|
+| 1 (Beginner) | 1.1–1.4 | 15 | Basic ADSR, SVF cutoff/res, Shaper A drive/fold, output levels, reverb mix |
+| 2 (Intermediate) | 2.1–2.4 | 40 | + Env B/C, filter FM, effects (reverb/echo/flanger), cabinet, stereo panning |
+| 3 (Advanced) | 3.1–3.3 | ~95 | + Cross-oscillator PM, feedback mixer, dual shapers, comb/gap filters, ring mod |
+| 4 (Expert) | 4.1–4.2 | 126 | Full engine |
+
+Presets use `curve` values to bias parameter distributions (< 0.5 = spend more time low, > 0.5 = bias high) without clamping extremes. Users can tweak any preset via the group drawer after loading.
 
 ## Build System
 

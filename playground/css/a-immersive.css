@@ -63,6 +63,38 @@ html, body {
   color: var(--accent);
 }
 
+/* ---- Output mode toggle (floating) ---- */
+.output-toggle-float {
+  position: fixed;
+  top: 30px;
+  right: 12px;
+  z-index: 30;
+  display: flex;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+.otf-opt {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.otf-opt.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* ---- Fullscreen canvas ---- */
 #vis-canvas,
 #synth-vis-canvas {
@@ -800,7 +832,7 @@ html, body {
   }
 
   .rl-buttons {
-    bottom: 196px;
+    bottom: 92px;
     gap: 32px;
   }
 

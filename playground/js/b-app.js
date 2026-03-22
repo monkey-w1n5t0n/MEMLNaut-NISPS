@@ -1241,14 +1241,22 @@ function init() {
       mappingView.drawOverlay();
     },
     onButton: (btn) => {
-      if (btn === 'rb') onThumbsUp();
       if (btn === 'lb') onThumbsDown();
+      if (btn === 'rb') onThumbsUp();
+      if (btn === 'a') onTrain();
+      if (btn === 'x') onRandomize();
+      if (btn === 'b') onClearExamples();
     },
     onConnectionChange: (connected) => {
       const el = document.getElementById('gamepad-status');
-      if (el) el.textContent = connected ? 'Gamepad connected' : '';
+      if (el) el.textContent = connected ? 'Gamepad connected' : 'Press any button to activate gamepad';
     },
   });
+
+  if (!gamepad.connected) {
+    const el = document.getElementById('gamepad-status');
+    if (el) el.textContent = 'Press any gamepad button to connect';
+  }
 
   // Resize
   window.addEventListener('resize', () => {

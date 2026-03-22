@@ -37,6 +37,17 @@ export class GamepadInput {
 
     // Check if a gamepad is already connected
     this._findGamepad();
+
+    // Periodic fallback: some environments (Steam Deck, some Linux browsers)
+    // don't fire gamepadconnected reliably. Poll every 500ms until found.
+    this._probeInterval = setInterval(() => {
+      if (!this.connected) {
+        this._findGamepad();
+      } else {
+        clearInterval(this._probeInterval);
+        this._probeInterval = null;
+      }
+    }, 500);
   }
 
   _onConnected(e) {
@@ -126,18 +137,17 @@ export class GamepadInput {
       this.onMove(mappedX, mappedY);
     }
 
-    // Buttons: LB=4, RB=5
+    // Buttons: A=0, B=1, X=2, Y=3, LB=4, RB=5
     if (this.onButton) {
-      const lbPressed = !!gp.buttons[4]?.pressed;
-      const rbPressed = !!gp.buttons[5]?.pressed;
-      const lbPrev = !!this._buttonsPrev[4];
-      const rbPrev = !!this._buttonsPrev[5];
-
-      if (lbPressed && !lbPrev) this.onButton('lb');
-      if (rbPressed && !rbPrev) this.onButton('rb');
-
-      this._buttonsPrev[4] = lbPressed;
-      this._buttonsPrev[5] = rbPressed;
+      const watched = [0, 1, 2, 3, 4, 5];
+      const names = ['a', 'b', 'x', 'y', 'lb', 'rb'];
+      for (let i = 0; i < watched.length; i++) {
+        const idx = watched[i];
+        const pressed = !!gp.buttons[idx]?.pressed;
+        const prev = !!this._buttonsPrev[idx];
+        if (pressed && !prev) this.onButton(names[i]);
+        this._buttonsPrev[idx] = pressed;
+      }
     }
 
     return moved;
@@ -153,5 +163,6 @@ export class GamepadInput {
   destroy() {
     window.removeEventListener('gamepadconnected', this._onConnected);
     window.removeEventListener('gamepaddisconnected', this._onDisconnected);
+    if (this._probeInterval) clearInterval(this._probeInterval);
   }
 }

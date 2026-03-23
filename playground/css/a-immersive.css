@@ -261,6 +261,260 @@ html, body {
   50% { box-shadow: 0 0 12px 3px rgba(255, 106, 0, 0.5); }
 }
 
+/* ---- Hand tracking PIP ---- */
+.hand-pip {
+  position: fixed;
+  bottom: 136px;
+  left: 24px;
+  width: 180px;
+  height: 135px;
+  z-index: 30;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+}
+
+.hand-pip.hidden {
+  display: none;
+}
+
+.hand-pip video {
+  /* Hidden — only used as MediaPipe source, not displayed */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hand-pip canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+  pointer-events: none;
+}
+
+.hand-status {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 9px;
+  color: var(--text-dim);
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+.hand-status.tracking {
+  color: var(--accent);
+}
+
+.gesture-indicator {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.gesture-indicator.active {
+  opacity: 1;
+}
+
+.gesture-ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.gesture-ring-bg {
+  fill: none;
+  stroke: rgba(255,255,255,0.1);
+  stroke-width: 3;
+}
+
+.gesture-ring-progress {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 100.53;
+  stroke-dashoffset: 100.53;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.05s linear;
+}
+
+.gesture-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+/* ---- Dev panel (hand tracking tuning) ---- */
+.dev-panel {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  width: 220px;
+  z-index: 90;
+  background: rgba(10, 10, 10, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+  user-select: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.dev-panel.collapsed {
+  width: auto;
+}
+
+.dev-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: grab;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.dev-panel-header:active {
+  cursor: grabbing;
+}
+
+.dev-panel-title {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+}
+
+.dev-panel-collapse {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-dim);
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dev-panel-body {
+  padding: 6px 10px 10px;
+}
+
+.dev-row {
+  margin-bottom: 6px;
+}
+
+.dev-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 2px;
+  cursor: help;
+}
+
+.dev-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dev-slider {
+  flex: 1;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  outline: none;
+}
+
+.dev-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.dev-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+
+.dev-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: rgba(255,255,255,0.6);
+  min-width: 28px;
+  text-align: right;
+}
+
+.dev-toggle {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dev-row-actions {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.dev-reset-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-dim);
+  font-size: 9px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.dev-reset-btn:hover {
+  background: rgba(255,255,255,0.1);
+  color: white;
+}
+
+.dev-feature-bars {
+  width: 100%;
+  height: 56px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.3);
+  display: block;
+}
+
 /* ---- RL floating buttons ---- */
 .rl-buttons {
   position: fixed;
@@ -1354,6 +1608,13 @@ html, body {
   #joy-map {
     width: 180px;
     height: 180px;
+  }
+
+  .hand-pip {
+    width: 200px;
+    height: 150px;
+    bottom: 156px;
+    left: 32px;
   }
 
   .rl-buttons {

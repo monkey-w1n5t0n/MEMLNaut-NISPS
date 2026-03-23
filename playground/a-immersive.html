@@ -75,6 +75,20 @@
     <div id="gamepad-status" style="color: #ff6a00; font-size: 0.6rem; text-align: center; position: absolute; bottom: -16px; left: 0; right: 0; pointer-events: none;"></div>
   </div>
 
+  <!-- Hand tracking PIP (replaces joystick position when active) -->
+  <div class="hand-pip hidden" id="hand-pip">
+    <video id="hand-video" playsinline autoplay muted></video>
+    <canvas id="hand-overlay"></canvas>
+    <div class="hand-status" id="hand-status">Loading...</div>
+    <div class="gesture-indicator" id="gesture-indicator">
+      <svg class="gesture-ring" viewBox="0 0 36 36">
+        <circle class="gesture-ring-bg" cx="18" cy="18" r="16" />
+        <circle class="gesture-ring-progress" cx="18" cy="18" r="16" />
+      </svg>
+      <span class="gesture-label" id="gesture-label"></span>
+    </div>
+  </div>
+
   <!-- RL floating buttons -->
   <div class="rl-buttons" id="rl-buttons">
     <button class="rl-btn rl-down" id="btn-thumbsdown" title="Explore more"><span class="rl-icon">&minus;</span><span class="key-num">1</span></button>
@@ -85,6 +99,10 @@
   <div class="bottom-sheet collapsed" id="bottom-sheet">
     <!-- Floating mode bar (sticky inside sheet) -->
     <div class="floating-bar" id="floating-bar">
+      <div class="pill-toggle pill-toggle-sm" id="input-toggle">
+        <button class="pill-opt active" data-input="joystick">Joystick</button>
+        <button class="pill-opt" data-input="hands">Hands</button>
+      </div>
       <div class="pill-toggle pill-toggle-sm" id="output-toggle-float">
         <button class="pill-opt active" data-mode="visual">Visual</button>
         <button class="pill-opt" data-mode="synth">Synth</button>
@@ -235,6 +253,21 @@
           <tr><td>X</td><td>Randomize</td></tr>
           <tr><td>B</td><td>Clear examples</td></tr>
         </table>
+      </div>
+
+      <div class="help-section">
+        <h3>Hand Tracking</h3>
+        <p>Toggle to <strong>Hands</strong> mode in the bottom bar to use your webcam for input.</p>
+        <ul>
+          <li><strong>Right hand</strong> controls parameters &mdash; palm position, finger curls, spread, rotation, and pinch map to 14 input dimensions</li>
+          <li><strong>Left hand</strong> gives feedback via gestures:</li>
+          <ul>
+            <li><strong>1 finger</strong> (index) held 0.4s &rarr; positive feedback (+)</li>
+            <li><strong>2 fingers</strong> (index + middle) held 0.4s &rarr; negative feedback (&minus;)</li>
+          </ul>
+          <li>If only one hand is visible, it's treated as the tracking hand &mdash; use keyboard/buttons for feedback</li>
+          <li>Camera permission is requested only when you switch to Hands mode</li>
+        </ul>
       </div>
 
       <div class="help-section">

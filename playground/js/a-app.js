@@ -8,10 +8,14 @@ import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
 import { GamepadInput } from './ui/gamepad.js';
+import { HandTracker } from './ui/hand-tracker.js';
+import { createDevPanel } from './ui/dev-panel.js';
 import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
 
 // ---- Constants ----
-const N_INPUTS = 2;
+const N_JOY_INPUTS = 2;
+const N_HAND_INPUTS = 14;
+const N_INPUTS = N_JOY_INPUTS; // default (joystick)
 const N_VISUAL_OUTPUTS = 20;
 const N_SYNTH_OUTPUTS = SYNTH_PARAM_MAP.length; // 126
 const N_OUTPUTS = N_SYNTH_OUTPUTS; // MLP always produces full output; visual uses first 20
@@ -61,7 +65,11 @@ const PRESETS = {
 };
 
 // ---- App state ----
-let iml;
+let iml;       // active IML (points to imlJoy or imlHand)
+let imlJoy;    // IML for joystick mode (2 inputs)
+let imlHand;   // IML for hand tracking mode (14 inputs)
+let inputMode = 'joystick'; // 'joystick' | 'hands'
+let handTracker = null;
 let visualizer;
 let synthVisualizer;
 let c15 = null;
@@ -673,9 +681,12 @@ async function init() {
   if (isNaN(spreadLevel)) spreadLevel = 0.6;
   spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 
-  // IML — WASM-backed, fresh random weights each boot
-  iml = await WasmIML.create(N_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
-  iml.setLogger(msg => console.log('[NISPS]', msg));
+  // Dual IML instances — joystick (2 inputs) and hand tracking (14 inputs)
+  imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+  imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
+  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, [48, 48, 64], 1000, 1.0, 0.00001);
+  imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
+  iml = imlJoy; // default to joystick
 
   // Canvas + Visualizer
   $canvas = document.getElementById('vis-canvas');
@@ -736,6 +747,8 @@ async function init() {
   wireSynthControls();
   wireGamepad();
   wireKeyboard();
+  wireInputToggle();
+  createDevPanel(() => handTracker);
   wireQuickPlayControls();
   wireGroupDrawer();
   wireHelp();
@@ -1010,6 +1023,7 @@ function updateFollowUI() {
 }
 
 function onJoystickMove() {
+  if (inputMode !== 'joystick') return;
   iml.setInput(0, joyX);
   iml.setInput(1, joyY);
   iml.process();
@@ -1099,6 +1113,167 @@ function wireControls() {
   updateNoiseRing();
 }
 
+// ---- Input mode (joystick / hands) ----
+function wireInputToggle() {
+  document.querySelectorAll('#input-toggle .pill-opt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.input;
+      if (mode === inputMode) return;
+      setInputMode(mode);
+      syncInputToggle(mode);
+    });
+  });
+}
+
+function syncInputToggle(mode) {
+  document.querySelectorAll('#input-toggle .pill-opt').forEach(b =>
+    b.classList.toggle('active', b.dataset.input === mode)
+  );
+}
+
+let _inputModeSwitching = false;
+async function setInputMode(mode) {
+  if (_inputModeSwitching) return;
+  _inputModeSwitching = true;
+  try {
+    await _setInputModeInner(mode);
+  } finally {
+    _inputModeSwitching = false;
+  }
+}
+
+async function _setInputModeInner(mode) {
+  inputMode = mode;
+  const $pip = document.getElementById('hand-pip');
+
+  if (mode === 'hands') {
+    iml = imlHand;
+    $joystickContainer.style.display = 'none';
+    $pip.classList.remove('hidden');
+
+    if (!handTracker) {
+      const $status = document.getElementById('hand-status');
+      $status.textContent = 'Loading model...';
+
+      handTracker = new HandTracker({
+        videoElement: document.getElementById('hand-video'),
+        overlayCanvas: document.getElementById('hand-overlay'),
+        onTrackingInput: onHandInput,
+        onGesture: onHandGesture,
+        onConnectionChange: (active) => {
+          console.log('[HandTracker] active:', active);
+        },
+      });
+
+      try {
+        await handTracker.start();
+        $status.textContent = 'Tracking';
+        $status.classList.add('tracking');
+      } catch (e) {
+        $status.textContent = 'Camera error';
+        console.error('[HandTracker]', e);
+        setInputMode('joystick');
+        syncInputToggle('joystick');
+        return;
+      }
+    } else {
+      await handTracker.start();
+      document.getElementById('hand-status').textContent = 'Tracking';
+      document.getElementById('hand-status').classList.add('tracking');
+    }
+
+    iml.process();
+    routeOutputs(iml.getOutputs());
+    updateHeatmap(iml.getOutputs());
+  } else {
+    iml = imlJoy;
+    $joystickContainer.style.display = '';
+    $pip.classList.add('hidden');
+
+    if (handTracker) {
+      handTracker.stop();
+      document.getElementById('hand-status').classList.remove('tracking');
+    }
+
+    iml.setInput(0, joyX);
+    iml.setInput(1, joyY);
+    iml.process();
+    routeOutputs(iml.getOutputs());
+    updateHeatmap(iml.getOutputs());
+  }
+
+  updateStatus();
+  drawJoyMap();
+}
+
+function getCurrentInputs() {
+  if (inputMode === 'hands' && handTracker) {
+    return [...handTracker.features];
+  }
+  return [joyX, joyY];
+}
+
+function setCurrentInputs() {
+  if (inputMode === 'hands' && handTracker) {
+    const f = handTracker.features;
+    for (let i = 0; i < f.length; i++) iml.setInput(i, f[i]);
+  } else {
+    iml.setInput(0, joyX);
+    iml.setInput(1, joyY);
+  }
+}
+
+function onHandInput(features) {
+  if (inputMode !== 'hands') return;
+  for (let i = 0; i < features.length; i++) {
+    iml.setInput(i, features[i]);
+  }
+  iml.process();
+
+  const outputs = iml.getOutputs();
+  routeOutputs(outputs);
+  updateHeatmap(outputs);
+  syncRawParamsFromOutputs(outputs);
+  updateGestureIndicator();
+}
+
+function onHandGesture(gesture) {
+  if (gesture === 'thumbsup') {
+    onThumbsUp();
+  } else if (gesture === 'thumbsdown') {
+    onThumbsDown();
+  }
+}
+
+function updateGestureIndicator() {
+  if (!handTracker) return;
+  const $indicator = document.getElementById('gesture-indicator');
+  const $label = document.getElementById('gesture-label');
+  const $progress = $indicator.querySelector('.gesture-ring-progress');
+
+  if (handTracker.gestureCandidate && handTracker.gestureProgress > 0) {
+    $indicator.classList.add('active');
+    const circumference = 2 * Math.PI * 16;
+    const offset = circumference * (1 - handTracker.gestureProgress);
+    $progress.style.strokeDashoffset = offset;
+    $label.textContent = handTracker.gestureCandidate === 'thumbsup' ? '+' : '\u2212';
+  } else {
+    $indicator.classList.remove('active');
+  }
+
+  const $status = document.getElementById('hand-status');
+  if (handTracker.active) {
+    if (handTracker.trackingRight && handTracker.trackingLeft) {
+      $status.textContent = 'Both hands';
+    } else if (handTracker.trackingRight) {
+      $status.textContent = 'Tracking';
+    } else {
+      $status.textContent = 'No hand';
+    }
+    $status.classList.toggle('tracking', handTracker.trackingRight);
+  }
+}
+
 function syncOutputToggles(mode) {
   document.querySelectorAll('#output-toggle-float .pill-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
 }
@@ -1148,7 +1323,7 @@ function updateNoiseRing() {
 
 // ---- Examples mode ----
 function onAddExample() {
-  const inputs = [joyX, joyY];
+  const inputs = getCurrentInputs();
   const outputs = [...rawParamValues];
   iml.addExample(inputs, outputs);
   updateStatus();
@@ -1164,8 +1339,7 @@ function onTrain() {
 
 function onRandomize() {
   iml.randomiseWeights(spreadLevel);
-  iml.setInput(0, joyX);
-  iml.setInput(1, joyY);
+  setCurrentInputs();
   iml.process();
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
@@ -1197,7 +1371,7 @@ function onClear() {
 function onThumbsUp() {
   if (iml.isTraining) return;
 
-  const inputs = [joyX, joyY];
+  const inputs = getCurrentInputs();
   const outputs = [...iml.getOutputs()];
   iml.addExample(inputs, outputs);
 
@@ -1248,13 +1422,23 @@ function loadPreset(name) {
   const preset = PRESETS[name];
   if (!preset) return;
 
-  iml.clearDataset();
+  // Visual presets have 2-element inputs — always apply to joystick IML
+  imlJoy.clearDataset();
   for (const ex of preset) {
-    iml.addExample(ex.input, padPresetOutputs(ex.output));
+    imlJoy.addExample(ex.input, padPresetOutputs(ex.output));
   }
 
+  // Temporarily point iml to imlJoy for training, then restore
+  const prevIml = iml;
+  iml = imlJoy;
   const loss = trainModel();
-  const outputs = iml.getOutputs();
+  iml = prevIml;
+
+  // Show results from joystick IML
+  imlJoy.setInput(0, joyX);
+  imlJoy.setInput(1, joyY);
+  imlJoy.process();
+  const outputs = imlJoy.getOutputs();
   routeOutputs(outputs);
   updateHeatmap(outputs);
   syncRawParamsFromOutputs(outputs);
@@ -1994,10 +2178,13 @@ function flash(id) {
 function saveState() {
   try {
     const state = {
-      features: iml.dataset.features,
-      labels: iml.dataset.labels,
+      features: imlJoy.dataset.features,
+      labels: imlJoy.dataset.labels,
+      handFeatures: imlHand.dataset.features,
+      handLabels: imlHand.dataset.labels,
       noiseLevel,
       outputMode,
+      inputMode,
       joyX,
       joyY,
       groupOverrides,
@@ -2015,15 +2202,29 @@ function loadState() {
     if (!raw) return;
     const state = JSON.parse(raw);
 
-    // Restore training data (pad old 20-element labels to N_OUTPUTS)
+    // Restore joystick IML training data (pad old 20-element labels to N_OUTPUTS)
     if (state.features && state.labels && state.features.length > 0) {
       for (let i = 0; i < state.features.length; i++) {
-        iml.addExample(state.features[i], padPresetOutputs(state.labels[i]));
+        imlJoy.addExample(state.features[i], padPresetOutputs(state.labels[i]));
       }
-      // Retrain with restored data
+      const prevIml = iml;
+      iml = imlJoy;
       trainModel();
-      routeOutputs(iml.getOutputs());
+      iml = prevIml;
     }
+
+    // Restore hand IML training data
+    if (state.handFeatures && state.handLabels && state.handFeatures.length > 0) {
+      for (let i = 0; i < state.handFeatures.length; i++) {
+        imlHand.addExample(state.handFeatures[i], padPresetOutputs(state.handLabels[i]));
+      }
+      const prevIml = iml;
+      iml = imlHand;
+      trainModel();
+      iml = prevIml;
+    }
+
+    routeOutputs(iml.getOutputs());
 
     if (typeof state.noiseLevel === 'number') noiseLevel = state.noiseLevel;
     if (typeof state.joyX === 'number') joyX = state.joyX;
@@ -2058,7 +2259,8 @@ function loadState() {
       syncOutputToggles(outputMode);
     }
 
-    console.log(`[NISPS] Restored ${state.features?.length || 0} examples from storage`);
+    // Note: don't auto-restore inputMode='hands' — requires camera permission
+    console.log(`[NISPS] Restored ${state.features?.length || 0} joy examples, ${state.handFeatures?.length || 0} hand examples from storage`);
   } catch (e) {
     console.warn('[NISPS] Failed to load state:', e);
   }

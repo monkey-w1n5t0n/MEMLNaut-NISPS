@@ -1,7 +1,7 @@
 // NISPS Immersive — Design A
 // Full-viewport flow field with floating overlays
 
-import { IML } from './nisps/iml.js';
+import { WasmIML } from './nisps/nisps-wasm.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
@@ -665,7 +665,7 @@ function padPresetOutputs(outputs) {
 }
 
 // ---- Init ----
-function init() {
+async function init() {
   // Parse ?tame URL param
   const urlParams = new URLSearchParams(window.location.search);
   // tame is handled at groupOverrides init time, no longer needed here
@@ -673,8 +673,8 @@ function init() {
   if (isNaN(spreadLevel)) spreadLevel = 0.6;
   spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 
-  // IML — fresh random weights each boot, no state restoration
-  iml = new IML(N_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+  // IML — WASM-backed, fresh random weights each boot
+  iml = await WasmIML.create(N_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
   iml.setLogger(msg => console.log('[NISPS]', msg));
 
   // Canvas + Visualizer
@@ -1157,17 +1157,9 @@ function onAddExample() {
 }
 
 function onTrain() {
-  const loss = trainModel();
-  if (loss !== null) {
-    const outputs = iml.getOutputs();
-    routeOutputs(outputs);
-    updateHeatmap(outputs);
-    syncRawParamsFromOutputs(outputs);
-    updateStatus();
-    drawLossPlot();
-    drawJoyMap();
-    flash('btn-train');
-  }
+  if (iml.isTraining) return;
+  flash('btn-train');
+  trainModelAsync();
 }
 
 function onRandomize() {
@@ -1203,24 +1195,18 @@ function onClear() {
 
 // ---- RL mode ----
 function onThumbsUp() {
+  if (iml.isTraining) return;
+
   const inputs = [joyX, joyY];
   const outputs = [...iml.getOutputs()];
   iml.addExample(inputs, outputs);
 
-  trainModel();
-  const trainedOutputs = iml.getOutputs();
-  routeOutputs(trainedOutputs);
-  updateHeatmap(trainedOutputs);
-  syncRawParamsFromOutputs(trainedOutputs);
-
   noiseLevel *= rlExplorationDecay;
   noiseLevel = Math.max(noiseLevel, 0.005);
 
-  updateStatus();
-  drawLossPlot();
-  drawJoyMap();
-  updateNoiseRing();
   flash('btn-thumbsup');
+  updateNoiseRing();
+  trainModelAsync();
 }
 
 function onThumbsDown() {
@@ -1239,14 +1225,22 @@ function onThumbsDown() {
 }
 
 // ---- Training ----
+// Sync — used for preset loading and state restore
 function trainModel() {
-  const loss = iml.train({
-    onIteration: (iter, iterLoss) => {
-      if (iter % 8 !== 0) return;
-      drawLossPlot();
-    },
+  return iml.train();
+}
+
+// Async — used for interactive training (thumbs-up, train button)
+function trainModelAsync(onDone) {
+  iml.trainAsync(({ loss, outputs }) => {
+    routeOutputs(outputs);
+    updateHeatmap(outputs);
+    syncRawParamsFromOutputs(outputs);
+    updateStatus();
+    drawLossPlot();
+    drawJoyMap();
+    if (onDone) onDone();
   });
-  return loss;
 }
 
 // ---- Presets ----

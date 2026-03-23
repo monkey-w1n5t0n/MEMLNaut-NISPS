@@ -1,121 +1,97 @@
 // Arpeggiator — plays chord progressions through the C15 engine
-// Supports tempo, octave range, octave offset, and multiple chord progressions
-
-// Chord progressions as arrays of arrays of intervals (semitones from root)
-const PROGRESSIONS = {
-  'I-vi-IV-V': [
-    [0, 4, 7],       // C major
-    [9, 12, 16],     // A minor
-    [5, 9, 12],      // F major
-    [7, 11, 14],     // G major
-  ],
-  'I-IV-vi-V': [
-    [0, 4, 7],
-    [5, 9, 12],
-    [9, 12, 16],
-    [7, 11, 14],
-  ],
-  'i-VI-III-VII': [
-    [0, 3, 7],       // C minor
-    [8, 12, 15],     // Ab major
-    [3, 7, 10],      // Eb major
-    [10, 14, 17],    // Bb major
-  ],
-  'I-V-vi-IV': [
-    [0, 4, 7],
-    [7, 11, 14],
-    [9, 12, 16],
-    [5, 9, 12],
-  ],
-};
+// Delegates to a dedicated Web Worker for reliable timing.
+// The worker writes noteOn/noteOff directly to the SharedArrayBuffer
+// ring buffer, bypassing main thread entirely.
 
 export class Arpeggiator {
   constructor(bridge) {
     this.bridge = bridge;
-    this.bpm = 120;
-    this.octaves = 2;       // how many octaves to span
-    this.octaveOffset = 0;  // base octave shift (-2 to +2)
-    this.progression = 'I-vi-IV-V';
-    this.playing = false;
-    this._timer = null;
-    this._chordIndex = 0;
-    this._noteIndex = 0;
-    this._currentNotes = [];
-    this._lastNote = -1;
+    this._worker = null;
+    this._playing = false;
+    this._bpm = 120;
+    this._octaves = 2;
+    this._octaveOffset = 0;
+    this._progression = 'I-vi-IV-V';
   }
 
   get progressionNames() {
-    return Object.keys(PROGRESSIONS);
+    return ['I-vi-IV-V', 'I-IV-vi-V', 'i-VI-III-VII', 'I-V-vi-IV'];
+  }
+
+  get playing() { return this._playing; }
+
+  get bpm() { return this._bpm; }
+  set bpm(v) {
+    this._bpm = v;
+    this._send('set', { bpm: v });
+  }
+
+  get octaves() { return this._octaves; }
+  set octaves(v) {
+    this._octaves = v;
+    this._send('set', { octaves: v });
+  }
+
+  get octaveOffset() { return this._octaveOffset; }
+  set octaveOffset(v) {
+    this._octaveOffset = v;
+    this._send('set', { octaveOffset: v });
+  }
+
+  get progression() { return this._progression; }
+  set progression(v) {
+    this._progression = v;
+    this._send('set', { progression: v });
+  }
+
+  _ensureWorker() {
+    if (this._worker) return;
+
+    this._worker = new Worker(
+      new URL('./arpeggiator-worker.js', import.meta.url),
+      { type: 'module' }
+    );
+
+    this._worker.onmessage = (e) => {
+      if (e.data.type === 'state') {
+        this._playing = e.data.playing;
+      }
+    };
+
+    // Pass the SharedArrayBuffer so the worker can write notes directly
+    const sab = this.bridge.sharedBuffer;
+    if (sab) {
+      this._worker.postMessage({ type: 'init', data: { sharedBuffer: sab } });
+    }
+
+    // Sync current settings
+    this._send('set', {
+      bpm: this._bpm,
+      octaves: this._octaves,
+      octaveOffset: this._octaveOffset,
+      progression: this._progression,
+    });
+  }
+
+  _send(type, data) {
+    if (this._worker) {
+      this._worker.postMessage({ type, data });
+    }
   }
 
   start() {
-    if (this.playing) return;
-    this.playing = true;
-    this._chordIndex = 0;
-    this._noteIndex = 0;
-    this._scheduleNext();
+    this._ensureWorker();
+    // If bridge wasn't ready when worker was created, send the buffer now
+    const sab = this.bridge.sharedBuffer;
+    if (sab) {
+      this._worker.postMessage({ type: 'init', data: { sharedBuffer: sab } });
+    }
+    this._send('start');
+    this._playing = true; // optimistic, worker confirms
   }
 
   stop() {
-    this.playing = false;
-    if (this._timer) {
-      clearTimeout(this._timer);
-      this._timer = null;
-    }
-    // Release current note
-    if (this._lastNote >= 0) {
-      this.bridge.noteOff(this._lastNote);
-      this._lastNote = -1;
-    }
-  }
-
-  _scheduleNext() {
-    if (!this.playing) return;
-
-    const msPerBeat = 60000 / this.bpm;
-    // Each note gets a 16th-note duration, chord changes every bar (4 beats)
-    const noteDuration = msPerBeat / 4;
-
-    this._playNextNote();
-
-    this._timer = setTimeout(() => this._scheduleNext(), noteDuration);
-  }
-
-  _playNextNote() {
-    const chords = PROGRESSIONS[this.progression] || PROGRESSIONS['I-vi-IV-V'];
-
-    // Release previous note
-    if (this._lastNote >= 0) {
-      this.bridge.noteOff(this._lastNote);
-    }
-
-    // Build arpeggiated note sequence from current chord across octaves
-    const chord = chords[this._chordIndex];
-    const baseNote = 48 + (this.octaveOffset * 12); // C3 as base + offset
-
-    // Build notes across octave range
-    const notes = [];
-    for (let oct = 0; oct < this.octaves; oct++) {
-      for (const interval of chord) {
-        const note = baseNote + interval + (oct * 12);
-        if (note >= 0 && note <= 127) {
-          notes.push(note);
-        }
-      }
-    }
-
-    if (notes.length === 0) return;
-
-    // Play the next note in sequence
-    const note = notes[this._noteIndex % notes.length];
-    this.bridge.noteOn(note, 0.6 + Math.random() * 0.2);
-    this._lastNote = note;
-
-    // Advance
-    this._noteIndex++;
-    if (this._noteIndex >= notes.length) {
-      this._noteIndex = 0;
-      this._chordIndex = (this._chordIndex + 1) % chords.length;
-    }
+    this._send('stop');
+    this._playing = false;
   }
 }

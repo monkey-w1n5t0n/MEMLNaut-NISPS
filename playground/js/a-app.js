@@ -1040,22 +1040,37 @@ function onJoystickMove() {
 }
 
 // ---- Output routing ----
+// Synth param throttling: only send values that changed beyond a dead zone.
+// Prevents ring buffer flooding (126 params × 30fps = 3780 msg/s > 512 capacity).
+const _lastSentParams = new Float32Array(N_OUTPUTS);
+const PARAM_DEAD_ZONE = 0.002; // ~0.2% change threshold
+let _lastParamSendTime = 0;
+const PARAM_SEND_INTERVAL = 50; // max ~20fps for synth param updates
+
 function routeOutputs(outputs) {
   if (outputMode === 'synth') {
-    // Synth mode: synth visualizer + C15
-    // Apply group overrides before visualization and C15
     const overridden = new Array(outputs.length);
     for (let i = 0; i < outputs.length; i++) {
       overridden[i] = applyGroupOverrides(outputs[i], i);
     }
+    // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);
+
+    // C15 ring buffer: throttle + dead-zone filter
     if (c15 && c15.running) {
-      for (let i = 0; i < overridden.length && i < SYNTH_PARAM_MAP.length; i++) {
-        c15.setParameter(SYNTH_PARAM_MAP[i].id, overridden[i]);
+      const now = performance.now();
+      if (now - _lastParamSendTime >= PARAM_SEND_INTERVAL) {
+        _lastParamSendTime = now;
+        for (let i = 0; i < overridden.length && i < SYNTH_PARAM_MAP.length; i++) {
+          const v = overridden[i];
+          if (Math.abs(v - _lastSentParams[i]) > PARAM_DEAD_ZONE) {
+            c15.setParameter(SYNTH_PARAM_MAP[i].id, v);
+            _lastSentParams[i] = v;
+          }
+        }
       }
     }
   } else {
-    // Visual mode: flow field uses first 20
     visualizer.setParams(outputs.slice(0, N_VISUAL_OUTPUTS));
   }
 }

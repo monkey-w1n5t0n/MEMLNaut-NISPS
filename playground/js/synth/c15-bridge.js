@@ -14,27 +14,37 @@ const HEADER_SIZE = 3;
 const MESSAGE_SIZE = 4;
 const RING_CAPACITY = 512;
 
+// Multi-producer-safe ring buffer writer using CAS (compare-and-swap).
+// Safe for concurrent writes from main thread + arpeggiator Worker.
 class RingBufferWriter {
   constructor(sharedBuffer) {
+    this._sab = sharedBuffer;
     this._buffer = new Float32Array(sharedBuffer);
     this._int32 = new Int32Array(sharedBuffer);
   }
 
   write(type, id, value) {
-    const writeIdx = Atomics.load(this._int32, 0);
-    const readIdx = Atomics.load(this._int32, 1);
-    const next = (writeIdx + 1) % RING_CAPACITY;
-    if (next === readIdx) return false;
+    // CAS loop: claim a slot atomically
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const writeIdx = Atomics.load(this._int32, 0);
+      const readIdx = Atomics.load(this._int32, 1);
+      const next = (writeIdx + 1) % RING_CAPACITY;
+      if (next === readIdx) return false; // full
 
-    const off = HEADER_SIZE + writeIdx * MESSAGE_SIZE;
-    this._buffer[off] = type;
-    this._buffer[off + 1] = id;
-    this._buffer[off + 2] = value;
-    this._buffer[off + 3] = 0;
-
-    Atomics.store(this._int32, 0, next);
-    Atomics.add(this._int32, 2, 1);
-    return true;
+      // Try to claim this slot
+      if (Atomics.compareExchange(this._int32, 0, writeIdx, next) === writeIdx) {
+        // Won the slot — write data
+        const off = HEADER_SIZE + writeIdx * MESSAGE_SIZE;
+        this._buffer[off] = type;
+        this._buffer[off + 1] = id;
+        this._buffer[off + 2] = value;
+        this._buffer[off + 3] = 0;
+        Atomics.add(this._int32, 2, 1);
+        return true;
+      }
+      // Another writer took it — retry
+    }
+    return false; // contention too high
   }
 
   writeParameter(paramId, value) {
@@ -46,6 +56,9 @@ class RingBufferWriter {
   writeNoteOff(note, velocity) {
     return this.write(MESSAGE_TYPE.NOTE_OFF, note, velocity || 0);
   }
+
+  /** Expose the SharedArrayBuffer for passing to Workers */
+  get sharedBuffer() { return this._sab; }
 }
 
 export class C15Bridge {
@@ -58,10 +71,14 @@ export class C15Bridge {
     this.ready = false;
     this.allParams = null;
     this.activeNotes = new Set();
+    this._sab = null; // SharedArrayBuffer, exposed after start()
     this._onStatusChange = null;
   }
 
   set onStatusChange(fn) { this._onStatusChange = fn; }
+
+  /** SharedArrayBuffer for the ring buffer — available after start() */
+  get sharedBuffer() { return this._sab; }
 
   _status(msg) {
     console.log('[C15]', msg);
@@ -106,6 +123,7 @@ export class C15Bridge {
       const sabSize = (HEADER_SIZE + RING_CAPACITY * MESSAGE_SIZE) * 4;
       const sab = new SharedArrayBuffer(sabSize);
       new Float32Array(sab).fill(0);
+      this._sab = sab;
       this.ringWriter = new RingBufferWriter(sab);
 
       // Load worklet

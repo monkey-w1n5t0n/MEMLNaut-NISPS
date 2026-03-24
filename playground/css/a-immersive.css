@@ -1026,6 +1026,7 @@ html, body {
   transition: background 0.15s, border-color 0.15s;
   padding: 0;
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .play-btn:active {
@@ -1091,7 +1092,8 @@ html, body {
   color: var(--text-dim);
 }
 
-.synth-quick-controls:hover .play-drawer,
+.play-btn:hover ~ .play-drawer,
+.play-drawer:hover,
 .play-drawer.show {
   display: flex;
 }
@@ -1120,6 +1122,7 @@ html, body {
   min-width: 0;
   max-width: 160px;
   text-overflow: ellipsis;
+  align-self: flex-start;
 }
 
 .preset-select:hover,

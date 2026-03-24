@@ -4,7 +4,10 @@
 import { WasmIML } from './nisps/nisps-wasm.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
-import { Arpeggiator } from './synth/arpeggiator.js';
+import { ShapeSeqEngine } from './shapeseq/sequencer.js';
+import { StepVisualizer } from './shapeseq/step-viz.js';
+import { ChainBuilderUI } from './shapeseq/chain-ui.js';
+import { getDefaultBus } from './shapeseq/event-bus.js';
 import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
 import { GamepadInput } from './ui/gamepad.js';
@@ -73,7 +76,9 @@ let handTracker = null;
 let visualizer;
 let synthVisualizer;
 let c15 = null;
-let arpeggiator = null;
+let shapeSeq = null;      // ShapeSeqEngine instance
+let stepViz = null;       // StepVisualizer
+let chainUI = null;       // ChainBuilderUI
 let midiInput = null;
 
 let outputMode = 'visual';
@@ -703,7 +708,9 @@ async function init() {
     if (el) el.textContent = msg;
   };
   c15.loadParams();
-  arpeggiator = new Arpeggiator(c15);
+
+  // ShapeSeq is initialized lazily when audio starts (needs AudioContext)
+
   midiInput = new MIDIInput(c15);
   initMIDIControls();
 
@@ -752,6 +759,7 @@ async function init() {
   wireQuickPlayControls();
   wireGroupDrawer();
   wireHelp();
+  wireShapeSeqControls();
 
   // Resize
   window.addEventListener('resize', onResize);
@@ -1301,6 +1309,7 @@ function setOutputMode(mode) {
 
   const heatmapStrip = document.getElementById('heatmap-strip');
   const synthQuickControls = document.getElementById('synth-quick-controls');
+  const shapeseqContainer = document.getElementById('shapeseq-container');
 
   if (mode === 'synth') {
     $synthPanel.classList.remove('hidden');
@@ -1309,6 +1318,16 @@ function setOutputMode(mode) {
     heatmapStrip.classList.add('hidden');
     synthQuickControls.classList.remove('hidden');
     synthVisualizer.enableInteraction(true);
+    // Show ShapeSeq UI
+    if (shapeseqContainer) shapeseqContainer.classList.remove('hidden');
+    // Resize step viz canvas to fit its container
+    if (stepViz) {
+      const vizCanvas = document.getElementById('shapeseq-viz');
+      if (vizCanvas) {
+        const rect = vizCanvas.getBoundingClientRect();
+        stepViz.resize(rect.width, rect.height);
+      }
+    }
     // Pulse play button if audio not yet started
     const qp = document.getElementById('quick-play');
     if (qp) qp.classList.toggle('audio-needs-init', !(c15 && c15.running));
@@ -1319,6 +1338,8 @@ function setOutputMode(mode) {
     heatmapStrip.classList.remove('hidden');
     synthQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(false);
+    // Hide ShapeSeq UI
+    if (shapeseqContainer) shapeseqContainer.classList.add('hidden');
   }
 
   routeOutputs(iml.getOutputs());
@@ -1567,26 +1588,47 @@ function syncRawParamsFromOutputs(outputs) {
   });
 }
 
+// ---- ShapeSeq lazy init (needs AudioContext from C15) ----
+async function ensureShapeSeqInit() {
+  if (shapeSeq) return; // already initialized
+  if (!c15 || !c15.audioContext) return; // no audio context yet
+
+  const eventBus = getDefaultBus(c15.audioContext);
+  shapeSeq = new ShapeSeqEngine({ audioContext: c15.audioContext, eventBus, c15Bridge: c15 });
+  await shapeSeq.init();
+
+  // Wire up StepVisualizer and ChainBuilderUI now that engine exists
+  const seqVizCanvas = document.getElementById('shapeseq-viz');
+  const seqChainContainer = document.getElementById('shapeseq-chain');
+  if (seqVizCanvas && !stepViz) {
+    stepViz = new StepVisualizer({ canvas: seqVizCanvas, eventBus });
+    const rect = seqVizCanvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) stepViz.resize(rect.width, rect.height);
+  }
+  if (seqChainContainer && !chainUI) {
+    chainUI = new ChainBuilderUI({ container: seqChainContainer, chain: shapeSeq.getChain(), eventBus });
+  }
+
+  console.log('[NISPS] ShapeSeq initialized');
+}
+
 // ---- Synth controls ----
 function wireSynthControls() {
   const startBtn = document.getElementById('synth-start');
   const volumeSlider = document.getElementById('synth-volume');
-  const arpToggle = document.getElementById('arp-toggle');
-  const arpProgression = document.getElementById('arp-progression');
-  const arpTempo = document.getElementById('arp-tempo');
-  const arpOctaves = document.getElementById('arp-octaves');
-  const arpOffset = document.getElementById('arp-offset');
 
   startBtn.addEventListener('click', async () => {
     const quickPlay = document.getElementById('quick-play');
     if (c15.running) {
-      arpeggiator.stop();
-      arpToggle.textContent = 'Play';
+      if (shapeSeq) shapeSeq.stop();
+      const seqToggle = document.getElementById('seq-toggle');
+      if (seqToggle) seqToggle.textContent = 'Play';
       await c15.stop();
       startBtn.textContent = 'Start Audio';
       if (quickPlay) quickPlay.classList.add('audio-needs-init');
     } else {
       await c15.start();
+      await ensureShapeSeqInit();
       startBtn.textContent = 'Stop Audio';
       if (quickPlay) quickPlay.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
@@ -1599,42 +1641,48 @@ function wireSynthControls() {
     if (quickVol) quickVol.value = e.target.value;
   });
 
-  arpToggle.addEventListener('click', () => {
-    if (!c15.running) return;
-    if (arpeggiator.playing) {
-      arpeggiator.stop();
-      arpToggle.textContent = 'Play';
-    } else {
-      arpeggiator.start();
-      arpToggle.textContent = 'Stop';
-    }
-  });
+}
 
-  arpProgression.addEventListener('change', (e) => {
-    arpeggiator.progression = e.target.value;
-  });
+// ---- ShapeSeq controls (bottom sheet) ----
+function wireShapeSeqControls() {
+  const seqToggle = document.getElementById('seq-toggle');
+  const seqTempo = document.getElementById('seq-tempo');
+  const seqSteps = document.getElementById('seq-steps');
 
-  arpTempo.addEventListener('input', (e) => {
-    const val = parseInt(e.target.value);
-    arpeggiator.bpm = val;
-    document.getElementById('tempo-val').textContent = val;
-    const quickBpm = document.getElementById('quick-bpm');
-    const quickBpmVal = document.getElementById('quick-bpm-val');
-    if (quickBpm) quickBpm.value = val;
-    if (quickBpmVal) quickBpmVal.textContent = val;
-  });
+  if (seqToggle) {
+    seqToggle.addEventListener('click', async () => {
+      if (!c15.running) return;
+      await ensureShapeSeqInit();
+      if (!shapeSeq) return;
+      if (shapeSeq.isPlaying) {
+        if (shapeSeq) shapeSeq.stop();
+        seqToggle.textContent = 'Play';
+      } else {
+        shapeSeq.start();
+        seqToggle.textContent = 'Stop';
+      }
+    });
+  }
 
-  arpOctaves.addEventListener('input', (e) => {
-    const val = parseInt(e.target.value);
-    arpeggiator.octaves = val;
-    document.getElementById('octaves-val').textContent = val;
-  });
+  if (seqTempo) {
+    seqTempo.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (shapeSeq) shapeSeq.setTempo(val);
+      document.getElementById('tempo-val').textContent = val;
+      const quickBpm = document.getElementById('quick-bpm');
+      const quickBpmVal = document.getElementById('quick-bpm-val');
+      if (quickBpm) quickBpm.value = val;
+      if (quickBpmVal) quickBpmVal.textContent = val;
+    });
+  }
 
-  arpOffset.addEventListener('input', (e) => {
-    const val = parseInt(e.target.value);
-    arpeggiator.octaveOffset = val;
-    document.getElementById('offset-val').textContent = val;
-  });
+  if (seqSteps) {
+    seqSteps.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (shapeSeq) shapeSeq.setStepCount(val);
+      document.getElementById('steps-val').textContent = val;
+    });
+  }
 }
 
 // ---- MIDI Input ----
@@ -1778,22 +1826,23 @@ function wireQuickPlayControls() {
 
   quickPlay.addEventListener('click', async () => {
     if (c15.running) {
-      arpeggiator.stop();
+      if (shapeSeq) shapeSeq.stop();
       await c15.stop();
       // Also update the bottom sheet controls
       const startBtn = document.getElementById('synth-start');
-      const arpToggle = document.getElementById('arp-toggle');
+      const seqToggle = document.getElementById('seq-toggle');
       if (startBtn) startBtn.textContent = 'Start Audio';
-      if (arpToggle) arpToggle.textContent = 'Play';
+      if (seqToggle) seqToggle.textContent = 'Play';
     } else {
       await c15.start();
-      arpeggiator.start();
+      await ensureShapeSeqInit();
+      if (shapeSeq) shapeSeq.start();
       routeOutputs(iml.getOutputs());
       // Also update the bottom sheet controls
       const startBtn = document.getElementById('synth-start');
-      const arpToggle = document.getElementById('arp-toggle');
+      const seqToggle = document.getElementById('seq-toggle');
       if (startBtn) startBtn.textContent = 'Stop Audio';
-      if (arpToggle) arpToggle.textContent = 'Stop';
+      if (seqToggle) seqToggle.textContent = 'Stop';
     }
     updatePlayIcon();
   });
@@ -1807,10 +1856,10 @@ function wireQuickPlayControls() {
 
   quickBpm.addEventListener('input', (e) => {
     const val = parseInt(e.target.value);
-    arpeggiator.bpm = val;
+    if (shapeSeq) shapeSeq.setTempo(val);
     quickBpmVal.textContent = val;
     // Sync with bottom sheet tempo slider
-    const sheetTempo = document.getElementById('arp-tempo');
+    const sheetTempo = document.getElementById('seq-tempo');
     const sheetTempoVal = document.getElementById('tempo-val');
     if (sheetTempo) sheetTempo.value = val;
     if (sheetTempoVal) sheetTempoVal.textContent = val;
@@ -2142,6 +2191,17 @@ function onResize() {
   visualizer.initParticles();
   synthVisualizer.resize();
 
+  // Resize ShapeSeq step viz if visible
+  if (stepViz && outputMode === 'synth') {
+    const vizCanvas = document.getElementById('shapeseq-viz');
+    if (vizCanvas) {
+      const rect = vizCanvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        stepViz.resize(rect.width, rect.height);
+      }
+    }
+  }
+
   // Resize joy-map canvas to match container
   const size = $joystickContainer.offsetWidth;
   if (size > 0) {
@@ -2175,6 +2235,15 @@ function animate() {
   if (gamepad) gamepad.poll();
   if (outputMode === 'synth') {
     synthVisualizer.draw();
+    // Route inputs to ShapeSeq and render step viz
+    if (shapeSeq && shapeSeq.isPlaying) {
+      if (inputMode === 'hands' && handTracker && handTracker.active && handTracker.features) {
+        shapeSeq.setSequenceInputs([handTracker.features[0], handTracker.features[1]]);
+      } else {
+        shapeSeq.setSequenceInputs([joyX, joyY]);
+      }
+    }
+    if (stepViz) stepViz.render();
   } else {
     visualizer.draw();
   }

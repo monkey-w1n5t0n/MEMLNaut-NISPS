@@ -239,11 +239,12 @@ export class ClockEngine {
 
   /**
    * Duration of one step in seconds at the current BPM.
-   * One beat = one step (quarter-note grid).
+   * One step = one 16th note (4 steps per beat).
+   * At 120 BPM: one step = 0.125s, 8 steps = 1 second.
    * @returns {number}
    */
   _stepDuration() {
-    return 60 / this._bpm;
+    return 60 / this._bpm / 4;
   }
 
   // ── Event emission ──────────────────────────────────────────────────

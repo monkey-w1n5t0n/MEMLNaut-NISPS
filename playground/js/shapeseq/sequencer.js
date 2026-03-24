@@ -66,6 +66,9 @@ export class ShapeSeqEngine {
     /** @private */ this._playing = false;
     /** @private */ this._initialized = false;
 
+    // Dirty-check: skip re-evaluation when inputs haven't changed
+    /** @private */ this._lastInputs = [NaN, NaN];
+
     // Track active notes for orphan prevention
     /** @private @type {Set<number>} */
     this._activeNotes = new Set();
@@ -88,7 +91,7 @@ export class ShapeSeqEngine {
     this._sequenceIML = await createSequenceIML();
 
     // Randomize weights with default spread
-    this._sequenceIML.drawWeights(DEFAULT_SPREAD);
+    this._sequenceIML.randomiseWeights(DEFAULT_SPREAD);
 
     // 2. Create the default primitive chain
     this._chain = new Chain();
@@ -224,6 +227,15 @@ export class ShapeSeqEngine {
   setSequenceInputs(values) {
     if (!this._initialized || !this._sequenceIML) return;
 
+    // Dirty-check: skip re-evaluation if inputs haven't changed
+    const EPS = 1e-5;
+    if (Math.abs(values[0] - this._lastInputs[0]) < EPS &&
+        Math.abs(values[1] - this._lastInputs[1]) < EPS) {
+      return;
+    }
+    this._lastInputs[0] = values[0];
+    this._lastInputs[1] = values[1];
+
     // 1. Forward inputs to the sequence IML
     this._sequenceIML.setInputs(values);
 
@@ -264,9 +276,9 @@ export class ShapeSeqEngine {
    * @param {Object} data - { pitch, velocity, stepIndex, time, accent, isSubdivision }
    */
   _handleNoteOn(data) {
-    // pitch comes from the projection layer; after RangeMap it's already
-    // in MIDI note range (e.g., 48-84). Round to nearest integer.
-    const midiNote = Math.round(data.pitch) | 0;
+    // pitch is stored as midiNote/127 in the pattern (set by IntervalLock).
+    // Convert back to MIDI note number.
+    const midiNote = Math.round(data.pitch * 127) | 0;
     const velocity = data.velocity;
 
     // Clamp to valid MIDI range
@@ -284,7 +296,7 @@ export class ShapeSeqEngine {
    * @param {Object} data - { pitch, velocity, stepIndex, time }
    */
   _handleNoteOff(data) {
-    const midiNote = Math.round(data.pitch) | 0;
+    const midiNote = Math.round(data.pitch * 127) | 0;
     const note = midiNote < 0 ? 0 : midiNote > 127 ? 127 : midiNote;
 
     this._c15.noteOff(note);

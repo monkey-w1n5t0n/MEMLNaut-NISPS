@@ -294,10 +294,13 @@ export function applyProjection(chain, patternDesc) {
  * ready to pass to createProjectionChain().
  */
 export const PRESETS = {
-  /** Exponential velocity shaping + pitch range map to MIDI 48-84 */
+  /**
+   * Exponential velocity shaping.
+   * Pitch is handled by IntervalLock primitive (outputs MIDI note / 127).
+   * No pitch RangeMap needed — the sequencer converts pitch * 127 to MIDI note.
+   */
   expressive: [
     { transform: VelocityCurve, params: { shape: 'exponential' }, field: 'velocity' },
-    { transform: RangeMap, params: { min: 48, max: 84 }, field: 'pitch' },
   ],
 
   /** Gate threshold at 0.5 + exponential velocity curve */
@@ -306,9 +309,8 @@ export const PRESETS = {
     { transform: VelocityCurve, params: { shape: 'exponential' }, field: 'velocity' },
   ],
 
-  /** Wide pitch range map (24-96) + linear velocity (identity) */
+  /** S-curve velocity for more dynamic contrast */
   fullRange: [
-    { transform: RangeMap, params: { min: 24, max: 96 }, field: 'pitch' },
-    { transform: VelocityCurve, params: { shape: 'linear' }, field: 'velocity' },
+    { transform: VelocityCurve, params: { shape: 'sCurve' }, field: 'velocity' },
   ],
 };

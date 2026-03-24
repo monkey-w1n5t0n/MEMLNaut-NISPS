@@ -268,15 +268,31 @@ export class SwingGroove extends Primitive {
 
   process(params, patternDesc, state, rng) {
     const swingAmount = params[0];
+    const swingGrid = params[1];
     const pattern = clonePattern(patternDesc);
 
     // Max swing = 0.33 (triplet feel)
     const maxOffset = 0.33;
     const offset = swingAmount * maxOffset;
 
-    // Apply swing to every other step (odd-indexed steps)
-    for (let i = 1; i < pattern.stepCount; i += 2) {
-      pattern.steps[i].timeOffset = offset;
+    // swingGrid selects which subdivision gets swung:
+    //   0.0–0.33: every 2nd step (8th note feel)
+    //   0.34–0.66: every 4th step (16th note feel)
+    //   0.67–1.0: every 3rd step (triplet feel)
+    let period;
+    if (swingGrid < 0.34) {
+      period = 2;
+    } else if (swingGrid < 0.67) {
+      period = 4;
+    } else {
+      period = 3;
+    }
+
+    // Apply swing to steps that fall on the swing grid
+    for (let i = 0; i < pattern.stepCount; i++) {
+      if (i % period === period - 1) {
+        pattern.steps[i].timeOffset = offset;
+      }
     }
 
     return { patternDesc: pattern, nextState: {} };
@@ -399,10 +415,13 @@ export class IntervalLock extends Primitive {
     const pattern = clonePattern(patternDesc);
 
     // Build the full set of MIDI notes in this scale + root + range
+    // Base octave offset: root param selects the note class (0-11),
+    // we start from C3 (MIDI 48) so that default output is in a playable range
+    const BASE_OCTAVE = 48;
     const notes = [];
     for (let oct = 0; oct < octaveRange; oct++) {
       for (let i = 0; i < scale.length; i++) {
-        const midiNote = root + scale[i] + oct * 12;
+        const midiNote = BASE_OCTAVE + root + scale[i] + oct * 12;
         if (midiNote <= 127) {
           notes.push(midiNote);
         }
@@ -418,7 +437,9 @@ export class IntervalLock extends Primitive {
       // Quantize pitch [0,1] to nearest note in our scale
       const targetIdx = Math.round(step.pitch * (notes.length - 1));
       const clampedIdx = targetIdx < 0 ? 0 : targetIdx >= notes.length ? notes.length - 1 : targetIdx;
-      // Store as MIDI note / 127 to stay in [0,1]
+      // Store MIDI note directly — downstream (sequencer._handleNoteOn)
+      // reads this as a MIDI note number, not a [0,1] value.
+      // We store as note/127 to stay within the [0,1] pattern field range.
       step.pitch = notes[clampedIdx] / 127;
     }
 

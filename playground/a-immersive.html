@@ -21,7 +21,7 @@
 
   <!-- Synth quick controls (play button + drawer, next to back button) -->
   <div class="synth-quick-controls hidden" id="synth-quick-controls">
-    <button class="play-btn" id="quick-play" title="Start audio + sequencer">
+    <button class="play-btn" id="quick-play" title="Start audio + arpeggiator">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" id="quick-play-icon"><path d="M4 2l10 6-10 6z"/></svg>
     </button>
     <div class="play-drawer" id="play-drawer">
@@ -60,7 +60,7 @@
   <!-- Synth visualization canvas -->
   <canvas id="synth-vis-canvas"></canvas>
 
-  <!-- ShapeSeq UI (synth mode only) -->
+  <!-- ShapeSeq UI (hidden by default, enabled with ?shapeseq=1) -->
   <div class="shapeseq-container hidden" id="shapeseq-container">
     <canvas id="shapeseq-viz"></canvas>
     <div class="shapeseq-chain-wrap" id="shapeseq-chain"></div>
@@ -157,16 +157,29 @@
           <input type="range" id="synth-volume" min="0" max="1" step="0.01" value="0.5">
         </div>
         <div class="synth-row">
-          <label>Sequencer</label>
-          <button class="action-btn" id="seq-toggle">Play</button>
+          <label>Arpeggiator</label>
+          <button class="action-btn" id="arp-toggle">Play</button>
+        </div>
+        <div class="synth-row">
+          <label>Progression</label>
+          <select id="arp-progression">
+            <option value="I-vi-IV-V">I-vi-IV-V</option>
+            <option value="I-IV-vi-V">I-IV-vi-V</option>
+            <option value="i-VI-III-VII">i-VI-III-VII</option>
+            <option value="I-V-vi-IV">I-V-vi-IV</option>
+          </select>
         </div>
         <div class="synth-row">
           <label>Tempo <span id="tempo-val">120</span></label>
-          <input type="range" id="seq-tempo" min="40" max="240" step="1" value="120">
+          <input type="range" id="arp-tempo" min="40" max="240" step="1" value="120">
         </div>
         <div class="synth-row">
-          <label>Steps <span id="steps-val">8</span></label>
-          <input type="range" id="seq-steps" min="1" max="32" step="1" value="8">
+          <label>Octaves <span id="octaves-val">2</span></label>
+          <input type="range" id="arp-octaves" min="1" max="5" step="1" value="2">
+        </div>
+        <div class="synth-row">
+          <label>Oct Offset <span id="offset-val">0</span></label>
+          <input type="range" id="arp-offset" min="-2" max="3" step="1" value="0">
         </div>
         <div class="synth-row" id="midi-row" style="display:none">
           <label>MIDI Input</label>
@@ -286,7 +299,7 @@
             <li><strong>Mute (M)</strong> &mdash; removes the parameter from NISPS control; its bar disappears and you get a manual value slider instead</li>
           </ul>
           <li><strong>MIDI input</strong> &mdash; connect a MIDI controller and it will be detected automatically; MIDI notes trigger the synth directly</li>
-          <li><strong>ShapeSeq</strong> &mdash; in synth mode, the sequencer UI appears: a circular step visualizer shows the current pattern; the chain builder below lets you add/remove/reorder algorithmic primitives; press Play to start the generative sequencer</li>
+          <li><strong>Arpeggiator</strong> &mdash; expand the bottom bar to access the built-in arpeggiator with tempo, octave range, offset, and chord progression controls; press Pause to stop it</li>
         </ul>
       </div>
 

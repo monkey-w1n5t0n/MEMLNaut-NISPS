@@ -98,7 +98,7 @@ html, body {
   display: none;
 }
 
-/* ---- ShapeSeq container (synth mode) ---- */
+/* ---- ShapeSeq container (synth mode, feature-flagged) ---- */
 .shapeseq-container {
   position: fixed;
   inset: 0;
@@ -108,17 +108,8 @@ html, body {
   background: #0d0d0d;
   overflow: hidden;
 }
-
-.shapeseq-container.hidden {
-  display: none;
-}
-
-#shapeseq-viz {
-  width: 100%;
-  flex: 0 0 45%;
-  min-height: 0;
-}
-
+.shapeseq-container.hidden { display: none; }
+#shapeseq-viz { width: 100%; flex: 0 0 45%; min-height: 0; }
 .shapeseq-chain-wrap {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -1035,7 +1026,6 @@ html, body {
   transition: background 0.15s, border-color 0.15s;
   padding: 0;
   flex-shrink: 0;
-  align-self: flex-start;
 }
 
 .play-btn:active {
@@ -1101,8 +1091,7 @@ html, body {
   color: var(--text-dim);
 }
 
-.play-btn:hover ~ .play-drawer,
-.play-drawer:hover,
+.synth-quick-controls:hover .play-drawer,
 .play-drawer.show {
   display: flex;
 }
@@ -1131,7 +1120,6 @@ html, body {
   min-width: 0;
   max-width: 160px;
   text-overflow: ellipsis;
-  align-self: flex-start;
 }
 
 .preset-select:hover,

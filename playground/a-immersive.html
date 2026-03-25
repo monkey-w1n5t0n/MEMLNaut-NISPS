@@ -117,6 +117,7 @@
       <button class="float-btn" id="btn-randomize-bar" title="Randomize weights">Randomize</button>
       <button class="float-btn" id="btn-clear-examples-bar" title="Clear examples">Clear Ex</button>
       <button class="follow-pill" id="follow-pill" title="Toggle follow mode">Follow</button>
+      <button class="osc-pill" id="osc-pill" title="Connect OSC output">OSC</button>
       <button class="chevron-btn" id="chevron-btn" title="Expand panel">&#9650;</button>
     </div>
 
@@ -188,6 +189,11 @@
         </div>
         <div class="synth-row" id="midi-status-row" style="display:none">
           <span class="synth-status" id="midi-status"></span>
+        </div>
+        <div class="synth-row" id="osc-row">
+          <label>OSC Output</label>
+          <button class="action-btn" id="osc-toggle">Connect</button>
+          <span class="synth-status" id="osc-status">Off</span>
         </div>
       </div>
 
@@ -301,6 +307,74 @@
           <li><strong>MIDI input</strong> &mdash; connect a MIDI controller and it will be detected automatically; MIDI notes trigger the synth directly</li>
           <li><strong>Arpeggiator</strong> &mdash; expand the bottom bar to access the built-in arpeggiator with tempo, octave range, offset, and chord progression controls; press Pause to stop it</li>
         </ul>
+      </div>
+
+      <div class="help-section">
+        <h3>OSC Output</h3>
+        <p>Send NISPS parameters to any OSC-capable software (SuperCollider, Max/MSP, Pure Data, TouchDesigner, Ableton, etc.) via a small bridge script that runs on your computer.</p>
+
+        <div class="help-osc-steps">
+          <p><strong>1. Download the bridge</strong></p>
+          <div class="help-download-row">
+            <button class="help-download-btn" id="osc-download-bin">Download for <span id="osc-platform-name">your OS</span></button>
+            <button class="help-download-btn help-download-alt" id="osc-download-src">Source (.ts)</button>
+          </div>
+          <p class="help-dim">Binary is standalone, no runtime needed. Source requires <a href="https://deno.land" target="_blank" rel="noopener">Deno</a> or <a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a>.</p>
+
+          <p><strong>2. Run</strong></p>
+          <pre class="help-code" id="osc-run-instructions">./nisps-osc-bridge</pre>
+
+          <p><strong>3. Connect</strong></p>
+          <p>In the synth panel below, click <strong>Connect</strong> next to "OSC Output". The status will show the target address once connected.</p>
+        </div>
+
+        <p style="margin-top:10px"><strong>Configuration</strong></p>
+        <table class="help-keys">
+          <tr><td><kbd>--osc-port 9000</kbd></td><td>Target port (default: 57120 / SuperCollider)</td></tr>
+          <tr><td><kbd>--osc-host 192.168.1.5</kbd></td><td>Target IP (default: 127.0.0.1)</td></tr>
+          <tr><td><kbd>--osc-prefix /my</kbd></td><td>Address prefix (default: /nisps)</td></tr>
+          <tr><td><kbd>--ws-port 8000</kbd></td><td>WebSocket listen port (default: 8765)</td></tr>
+          <tr><td><kbd>--bundle</kbd></td><td>Send OSC bundles instead of individual messages</td></tr>
+        </table>
+
+        <p style="margin-top:10px"><strong>OSC addresses</strong></p>
+        <p>Each parameter is sent as <code>/nisps/&lt;Param_Name&gt; &lt;float 0&ndash;1&gt;</code>. All 126 synth parameters are available. Values reflect your current preset, curves, and tame settings. Examples:</p>
+        <pre class="help-code">/nisps/Env_A_Att 0.35
+/nisps/SVF_Flt_Cut 0.72
+/nisps/Reverb_Mix 0.15</pre>
+
+        <details class="help-details">
+          <summary>SuperCollider example</summary>
+          <pre class="help-code">// Listen for all NISPS params
+OSCdef(\nisps, { |msg, time|
+    msg.postln;
+}, '/nisps/*');
+
+// Map a specific param to a synth
+OSCdef(\cutoff, { |msg|
+    ~synth.set(\freq, msg[1].linexp(0, 1, 200, 8000));
+}, '/nisps/SVF_Flt_Cut');</pre>
+        </details>
+
+        <details class="help-details">
+          <summary>Pure Data example</summary>
+          <pre class="help-code">[netreceive -u -b 57120]
+|
+[oscparse]
+|
+[route /nisps]
+|
+[route /Env_A_Att /SVF_Flt_Cut ...]</pre>
+        </details>
+
+        <details class="help-details">
+          <summary>Max/MSP example</summary>
+          <pre class="help-code">[udpreceive 57120]
+|
+[OSC-route /nisps/Env_A_Att]
+|
+[scale 0. 1. 200. 8000.]</pre>
+        </details>
       </div>
 
       <button class="help-got-it" id="help-got-it">Got it</button>

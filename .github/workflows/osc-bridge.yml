@@ -1,0 +1,66 @@
+name: Build OSC Bridge
+
+on:
+  push:
+    tags: ['osc-bridge-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            suffix: linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            suffix: linux-arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            suffix: macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Compile
+        run: |
+          cd playground/osc-bridge
+          deno compile --allow-net --unstable-net --target ${{ matrix.target }} --output ../../dist/nisps-osc-bridge-${{ matrix.suffix }}${{ matrix.os == 'windows-latest' && '.exe' || '' }} bridge.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nisps-osc-bridge-${{ matrix.suffix }}
+          path: dist/nisps-osc-bridge-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

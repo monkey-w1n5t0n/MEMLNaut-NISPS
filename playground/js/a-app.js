@@ -30,6 +30,7 @@ let shapeSeq = null;
 let stepViz = null;
 let chainUI = null;
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
+import { OSCOutput } from './synth/osc-output.js';
 import { GamepadInput } from './ui/gamepad.js';
 import { HandTracker } from './ui/hand-tracker.js';
 import { createDevPanel } from './ui/dev-panel.js';
@@ -96,6 +97,7 @@ let handTracker = null;
 let visualizer;
 let synthVisualizer;
 let c15 = null;
+let oscOutput = null;
 let arpeggiator = null;
 let midiInput = null;
 
@@ -730,6 +732,22 @@ async function init() {
   midiInput = new MIDIInput(c15);
   initMIDIControls();
 
+  // OSC output
+  oscOutput = new OSCOutput();
+  oscOutput.onStatusChange = (msg, connected) => {
+    const el = document.getElementById('osc-status');
+    const btn = document.getElementById('osc-toggle');
+    const pill = document.getElementById('osc-pill');
+    if (el) el.textContent = msg;
+    if (btn) btn.textContent = connected ? 'Disconnect' : 'Connect';
+    if (pill) {
+      pill.classList.toggle('connected', connected);
+      pill.classList.toggle('connecting', oscOutput.enabled && !connected);
+      pill.title = connected ? `OSC connected: ${msg}` : 'Connect OSC output';
+    }
+  };
+  wireOSCControls();
+
   // DOM refs
   $heatmapCells = document.getElementById('heatmap-cells');
   $heatmapTooltip = document.getElementById('heatmap-tooltip');
@@ -1071,8 +1089,10 @@ let _lastParamSendTime = 0;
 const PARAM_SEND_INTERVAL = 50; // max ~20fps for synth param updates
 
 function routeOutputs(outputs) {
+  let overridden = null;
+
   if (outputMode === 'synth') {
-    const overridden = new Array(outputs.length);
+    overridden = new Array(outputs.length);
     for (let i = 0; i < outputs.length; i++) {
       overridden[i] = applyGroupOverrides(outputs[i], i);
     }
@@ -1095,6 +1115,12 @@ function routeOutputs(outputs) {
     }
   } else {
     visualizer.setParams(outputs.slice(0, N_VISUAL_OUTPUTS));
+  }
+
+  // OSC output — sends in both modes (has its own throttle + dead-zone).
+  // In synth mode sends post-override values; in visual mode sends raw outputs.
+  if (oscOutput) {
+    oscOutput.sendParams(overridden || outputs);
   }
 }
 
@@ -1702,6 +1728,22 @@ function wireSynthControls() {
   });
 }
 
+// ---- OSC Output ----
+function toggleOSC() {
+  if (oscOutput.connected || oscOutput.enabled) {
+    oscOutput.disconnect();
+  } else {
+    oscOutput.connect();
+  }
+}
+
+function wireOSCControls() {
+  const toggle = document.getElementById('osc-toggle');
+  const pill = document.getElementById('osc-pill');
+  if (toggle) toggle.addEventListener('click', toggleOSC);
+  if (pill) pill.addEventListener('click', toggleOSC);
+}
+
 // ---- MIDI Input ----
 async function initMIDIControls() {
   const row = document.getElementById('midi-row');
@@ -2226,6 +2268,81 @@ function onResize() {
   }
 }
 
+// ---- OSC bridge download ----
+// GitHub releases URL — update this when the repo is set up
+const OSC_RELEASE_BASE = 'https://github.com/MusicallyEmbodiedML/MEMLNaut-NISPS/releases/latest/download';
+
+function detectPlatform() {
+  const ua = navigator.userAgent.toLowerCase();
+  const platform = navigator.platform?.toLowerCase() || '';
+
+  if (ua.includes('win')) return { os: 'windows', arch: 'x86_64', label: 'Windows', ext: '.exe' };
+  if (ua.includes('mac') || platform.includes('mac')) {
+    // Check for Apple Silicon via WebGL renderer or default to ARM (most modern Macs)
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl');
+    const renderer = gl?.getParameter(gl.RENDERER)?.toLowerCase() || '';
+    const isIntel = renderer.includes('intel') || ua.includes('intel');
+    return isIntel
+      ? { os: 'macos', arch: 'x86_64', label: 'macOS (Intel)', ext: '' }
+      : { os: 'macos', arch: 'arm64', label: 'macOS (Apple Silicon)', ext: '' };
+  }
+  if (ua.includes('linux')) {
+    const isArm = platform.includes('arm') || platform.includes('aarch');
+    return isArm
+      ? { os: 'linux', arch: 'arm64', label: 'Linux (ARM)', ext: '' }
+      : { os: 'linux', arch: 'x86_64', label: 'Linux', ext: '' };
+  }
+  return { os: 'linux', arch: 'x86_64', label: 'Linux', ext: '' };
+}
+
+function downloadOSCBinary() {
+  const p = detectPlatform();
+  const filename = `nisps-osc-bridge-${p.os}-${p.arch}${p.ext}`;
+  const url = `${OSC_RELEASE_BASE}/${filename}`;
+  window.open(url, '_blank');
+}
+
+function downloadOSCSource() {
+  // Download bridge.ts directly — it's self-contained with Deno
+  fetch('osc-bridge/bridge.ts').then(r => r.blob()).then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'nisps-osc-bridge.ts';
+    a.click();
+    URL.revokeObjectURL(url);
+  }).catch(() => {
+    alert('Failed to download. Make sure the server is serving the osc-bridge/ directory.');
+  });
+}
+
+function initOSCDownloadUI() {
+  const p = detectPlatform();
+
+  // Set platform name in button
+  const platformName = document.getElementById('osc-platform-name');
+  if (platformName) platformName.textContent = p.label;
+
+  // Set run instructions based on OS
+  const instructions = document.getElementById('osc-run-instructions');
+  if (instructions) {
+    if (p.os === 'windows') {
+      instructions.textContent = 'nisps-osc-bridge-windows-x86_64.exe';
+    } else if (p.os === 'macos') {
+      instructions.textContent =
+        `# First time only: allow the binary to run\n` +
+        `chmod +x nisps-osc-bridge-macos-${p.arch}\n` +
+        `xattr -d com.apple.quarantine nisps-osc-bridge-macos-${p.arch}\n\n` +
+        `./nisps-osc-bridge-macos-${p.arch}`;
+    } else {
+      instructions.textContent =
+        `chmod +x nisps-osc-bridge-linux-${p.arch}\n` +
+        `./nisps-osc-bridge-linux-${p.arch}`;
+    }
+  }
+}
+
 // ---- Help modal ----
 function wireHelp() {
   const overlay = document.getElementById('help-overlay');
@@ -2240,6 +2357,13 @@ function wireHelp() {
   btnClose.addEventListener('click', hide);
   btnGotIt.addEventListener('click', hide);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hide(); });
+
+  // OSC bridge download buttons
+  initOSCDownloadUI();
+  const oscDlBin = document.getElementById('osc-download-bin');
+  const oscDlSrc = document.getElementById('osc-download-src');
+  if (oscDlBin) oscDlBin.addEventListener('click', (e) => { e.stopPropagation(); downloadOSCBinary(); });
+  if (oscDlSrc) oscDlSrc.addEventListener('click', (e) => { e.stopPropagation(); downloadOSCSource(); });
 
   // Show on first visit
   if (!localStorage.getItem('nisps-help-seen')) show();

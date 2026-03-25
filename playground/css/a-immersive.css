@@ -675,6 +675,29 @@ html, body {
   color: var(--accent);
 }
 
+.osc-pill {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.osc-pill.connected {
+  background: rgba(0, 200, 120, 0.15);
+  border-color: rgba(0, 200, 120, 0.4);
+  color: #00c878;
+}
+
+.osc-pill.connecting {
+  background: rgba(255, 200, 0, 0.1);
+  border-color: rgba(255, 200, 0, 0.3);
+  color: #ffc800;
+}
+
 .chevron-btn {
   width: 32px;
   height: 32px;
@@ -1603,6 +1626,118 @@ html, body {
 
 .help-got-it:active {
   background: rgba(255, 106, 0, 0.25);
+}
+
+/* Help OSC section */
+.help-osc-steps {
+  margin: 8px 0;
+}
+
+.help-osc-steps p {
+  margin: 10px 0 4px;
+  font-size: 12px;
+}
+
+.help-download-row {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+  flex-wrap: wrap;
+}
+
+.help-download-btn {
+  display: inline-block;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 106, 0, 0.4);
+  background: rgba(255, 106, 0, 0.12);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.help-download-alt {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--glass-border);
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.help-download-alt:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+
+.help-download-btn:hover {
+  background: rgba(255, 106, 0, 0.25);
+  border-color: var(--accent);
+}
+
+.help-download-btn:active {
+  background: rgba(255, 106, 0, 0.35);
+}
+
+.help-dim {
+  font-size: 11px !important;
+  color: var(--text-dim) !important;
+  margin: 4px 0 8px !important;
+}
+
+.help-dim a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.help-dim a:hover {
+  text-decoration: underline;
+}
+
+.help-code {
+  display: block;
+  padding: 8px 10px;
+  margin: 4px 0 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.help-section code {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+}
+
+.help-details {
+  margin: 6px 0;
+}
+
+.help-details summary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s;
+}
+
+.help-details summary:hover {
+  color: var(--accent);
+}
+
+.help-details[open] summary {
+  color: var(--accent);
+  margin-bottom: 2px;
 }
 
 /* Help modal scrollbar */

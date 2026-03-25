@@ -34,6 +34,10 @@
 .ai
 build
 
+# OSC bridge compiled binaries (built via compile.sh or CI)
+playground/osc-bridge/dist/
+playground/osc-bridge/node_modules/
+
 # Dolt database files (added by bd init)
 .dolt/
 *.db

@@ -8,8 +8,8 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 
 **Plugin name:** MEMLNaut
 **Module name:** MEMLNaut (initially single module, future modules possible)
-**License:** Proprietary / undecided (will not be submitted to VCV Library initially)
-**Target:** VCV Rack 2 (primary), VCV Rack Free v1 (compatibility where feasible)
+**License:** Undecided. Note: nisps-core is MPL-2.0 (file-level copyleft — MPL files must remain open, but wrapper code can be any license). VCV SDK is GPLv3 — linking against it effectively makes the combined binary GPL. Will not be submitted to VCV Library initially.
+**Target:** VCV Rack 2 (primary, both Community Edition [free] and Pro), v1 compatibility where feasible
 
 ---
 
@@ -39,10 +39,17 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 ### Threading Model
 
 - **Audio thread** (`process()`): Reads input CVs, runs MLP inference (decimated), writes output CVs. Never blocks.
-- **Background thread**: Handles training (SGD/RMSProp). On completion, atomically swaps weight buffer into the inference path.
+- **Background thread**: Handles training (SGD/RMSProp). On completion, atomically swaps weight buffer into the inference path. Also computes novelty/confidence maps post-training.
 - **Widget thread**: Draws UI, handles user interaction (buttons, knobs). Reads output values for display.
 
-Weight double-buffering: inference reads from buffer A while training writes to buffer B. Atomic pointer swap on training completion.
+**Weight double-buffering**: Two separate MLP instances are maintained (nisps-core is not thread-safe — no locks, public `m_layers`, `std::mt19937` without synchronization). The audio thread reads from MLP-A while the training thread clones weights into MLP-B, trains MLP-B, then signals completion. An `std::atomic<bool>` flag tells the audio thread to swap. Memory cost is ~2x network weights (~20KB for the default architecture — trivial).
+
+**Post-swap output crossfade**: When weights are swapped, outputs may jump discontinuously. A configurable slew parameter (default ~10ms) linearly interpolates between old and new output vectors over a short crossfade window to prevent audible clicks in downstream audio. Accessible via right-click context menu.
+
+### Input Signal Handling
+
+- **Polyphonic inputs**: Channel 0 only (monophonic). Extra channels are ignored. Standard behavior for non-polyphonic module designs.
+- **Input clipping**: All CV inputs are hard-clamped to their expected range before normalization. For 0–10V mode: clamp to [0, 10V]. For ±5V mode: clamp to [-5V, +5V]. Out-of-range signals are silently clipped.
 
 ---
 
@@ -71,8 +78,8 @@ Weight double-buffering: inference reads from buffer A while training writes to 
 | MEAN | Derived | Mean of the 12 raw outputs |
 | SPREAD | Derived | Standard deviation of the 12 raw outputs |
 | DELTA | Derived | Rate of change (L2 norm of output difference from previous inference) |
-| NOVELTY | Derived | Gate: fires when current input is far from all training examples |
-| CONFIDENCE | Derived | Inverse of loss on nearest training example (high = near trained region) |
+| NOVELTY | Derived | Gate: fires when current input is far from all training examples (computed on training thread, cached) |
+| CONFIDENCE | Derived | Inverse of loss on nearest training example (computed on training thread, cached) |
 
 Each output has:
 - Per-output range configuration (0–10V unipolar or ±5V bipolar) via context menu
@@ -100,6 +107,7 @@ Each output has:
 | Learning rate | MLP training learning rate |
 | Max iterations | Training iteration cap |
 | Per-output range | Unipolar (0–10V) or Bipolar (±5V) for each output |
+| Output slew | Post-training crossfade time in ms (default: 10ms, range: 0–100ms) |
 
 ---
 
@@ -153,10 +161,16 @@ Significantly smaller than the webapp's [3, 32, 48, 64, 126] — appropriate for
 
 Identical behavior to webapp (see CLAUDE.md for full spec):
 
-1. **Weight initialization**: `drawWeights(spread)` — scales from uniform [-1,1] (spread=0) to Xavier 1/√fan_in (spread=1)
-2. **RL noise**: `moveWeights(speed, spread)` — noise cap from 0.3 (spread=0) to 0.05 (spread=1), per-layer scaling
+1. **Weight initialization**: `DrawWeights(spread)` — scales from uniform [-1,1] (spread=0) to Xavier 1/√fan_in (spread=1)
+2. **RL noise**: `MoveWeights(speed, spread)` — noise cap from 0.3 (spread=0) to 0.05 (spread=1), per-layer scaling
 3. **Weight decay**: 0% (spread=0) to 10% per step (spread=1)
 4. **Noise cap**: `0.3*(1-spread) + 0.05*spread`
+
+**Prerequisite**: These spread-aware methods do **not** currently exist in nisps-core C++. The JS webapp implements spread interpolation, per-layer noise scaling, and weight decay in `playground/js/nisps/mlp.js`. The existing C++ `DrawWeights(scale)` is deprecated and `MoveWeights(speed)` has no spread parameter. **Phase 0** (below) ports this logic into nisps-core as proper C++ MLP methods.
+
+### Dataset Capacity
+
+The dataset has a maximum of 100 examples (`Dataset::kMax_examples`). When full, FIFO forgetting drops the oldest example. This means extended RL sessions will gradually lose the user's earliest preferences. This is acceptable for RL exploration but should be surfaced in the UI (example count display should show "42/100" style).
 
 ---
 
@@ -205,16 +219,20 @@ Full state serialized into VCV patch JSON:
 
 ```json
 {
+  "version": 1,
   "inputCount": 2,
   "spread": 0.6,
   "inferenceRate": 0.5,
   "noiseLevel": 0.1,
+  "slewMs": 10,
   "outputRanges": [{"unipolar": true, "attenuation": 1.0}, ...],
   "weights": [[...], ...],
   "examples": {"features": [[...]], "labels": [[...]]},
   "mlpConfig": {"layers": [3, 16, 24, 16, 12], "activations": ["relu", "relu", "relu", "sigmoid"]}
 }
 ```
+
+The `version` field enables forward compatibility. On load, validate that `mlpConfig.layers` matches the current module configuration; if not, warn the user and offer to rebuild the MLP to match the file's architecture.
 
 ### Preset Files (.nisps)
 
@@ -360,6 +378,15 @@ make install  # Copies to VCV plugin directory
 
 ## Development Phases
 
+### Phase 0: nisps-core Spread API
+- Port `drawWeights(spread)` from JS `mlp.js:209` to C++ `MLP::DrawWeights(T spread)`
+- Port `moveWeights(speed, spread)` from JS `mlp.js:231` to C++ `MLP::MoveWeights(T speed, T spread)`
+  - Per-layer Xavier noise scaling
+  - Weight decay proportional to spread
+- Deprecate old `DrawWeights(float scale)` (already marked `[[deprecated]]`)
+- Update `IML` to expose spread-aware methods
+- Unit tests for spread=0, spread=0.5, spread=1 behavior
+
 ### Phase 1: Skeleton (get it compiling)
 - VCV plugin scaffold from template
 - Integrate nisps-core headers
@@ -396,7 +423,11 @@ make install  # Copies to VCV plugin directory
 - Right-click menu integration
 
 ### Phase 7: Derived Outputs
-- Mean, spread, delta, novelty, confidence computations
+- Mean, spread, delta: computed on audio thread (trivial cost)
+- Novelty, confidence: computed on training thread after each training run
+  - Pre-compute a novelty/confidence map over a grid of input positions
+  - Audio thread looks up nearest grid point (cheap)
+  - **Future consideration**: alternative approaches (display-rate update, lazy compute on input change) may be more accurate — document in backlog
 - 5 additional output ports
 
 ### Phase 8: Companion Webapp Bridge
@@ -422,7 +453,10 @@ make install  # Copies to VCV plugin directory
 
 1. **MLP hidden layer sizing**: [16, 24, 16] is a guess. May need tuning based on real-world training performance with 12 outputs.
 2. **Novelty/confidence thresholds**: How to calibrate the novelty gate and confidence output. May need user-adjustable sensitivity.
-3. **OSC port conflicts**: What if multiple MEMLNaut instances run in the same patch? Per-instance port assignment?
-4. **V1 compatibility**: How much of the v2-specific API (polyphonic ports, new widget system) do we actually use? Determines v1 compat effort.
-5. **Attenuverter UX**: Tiny trimpots on a VCV panel can be fiddly. May need to test whether attenuverters per output are actually useful vs. just using VCV's built-in attenuverter modules.
-6. **Training convergence with 12 outputs**: The webapp trains 126 outputs — RL feedback on 12 is a different dynamic. May converge faster or feel less "exploratory".
+3. **Novelty grid resolution**: The training-thread novelty map approach trades accuracy for speed. What grid resolution is needed for useful novelty output? With 2 inputs a 32x32 grid is 1024 points; with 8 inputs the grid is impractical (32^8 = 1 trillion). Higher-dimensional inputs may need a different strategy (e.g. only compute for current input neighborhood).
+4. **OSC port conflicts**: What if multiple MEMLNaut instances run in the same patch? Per-instance port assignment?
+5. **V1 compatibility**: How much of the v2-specific API (polyphonic ports, new widget system) do we actually use? Determines v1 compat effort.
+6. **Attenuverter UX**: Tiny trimpots on a VCV panel can be fiddly. May need to test whether attenuverters per output are actually useful vs. just using VCV's built-in attenuverter modules.
+7. **Training convergence with 12 outputs**: The webapp trains 126 outputs — RL feedback on 12 is a different dynamic. May converge faster or feel less "exploratory".
+8. **Expander module protocol**: VCV uses `ExpanderMessage` structs with left/right adjacency detection. Need to design the data protocol between main module and expander if/when we build it.
+9. **C++20 compiler support**: VCV SDK Makefile targets specific compiler versions. Verify that C++20 features used by nisps-core (std::span, concepts) are supported by the VCV toolchain on all platforms (Linux, macOS, Windows).

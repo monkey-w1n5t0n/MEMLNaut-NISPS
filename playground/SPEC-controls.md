@@ -656,22 +656,26 @@ Control presets define a complete control surface state (all parameters from Par
 9. ✅ (bonus) Control presets with offset-based override resolution — 6 built-in presets, trim-pot model
 10. ✅ (bonus) Dual concentric noise rings (zoom + noise) replacing CSS-only ring
 
-### Phase 2 — Pinning + History
-7. Parameter pinning (per-output, in synth visualizer drawer)
-8. Region pinning (on joy-map, Approach A: example pinning)
-9. Snapshot stack with undo button
-10. A/B Compare toggle
+### Phase 2 — Pinning + History ✅ IMPLEMENTED
+7. ✅ Parameter pinning — per-output pin flags, pin mask passed to `moveWeights()`, double-tap to toggle in synth visualizer
+8. ✅ Region pinning (Approach A: example pinning) — long-press joy-map pins current zoom window, pinned examples always included in training with high weight
+9. ✅ Snapshot stack with undo — ring buffer (20 max), auto-snapshot on train/randomize/thumbs-down, long-press for history popup
+10. ✅ A/B Compare toggle — capture A, toggle between states, accept B or revert to A
+11. ✅ Modified `mlp.js` moveWeights to accept optional `outputPinMask` for pinned output nodes
 
-### Phase 3 — Input Refinement + Exploration
-11. Pressure/hold-duration feedback
-12. Auto-Explore mode
-13. Input space heatmap on joy-map
+### Phase 3 — Input Refinement + Exploration ✅ IMPLEMENTED
+12. ✅ Pressure/hold-duration feedback — touch force + hold duration modulate noise growth/decay strength
+13. ✅ Auto-Explore mode — automated thumbs-down at configurable interval, zoom-scaled intensity, emerald toggle button with progress ring
+14. ✅ Input space heatmap — 16×16 grid inference sampling, 3 color modes (luminance/variance/divergence), zoom-aware resampling, throttled updates
 
-### Phase 4 — Output, Persistence + Polish
-14. Output smoothing, slew rate, and freeze output gate — (sliders exist in drawer but not yet wired to output pipeline)
-15. Weight health indicator + gradient flow
-16. Session presets (control + synth bundled)
-17. Engine configuration panel
+### Phase 4 — Output, Persistence + Polish ✅ IMPLEMENTED
+15. ✅ Output pipeline — global curve → smoothing → slew rate → freeze gate, wired into `routeOutputs()`
+16. ✅ Weight health indicator — weight magnitude histogram, dead/saturating/healthy status, ambient glow visualization
+17. ✅ Gradient flow indicator — per-layer weight-delta analysis, vanishing/exploding/converged detection, bar visualization
+18. ✅ Session presets — save/load full state (control surface + synth preset + pipelines), URL sharing via compact params
+
+### Remaining
+- Engine configuration panel (Part 8) — network architecture, loss function, optimizer selection
 
 ---
 

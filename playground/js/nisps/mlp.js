@@ -228,13 +228,22 @@ export class MLP {
   // preventing unbounded magnitude drift from repeated thumbs-down. At spread=0 there is
   // no decay (original behavior). At spread=1 each call decays weights by ~10%, creating
   // a natural equilibrium where exploration can't permanently saturate sigmoid.
-  moveWeights(speed, spread = 0) {
+  //
+  // outputPinMask: optional Uint8Array[numOutputs]. If provided, output-layer nodes where
+  // mask[i] === 1 are skipped (their weights are not perturbed). Only affects the last layer.
+  moveWeights(speed, spread = 0, outputPinMask = null) {
     const decay = 1 - 0.1 * spread; // spread=0 → 1.0 (no decay), spread=1 → 0.9
     for (let l = 0; l < this.layers.length; l++) {
       const fanIn = this.layersNodes[l];
       const xavierScale = 1 / Math.sqrt(fanIn);
       const layerScale = 1 * (1 - spread) + xavierScale * spread;
-      for (const node of this.layers[l].nodes) {
+      const isOutputLayer = l === this.layers.length - 1;
+      const nodes = this.layers[l].nodes;
+      for (let ni = 0; ni < nodes.length; ni++) {
+        // Skip pinned output nodes in the final layer
+        if (isOutputLayer && outputPinMask && outputPinMask[ni]) continue;
+
+        const node = nodes[ni];
         for (let j = 0; j < node.weights.length; j++) {
           // Decay toward zero to prevent magnitude drift
           node.weights[j] *= decay;

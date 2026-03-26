@@ -287,8 +287,47 @@ export class WasmIML {
     this.log('Weights randomised.');
   }
 
-  moveWeights(speed, spread = 0) {
+  // outputPinMask: optional Uint8Array[nOutputs], 1 = skip that output node.
+  // Since WASM moveWeights doesn't support pin masks, we save pinned nodes'
+  // weights before the call and restore them after.
+  moveWeights(speed, spread = 0, outputPinMask = null) {
+    let savedSlices = null;
+
+    if (outputPinMask && outputPinMask.some(v => v)) {
+      // Compute the flat-array offset of the last layer's nodes.
+      // Flat format: for each layer, for each node: [w0..wN, bias]
+      const allWeights = this._getFlatWeights();
+      const lastLayerInputSize = this.layerSizes[this.layerSizes.length - 2];
+      const numOutputNodes = this.layerSizes[this.layerSizes.length - 1];
+      const weightsPerOutputNode = lastLayerInputSize + 1; // weights + bias
+
+      // Offset of the last layer in the flat array
+      const lastLayerOffset = this._weightCount - (numOutputNodes * weightsPerOutputNode);
+
+      // Save pinned nodes' weight slices
+      savedSlices = [];
+      for (let i = 0; i < numOutputNodes; i++) {
+        if (outputPinMask[i]) {
+          const start = lastLayerOffset + i * weightsPerOutputNode;
+          const end = start + weightsPerOutputNode;
+          savedSlices.push({ start, end, data: allWeights.slice(start, end) });
+        }
+      }
+    }
+
     this._w.moveWeightsSpread(this._mlp, speed, spread);
+
+    // Restore pinned nodes' weights
+    if (savedSlices && savedSlices.length > 0) {
+      const allWeights = this._getFlatWeights();
+      for (const slice of savedSlices) {
+        for (let j = 0; j < slice.data.length; j++) {
+          allWeights[slice.start + j] = slice.data[j];
+        }
+      }
+      this._setFlatWeights(allWeights);
+    }
+
     this.inputUpdated = true;
     this.process();
   }

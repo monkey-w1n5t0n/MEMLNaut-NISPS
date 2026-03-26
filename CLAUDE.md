@@ -96,14 +96,28 @@ Presets use `curve` values to bias parameter distributions (< 0.5 = spend more t
 
 The immersive app (`a-immersive.html`) has a control surface system for tuning how exploration and learning feel. Full spec: `playground/SPEC-controls.md`.
 
-**Architecture** — three standalone ES modules wired into `a-app.js`:
+**Architecture** — modular ES modules organized by phase, wired into `a-app.js`:
 
-| Module | Purpose |
-|--------|---------|
-| `js/ui/input-pipeline.js` | Processes raw joystick input through deadzone → zoom → curve → smoothing → momentum-as-zoom. Pure math, no DOM. |
-| `js/ui/control-surface.js` | Compound axes (Boldness, Memory, Precision) that map single sliders to multiple underlying params. Offset-based override resolution (trim-pot model). 6 built-in control presets. |
-| `js/ui/control-surface-ui.js` | DOM layer: 3 axis sliders on floating bar, gear icon settings drawer with per-param overrides. Injects its own CSS. |
-| `js/ui/joy-map-enhanced.js` | Enhanced joy-map canvas: zoom minimap with adaptive grid, vanishing trail with Catmull-Rom spline and tap-to-return, dual concentric noise rings (zoom + noise), frozen state overlay. |
+| Module | Phase | Purpose |
+|--------|-------|---------|
+| `js/ui/input-pipeline.js` | 1 | Processes raw joystick input through deadzone → zoom → curve → smoothing → momentum-as-zoom. Pure math, no DOM. |
+| `js/ui/control-surface.js` | 1 | Compound axes (Boldness, Memory, Precision) that map single sliders to multiple underlying params. Offset-based override resolution (trim-pot model). 6 built-in control presets. |
+| `js/ui/control-surface-ui.js` | 1 | DOM layer: 3 axis sliders on floating bar, gear icon settings drawer with per-param overrides. Injects its own CSS. |
+| `js/ui/joy-map-enhanced.js` | 1 | Enhanced joy-map canvas: zoom minimap with adaptive grid, vanishing trail with Catmull-Rom spline and tap-to-return, dual concentric noise rings, frozen state overlay. |
+| `js/ui/snapshot-stack.js` | 2 | Ring buffer (20 max) of weight snapshots. Auto-snapshot on train/randomize/thumbs-down. Multi-level undo. |
+| `js/ui/ab-compare.js` | 2 | Rapid A/B weight state comparison. Capture, toggle, accept or revert. |
+| `js/ui/region-pin.js` | 2 | Pins rectangular input-space regions (Approach A: example pinning). Pinned examples always included in training. |
+| `js/ui/param-pin.js` | 2 | Per-output pin flags. Pin mask passed to `moveWeights()` to skip pinned output nodes. |
+| `js/ui/phase2-ui.js` | 2 | DOM: undo button with history popup, A/B toggle, region pin via long-press, param pin via double-tap. |
+| `js/ui/pressure-feedback.js` | 3 | Touch force + hold duration → intensity multiplier for noise growth/decay. |
+| `js/ui/auto-explore.js` | 3 | Automated thumbs-down at configurable interval. Zoom-scaled intensity. |
+| `js/ui/input-heatmap.js` | 3 | 2D color field sampling MLP across input space. 3 color modes, zoom-aware resampling. |
+| `js/ui/phase3-ui.js` | 3 | DOM: auto-explore toggle with progress ring, heatmap eye icon, pressure indicators. |
+| `js/ui/output-pipeline.js` | 4 | Global curve → smoothing → slew rate → freeze gate on MLP outputs before synth/visual routing. |
+| `js/ui/weight-health.js` | 4 | Weight magnitude histogram, dead/saturating/healthy status detection, ambient visualization. |
+| `js/ui/gradient-flow.js` | 4 | Per-layer weight-delta analysis after training. Vanishing/exploding/converged detection. |
+| `js/ui/session-presets.js` | 4 | Save/load full session state. URL sharing via compact params. |
+| `js/ui/phase4-ui.js` | 4 | DOM: freeze button, network health panel, session preset UI, output pipeline slider wiring. |
 
 **Compound Axes** — each controls 4-6 underlying parameters via interpolation tables:
 
@@ -119,7 +133,7 @@ When a user manually overrides an individual param, the offset from the axis-der
 
 **Integration** — the control surface dispatches `controlsurface:change` CustomEvents. `a-app.js` listens and updates the input pipeline config, spread level, and RL parameters (noise cap, growth, decay, floor, zoom-aware feedback scaling). Pipeline-processed coordinates are cached (`_lastPipeX/Y`) so `getCurrentInputs()` and `setCurrentInputs()` use the same values the MLP sees. State is persisted to localStorage alongside existing app state.
 
-**Remaining spec phases** (not yet implemented): Phase 2 (pinning + history + A/B compare), Phase 3 (momentum-zoom, pressure feedback, auto-explore, heatmap), Phase 4 (output pipeline, weight health, gradient flow, engine config, session presets).
+**Remaining**: Engine configuration panel (Part 8 of spec) — network architecture, loss function, optimizer selection.
 
 ## Build System
 

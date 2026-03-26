@@ -10,6 +10,20 @@ import { InputPipeline } from './ui/input-pipeline.js';
 import { initControlSurfaceUI } from './ui/control-surface-ui.js';
 import { JoyMapEnhanced } from './ui/joy-map-enhanced.js';
 
+// Phase 2: Pinning + History
+import { SnapshotStack } from './ui/snapshot-stack.js';
+import { ABCompare } from './ui/ab-compare.js';
+import { RegionPinManager } from './ui/region-pin.js';
+import { ParamPinManager } from './ui/param-pin.js';
+import { initPhase2UI } from './ui/phase2-ui.js';
+
+// Phase 3: Pressure, Auto-Explore, Heatmap
+import { initPhase3UI } from './ui/phase3-ui.js';
+
+// Phase 4: Output Pipeline + Visualization + Polish
+import { OutputPipeline } from './ui/output-pipeline.js';
+import { initPhase4UI } from './ui/phase4-ui.js';
+
 // ---- ShapeSeq (feature-flagged, enable with ?shapeseq=1) ----
 const ENABLE_SHAPESEQ = new URLSearchParams(window.location.search).get('shapeseq') === '1';
 let _shapeSeqImports = null;
@@ -116,6 +130,20 @@ let controlSurface = null;
 let joyMapEnhanced = null;
 let _lastFrameTime = 0;
 let _lastPipeX = 0.5, _lastPipeY = 0.5; // cached pipeline output for getCurrentInputs()
+
+// Phase 2: Pinning + History
+let snapshotStack = null;
+let abCompare = null;
+let regionPins = null;
+let paramPins = null;
+let phase2UI = null;
+
+// Phase 3: Pressure, Auto-Explore, Heatmap
+let phase3 = null;
+
+// Phase 4: Output Pipeline + Visualization + Polish
+let outputPipeline = null;
+let phase4 = null;
 
 // Joystick state
 let joyX = 0.5;
@@ -490,13 +518,27 @@ class SynthVisualizer {
       const barH = val * maxBarHeight;
       const barY = topPad + usableHeight - barH;
 
-      // Bar with slight transparency
-      ctx.fillStyle = sec.color + 'cc';
+      // Phase 2: Dim pinned param bars
+      const isPinned = paramPins && paramPins.isPinned(i);
+
+      // Bar with slight transparency (dimmer if pinned)
+      ctx.fillStyle = sec.color + (isPinned ? '66' : 'cc');
       ctx.fillRect(x, barY, Math.max(barWidth - 0.5, 1), barH);
 
       // Bright top edge
-      ctx.fillStyle = sec.color;
+      ctx.fillStyle = isPinned ? (sec.color + '88') : sec.color;
       ctx.fillRect(x, barY, Math.max(barWidth - 0.5, 1), Math.min(2 * dpr, barH));
+
+      // Phase 2: Draw small lock indicator on pinned params
+      if (isPinned) {
+        const dotR = Math.max(2 * dpr, barWidth * 0.2);
+        const dotX = x + barWidth / 2;
+        const dotY = topPad + usableHeight + 6 * dpr;
+        ctx.fillStyle = 'rgba(255, 180, 0, 0.8)';
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       x += barWidth;
     }
@@ -813,6 +855,12 @@ async function init() {
   const csUI = initControlSurfaceUI();
   controlSurface = csUI.surface;
 
+  // ---- Phase 2: Data models — init before loadState so restore works ----
+  snapshotStack = new SnapshotStack(20);
+  abCompare = new ABCompare();
+  regionPins = new RegionPinManager();
+  paramPins = new ParamPinManager(N_OUTPUTS);
+
   // Restore saved state (if any)
   loadState();
 
@@ -842,9 +890,115 @@ async function init() {
     }),
   });
 
+  // ---- Phase 2: UI (data models already created above, before loadState) ----
+  phase2UI = initPhase2UI({
+    snapshotStack,
+    abCompare,
+    regionPins,
+    paramPins,
+    getWeights: () => iml._getFlatWeights(),
+    setWeights: (w) => { iml._setFlatWeights(w); },
+    getNoiseLevel: () => noiseLevel,
+    setNoiseLevel: (n) => { noiseLevel = n; updateNoiseRing(); },
+    getZoomLevel: () => inputPipeline ? inputPipeline.getZoomLevel() : 1.0,
+    getZoomWindow: () => inputPipeline ? inputPipeline.getZoomWindow() : null,
+    getTrainingData: () => ({
+      features: iml.dataset.features,
+      labels: iml.dataset.labels,
+    }),
+    runInference: () => {
+      iml.inputUpdated = true;
+      iml.process();
+      const outputs = iml.getOutputs();
+      routeOutputs(outputs);
+      updateHeatmap(outputs);
+      syncRawParamsFromOutputs(outputs);
+      updateStatus();
+    },
+    joyMapCanvas: $joyMap,
+    synthVisualizer,
+  });
+
+  // Sync region pin overlays to the enhanced joy-map
+  document.addEventListener('regionpin:sync', (e) => {
+    if (joyMapEnhanced) {
+      joyMapEnhanced.setPinnedRegions(e.detail.regions);
+    }
+  });
+
+  // ---- Phase 3: Pressure, Auto-Explore, Input Heatmap ----
+  phase3 = initPhase3UI({
+    onAutoExplore: ({ intensity }) => {
+      const csParams = controlSurface ? controlSurface.getParams() : null;
+      const noiseCap = csParams ? csParams.noiseCap : (0.3 * (1 - spreadLevel) + 0.05 * spreadLevel);
+      const growth = csParams ? csParams.noiseGrowth : 1.5;
+      let effectiveGrowth = growth * intensity;
+      if (csParams && csParams.zoomAwareFeedback && inputPipeline) {
+        effectiveGrowth *= inputPipeline.getZoomLevel();
+      }
+      noiseLevel = Math.min(noiseLevel * effectiveGrowth, noiseCap);
+      const pinMask = paramPins ? paramPins.getPinMask() : null;
+      iml.moveWeights(noiseLevel, spreadLevel, pinMask);
+      const outputs = iml.getOutputs();
+      routeOutputs(outputs);
+      updateHeatmap(outputs);
+      syncRawParamsFromOutputs(outputs);
+      updateStatus();
+      updateNoiseRing();
+      if (phase3) phase3.updateHeatmap();
+    },
+    getZoomLevel: () => inputPipeline ? inputPipeline.getZoomLevel() : 1.0,
+    inferFn: (inputs) => {
+      if (inputMode === 'hands') return [];
+      const savedInput = [...iml.inputState];
+      const savedUpdated = iml.inputUpdated;
+      iml.setInput(0, inputs[0]);
+      iml.setInput(1, inputs[1]);
+      iml.inputUpdated = true;
+      iml.process();
+      const result = [...iml.getOutputs()];
+      for (let i = 0; i < savedInput.length; i++) iml.inputState[i] = savedInput[i];
+      iml.inputUpdated = savedUpdated;
+      return result;
+    },
+    getZoomWindow: () => inputPipeline ? inputPipeline.getZoomWindow() : null,
+  });
+
+  // Wire heatmap into the enhanced joy-map
+  if (joyMapEnhanced && phase3) {
+    joyMapEnhanced.setHeatmap(phase3.heatmap);
+  }
+
+  // ---- Phase 4: Output Pipeline + Visualization + Polish ----
+  outputPipeline = new OutputPipeline(N_OUTPUTS);
+  phase4 = initPhase4UI({
+    outputPipeline,
+    iml,
+    controlSurface,
+    getGroupOverrides: () => groupOverrides,
+    getActiveSynthPresetId: () => activeSynthPresetId,
+    inputPipeline,
+    onSessionLoad: (preset) => {
+      if (preset.controlSurface && controlSurface) {
+        controlSurface.setState(preset.controlSurface);
+      }
+      if (preset.inputPipeline && inputPipeline) {
+        inputPipeline.setConfig(preset.inputPipeline);
+      }
+      if (preset.outputPipeline && outputPipeline) {
+        outputPipeline.setConfig(preset.outputPipeline);
+      }
+      if (preset.synthPresetId) {
+        applyPreset(preset.synthPresetId);
+      }
+      if (inputMode === 'joystick') onJoystickMove();
+    },
+  });
+
   // Wire control surface changes to pipeline + RL params
   document.addEventListener('controlsurface:change', (e) => {
     const p = e.detail;
+    if (p._phase3) return; // Phase 3 drawer events handled internally
     // Input pipeline
     inputPipeline.setConfig({
       zoom: p.zoom,
@@ -857,6 +1011,12 @@ async function init() {
     });
     // Sync spread (used by moveWeights and randomise)
     spreadLevel = p.spread;
+    // Phase 4: wire output pipeline params
+    if (outputPipeline) {
+      if (p.outputSmoothing !== undefined) outputPipeline.setSmoothing(p.outputSmoothing);
+      if (p.outputSlewRate !== undefined) outputPipeline.setSlewRate(p.outputSlewRate);
+      if (p.globalCurve !== undefined) outputPipeline.setGlobalCurve(p.globalCurve);
+    }
   });
 
   // Initial inference — run through pipeline for consistency
@@ -1164,15 +1324,25 @@ function onJoystickMove() {
 const _lastSentParams = new Float32Array(N_OUTPUTS);
 const PARAM_DEAD_ZONE = 0.002; // ~0.2% change threshold
 let _lastParamSendTime = 0;
+let _lastRouteTime = 0;
 const PARAM_SEND_INTERVAL = 50; // max ~20fps for synth param updates
 
 function routeOutputs(outputs) {
+  // Phase 4: Output Pipeline (curve, smoothing, slew, freeze)
+  let pipelined = outputs;
+  if (outputPipeline) {
+    const now = performance.now();
+    const dt = _lastRouteTime > 0 ? (now - _lastRouteTime) / 1000 : 1 / 60;
+    _lastRouteTime = now;
+    pipelined = outputPipeline.process(outputs, dt);
+  }
+
   let overridden = null;
 
   if (outputMode === 'synth') {
-    overridden = new Array(outputs.length);
-    for (let i = 0; i < outputs.length; i++) {
-      overridden[i] = applyGroupOverrides(outputs[i], i);
+    overridden = new Array(pipelined.length);
+    for (let i = 0; i < pipelined.length; i++) {
+      overridden[i] = applyGroupOverrides(pipelined[i], i);
     }
     // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);
@@ -1192,13 +1362,13 @@ function routeOutputs(outputs) {
       }
     }
   } else {
-    visualizer.setParams(outputs.slice(0, N_VISUAL_OUTPUTS));
+    visualizer.setParams(Array.from(pipelined).slice(0, N_VISUAL_OUTPUTS));
   }
 
   // OSC output — sends in both modes (has its own throttle + dead-zone).
   // In synth mode sends post-override values; in visual mode sends raw outputs.
   if (oscOutput) {
-    oscOutput.sendParams(overridden || outputs);
+    oscOutput.sendParams(overridden || Array.from(pipelined));
   }
 }
 
@@ -1495,11 +1665,15 @@ function onAddExample() {
 
 function onTrain() {
   if (iml.isTraining) return;
+  // Phase 2: auto-snapshot before training
+  if (phase2UI) phase2UI.pushSnapshot('before train');
   flash('btn-train');
   trainModelAsync();
 }
 
 function onRandomize() {
+  // Phase 2: auto-snapshot before randomize
+  if (phase2UI) phase2UI.pushSnapshot('before randomize');
   iml.randomiseWeights(spreadLevel);
   setCurrentInputs();
   iml.process();
@@ -1509,6 +1683,7 @@ function onRandomize() {
   syncRawParamsFromOutputs(outputs);
   noiseLevel = 0.05;
   updateStatus();
+  if (phase3) phase3.updateHeatmap();
 }
 
 function onClearExamples() {
@@ -1541,15 +1716,22 @@ function onThumbsUp() {
   const csParams = controlSurface ? controlSurface.getParams() : null;
   const decay = csParams ? csParams.noiseDecay : rlExplorationDecay;
   const floor = csParams ? csParams.noiseFloor : 0.005;
-  noiseLevel *= decay;
+  // Phase 3: pressure/hold modulates decay strength
+  const p3Intensity = phase3 ? phase3.pressure.getIntensity() : 1.0;
+  const modulatedDecay = 1 - (1 - decay) * p3Intensity;
+  noiseLevel *= modulatedDecay;
   noiseLevel = Math.max(noiseLevel, floor);
 
   flash('btn-thumbsup');
   updateNoiseRing();
   trainModelAsync();
+  if (phase3) phase3.updateHeatmap();
 }
 
 function onThumbsDown() {
+  // Phase 2: auto-snapshot before thumbs-down
+  if (phase2UI) phase2UI.pushSnapshot('before thumbs-down');
+
   // Use control surface params if available, else legacy
   const csParams = controlSurface ? controlSurface.getParams() : null;
   const noiseCap = csParams ? csParams.noiseCap : (0.3 * (1 - spreadLevel) + 0.05 * spreadLevel);
@@ -1560,10 +1742,15 @@ function onThumbsDown() {
   if (csParams && csParams.zoomAwareFeedback && inputPipeline) {
     effectiveGrowth *= inputPipeline.getZoomLevel();
   }
+  // Phase 3: pressure/hold modulates noise growth
+  const p3DownIntensity = phase3 ? phase3.pressure.getIntensity() : 1.0;
+  effectiveGrowth *= p3DownIntensity;
 
   noiseLevel = Math.min(noiseLevel * effectiveGrowth, noiseCap);
 
-  iml.moveWeights(noiseLevel, spreadLevel);
+  // Phase 2: pass param pin mask to moveWeights (pinned outputs are not perturbed)
+  const pinMask = paramPins ? paramPins.getPinMask() : null;
+  iml.moveWeights(noiseLevel, spreadLevel, pinMask);
 
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
@@ -1572,6 +1759,7 @@ function onThumbsDown() {
   updateStatus();
   updateNoiseRing();
   flash('btn-thumbsdown');
+  if (phase3) phase3.updateHeatmap();
 }
 
 // ---- Training ----
@@ -1581,8 +1769,39 @@ function trainModel() {
 }
 
 // Async — used for interactive training (thumbs-up, train button)
+// Phase 2: includes pinned region examples and freezes pinned param labels.
 function trainModelAsync(onDone) {
+  // Phase 2: Inject pinned region examples into the dataset before training.
+  // These anchor behavior in pinned regions and can't be evicted by FIFO.
+  if (regionPins && regionPins.count > 0) {
+    const pinned = regionPins.getPinnedExamples();
+    for (let i = 0; i < pinned.features.length; i++) {
+      iml.addExample(pinned.features[i], pinned.labels[i]);
+    }
+  }
+
+  // Phase 2: If any output params are pinned, freeze their labels to current
+  // inferred values so the network maintains its mapping for those outputs.
+  if (paramPins && paramPins.pinnedCount > 0) {
+    const mask = paramPins.getPinMask();
+    const currentOutputs = iml.getOutputs();
+    const labels = iml.dataset.labels;
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = 0; j < labels[i].length; j++) {
+        if (mask[j]) {
+          labels[i][j] = currentOutputs[j];
+        }
+      }
+    }
+  }
+
+  // Phase 4: Capture weights before training for gradient flow analysis
+  if (phase4) phase4.captureBeforeTrain();
+
   iml.trainAsync(({ loss, outputs }) => {
+    // Phase 4: Capture weights after training for gradient flow analysis
+    if (phase4) phase4.captureAfterTrain();
+
     routeOutputs(outputs);
     updateHeatmap(outputs);
     syncRawParamsFromOutputs(outputs);
@@ -2468,6 +2687,11 @@ function wireHelp() {
 
 // ---- Animation ----
 function animate() {
+  // Phase 3: tick auto-explore timer and pressure indicators
+  const _animNow = performance.now();
+  const _animDt = _lastFrameTime > 0 ? (_animNow - _lastFrameTime) / 1000 : 1 / 60;
+  if (phase3) phase3.tick(_animDt);
+
   if (gamepad) gamepad.poll();
   if (outputMode === 'synth') {
     synthVisualizer.draw();
@@ -2511,6 +2735,14 @@ function saveState() {
       synthPresetId: activeSynthPresetId,
       controlSurface: controlSurface ? controlSurface.getState() : null,
       inputPipeline: inputPipeline ? inputPipeline.getConfig() : null,
+      // Phase 2: Pinning + History
+      snapshotStack: snapshotStack ? snapshotStack.getState() : null,
+      regionPins: regionPins ? regionPins.getState() : null,
+      paramPins: paramPins ? paramPins.getState() : null,
+      // Phase 3
+      phase3: phase3 ? phase3.getConfig() : null,
+      // Phase 4
+      outputPipeline: outputPipeline ? outputPipeline.getConfig() : null,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -2587,6 +2819,25 @@ function loadState() {
     }
     if (state.inputPipeline && inputPipeline) {
       inputPipeline.setConfig(state.inputPipeline);
+    }
+
+    // Phase 2: Restore pinning + history state
+    if (state.snapshotStack && snapshotStack) {
+      snapshotStack.setState(state.snapshotStack);
+    }
+    if (state.regionPins && regionPins) {
+      regionPins.setState(state.regionPins);
+    }
+    if (state.paramPins && paramPins) {
+      paramPins.setState(state.paramPins);
+    }
+    // Phase 3: restore config
+    if (state.phase3 && phase3) {
+      phase3.setConfig(state.phase3);
+    }
+    // Phase 4: restore output pipeline
+    if (state.outputPipeline && outputPipeline) {
+      outputPipeline.setConfig(state.outputPipeline);
     }
 
     // Note: don't auto-restore inputMode='hands' — requires camera permission

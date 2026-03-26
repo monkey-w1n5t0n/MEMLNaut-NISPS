@@ -159,8 +159,9 @@ export class IML {
 
   // Add Gaussian noise to weights (for RL exploration)
   // spread: 0 = flat noise, 1 = Xavier-scaled per layer
-  moveWeights(speed, spread = 0) {
-    this.mlp.moveWeights(speed, spread);
+  // outputPinMask: optional Uint8Array[nOutputs], 1 = skip that output node
+  moveWeights(speed, spread = 0, outputPinMask = null) {
+    this.mlp.moveWeights(speed, spread, outputPinMask);
     // Run inference to show effect
     this.inputUpdated = true;
     this.process();

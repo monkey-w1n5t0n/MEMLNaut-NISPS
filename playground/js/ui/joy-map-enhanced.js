@@ -107,6 +107,9 @@ export class JoyMapEnhanced {
 
     this.pinnedRegions = [];
 
+    // Optional heatmap layer (InputHeatmap instance)
+    this._heatmap = null;
+
     // Flash state for tapped trail point
     this._flashPoint = null;
     this._flashTime = 0;
@@ -168,6 +171,7 @@ export class JoyMapEnhanced {
     ctx.fillRect(0, 0, w, h);
 
     // Layers (back to front):
+    // 0. Input heatmap (background)
     // 1. Dim area outside zoom window
     // 2. Grid (adapts to zoom)
     // 3. Zoom window border
@@ -180,6 +184,11 @@ export class JoyMapEnhanced {
     // 10. Frozen overlay
 
     const zw = this._normalizeZoomWindow(zoomWindow, zoomLevel);
+
+    // Heatmap background layer
+    if (this._heatmap && this._heatmap.enabled) {
+      this._heatmap.draw(ctx, w, h, zw);
+    }
 
     this._drawDimOverlay(ctx, w, h, zw);
     this._drawGrid(ctx, w, h, zw, zoomLevel);
@@ -254,6 +263,14 @@ export class JoyMapEnhanced {
       return { x: bestPoint.x, y: bestPoint.y };
     }
     return null;
+  }
+
+  /**
+   * Set a heatmap instance to draw as the background layer.
+   * @param {InputHeatmap|null} heatmap
+   */
+  setHeatmap(heatmap) {
+    this._heatmap = heatmap || null;
   }
 
   setPinnedRegions(regions) {

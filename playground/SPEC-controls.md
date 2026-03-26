@@ -644,36 +644,34 @@ Control presets define a complete control surface state (all parameters from Par
 
 ## Part 10: Implementation Priority
 
-### Phase 1 — Core Zoom + Compound Axes
-1. Input zoom with anchor modes and minimap visualization
-2. Zoom-at-zero freeze behavior
-3. Vanishing trail with tap-to-return
-4. Compound axis sliders (Boldness, Memory, Precision) wired to underlying params
-5. Spread, LR, noise cap promoted to panel sliders
-6. Resolve UI location (Part 11.5) — prototype Option E (hybrid)
+### Phase 1 — Core Zoom + Compound Axes ✅ IMPLEMENTED
+1. ✅ Input zoom with anchor modes and minimap visualization — `js/ui/input-pipeline.js`, `js/ui/joy-map-enhanced.js`
+2. ✅ Zoom-at-zero freeze behavior — `InputPipeline.isFrozen()`, frozen overlay in joy-map
+3. ✅ Vanishing trail with tap-to-return — Catmull-Rom spline, ring buffer, 5s duration, zoom-width encoding
+4. ✅ Compound axis sliders (Boldness, Memory, Precision) wired to underlying params — `js/ui/control-surface.js`
+5. ✅ Spread, LR, noise cap promoted to panel sliders — settings drawer with all params from Parts 2-6
+6. ✅ Resolve UI location (Part 11.5) — Option E (hybrid): axes on floating bar, overrides in gear drawer
+7. ✅ (bonus) Input curve, deadzone, smoothing, momentum-zoom — all implemented in pipeline, exposed in drawer
+8. ✅ (bonus) Zoom-aware feedback scaling — thumbs-down noise scales by zoom level
+9. ✅ (bonus) Control presets with offset-based override resolution — 6 built-in presets, trim-pot model
+10. ✅ (bonus) Dual concentric noise rings (zoom + noise) replacing CSS-only ring
 
 ### Phase 2 — Pinning + History
 7. Parameter pinning (per-output, in synth visualizer drawer)
 8. Region pinning (on joy-map, Approach A: example pinning)
 9. Snapshot stack with undo button
 10. A/B Compare toggle
-11. Zoom-aware feedback scaling
 
 ### Phase 3 — Input Refinement + Exploration
-12. Input curve and deadzone controls
-13. Input smoothing (especially for hand tracking)
-14. Momentum-as-zoom toggle
-15. Pressure/hold-duration feedback
-16. Auto-Explore mode
-17. Input space heatmap on joy-map
+11. Pressure/hold-duration feedback
+12. Auto-Explore mode
+13. Input space heatmap on joy-map
 
 ### Phase 4 — Output, Persistence + Polish
-18. Output smoothing, slew rate, and freeze output gate
-19. Weight health indicator + gradient flow
-20. Control presets (save/load/built-ins) + persistence (localStorage + URL sharing)
-21. Session presets (control + synth bundled)
-22. Engine configuration panel
-23. Compound axis override resolution (Part 11.1) — prototype offset approach
+14. Output smoothing, slew rate, and freeze output gate — (sliders exist in drawer but not yet wired to output pipeline)
+15. Weight health indicator + gradient flow
+16. Session presets (control + synth bundled)
+17. Engine configuration panel
 
 ---
 

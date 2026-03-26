@@ -36,7 +36,7 @@ The `playground/` directory contains a browser-based interactive demo of the NIS
 - **Serve statically**: `cd playground && python3 -m http.server`
 - **Mobile-first**: designed for touch/foldable phone use
 
-Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls), `js/synth/` (C15 bridge, param map, arpeggiator), `js/app.js` (wiring).
+Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls, input pipeline, control surface), `js/synth/` (C15 bridge, param map, arpeggiator), `js/a-app.js` (immersive app wiring).
 
 ### URL Parameters
 
@@ -91,6 +91,35 @@ Presets (`js/synth/presets.js`) control which parameters the ML engine can modif
 | 4 (Expert) | 4.1–4.2 | 126 | Full engine |
 
 Presets use `curve` values to bias parameter distributions (< 0.5 = spend more time low, > 0.5 = bias high) without clamping extremes. Users can tweak any preset via the group drawer after loading.
+
+### Control Surface (Phase 1)
+
+The immersive app (`a-immersive.html`) has a control surface system for tuning how exploration and learning feel. Full spec: `playground/SPEC-controls.md`.
+
+**Architecture** — three standalone ES modules wired into `a-app.js`:
+
+| Module | Purpose |
+|--------|---------|
+| `js/ui/input-pipeline.js` | Processes raw joystick input through deadzone → zoom → curve → smoothing → momentum-as-zoom. Pure math, no DOM. |
+| `js/ui/control-surface.js` | Compound axes (Boldness, Memory, Precision) that map single sliders to multiple underlying params. Offset-based override resolution (trim-pot model). 6 built-in control presets. |
+| `js/ui/control-surface-ui.js` | DOM layer: 3 axis sliders on floating bar, gear icon settings drawer with per-param overrides. Injects its own CSS. |
+| `js/ui/joy-map-enhanced.js` | Enhanced joy-map canvas: zoom minimap with adaptive grid, vanishing trail with Catmull-Rom spline and tap-to-return, dual concentric noise rings (zoom + noise), frozen state overlay. |
+
+**Compound Axes** — each controls 4-6 underlying parameters via interpolation tables:
+
+- **Boldness** (Caution ↔ Bold): input zoom, noise cap, noise growth, learning rate, weight decay, noise distribution
+- **Memory** (Amnesia ↔ Elephant): max examples, example decay, weight decay, noise decay, convergence threshold
+- **Precision** (Raw ↔ Precise): input curve, deadzone, smoothing, slew rate, momentum-zoom mode
+
+When a user manually overrides an individual param, the offset from the axis-derived value persists as the axis moves (like a trim pot on a mixing desk). Double-tap an axis to re-link all params.
+
+**Input Pipeline** — sits between physical joystick and MLP. Key feature: **zoom** narrows the effective input window around an anchor point (`effective = anchor + (raw - 0.5) * zoom_level`). Zoom-at-zero freezes input. Three anchor modes: auto (anchor follows current position when zoom changes), sticky (explicit anchor), center (always 0.5).
+
+**Control Presets**: Default, First Touch, Jazz Hands, Sculptor, Improviser, Microscope. These set compound axis positions — they don't include network weights or synth preset selection.
+
+**Integration** — the control surface dispatches `controlsurface:change` CustomEvents. `a-app.js` listens and updates the input pipeline config, spread level, and RL parameters (noise cap, growth, decay, floor, zoom-aware feedback scaling). Pipeline-processed coordinates are cached (`_lastPipeX/Y`) so `getCurrentInputs()` and `setCurrentInputs()` use the same values the MLP sees. State is persisted to localStorage alongside existing app state.
+
+**Remaining spec phases** (not yet implemented): Phase 2 (pinning + history + A/B compare), Phase 3 (momentum-zoom, pressure feedback, auto-explore, heatmap), Phase 4 (output pipeline, weight health, gradient flow, engine config, session presets).
 
 ## Build System
 

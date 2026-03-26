@@ -6,6 +6,9 @@ import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
+import { InputPipeline } from './ui/input-pipeline.js';
+import { initControlSurfaceUI } from './ui/control-surface-ui.js';
+import { JoyMapEnhanced } from './ui/joy-map-enhanced.js';
 
 // ---- ShapeSeq (feature-flagged, enable with ?shapeseq=1) ----
 const ENABLE_SHAPESEQ = new URLSearchParams(window.location.search).get('shapeseq') === '1';
@@ -106,6 +109,13 @@ let outputMode = 'visual';
 let spreadLevel = 0.6;
 let noiseLevel = 0.05;
 const rlExplorationDecay = 0.97;
+
+// Control surface (Phase 1)
+let inputPipeline = null;
+let controlSurface = null;
+let joyMapEnhanced = null;
+let _lastFrameTime = 0;
+let _lastPipeX = 0.5, _lastPipeY = 0.5; // cached pipeline output for getCurrentInputs()
 
 // Joystick state
 let joyX = 0.5;
@@ -798,6 +808,11 @@ async function init() {
   window.addEventListener('resize', onResize);
   onResize();
 
+  // ---- Control Surface (Phase 1) — init before loadState so restore works ----
+  inputPipeline = new InputPipeline();
+  const csUI = initControlSurfaceUI();
+  controlSurface = csUI.surface;
+
   // Restore saved state (if any)
   loadState();
 
@@ -814,12 +829,38 @@ async function init() {
     if ($ps) $ps.value = activeSynthPresetId;
   }
 
-  // Initial inference
-  iml.setInput(0, joyX);
-  iml.setInput(1, joyY);
-  iml.process();
-  routeOutputs(iml.getOutputs());
-  updateHeatmap(iml.getOutputs());
+  // Enhanced joy-map (replaces drawJoyMap)
+  joyMapEnhanced = new JoyMapEnhanced($joyMap, {
+    onTrailTap: (pos) => {
+      joyX = pos.x;
+      joyY = pos.y;
+      onJoystickMove();
+    },
+    getTrainingData: () => ({
+      features: iml.dataset.features,
+      labels: iml.dataset.labels,
+    }),
+  });
+
+  // Wire control surface changes to pipeline + RL params
+  document.addEventListener('controlsurface:change', (e) => {
+    const p = e.detail;
+    // Input pipeline
+    inputPipeline.setConfig({
+      zoom: p.zoom,
+      deadzone: p.deadzone,
+      inputCurve: p.inputCurve,
+      smoothing: p.smoothing,
+      momentumZoom: p.momentumZoom,
+      invertX: p.invertX,
+      invertY: p.invertY,
+    });
+    // Sync spread (used by moveWeights and randomise)
+    spreadLevel = p.spread;
+  });
+
+  // Initial inference — run through pipeline for consistency
+  if (inputMode === 'joystick') onJoystickMove();
   updateStatus();
   drawJoyMap();
   drawLossPlot();
@@ -879,6 +920,22 @@ function updateHeatmap(outputs) {
 
 // ---- Joy Map (merged joystick + minimap) ----
 function drawJoyMap() {
+  // Use enhanced joy-map if available
+  if (joyMapEnhanced) {
+    joyMapEnhanced.draw({
+      joyX,
+      joyY,
+      // effectiveX/Y are set in onJoystickMove; for draw we show zoom window + cursor
+      zoomWindow: inputPipeline ? inputPipeline.getZoomWindow() : null,
+      zoomLevel: inputPipeline ? inputPipeline.getZoomLevel() : 1.0,
+      noiseLevel,
+      outputMode,
+      frozen: inputPipeline ? inputPipeline.isFrozen() : false,
+    });
+    return;
+  }
+
+  // Legacy fallback
   const canvas = $joyMap;
   const ctx = $joyMapCtx;
   const w = canvas.width;
@@ -1065,8 +1122,24 @@ function updateFollowUI() {
 
 function onJoystickMove() {
   if (inputMode !== 'joystick') return;
-  iml.setInput(0, joyX);
-  iml.setInput(1, joyY);
+
+  // Process through input pipeline (zoom, deadzone, curve, smoothing, momentum)
+  const now = performance.now();
+  const dt = _lastFrameTime > 0 ? (now - _lastFrameTime) / 1000 : 1 / 60;
+  _lastFrameTime = now;
+
+  const pipeResult = inputPipeline
+    ? inputPipeline.process(joyX, joyY, dt)
+    : { x: joyX, y: joyY, frozen: false };
+
+  // Cache for getCurrentInputs() (avoids re-processing and mutating state)
+  _lastPipeX = pipeResult.x;
+  _lastPipeY = pipeResult.y;
+
+  if (pipeResult.frozen) return; // Input frozen (zoom at zero)
+
+  iml.setInput(0, pipeResult.x);
+  iml.setInput(1, pipeResult.y);
   iml.process();
 
   const outputs = iml.getOutputs();
@@ -1075,9 +1148,14 @@ function onJoystickMove() {
 
   syncRawParamsFromOutputs(outputs);
 
-  // Trail
+  // Trail (enhanced joy-map handles this now, legacy trail kept for compat)
   joyTrail.push({ x: joyX, y: joyY, t: Date.now() });
   if (joyTrail.length > 30) joyTrail.shift();
+
+  // Enhanced trail records in input-space coords
+  if (joyMapEnhanced) {
+    joyMapEnhanced.addTrailPoint(joyX, joyY, inputPipeline ? inputPipeline.getZoomLevel() : 1.0);
+  }
 }
 
 // ---- Output routing ----
@@ -1259,11 +1337,8 @@ async function _setInputModeInner(mode) {
       document.getElementById('hand-status').classList.remove('tracking');
     }
 
-    iml.setInput(0, joyX);
-    iml.setInput(1, joyY);
-    iml.process();
-    routeOutputs(iml.getOutputs());
-    updateHeatmap(iml.getOutputs());
+    // Re-run through pipeline so MLP sees processed coords
+    onJoystickMove();
   }
 
   updateStatus();
@@ -1274,7 +1349,9 @@ function getCurrentInputs() {
   if (inputMode === 'hands' && handTracker) {
     return [...handTracker.features];
   }
-  return [joyX, joyY];
+  // Return pipeline-processed coords (what the MLP actually sees),
+  // not raw joyX/joyY, so examples are recorded in the correct input space
+  return [_lastPipeX, _lastPipeY];
 }
 
 function setCurrentInputs() {
@@ -1282,8 +1359,9 @@ function setCurrentInputs() {
     const f = handTracker.features;
     for (let i = 0; i < f.length; i++) iml.setInput(i, f[i]);
   } else {
-    iml.setInput(0, joyX);
-    iml.setInput(1, joyY);
+    // Use cached pipeline output (matches what MLP sees during inference)
+    iml.setInput(0, _lastPipeX);
+    iml.setInput(1, _lastPipeY);
   }
 }
 
@@ -1391,6 +1469,11 @@ function setOutputMode(mode) {
 }
 
 function updateNoiseRing() {
+  // When enhanced joy-map is active, noise ring is drawn on canvas — hide CSS version
+  if (joyMapEnhanced) {
+    $noiseRing.className = 'noise-ring';
+    return;
+  }
   if (noiseLevel > 0.15) {
     $noiseRing.className = 'noise-ring active high';
   } else if (noiseLevel > 0.01) {
@@ -1454,8 +1537,12 @@ function onThumbsUp() {
   const outputs = [...iml.getOutputs()];
   iml.addExample(inputs, outputs);
 
-  noiseLevel *= rlExplorationDecay;
-  noiseLevel = Math.max(noiseLevel, 0.005);
+  // Use control surface params if available, else legacy
+  const csParams = controlSurface ? controlSurface.getParams() : null;
+  const decay = csParams ? csParams.noiseDecay : rlExplorationDecay;
+  const floor = csParams ? csParams.noiseFloor : 0.005;
+  noiseLevel *= decay;
+  noiseLevel = Math.max(noiseLevel, floor);
 
   flash('btn-thumbsup');
   updateNoiseRing();
@@ -1463,8 +1550,18 @@ function onThumbsUp() {
 }
 
 function onThumbsDown() {
-  const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
-  noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
+  // Use control surface params if available, else legacy
+  const csParams = controlSurface ? controlSurface.getParams() : null;
+  const noiseCap = csParams ? csParams.noiseCap : (0.3 * (1 - spreadLevel) + 0.05 * spreadLevel);
+  const growth = csParams ? csParams.noiseGrowth : 1.5;
+
+  // Zoom-aware feedback: scale noise by zoom level
+  let effectiveGrowth = growth;
+  if (csParams && csParams.zoomAwareFeedback && inputPipeline) {
+    effectiveGrowth *= inputPipeline.getZoomLevel();
+  }
+
+  noiseLevel = Math.min(noiseLevel * effectiveGrowth, noiseCap);
 
   iml.moveWeights(noiseLevel, spreadLevel);
 
@@ -2412,6 +2509,8 @@ function saveState() {
       joyY,
       groupOverrides,
       synthPresetId: activeSynthPresetId,
+      controlSurface: controlSurface ? controlSurface.getState() : null,
+      inputPipeline: inputPipeline ? inputPipeline.getConfig() : null,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -2480,6 +2579,14 @@ function loadState() {
     if (state.outputMode && state.outputMode !== outputMode) {
       setOutputMode(state.outputMode);
       syncOutputToggles(outputMode);
+    }
+
+    // Restore control surface state
+    if (state.controlSurface && controlSurface) {
+      controlSurface.setState(state.controlSurface);
+    }
+    if (state.inputPipeline && inputPipeline) {
+      inputPipeline.setConfig(state.inputPipeline);
     }
 
     // Note: don't auto-restore inputMode='hands' — requires camera permission

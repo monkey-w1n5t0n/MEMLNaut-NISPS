@@ -44,6 +44,10 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 
 **Weight double-buffering**: Two separate MLP instances are maintained (nisps-core is not thread-safe — no locks, public `m_layers`, `std::mt19937` without synchronization). The audio thread reads from MLP-A while the training thread clones weights into MLP-B, trains MLP-B, then signals completion. An `std::atomic<bool>` flag tells the audio thread to swap. Memory cost is ~2x network weights (~20KB for the default architecture — trivial).
 
+**Threading invariant**: Only the background thread ever writes to an MLP instance. This applies to both training (thumbs-up) and weight perturbation (thumbs-down). Both operations are enqueued as jobs for the background thread, which clones → mutates → signals swap. Thumbs-down adds ~1-5ms latency vs. direct mutation, but maintains the single-writer invariant and eliminates data races.
+
+**Rapid feedback queueing**: If the user taps +/− while a training/perturbation job is in progress, incoming examples are buffered into a pending list. When the current job completes, if pending work exists, a new job starts immediately with the full (now-updated) dataset. Maximum queue depth of 1 — latest pending state wins, intermediate states are coalesced.
+
 **Post-swap output crossfade**: When weights are swapped, outputs may jump discontinuously. A configurable slew parameter (default ~10ms) linearly interpolates between old and new output vectors over a short crossfade window to prevent audible clicks in downstream audio. Accessible via right-click context menu.
 
 ### Input Signal Handling
@@ -76,10 +80,10 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 |------|------|-------------|
 | OUT 1–12 | Raw MLP | Direct MLP output activations, scaled to configured CV range |
 | MEAN | Derived | Mean of the 12 raw outputs |
-| SPREAD | Derived | Standard deviation of the 12 raw outputs |
+| STD | Derived | Standard deviation of the 12 raw outputs (named "STD" to avoid collision with the SPREAD knob) |
 | DELTA | Derived | Rate of change (L2 norm of output difference from previous inference) |
-| NOVELTY | Derived | Gate: fires when current input is far from all training examples (computed on training thread, cached) |
-| CONFIDENCE | Derived | Inverse of loss on nearest training example (computed on training thread, cached) |
+| NOVELTY | Derived | Gate: fires when current input is far from all training examples (computed on training thread, cached). **Default with 0 examples: 10V** (everything is novel when untrained). |
+| CONFIDENCE | Derived | Inverse of loss on nearest training example (computed on training thread, cached). **Default with 0 examples: 0V** (no confidence with no data). |
 
 Each output has:
 - Per-output range configuration (0–10V unipolar or ±5V bipolar) via context menu
@@ -186,6 +190,8 @@ User-configurable via RATE knob:
 
 Between inference steps, output values are linearly interpolated (slew) to avoid staircase artifacts.
 
+Note: two interpolation systems coexist — decimation interpolation (sub-ms, between inference steps) and post-training crossfade (10ms+, between weight swaps). These compose cleanly: the crossfade produces a smooth target that the decimation interpolation tracks. No special interaction handling needed.
+
 ---
 
 ## RL Feedback Workflow
@@ -200,8 +206,10 @@ Between inference steps, output values are linearly interpolated (slew) to avoid
 ### Thumbs Down (−)
 
 1. Increase noise: `noiseLevel = min(noiseLevel * 1.5, noiseCap)`
-2. Perturb weights: `mlp.moveWeights(noiseLevel, spread)`
-3. Re-run inference to produce new exploration output
+2. Enqueue perturbation job on background thread: clone weights → `mlp.moveWeights(noiseLevel, spread)` → signal swap
+3. Audio thread picks up new weights on next swap, crossfades via output slew
+
+Note: perturbation goes through the background thread (not direct mutation) to maintain the single-writer threading invariant. The ~1-5ms latency is imperceptible on a button press.
 
 ### Learn Enable Gate
 
@@ -274,39 +282,9 @@ The `version` field enables forward compatibility. On load, validate that `mlpCo
 
 ## Panel Layout (Prototyping Phase)
 
-Three panel width variants to prototype:
+Three panel variants to prototype. The compact (20HP) option was cut — 22 jacks + 5 buttons + 2 knobs + display cannot physically fit in 128.5mm of vertical panel space.
 
-### Compact (20HP)
-```
-┌──────────────────────┐
-│     MEMLNaut         │
-│  ┌────────────────┐  │
-│  │   DISPLAY      │  │
-│  │  (bars + dot)  │  │
-│  └────────────────┘  │
-│                      │
-│  SPREAD    RATE      │
-│  [knob]    [knob]    │
-│                      │
-│  [+] [−] [LEARN]    │
-│  [RAND]  [CLEAR]    │
-│                      │
-│  IN1  IN2  LEARN TRG│
-│  (o)  (o)  (o)      │
-│  +TRG  −TRG         │
-│  (o)   (o)           │
-│                      │
-│  1  2  3  4  5  6   │
-│  (o)(o)(o)(o)(o)(o)  │
-│  7  8  9 10 11 12   │
-│  (o)(o)(o)(o)(o)(o)  │
-│  MN SP DL NV CF     │
-│  (o)(o)(o)(o)(o)     │
-└──────────────────────┘
-```
-No individual attenuverters. Outputs tightly packed.
-
-### Standard (30HP)
+### Standard (30HP) — minimum viable panel
 ```
 ┌──────────────────────────────────┐
 │          MEMLNaut                │
@@ -437,7 +415,7 @@ make install  # Copies to VCV plugin directory
 - OSC client in webapp
 
 ### Phase 9: Panel Variants
-- Prototype compact, standard, wide, expander layouts
+- Prototype standard (30HP), wide (44HP), and expander (16HP) layouts
 - User testing, converge on final layout
 
 ### Phase 10: Polish & Distribution

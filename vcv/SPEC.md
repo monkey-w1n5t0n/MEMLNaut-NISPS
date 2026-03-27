@@ -48,6 +48,10 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 
 **Rapid feedback queueing**: If the user taps +/− while a training/perturbation job is in progress, incoming examples are buffered into a pending list. When the current job completes, if pending work exists, a new job starts immediately with the full (now-updated) dataset. Maximum queue depth of 1 — latest pending state wins, intermediate states are coalesced.
 
+**Thread lifecycle**: Background thread checks an `std::atomic<bool> shouldStop` flag each training iteration. On module destruction, set flag and join with a timeout (~100ms). If training doesn't finish in time, the thread is detached (VCV can't hang waiting for a stuck training loop). Each module instance owns its own background thread — no shared thread pool (simplicity over efficiency; revisit if profiling shows thread overhead with many instances).
+
+**Multiple instances**: Each module instance is fully independent (own IML, own background thread, own state). 4 instances = 4 threads + ~80KB weight memory — negligible. The OSC server (Phase 8) needs per-instance port assignment to avoid conflicts.
+
 **Post-swap output crossfade**: When weights are swapped, outputs may jump discontinuously. A configurable slew parameter (default ~10ms) linearly interpolates between old and new output vectors over a short crossfade window to prevent audible clicks in downstream audio. Accessible via right-click context menu.
 
 ### Input Signal Handling
@@ -66,11 +70,14 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 | IN 1 | X | Primary input CV |
 | IN 2 | Y | Primary input CV |
 | IN 3–8 | IN 3–8 | Hidden by default, shown when enabled |
+| SPREAD CV | Spread | CV modulation of SPREAD knob (attenuated, added to knob value) |
 | LEARN | Learn | Gate input: when high, RL feedback is accepted |
 | + TRIG | Positive | Trigger input: register thumbs-up |
 | − TRIG | Negative | Trigger input: register thumbs-down |
 
-- All CV inputs normalized to [0, 1] internally (0–10V → [0,1] or ±5V → [0,1] depending on input mode)
+- All CV inputs normalized to [0, 1] internally. Per-input range configuration via context menu:
+  - **Unipolar (0–10V)**: default. Clamp to [0, 10V], divide by 10. Good for envelopes, sequencers.
+  - **Bipolar (±5V)**: Clamp to [-5, +5V], add 5, divide by 10. Good for LFOs, oscillators.
 - LEARN gate has a corresponding panel toggle button (either/or — gate OR button enables learning)
 - +/− triggers work only when LEARN is enabled (gate high OR toggle on)
 
@@ -106,6 +113,7 @@ Each output has:
 | Setting | Description |
 |---------|-------------|
 | Input count | Number of CV inputs (2–8). **Warning: changing rebuilds MLP and clears all state.** |
+| Per-input range | Unipolar (0–10V, default) or Bipolar (±5V) for each CV input |
 | Noise level | Manual override for RL exploration noise (default: auto from spread) |
 | Decay rate | Weight decay per RL step (default: auto from spread) |
 | Learning rate | MLP training learning rate |
@@ -341,7 +349,7 @@ vcv/
 
 - **VCV Rack SDK** (v2.x)
 - **nisps-core** (header-only, C++20, already in this repo)
-- No other external dependencies
+- **OSC library** (Phase 8 only): oscpack or liblo for UDP OSC server. Not needed until Phase 8. Alternative: minimal from-scratch UDP implementation to avoid the dependency.
 
 ### Build Commands
 
@@ -376,6 +384,13 @@ make install  # Copies to VCV plugin directory
 - MLP inference in process() callback (fixed rate)
 - Spread knob controlling weight initialization
 - Randomize button
+
+### Integration Smoke Test (after Phase 2, before Phase 3)
+- Patch MEMLNaut outputs into a VCV synth voice (VCO → VCF → VCA)
+- Verify outputs change when inputs change (patch LFO into input)
+- Verify Randomize produces audibly different mappings
+- Evaluate if [16, 24, 16] network feels expressive enough for 12 outputs
+- This is the first "playable moment" — assess if the core concept works before building RL
 
 ### Phase 3: RL Feedback
 - +/− buttons on panel

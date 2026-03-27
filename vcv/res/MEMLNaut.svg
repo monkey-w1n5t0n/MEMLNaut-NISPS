@@ -1,5 +1,195 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="203.2mm" height="128.5mm" viewBox="0 0 203.2 128.5">
-  <rect width="203.2" height="128.5" fill="#1a1a2e" />
-  <text x="101.6" y="12" text-anchor="middle" fill="#e0e0e0" font-family="monospace" font-size="6">MEMLNaut</text>
-  <text x="101.6" y="120" text-anchor="middle" fill="#808080" font-family="monospace" font-size="3">NISPS v0.1</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="152.4mm" height="128.5mm" viewBox="0 0 152.4 128.5">
+  <defs>
+    <style>
+      text { font-family: 'Courier New', monospace; }
+      .title { font-size: 5; fill: #e0e0e0; }
+      .section-label { font-size: 3; fill: #808080; }
+      .component-label { font-size: 2.5; fill: #808080; }
+      .output-num { font-size: 2.2; fill: #4a9eff; }
+      .footer { font-size: 2.5; fill: #808080; }
+      .accent { fill: #4a9eff; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="152.4" height="128.5" fill="#1a1a2e"/>
+
+  <!-- Panel border -->
+  <rect x="0.5" y="0.5" width="151.4" height="127.5" fill="none" stroke="#2a2a3e" stroke-width="0.5"/>
+
+  <!-- Title -->
+  <text x="76.2" y="8" text-anchor="middle" class="title">MEMLNaut</text>
+  <line x1="20" y1="10" x2="132" y2="10" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- DISPLAY AREA: (2, 14) to (38, 32) -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <rect x="2" y="14" width="36" height="18" rx="1" fill="#0a0a18" stroke="#2a2a3e" stroke-width="0.4"/>
+  <text x="20" y="24" text-anchor="middle" class="component-label" fill="#4a9eff">DISPLAY</text>
+
+  <line x1="0" y1="34" x2="152.4" y2="34" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- KNOBS ROW: y=36  SPREAD(8,36) CV(20,36) RATE(32,36) -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="8" y="33.5" text-anchor="middle" class="section-label">SPREAD</text>
+  <circle cx="8" cy="36" r="3.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+  <circle cx="8" cy="36" r="0.6" fill="#4a9eff"/>
+
+  <text x="20" y="33.5" text-anchor="middle" class="component-label">CV</text>
+  <circle cx="20" cy="36" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="32" y="33.5" text-anchor="middle" class="section-label">RATE</text>
+  <circle cx="32" cy="36" r="3.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+  <circle cx="32" cy="36" r="0.6" fill="#4a9eff"/>
+
+  <line x1="0" y1="42" x2="152.4" y2="42" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- BUTTONS ROW: y=46  +(6) -(14) LEARN(22) RAND(32) CLR(40) -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="6" y="43.5" text-anchor="middle" class="section-label" fill="#4a9eff">+</text>
+  <rect x="3.5" y="44" width="5" height="4" rx="0.8" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="14" y="43.5" text-anchor="middle" class="section-label" fill="#4a9eff">&minus;</text>
+  <rect x="11.5" y="44" width="5" height="4" rx="0.8" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="22" y="43.5" text-anchor="middle" class="section-label">LEARN</text>
+  <rect x="20.5" y="44.5" width="3" height="5" rx="0.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+  <!-- Learn LED -->
+  <circle cx="22" cy="42" r="0.8" fill="none" stroke="#00cc00" stroke-width="0.3"/>
+
+  <text x="32" y="43.5" text-anchor="middle" class="section-label">RAND</text>
+  <rect x="29.5" y="44" width="5" height="4" rx="0.8" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="40" y="43.5" text-anchor="middle" class="section-label">CLR</text>
+  <rect x="37.5" y="44" width="5" height="4" rx="0.8" fill="none" stroke="#808080" stroke-width="0.4"/>
+  <!-- Training LED -->
+  <circle cx="40" cy="42" r="0.8" fill="none" stroke="#cccc00" stroke-width="0.3"/>
+
+  <line x1="0" y1="52" x2="152.4" y2="52" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- INPUTS: y=56 X(8) Y(20) LEARN_GATE(32) -->
+  <!--         y=64 +TRIG(8) -TRIG(20) -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="20" y="54" text-anchor="middle" class="section-label" fill="#e0e0e0">IN</text>
+
+  <text x="8" y="53.5" text-anchor="middle" class="component-label">X</text>
+  <circle cx="8" cy="56" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="20" y="53.5" text-anchor="middle" class="component-label">Y</text>
+  <circle cx="20" cy="56" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="32" y="53.5" text-anchor="middle" class="component-label">LEARN</text>
+  <circle cx="32" cy="56" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="8" y="61.5" text-anchor="middle" class="component-label">+TRIG</text>
+  <circle cx="8" cy="64" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="20" y="61.5" text-anchor="middle" class="component-label">&minus;TRIG</text>
+  <circle cx="20" cy="64" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <line x1="0" y1="70" x2="152.4" y2="70" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- OUTPUTS: 3 cols x 4 rows starting y=74, col spacing 13mm, row 9mm -->
+  <!-- ox = 6 + col*13, jack at ox+9 -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="20" y="72.5" text-anchor="middle" class="section-label" fill="#e0e0e0">OUT</text>
+
+  <!-- Row 0: y=74 -->
+  <text x="6" y="72" text-anchor="middle" class="output-num">1</text>
+  <circle cx="6" cy="74" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="10.5" cy="74" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="15" cy="74" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="19" y="72" text-anchor="middle" class="output-num">2</text>
+  <circle cx="19" cy="74" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="23.5" cy="74" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="28" cy="74" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="32" y="72" text-anchor="middle" class="output-num">3</text>
+  <circle cx="32" cy="74" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="36.5" cy="74" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="41" cy="74" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <!-- Row 1: y=83 -->
+  <text x="6" y="81" text-anchor="middle" class="output-num">4</text>
+  <circle cx="6" cy="83" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="10.5" cy="83" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="15" cy="83" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="19" y="81" text-anchor="middle" class="output-num">5</text>
+  <circle cx="19" cy="83" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="23.5" cy="83" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="28" cy="83" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="32" y="81" text-anchor="middle" class="output-num">6</text>
+  <circle cx="32" cy="83" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="36.5" cy="83" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="41" cy="83" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <!-- Row 2: y=92 -->
+  <text x="6" y="90" text-anchor="middle" class="output-num">7</text>
+  <circle cx="6" cy="92" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="10.5" cy="92" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="15" cy="92" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="19" y="90" text-anchor="middle" class="output-num">8</text>
+  <circle cx="19" cy="92" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="23.5" cy="92" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="28" cy="92" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="32" y="90" text-anchor="middle" class="output-num">9</text>
+  <circle cx="32" cy="92" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="36.5" cy="92" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="41" cy="92" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <!-- Row 3: y=101 -->
+  <text x="6" y="99" text-anchor="middle" class="output-num">10</text>
+  <circle cx="6" cy="101" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="10.5" cy="101" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="15" cy="101" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="19" y="99" text-anchor="middle" class="output-num">11</text>
+  <circle cx="19" cy="101" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="23.5" cy="101" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="28" cy="101" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="32" y="99" text-anchor="middle" class="output-num">12</text>
+  <circle cx="32" cy="101" r="1.8" fill="none" stroke="#808080" stroke-width="0.3"/>
+  <circle cx="36.5" cy="101" r="0.6" fill="none" stroke="#ffffff" stroke-width="0.2"/>
+  <circle cx="41" cy="101" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <line x1="0" y1="106" x2="152.4" y2="106" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- DERIVED OUTPUTS: y=112, starting x=4, spacing 8mm -->
+  <!-- MN(4) SD(12) DT(20) NV(28) CF(36) -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="4" y="109" text-anchor="middle" class="component-label">MN</text>
+  <circle cx="4" cy="112" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="12" y="109" text-anchor="middle" class="component-label">SD</text>
+  <circle cx="12" cy="112" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="20" y="109" text-anchor="middle" class="component-label">&#x0394;T</text>
+  <circle cx="20" cy="112" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="28" y="109" text-anchor="middle" class="component-label">NV</text>
+  <circle cx="28" cy="112" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <text x="36" y="109" text-anchor="middle" class="component-label">CF</text>
+  <circle cx="36" cy="112" r="2.5" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+
+  <!-- Footer -->
+  <line x1="20" y1="122" x2="132" y2="122" stroke="#2a2a3e" stroke-width="0.3"/>
+  <text x="76.2" y="126" text-anchor="middle" class="footer">NISPS v0.1</text>
+
+  <!-- Mounting holes (decorative) -->
+  <circle cx="5.08" cy="3" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+  <circle cx="147.32" cy="3" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+  <circle cx="5.08" cy="125.5" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+  <circle cx="147.32" cy="125.5" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
 </svg>

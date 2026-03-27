@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40.64mm" height="128.5mm" viewBox="0 0 40.64 128.5">
+  <defs>
+    <style>
+      text { font-family: 'Courier New', monospace; }
+      .title { font-size: 3.5; fill: #e0e0e0; }
+      .subtitle { font-size: 2.5; fill: #4a9eff; }
+      .section-label { font-size: 2.5; fill: #808080; }
+      .component-label { font-size: 2.2; fill: #808080; }
+      .footer { font-size: 2; fill: #808080; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="40.64" height="128.5" fill="#1a1a2e"/>
+
+  <!-- Panel border -->
+  <rect x="0.5" y="0.5" width="39.64" height="127.5" fill="none" stroke="#2a2a3e" stroke-width="0.5"/>
+
+  <!-- Title -->
+  <text x="20.32" y="8" text-anchor="middle" class="title">MEMLNaut</text>
+  <text x="20.32" y="12" text-anchor="middle" class="subtitle">EXP</text>
+  <line x1="5" y1="14" x2="35.64" y2="14" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- CONNECTION INDICATOR LED -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="20.32" y="20" text-anchor="middle" class="component-label">LINK</text>
+  <circle cx="20.32" cy="23" r="1.2" fill="none" stroke="#4a9eff" stroke-width="0.4"/>
+  <circle cx="20.32" cy="23" r="0.4" fill="#333355"/>
+
+  <line x1="5" y1="28" x2="35.64" y2="28" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- EXTRA INPUTS: IN 3-8 -->
+  <!-- 2 columns, 3 rows -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <text x="20.32" y="32" text-anchor="middle" class="section-label" fill="#e0e0e0">IN</text>
+
+  <!-- Row 0: IN 3, IN 4 -->
+  <text x="12" y="37" text-anchor="middle" class="component-label">IN 3</text>
+  <circle cx="12" cy="40" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="28.64" y="37" text-anchor="middle" class="component-label">IN 4</text>
+  <circle cx="28.64" cy="40" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <!-- Row 1: IN 5, IN 6 -->
+  <text x="12" y="50" text-anchor="middle" class="component-label">IN 5</text>
+  <circle cx="12" cy="53" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="28.64" y="50" text-anchor="middle" class="component-label">IN 6</text>
+  <circle cx="28.64" cy="53" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <!-- Row 2: IN 7, IN 8 -->
+  <text x="12" y="63" text-anchor="middle" class="component-label">IN 7</text>
+  <circle cx="12" cy="66" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <text x="28.64" y="63" text-anchor="middle" class="component-label">IN 8</text>
+  <circle cx="28.64" cy="66" r="2.5" fill="none" stroke="#808080" stroke-width="0.4"/>
+
+  <line x1="5" y1="74" x2="35.64" y2="74" stroke="#2a2a3e" stroke-width="0.3"/>
+
+  <!-- Empty space for future expansion -->
+  <text x="20.32" y="90" text-anchor="middle" class="component-label" fill="#333355">reserved</text>
+
+  <!-- Footer -->
+  <line x1="5" y1="122" x2="35.64" y2="122" stroke="#2a2a3e" stroke-width="0.3"/>
+  <text x="20.32" y="126" text-anchor="middle" class="footer">NISPS v0.1</text>
+
+  <!-- Mounting holes -->
+  <circle cx="5.08" cy="3" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+  <circle cx="35.56" cy="3" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+  <circle cx="5.08" cy="125.5" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+  <circle cx="35.56" cy="125.5" r="1.2" fill="none" stroke="#2a2a3e" stroke-width="0.3"/>
+</svg>

@@ -215,4 +215,101 @@ export class IML {
   get exampleCount() {
     return this.dataset.size;
   }
+
+  /**
+   * Export state as a .nisps-compatible JSON object.
+   * The weight format matches the VCV Rack serialization: a 3D array of
+   * connection weights [layer][node][weight], without bias values.
+   * Bias is stored in a separate parallel structure for lossless round-trip
+   * within the webapp, but VCV Rack will ignore it.
+   *
+   * @returns {object} .nisps JSON object
+   */
+  exportState() {
+    const internalWeights = this.mlp.getWeights();
+
+    // Convert from JS format [{weights, bias}, ...] per layer
+    // to .nisps format: float[][][] (connection weights only)
+    const weights = internalWeights.map(layer =>
+      layer.map(node => node.weights)
+    );
+
+    // Also capture bias values for lossless webapp round-trip
+    const biases = internalWeights.map(layer =>
+      layer.map(node => node.bias)
+    );
+
+    // Features stored without bias term
+    const features = this.dataset.features.map(f => [...f]);
+    const labels = this.dataset.labels.map(l => [...l]);
+
+    const activations = this.mlp.layers.map(layer => layer.activationName);
+
+    return {
+      version: 1,
+      weights: weights,
+      biases: biases,
+      examples: { features, labels },
+      mlpConfig: {
+        layers: [...this.mlp.layersNodes],
+        activations: activations,
+      },
+    };
+  }
+
+  /**
+   * Import state from a .nisps JSON object.
+   * Accepts both the VCV Rack format (3D weight array without bias) and
+   * the webapp extended format (with separate biases array).
+   *
+   * @param {object} state - Parsed .nisps JSON
+   * @throws {Error} If version is invalid or architecture mismatches
+   */
+  importState(state) {
+    if (!state || !state.version || state.version < 1) {
+      throw new Error('Invalid .nisps format: missing or unsupported version');
+    }
+
+    // Validate architecture compatibility if mlpConfig is present
+    if (state.mlpConfig && state.mlpConfig.layers) {
+      const expected = this.mlp.layersNodes;
+      const actual = state.mlpConfig.layers;
+      if (expected.length !== actual.length ||
+          !expected.every((v, i) => v === actual[i])) {
+        throw new Error(
+          `Architecture mismatch: expected [${expected}], got [${actual}]`
+        );
+      }
+    }
+
+    // Load weights
+    if (state.weights) {
+      // Convert from .nisps 3D format to JS internal format
+      const internalWeights = state.weights.map((layer, li) =>
+        layer.map((nodeWeights, ni) => ({
+          weights: Array.isArray(nodeWeights) ? [...nodeWeights] : nodeWeights,
+          bias: (state.biases && state.biases[li] && state.biases[li][ni] !== undefined)
+            ? state.biases[li][ni]
+            : 0,
+        }))
+      );
+      this.mlp.setWeights(internalWeights);
+    }
+
+    // Load examples
+    if (state.examples) {
+      this.dataset.clear();
+      const { features, labels } = state.examples;
+      if (features && labels) {
+        const count = Math.min(features.length, labels.length);
+        for (let i = 0; i < count; i++) {
+          this.dataset.add(features[i], labels[i]);
+        }
+      }
+    }
+
+    // Re-run inference with current inputs
+    this.inputUpdated = true;
+    this.process();
+  }
 }

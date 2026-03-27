@@ -1,21 +1,20 @@
 #!/usr/bin/env node
 
-// NISPS → OSC Bridge
-// WebSocket server that receives parameter updates from the browser
-// and forwards them as OSC messages to any OSC-capable software.
+// NISPS <-> OSC Bridge (bidirectional)
+// WebSocket server that bridges the browser webapp and OSC-capable software
+// (VCV Rack MEMLNaut module, SuperCollider, etc.).
 //
 // Usage:
-//   node bridge.mjs                              # defaults: ws:8765, osc:127.0.0.1:57120
+//   node bridge.mjs                              # defaults
 //   node bridge.mjs --osc-host 192.168.1.5       # send to another machine
-//   node bridge.mjs --osc-port 9000              # SuperCollider on custom port
+//   node bridge.mjs --osc-port 9000              # target port
 //   node bridge.mjs --ws-port 8765               # WebSocket listen port
-//   node bridge.mjs --osc-prefix /nisps          # OSC address prefix (default: /nisps)
-//   node bridge.mjs --bundle                     # send OSC bundles instead of individual messages
+//   node bridge.mjs --listen-port 9001           # UDP listen port for incoming OSC
+//   node bridge.mjs --osc-prefix /nisps          # OSC address prefix
+//   node bridge.mjs --bundle                     # send OSC bundles
 //
-// OSC address format:
-//   /nisps/<param_name> <float>
-//   e.g. /nisps/Env_A_Att 0.35
-//        /nisps/SVF_Cutoff 0.72
+// Webapp -> Bridge -> OSC target (param updates, state, weights)
+// OSC target -> Bridge -> Webapp (output values, input values)
 
 import { createSocket } from 'node:dgram';
 import { WebSocketServer } from 'ws';
@@ -31,15 +30,20 @@ const hasFlag = (name) => args.includes(`--${name}`);
 
 const WS_PORT = parseInt(flag('ws-port', '8765'), 10);
 const OSC_HOST = flag('osc-host', '127.0.0.1');
-const OSC_PORT = parseInt(flag('osc-port', '57120'), 10);
+const OSC_PORT = parseInt(flag('osc-port', '9000'), 10);
 const OSC_PREFIX = flag('osc-prefix', '/nisps');
+const LISTEN_PORT = parseInt(flag('listen-port', '9001'), 10);
 const USE_BUNDLES = hasFlag('bundle');
 
 // ---- OSC encoding (minimal, no dependencies) ----
 
+function oscPadded(len) {
+  return len + (4 - (len % 4)) % 4;
+}
+
 function oscString(str) {
   const len = str.length + 1; // null terminator
-  const padded = len + (4 - (len % 4)) % 4;
+  const padded = oscPadded(len);
   const buf = Buffer.alloc(padded);
   buf.write(str, 'ascii');
   return buf;
@@ -59,9 +63,16 @@ function oscMessage(address, value) {
   ]);
 }
 
+function oscMessageString(address, value) {
+  return Buffer.concat([
+    oscString(address),
+    oscString(',s'),
+    oscString(value),
+  ]);
+}
+
 function oscBundle(messages) {
   const header = oscString('#bundle');
-  // NTP timestamp: immediately (1 in upper 32 bits)
   const timetag = Buffer.alloc(8);
   timetag.writeUInt32BE(1, 0);
 
@@ -74,12 +85,64 @@ function oscBundle(messages) {
   return Buffer.concat(parts);
 }
 
-// ---- UDP socket ----
-const udp = createSocket('udp4');
+// ---- OSC decoding ----
+
+function readOscString(buf, offset) {
+  let end = offset;
+  while (end < buf.length && buf[end] !== 0) end++;
+  const str = buf.toString('ascii', offset, end);
+  const nextOffset = offset + oscPadded(end - offset + 1);
+  return [str, nextOffset];
+}
+
+function readOscFloat(buf, offset) {
+  if (offset + 4 > buf.length) return [0, offset + 4];
+  return [buf.readFloatBE(offset), offset + 4];
+}
+
+function parseOscMessage(buf) {
+  if (buf.length < 4) return null;
+  let offset = 0;
+
+  const [address, off1] = readOscString(buf, offset);
+  if (!address.startsWith('/')) return null;
+  offset = off1;
+
+  const [tags, off2] = readOscString(buf, offset);
+  if (!tags.startsWith(',')) return null;
+  offset = off2;
+
+  const types = tags.slice(1);
+  const args = [];
+
+  for (const t of types) {
+    if (t === 'f') {
+      const [val, off] = readOscFloat(buf, offset);
+      args.push(val);
+      offset = off;
+    } else if (t === 's') {
+      const [val, off] = readOscString(buf, offset);
+      args.push(val);
+      offset = off;
+    }
+  }
+
+  return { address, types, args };
+}
+
+// ---- UDP sockets ----
+
+// Outgoing: sends OSC to target
+const udpSend = createSocket('udp4');
 
 function sendOSC(address, value) {
   const msg = oscMessage(address, value);
-  udp.send(msg, OSC_PORT, OSC_HOST);
+  udpSend.send(msg, OSC_PORT, OSC_HOST);
+}
+
+function sendOSCString(address, value) {
+  const msg = oscMessageString(address, value);
+  udpSend.send(msg, OSC_PORT, OSC_HOST);
 }
 
 function sendOSCBundle(params) {
@@ -87,35 +150,96 @@ function sendOSCBundle(params) {
     oscMessage(`${OSC_PREFIX}/${name}`, value)
   );
   const bundle = oscBundle(messages);
-  udp.send(bundle, OSC_PORT, OSC_HOST);
+  udpSend.send(bundle, OSC_PORT, OSC_HOST);
 }
+
+// Incoming: listens for OSC from target
+const udpRecv = createSocket('udp4');
+udpRecv.bind(LISTEN_PORT, '0.0.0.0');
+
+udpRecv.on('message', (buf, _rinfo) => {
+  const msg = parseOscMessage(buf);
+  if (!msg) return;
+
+  const wsMsg = { type: 'osc', address: msg.address };
+
+  if (msg.address === `${OSC_PREFIX}/output` || msg.address === '/nisps/output') {
+    wsMsg.type = 'outputs';
+    wsMsg.values = msg.args.filter(a => typeof a === 'number');
+  } else if (msg.address === `${OSC_PREFIX}/input` || msg.address === '/nisps/input') {
+    wsMsg.type = 'inputs';
+    wsMsg.values = msg.args.filter(a => typeof a === 'number');
+  } else {
+    wsMsg.args = msg.args;
+  }
+
+  broadcastToWs(JSON.stringify(wsMsg));
+});
+
+udpRecv.on('error', (err) => {
+  console.error('[udp] Listen error:', err.message);
+});
 
 // ---- WebSocket server ----
 const wss = new WebSocketServer({ port: WS_PORT });
+const wsClients = new Set();
 
-let clientCount = 0;
+function broadcastToWs(data) {
+  for (const ws of wsClients) {
+    try {
+      if (ws.readyState === 1) { // OPEN
+        ws.send(data);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
 
 wss.on('connection', (ws) => {
-  clientCount++;
-  console.log(`[ws] Client connected (${clientCount} total)`);
+  wsClients.add(ws);
+  console.log(`[ws] Client connected (${wsClients.size} total)`);
 
-  // Tell the browser what we're targeting
   ws.send(JSON.stringify({
     type: 'info',
-    message: `OSC → ${OSC_HOST}:${OSC_PORT} (prefix: ${OSC_PREFIX})`,
+    message: `OSC <-> ${OSC_HOST}:${OSC_PORT} (prefix: ${OSC_PREFIX}, listen: ${LISTEN_PORT})`,
   }));
 
-  ws.on('message', (data) => {
+  ws.on('message', (raw) => {
     try {
-      // Expects: [[paramName, value], ...]
-      const batch = JSON.parse(data);
-      if (!Array.isArray(batch)) return;
+      const data = JSON.parse(raw);
 
-      if (USE_BUNDLES) {
-        sendOSCBundle(batch);
-      } else {
-        for (const [name, value] of batch) {
-          sendOSC(`${OSC_PREFIX}/${name}`, value);
+      // Structured message format: { type, payload }
+      if (data && typeof data === 'object' && data.type) {
+        switch (data.type) {
+          case 'state':
+            sendOSCString(`${OSC_PREFIX}/state`, JSON.stringify(data.payload));
+            return;
+          case 'weights':
+            sendOSCString(`${OSC_PREFIX}/weights`, JSON.stringify(data.payload));
+            return;
+          case 'params':
+            if (Array.isArray(data.payload)) {
+              if (USE_BUNDLES) {
+                sendOSCBundle(data.payload);
+              } else {
+                for (const [name, value] of data.payload) {
+                  sendOSC(`${OSC_PREFIX}/${name}`, value);
+                }
+              }
+            }
+            return;
+        }
+      }
+
+      // Legacy format: [[paramName, value], ...]
+      if (Array.isArray(data)) {
+        if (USE_BUNDLES) {
+          sendOSCBundle(data);
+        } else {
+          for (const [name, value] of data) {
+            sendOSC(`${OSC_PREFIX}/${name}`, value);
+          }
         }
       }
     } catch (e) {
@@ -124,22 +248,28 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    clientCount--;
-    console.log(`[ws] Client disconnected (${clientCount} remaining)`);
+    wsClients.delete(ws);
+    console.log(`[ws] Client disconnected (${wsClients.size} remaining)`);
   });
 });
 
 console.log(`
-NISPS → OSC Bridge
-──────────────────
-  WebSocket:  ws://localhost:${WS_PORT}
-  OSC target: ${OSC_HOST}:${OSC_PORT}
-  Prefix:     ${OSC_PREFIX}
-  Mode:       ${USE_BUNDLES ? 'bundles' : 'individual messages'}
+NISPS <-> OSC Bridge (bidirectional)
+────────────────────────────────────
+  WebSocket:    ws://localhost:${WS_PORT}
+  OSC target:   ${OSC_HOST}:${OSC_PORT}
+  OSC listen:   0.0.0.0:${LISTEN_PORT}
+  Prefix:       ${OSC_PREFIX}
+  Mode:         ${USE_BUNDLES ? 'bundles' : 'individual messages'}
 
-  OSC addresses: ${OSC_PREFIX}/<param_name> <float>
-  e.g. ${OSC_PREFIX}/Env_A_Att 0.35
-       ${OSC_PREFIX}/SVF_Cut 0.72
+  Webapp -> VCV:
+    params:  [[name, value], ...]  or  { type: "params", payload: [...] }
+    state:   { type: "state", payload: <JSON> }
+    weights: { type: "weights", payload: <JSON> }
 
-  Waiting for browser connection...
+  VCV -> Webapp:
+    /nisps/output <f...f>  ->  { type: "outputs", values: [...] }
+    /nisps/input  <f...f>  ->  { type: "inputs",  values: [...] }
+
+  Waiting for connections...
 `);

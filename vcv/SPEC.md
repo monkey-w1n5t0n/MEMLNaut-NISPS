@@ -442,6 +442,106 @@ make install  # Copies to VCV plugin directory
 
 ---
 
+## Performance Characteristics
+
+### Inference Cost
+
+The MLP has architecture `[3, 16, 24, 16, 12]` (3 = 2 inputs + 1 bias node). Each layer's nodes compute a weighted sum of all inputs from the previous layer (including bias weight), then apply an activation function.
+
+| Layer transition | Nodes | Weights per node | Multiply-adds | Activations |
+|-----------------|-------|-----------------|---------------|-------------|
+| Input (3) -> Hidden 1 (16) | 16 | 3 | 48 | 16 (ReLU) |
+| Hidden 1 (16) -> Hidden 2 (24) | 24 | 17 (16 + bias) | 408 | 24 (ReLU) |
+| Hidden 2 (24) -> Hidden 3 (16) | 16 | 25 (24 + bias) | 400 | 16 (ReLU) |
+| Hidden 3 (16) -> Output (12) | 12 | 17 (16 + bias) | 204 | 12 (sigmoid) |
+| **Total** | | | **1,060** | **68** |
+
+One forward pass: ~1,060 multiply-adds + 68 activation evaluations (56 ReLU, 12 sigmoid). This is trivially cheap for any modern CPU.
+
+### Memory
+
+- ~20KB per MLP instance (weights + node state for [3, 16, 24, 16, 12])
+- 2 MLP instances per module (double-buffering for thread safety): ~40KB
+- Dataset: up to 100 examples, each with 2 floats (inputs) + 12 floats (labels) = 5.6KB max
+- Total per module instance: ~46KB — negligible
+
+### Threading
+
+- 1 background thread per module instance for training/perturbation
+- No shared thread pool (simplicity over efficiency)
+- 4 module instances = 4 threads + ~184KB total memory
+
+### Rate Knob Range
+
+| Knob position | Inference rate | Period (samples at 44.1kHz) | Behavior |
+|--------------|---------------|----------------------------|----------|
+| Full CCW (0.0) | ~170 Hz | 256 | Once per process block. Cheapest. |
+| 12 o'clock (0.5) | ~2,756 Hz | 16 | Good for CV-rate modulation. |
+| Full CW (1.0) | 44,100 Hz | 1 | Every sample. Audio-rate CV. |
+
+Mapping is exponential: `period = 256 * (1/256)^rate`, giving perceptually linear response.
+
+### CPU Estimate
+
+At default rate (~2kHz with knob at 0.5): ~2,000 forward passes/sec. Each pass is ~1,060 multiply-adds. Total: ~2.1M multiply-adds/sec. For context, a single modern CPU core can sustain billions of multiply-adds per second. Even at audio rate (44.1kHz = ~46M multiply-adds/sec), the MLP inference is a small fraction of available compute.
+
+The dominant CPU cost at audio rate is not the MLP math but the per-sample overhead in `process()` (derived output computation, slew interpolation, voltage scaling). At default rate this overhead is amortized across ~16 samples.
+
+---
+
+## VCV Rack v1 Compatibility
+
+### v2-Specific APIs Used
+
+The following VCV Rack v2 APIs are used throughout `src/MEMLNaut.cpp`:
+
+| API | Usage | v1 Equivalent |
+|-----|-------|--------------|
+| `createPanel()` | `setPanel(createPanel(asset::plugin(...)))` — loads SVG panel | `SVGPanel` + `setPanel()` manual setup |
+| `configButton()` | Configures momentary button params (RAND, +, -, CLEAR) | `configParam()` with min=0, max=1, default=0 |
+| `configSwitch()` | Configures LEARN toggle with string labels | `configParam()` (no label strings) |
+| `configParam()` | All knob/attenuverter configuration | Same name, but v2 added display formatting args |
+| `configInput()` / `configOutput()` | Port labels for tooltips | Not available in v1 (no port tooltips) |
+| `createCheckMenuItem()` | Context menu toggle items (output ranges, input ranges, OSC, slew) | Manual `MenuItem` subclass with `rightText` checkmark |
+| `createSubmenuItem()` | Nested submenus (slew time, OSC port) | Manual `MenuItem` subclass overriding `createChildMenu()` |
+| `createMenuItem()` | Simple menu actions (save/load preset) | Manual `MenuItem` subclass overriding `onAction()` |
+| `createMenuLabel()` | Section headers in context menu | `MenuLabel` direct construction |
+| `LedDisplay` | Base class for NanoVG bar graph display widget | `LedDisplayWidget` (similar but slightly different API) |
+| `drawLayer()` | Layer-based drawing (layer 1 = foreground) | `draw()` only (no layer separation) |
+| `createModel<M, W>()` | Template model registration | Same syntax (available since late v1) |
+| `string::f()` | Printf-style string formatting | `string::f()` (available in v1) |
+| `dsp::BooleanTrigger` | Edge detection on boolean params | Available in v1 |
+| `dsp::SchmittTrigger` | Edge detection on CV triggers | Available in v1 |
+| `json_*` (jansson) | State serialization | Same (jansson is used in both v1 and v2) |
+| `osdialog_*` | Native file dialogs for preset save/load | Same (osdialog bundled in both) |
+| Standard widgets: `RoundBlackKnob`, `VCVButton`, `CKSS`, `Trimpot`, `PJ301MPort`, `SmallLight` | Panel components | All available in v1 (VCVButton may need renaming to `BefacoButton` or similar) |
+
+### APIs Without Direct v1 Equivalents
+
+- **`configInput()` / `configOutput()`**: v1 has no port tooltip system. These calls would simply be removed — ports would work but lack hover labels.
+- **`configButton()` / `configSwitch()`**: Would revert to `configParam()` calls. Lose the semantic distinction and string labels.
+- **`createCheckMenuItem()` / `createSubmenuItem()`**: The most labor-intensive change. Each menu item in v1 requires a dedicated `struct` subclass of `MenuItem` with `onAction()` and `rightText` overrides. Our context menu has ~20+ items. A v1 port would need ~20 small structs or a templated helper.
+
+### Estimated Effort
+
+- **Mechanical changes** (configButton -> configParam, remove configInput/configOutput labels): ~1 hour
+- **Context menu rewrite** (createCheckMenuItem/createSubmenuItem -> manual MenuItem subclasses): ~3-4 hours. This is the bulk of the work — approximately 20 menu items each needing a small struct.
+- **Display widget** (LedDisplay/drawLayer -> LedDisplayWidget/draw): ~30 minutes
+- **Widget naming** (VCVButton and similar may have different names): ~30 minutes of research + find/replace
+- **Testing**: ~2 hours (v1 has different SDK build, need separate build environment)
+- **Total estimate**: ~8 hours of focused work
+
+### Recommendation
+
+**Ship v2-only.** Rationale:
+
+1. VCV Rack v1 userbase is declining — v2 Community Edition is free, removing the cost barrier that kept some users on v1.
+2. The 8-hour port effort is not large, but maintaining two codepaths adds ongoing cost for every future feature.
+3. nisps-core requires C++20 (`std::span`, concepts). The v1 SDK toolchain may not support C++20 on all platforms, which could require additional workarounds or feature-gating.
+4. If v1 demand materializes, the port is straightforward and can be done as a one-time effort.
+
+---
+
 ## Open Questions (to resolve during implementation)
 
 1. **MLP hidden layer sizing**: [16, 24, 16] is a guess. May need tuning based on real-world training performance with 12 outputs.

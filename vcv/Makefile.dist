@@ -1,0 +1,35 @@
+# Distribution packaging for MEMLNaut VCV plugin
+#
+# Usage:
+#   make -f Makefile.dist dist          # Build plugin then package
+#   make -f Makefile.dist package-only  # Package without rebuilding
+#   make -f Makefile.dist clean-dist    # Remove dist/ directory
+
+PLUGIN_NAME = MEMLNaut
+VERSION = 0.1.0
+PLATFORM = $(shell uname -s)-$(shell uname -m)
+
+# Delegate build to the main Makefile (which includes the VCV SDK plugin.mk)
+all:
+	$(MAKE) -f Makefile
+
+# Build then package
+dist: all package-only
+
+# Package the already-built plugin (no rebuild)
+package-only:
+	@echo "Packaging $(PLUGIN_NAME) v$(VERSION) for $(PLATFORM)..."
+	mkdir -p dist/$(PLUGIN_NAME)
+	cp plugin.so dist/$(PLUGIN_NAME)/ 2>/dev/null || true
+	cp plugin.dylib dist/$(PLUGIN_NAME)/ 2>/dev/null || true
+	cp plugin.dll dist/$(PLUGIN_NAME)/ 2>/dev/null || true
+	cp plugin.json dist/$(PLUGIN_NAME)/
+	cp -r res dist/$(PLUGIN_NAME)/
+	cd dist && zip -r $(PLUGIN_NAME)-$(VERSION)-$(PLATFORM).zip $(PLUGIN_NAME)
+	rm -rf dist/$(PLUGIN_NAME)
+	@echo "Created dist/$(PLUGIN_NAME)-$(VERSION)-$(PLATFORM).zip"
+
+clean-dist:
+	rm -rf dist
+
+.PHONY: all dist package-only clean-dist

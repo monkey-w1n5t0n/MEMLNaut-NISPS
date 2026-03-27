@@ -34,6 +34,7 @@ export class Layer {
     this.numNodes = numNodes;
     this.nodes = [];
 
+    this.activationName = activationName;
     const pair = activationPairs[activationName];
     this.activationFn = pair[0];
     this.derivActivationFn = pair[1];

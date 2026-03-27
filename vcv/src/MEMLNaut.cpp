@@ -1,4 +1,5 @@
 #include "plugin.hpp"
+#include "osc_server.hpp"
 #include <nisps/nisps.hpp>
 #include <osdialog.h>
 #include <thread>
@@ -81,6 +82,68 @@ struct MEMLNaut : Module {
     float cachedConfidence = 0.f; // default: no confidence (0V)
     float lastInputs[MAX_ML_INPUTS] = {};
 
+    // ── OSC bridge ────────────────────────────────────────────────────
+    std::unique_ptr<memlnaut::OscServer> oscServer;
+    bool oscEnabled = false;
+    int oscPort = 9000;
+    int oscSendCounter = 0;
+    static constexpr int OSC_SEND_INTERVAL_SAMPLES = 4410; // ~100ms at 44.1kHz
+
+    void startOsc() {
+        if (oscServer && oscServer->isRunning()) return;
+        oscServer = std::make_unique<memlnaut::OscServer>();
+
+        // When we receive full state JSON, apply it
+        oscServer->onState([this](const std::string& json) {
+            json_error_t error;
+            json_t* root = json_loads(json.c_str(), 0, &error);
+            if (!root) return;
+            dataFromJson(root);
+            json_decref(root);
+        });
+
+        // When we receive weights JSON, apply just the weights
+        oscServer->onWeights([this](const std::string& json) {
+            json_error_t error;
+            json_t* root = json_loads(json.c_str(), 0, &error);
+            if (!root) return;
+            json_t* jWeights = json_object_get(root, "weights");
+            if (jWeights && json_is_array(jWeights)) {
+                nisps::MLP<float>::mlp_weights weights;
+                for (size_t li = 0; li < json_array_size(jWeights); li++) {
+                    json_t* jLayer = json_array_get(jWeights, li);
+                    std::vector<std::vector<float>> layer;
+                    for (size_t ni = 0; ni < json_array_size(jLayer); ni++) {
+                        json_t* jNode = json_array_get(jLayer, ni);
+                        std::vector<float> node;
+                        for (size_t wi = 0; wi < json_array_size(jNode); wi++) {
+                            node.push_back(json_real_value(json_array_get(jNode, wi)));
+                        }
+                        layer.push_back(node);
+                    }
+                    weights.push_back(layer);
+                }
+                iml.set_weights(weights);
+            }
+            json_decref(root);
+        });
+
+        if (!oscServer->start(oscPort)) {
+            oscServer.reset();
+            oscEnabled = false;
+        } else {
+            oscEnabled = true;
+        }
+    }
+
+    void stopOsc() {
+        if (oscServer) {
+            oscServer->stop();
+            oscServer.reset();
+        }
+        oscEnabled = false;
+    }
+
     // ── Triggers ──────────────────────────────────────────────────────
     dsp::BooleanTrigger randTrigger;
     dsp::BooleanTrigger thumbsUpTrigger;
@@ -154,6 +217,7 @@ struct MEMLNaut : Module {
     }
 
     ~MEMLNaut() {
+        stopOsc();
         shouldStop.store(true);
         jobCv.notify_one();
         if (workerThread.joinable()) {
@@ -432,6 +496,16 @@ struct MEMLNaut : Module {
         // Novelty + Confidence (computed on background thread, cached)
         outputs[OUTPUT_NOVELTY].setVoltage(cachedNovelty);
         outputs[OUTPUT_CONFIDENCE].setVoltage(cachedConfidence);
+
+        // ── OSC send (throttled to ~100ms) ───────────────────────────
+        if (oscServer && oscServer->isRunning()) {
+            oscSendCounter++;
+            if (oscSendCounter >= OSC_SEND_INTERVAL_SAMPLES) {
+                oscSendCounter = 0;
+                oscServer->sendOutputs(slewOutputs, NUM_ML_OUTPUTS);
+                oscServer->sendInputs(lastInputs, NUM_ML_INPUTS);
+            }
+        }
     }
 
     // ── Serialization ─────────────────────────────────────────────────
@@ -440,6 +514,8 @@ struct MEMLNaut : Module {
         json_object_set_new(root, "version", json_integer(1));
         json_object_set_new(root, "noiseLevel", json_real(noiseLevel));
         json_object_set_new(root, "slewMs", json_real(slewMs));
+        json_object_set_new(root, "oscEnabled", json_boolean(oscEnabled));
+        json_object_set_new(root, "oscPort", json_integer(oscPort));
 
         // Output ranges
         json_t* outRanges = json_array();
@@ -510,6 +586,16 @@ struct MEMLNaut : Module {
             noiseLevel = json_real_value(j);
         if ((j = json_object_get(root, "slewMs")))
             slewMs = json_real_value(j);
+
+        // OSC
+        if ((j = json_object_get(root, "oscPort")))
+            oscPort = json_integer_value(j);
+        if ((j = json_object_get(root, "oscEnabled"))) {
+            if (json_boolean_value(j))
+                startOsc();
+            else
+                stopOsc();
+        }
 
         // Output ranges
         json_t* outRanges = json_object_get(root, "outputRangeUnipolar");
@@ -799,6 +885,37 @@ struct MEMLNautWidget : ModuleWidget {
             }
 
             json_decref(root);
+        }));
+
+        // ── OSC bridge ───────────────────────────────────────────────
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("OSC Bridge"));
+
+        menu->addChild(createCheckMenuItem(
+            string::f("Enable OSC server (port %d)", module->oscPort), "",
+            [=]() { return module->oscEnabled; },
+            [=]() {
+                if (module->oscEnabled) {
+                    module->stopOsc();
+                } else {
+                    module->startOsc();
+                }
+            }
+        ));
+
+        menu->addChild(createSubmenuItem("OSC listen port", string::f("%d", module->oscPort), [=](Menu* childMenu) {
+            for (int port : {9000, 9001, 9002, 8000, 7000}) {
+                childMenu->addChild(createCheckMenuItem(
+                    string::f("%d", port), "",
+                    [=]() { return module->oscPort == port; },
+                    [=]() {
+                        bool wasRunning = module->oscEnabled;
+                        if (wasRunning) module->stopOsc();
+                        module->oscPort = port;
+                        if (wasRunning) module->startOsc();
+                    }
+                ));
+            }
         }));
     }
 };

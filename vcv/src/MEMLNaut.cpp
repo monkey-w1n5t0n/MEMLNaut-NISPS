@@ -64,8 +64,14 @@ struct MEMLNaut : Module {
         LIGHTS_LEN
     };
 
-    // ── ML Engine ─────────────────────────────────────────────────────
+    // ── ML Engine (double-buffered) ─────────────────────────────────
+    // Audio thread reads from `iml` (inference only).
+    // Background thread clones weights into `imlShadow`, trains/perturbs
+    // the shadow, then copies new weights back via atomic swap flag.
     nisps::IML<float> iml{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
+    nisps::IML<float> imlShadow{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
+    nisps::MLP<float>::mlp_weights pendingWeights; // new weights from shadow, waiting for swap
+    std::atomic<bool> weightsPending{false};       // true when pendingWeights is ready
 
     // ── State ─────────────────────────────────────────────────────────
     float noiseLevel = 0.1f;
@@ -239,21 +245,26 @@ struct MEMLNaut : Module {
 
             isTraining.store(true);
 
-            // NOTE: Full double-buffering requires IML weight get/set API
-            // (filed for follow-up). For now, training and perturbation
-            // operate directly on iml. The audio thread reads outputs
-            // (which are a cached copy), so this is safe for outputs
-            // but not for concurrent inference. The RATE decimation
-            // means inference doesn't run every sample, reducing
-            // collision probability. Proper double-buffering is Phase 3
-            // follow-up work.
+            // Double-buffering: clone weights to shadow, mutate shadow,
+            // stage new weights for the audio thread to pick up.
+            auto weights = iml.get_weights();
+            imlShadow.set_weights(weights);
 
             if (job.type == JobType::Train) {
-                iml.set_mode(nisps::IML<float>::Mode::Training);
-                iml.set_mode(nisps::IML<float>::Mode::Inference);
+                // Copy examples to shadow, train it
+                auto features = iml.get_example_features();
+                auto labels = iml.get_example_labels();
+                imlShadow.load_examples(features, labels);
+                imlShadow.set_mode(nisps::IML<float>::Mode::Training);
+                imlShadow.set_mode(nisps::IML<float>::Mode::Inference);
             } else {
-                iml.move_weights(job.noiseLevel, job.spread);
+                // Perturb shadow weights
+                imlShadow.move_weights(job.noiseLevel, job.spread);
             }
+
+            // Stage new weights for audio thread to swap in
+            pendingWeights = imlShadow.get_weights();
+            weightsPending.store(true);
 
             // Update novelty/confidence for current input position
             if (iml.get_example_count() > 0) {
@@ -341,14 +352,18 @@ struct MEMLNaut : Module {
         lights[LIGHT_LEARN].setBrightness(learn ? 1.f : 0.f);
         lights[LIGHT_TRAINING].setBrightness(isTraining.load() ? 1.f : 0.f);
 
-        // ── Handle weight change notification from background thread ──
-        if (swapReady.load()) {
-            swapReady.store(false);
+        // ── Apply new weights from background thread ─────────────────
+        if (weightsPending.load()) {
+            iml.set_weights(pendingWeights);
+            weightsPending.store(false);
             // Start crossfade: save current outputs as "old"
             for (int i = 0; i < NUM_ML_OUTPUTS; i++) {
                 prevOutputs[i] = cachedOutputs[i];
             }
             crossfadeProgress = 0.f;
+        }
+        if (swapReady.load()) {
+            swapReady.store(false);
         }
 
         // ── Handle RAND button ────────────────────────────────────────
@@ -402,8 +417,7 @@ struct MEMLNaut : Module {
             if (thumbsDown || trigNeg) {
                 float noiseCap = 0.3f * (1.f - spread) + 0.05f * spread;
                 noiseLevel = std::min(noiseLevel * 1.5f, noiseCap);
-                // Perturb directly (simple for now — enqueue for full thread safety later)
-                iml.move_weights(noiseLevel, spread);
+                enqueueJob(JobType::Perturb, noiseLevel, spread);
             }
         }
 

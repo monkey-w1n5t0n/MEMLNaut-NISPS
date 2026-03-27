@@ -1,6 +1,9 @@
 #ifndef NISPS_IML_IMPL_HPP
 #define NISPS_IML_IMPL_HPP
 
+#include <limits>
+#include <cmath>
+
 namespace nisps {
 
 template<typename Float>
@@ -224,6 +227,84 @@ void IML<Float>::train() {
     output_state_ = output;
 
     log("Training complete.");
+}
+
+// ── Serialization accessors ───────────────────────────────────────
+
+template<typename Float>
+typename MLP<Float>::mlp_weights IML<Float>::get_weights() const {
+    return mlp_->GetWeights();
+}
+
+template<typename Float>
+void IML<Float>::set_weights(typename MLP<Float>::mlp_weights& weights) {
+    mlp_->SetWeights(weights);
+}
+
+template<typename Float>
+size_t IML<Float>::get_example_count() const {
+    Dataset::DatasetVector* feats;
+    Dataset::DatasetVector* labels;
+    const_cast<Dataset*>(dataset_.get())->Fetch(feats, labels);
+    return feats ? feats->size() : 0;
+}
+
+template<typename Float>
+size_t IML<Float>::get_max_examples() const {
+    return Dataset::kMax_examples;
+}
+
+template<typename Float>
+std::vector<std::vector<Float>> IML<Float>::get_example_features() const {
+    auto feats = const_cast<Dataset*>(dataset_.get())->GetFeatures(false);
+    std::vector<std::vector<Float>> result;
+    result.reserve(feats.size());
+    for (auto& f : feats) {
+        result.emplace_back(f.begin(), f.end());
+    }
+    return result;
+}
+
+template<typename Float>
+std::vector<std::vector<Float>> IML<Float>::get_example_labels() const {
+    auto& labels = const_cast<Dataset*>(dataset_.get())->GetLabels();
+    std::vector<std::vector<Float>> result;
+    result.reserve(labels.size());
+    for (auto& l : labels) {
+        result.emplace_back(l.begin(), l.end());
+    }
+    return result;
+}
+
+template<typename Float>
+void IML<Float>::load_examples(const std::vector<std::vector<Float>>& features,
+                                const std::vector<std::vector<Float>>& labels) {
+    dataset_->Clear();
+    size_t count = std::min(features.size(), labels.size());
+    for (size_t i = 0; i < count; i++) {
+        std::vector<float> feat(features[i].begin(), features[i].end());
+        std::vector<float> label(labels[i].begin(), labels[i].end());
+        dataset_->Add(feat, label);
+    }
+}
+
+template<typename Float>
+Float IML<Float>::nearest_example_distance(const Float* input, size_t n_in) const {
+    auto feats = const_cast<Dataset*>(dataset_.get())->GetFeatures(false);
+    if (feats.empty()) return static_cast<Float>(-1);
+
+    Float minDist = std::numeric_limits<Float>::max();
+    size_t dims = std::min(n_in, n_inputs_);
+    for (auto& f : feats) {
+        Float dist = 0;
+        for (size_t d = 0; d < dims && d < f.size(); d++) {
+            Float diff = static_cast<Float>(f[d]) - input[d];
+            dist += diff * diff;
+        }
+        dist = std::sqrt(dist);
+        if (dist < minDist) minDist = dist;
+    }
+    return minDist;
 }
 
 } // namespace nisps

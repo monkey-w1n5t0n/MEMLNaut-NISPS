@@ -1,10 +1,12 @@
 #include "plugin.hpp"
 #include <nisps/nisps.hpp>
+#include <osdialog.h>
 #include <thread>
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <fstream>
 
 static constexpr int NUM_ML_INPUTS = 2;
 static constexpr int NUM_ML_OUTPUTS = 12;
@@ -75,6 +77,9 @@ struct MEMLNaut : Module {
     bool outputRangeUnipolar[NUM_ML_OUTPUTS] = {}; // true = 0-10V, false = ±5V
     bool inputRangeUnipolar[MAX_ML_INPUTS] = {};   // true = 0-10V, false = ±5V
     float clearHoldTime = 0.f;
+    float cachedNovelty = 10.f;   // default: everything novel (10V)
+    float cachedConfidence = 0.f; // default: no confidence (0V)
+    float lastInputs[MAX_ML_INPUTS] = {};
 
     // ── Triggers ──────────────────────────────────────────────────────
     dsp::BooleanTrigger randTrigger;
@@ -184,6 +189,18 @@ struct MEMLNaut : Module {
                 iml.set_mode(nisps::IML<float>::Mode::Inference);
             } else {
                 iml.move_weights(job.noiseLevel, job.spread);
+            }
+
+            // Update novelty/confidence for current input position
+            if (iml.get_example_count() > 0) {
+                float dist = iml.nearest_example_distance(lastInputs, NUM_ML_INPUTS);
+                // Novelty: scale distance to 0-10V (1.0 distance = 10V, saturates)
+                cachedNovelty = std::min(dist * 10.f, 10.f);
+                // Confidence: inverse of distance (close = high confidence)
+                cachedConfidence = std::max(0.f, 10.f - dist * 10.f);
+            } else {
+                cachedNovelty = 10.f;
+                cachedConfidence = 0.f;
             }
 
             swapReady.store(true);
@@ -340,6 +357,8 @@ struct MEMLNaut : Module {
             // Read and normalize inputs
             float x = normalizeInput(INPUT_X, 0);
             float y = normalizeInput(INPUT_Y, 1);
+            lastInputs[0] = x;
+            lastInputs[1] = y;
 
             iml.set_input(0, x);
             iml.set_input(1, y);
@@ -410,14 +429,15 @@ struct MEMLNaut : Module {
         }
         outputs[OUTPUT_DELTA].setVoltage(std::sqrt(delta) * 10.f);
 
-        // Novelty + Confidence (placeholder — computed on training thread in Phase 7)
-        outputs[OUTPUT_NOVELTY].setVoltage(10.f);    // default: everything is novel
-        outputs[OUTPUT_CONFIDENCE].setVoltage(0.f);   // default: no confidence
+        // Novelty + Confidence (computed on background thread, cached)
+        outputs[OUTPUT_NOVELTY].setVoltage(cachedNovelty);
+        outputs[OUTPUT_CONFIDENCE].setVoltage(cachedConfidence);
     }
 
     // ── Serialization ─────────────────────────────────────────────────
     json_t* dataToJson() override {
         json_t* root = json_object();
+        json_object_set_new(root, "version", json_integer(1));
         json_object_set_new(root, "noiseLevel", json_real(noiseLevel));
         json_object_set_new(root, "slewMs", json_real(slewMs));
 
@@ -435,6 +455,52 @@ struct MEMLNaut : Module {
         }
         json_object_set_new(root, "inputRangeUnipolar", inRanges);
 
+        // MLP weights (3D: layer → node → weight)
+        auto weights = iml.get_weights();
+        json_t* jWeights = json_array();
+        for (auto& layer : weights) {
+            json_t* jLayer = json_array();
+            for (auto& node : layer) {
+                json_t* jNode = json_array();
+                for (float w : node) {
+                    json_array_append_new(jNode, json_real(w));
+                }
+                json_array_append_new(jLayer, jNode);
+            }
+            json_array_append_new(jWeights, jLayer);
+        }
+        json_object_set_new(root, "weights", jWeights);
+
+        // Training examples
+        auto features = iml.get_example_features();
+        auto labels = iml.get_example_labels();
+        json_t* jExamples = json_object();
+        json_t* jFeatures = json_array();
+        for (auto& f : features) {
+            json_t* jF = json_array();
+            for (float v : f) json_array_append_new(jF, json_real(v));
+            json_array_append_new(jFeatures, jF);
+        }
+        json_t* jLabels = json_array();
+        for (auto& l : labels) {
+            json_t* jL = json_array();
+            for (float v : l) json_array_append_new(jL, json_real(v));
+            json_array_append_new(jLabels, jL);
+        }
+        json_object_set_new(jExamples, "features", jFeatures);
+        json_object_set_new(jExamples, "labels", jLabels);
+        json_object_set_new(root, "examples", jExamples);
+
+        // MLP config (for validation on load)
+        json_t* jConfig = json_object();
+        json_t* jLayers = json_array();
+        // [3, 16, 24, 16, 12] for default config
+        json_array_append_new(jLayers, json_integer(NUM_ML_INPUTS + 1)); // +bias
+        for (int h : {16, 24, 16}) json_array_append_new(jLayers, json_integer(h));
+        json_array_append_new(jLayers, json_integer(NUM_ML_OUTPUTS));
+        json_object_set_new(jConfig, "layers", jLayers);
+        json_object_set_new(root, "mlpConfig", jConfig);
+
         return root;
     }
 
@@ -445,6 +511,7 @@ struct MEMLNaut : Module {
         if ((j = json_object_get(root, "slewMs")))
             slewMs = json_real_value(j);
 
+        // Output ranges
         json_t* outRanges = json_object_get(root, "outputRangeUnipolar");
         if (outRanges) {
             for (int i = 0; i < NUM_ML_OUTPUTS && i < (int)json_array_size(outRanges); i++) {
@@ -452,10 +519,56 @@ struct MEMLNaut : Module {
             }
         }
 
+        // Input ranges
         json_t* inRanges = json_object_get(root, "inputRangeUnipolar");
         if (inRanges) {
             for (int i = 0; i < MAX_ML_INPUTS && i < (int)json_array_size(inRanges); i++) {
                 inputRangeUnipolar[i] = json_boolean_value(json_array_get(inRanges, i));
+            }
+        }
+
+        // MLP weights
+        json_t* jWeights = json_object_get(root, "weights");
+        if (jWeights && json_is_array(jWeights)) {
+            nisps::MLP<float>::mlp_weights weights;
+            for (size_t li = 0; li < json_array_size(jWeights); li++) {
+                json_t* jLayer = json_array_get(jWeights, li);
+                std::vector<std::vector<float>> layer;
+                for (size_t ni = 0; ni < json_array_size(jLayer); ni++) {
+                    json_t* jNode = json_array_get(jLayer, ni);
+                    std::vector<float> node;
+                    for (size_t wi = 0; wi < json_array_size(jNode); wi++) {
+                        node.push_back(json_real_value(json_array_get(jNode, wi)));
+                    }
+                    layer.push_back(node);
+                }
+                weights.push_back(layer);
+            }
+            iml.set_weights(weights);
+        }
+
+        // Training examples
+        json_t* jExamples = json_object_get(root, "examples");
+        if (jExamples) {
+            json_t* jFeatures = json_object_get(jExamples, "features");
+            json_t* jLabels = json_object_get(jExamples, "labels");
+            if (jFeatures && jLabels) {
+                std::vector<std::vector<float>> features, labels;
+                for (size_t i = 0; i < json_array_size(jFeatures); i++) {
+                    json_t* jF = json_array_get(jFeatures, i);
+                    std::vector<float> f;
+                    for (size_t fi = 0; fi < json_array_size(jF); fi++)
+                        f.push_back(json_real_value(json_array_get(jF, fi)));
+                    features.push_back(f);
+                }
+                for (size_t i = 0; i < json_array_size(jLabels); i++) {
+                    json_t* jL = json_array_get(jLabels, i);
+                    std::vector<float> l;
+                    for (size_t li = 0; li < json_array_size(jL); li++)
+                        l.push_back(json_real_value(json_array_get(jL, li)));
+                    labels.push_back(l);
+                }
+                iml.load_examples(features, labels);
             }
         }
     }
@@ -618,6 +731,74 @@ struct MEMLNautWidget : ModuleWidget {
                     [=]() { module->slewMs = ms; }
                 ));
             }
+        }));
+
+        // ── Preset save/load ──────────────────────────────────────────
+        menu->addChild(new MenuSeparator);
+        menu->addChild(createMenuLabel("Presets (.nisps)"));
+
+        menu->addChild(createMenuItem("Save .nisps preset...", "", [=]() {
+            osdialog_filters* filters = osdialog_filters_parse("NISPS preset:nisps");
+            char* path = osdialog_file(OSDIALOG_SAVE, nullptr, "preset.nisps", filters);
+            osdialog_filters_free(filters);
+            if (!path) return;
+
+            json_t* root = module->dataToJson();
+            // Also save all param values
+            json_t* jParams = json_array();
+            for (int i = 0; i < MEMLNaut::PARAMS_LEN; i++) {
+                json_array_append_new(jParams, json_real(module->params[i].getValue()));
+            }
+            json_object_set_new(root, "params", jParams);
+
+            char* jsonStr = json_dumps(root, JSON_INDENT(2));
+            json_decref(root);
+
+            std::ofstream file(path);
+            if (file.is_open()) {
+                file << jsonStr;
+                file.close();
+            }
+            free(jsonStr);
+            free(path);
+        }));
+
+        menu->addChild(createMenuItem("Load .nisps preset...", "", [=]() {
+            osdialog_filters* filters = osdialog_filters_parse("NISPS preset:nisps");
+            char* path = osdialog_file(OSDIALOG_OPEN, nullptr, nullptr, filters);
+            osdialog_filters_free(filters);
+            if (!path) return;
+
+            std::ifstream file(path);
+            free(path);
+            if (!file.is_open()) return;
+
+            std::string content((std::istreambuf_iterator<char>(file)),
+                                 std::istreambuf_iterator<char>());
+            file.close();
+
+            json_error_t error;
+            json_t* root = json_loads(content.c_str(), 0, &error);
+            if (!root) return;
+
+            // Validate version
+            json_t* jVersion = json_object_get(root, "version");
+            if (!jVersion || json_integer_value(jVersion) < 1) {
+                json_decref(root);
+                return;
+            }
+
+            module->dataFromJson(root);
+
+            // Restore param values if present
+            json_t* jParams = json_object_get(root, "params");
+            if (jParams && json_is_array(jParams)) {
+                for (size_t i = 0; i < json_array_size(jParams) && i < MEMLNaut::PARAMS_LEN; i++) {
+                    module->params[i].setValue(json_real_value(json_array_get(jParams, i)));
+                }
+            }
+
+            json_decref(root);
         }));
     }
 };

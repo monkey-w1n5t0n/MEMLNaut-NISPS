@@ -54,6 +54,26 @@ public:
     // speed: noise magnitude, spread: 0 = flat noise, 1 = Xavier-scaled + weight decay
     void move_weights(Float speed, Float spread);
 
+    // ── Serialization accessors ───────────────────────────────────────
+
+    // Weight access (delegates to MLP)
+    typename MLP<Float>::mlp_weights get_weights() const;
+    void set_weights(typename MLP<Float>::mlp_weights& weights);
+
+    // Dataset access
+    size_t get_example_count() const;
+    size_t get_max_examples() const;
+    // Returns copies of the dataset vectors
+    std::vector<std::vector<Float>> get_example_features() const;
+    std::vector<std::vector<Float>> get_example_labels() const;
+    // Bulk-load examples (clears existing, adds all)
+    void load_examples(const std::vector<std::vector<Float>>& features,
+                       const std::vector<std::vector<Float>>& labels);
+
+    // Nearest-neighbor distance for novelty/confidence computation
+    // Returns the minimum Euclidean distance from `input` to any training example
+    Float nearest_example_distance(const Float* input, size_t n_in) const;
+
     // Optional logging
     void set_logger(LogFn fn) { log_fn_ = fn; }
 

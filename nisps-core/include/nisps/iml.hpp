@@ -46,6 +46,14 @@ public:
     void clear_dataset();
     void randomise_weights();
 
+    // Spread-aware weight randomization
+    // spread: 0 = uniform [-1,1], 1 = Xavier-scaled per layer
+    void randomise_weights(Float spread);
+
+    // Spread-aware weight perturbation (for RL exploration)
+    // speed: noise magnitude, spread: 0 = flat noise, 1 = Xavier-scaled + weight decay
+    void move_weights(Float speed, Float spread);
+
     // Optional logging
     void set_logger(LogFn fn) { log_fn_ = fn; }
 

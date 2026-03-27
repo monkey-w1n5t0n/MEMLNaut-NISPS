@@ -1,0 +1,19 @@
+{
+  "slug": "MEMLNaut",
+  "name": "MEMLNaut",
+  "version": "0.1.0",
+  "license": "proprietary",
+  "brand": "MEMLNaut",
+  "author": "MEML",
+  "authorUrl": "https://musicallyembodiedml.github.io",
+  "pluginUrl": "https://github.com/MusicallyEmbodiedML/MEMLNaut-NISPS",
+  "sourceUrl": "https://github.com/MusicallyEmbodiedML/MEMLNaut-NISPS",
+  "modules": [
+    {
+      "slug": "MEMLNaut",
+      "name": "MEMLNaut",
+      "description": "Neural Interactive Shaping of Parameter Spaces — ML-powered CV mapper with RL feedback",
+      "tags": ["Controller", "Utility", "Random"]
+    }
+  ]
+}

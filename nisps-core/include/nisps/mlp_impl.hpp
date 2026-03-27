@@ -22,6 +22,7 @@
 #include <vector>
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <random>
 
 // #define SAFE_MODE
@@ -808,6 +809,24 @@ void MLP<T>::DrawWeights(float scale)
 }
 
 template <typename T>
+void MLP<T>::DrawWeightsSpread(T spread) {
+    utils::gen_rand<T> gen;
+
+    for (size_t n = 0; n < m_layers.size(); n++) {
+        const size_t fanIn = m_layers_nodes[n];
+        const T xavierScale = static_cast<T>(1.0) / std::sqrt(static_cast<T>(fanIn));
+        const T scale = static_cast<T>(1.0) * (static_cast<T>(1.0) - spread) + xavierScale * spread;
+
+        for (size_t k = 0; k < m_layers[n].m_nodes.size(); k++) {
+            for (size_t j = 0; j < m_layers[n].m_nodes[k].m_weights.size(); j++) {
+                m_layers[n].m_nodes[k].m_weights[j] = gen() * scale;
+            }
+            m_layers[n].m_nodes[k].m_bias = static_cast<T>(0);
+        }
+    }
+}
+
+template <typename T>
 void MLP<T>::MoveWeights(T speed)
 {
     T before = m_layers[0].m_nodes[0].m_weights[0];
@@ -828,6 +847,32 @@ void MLP<T>::MoveWeights(T speed)
     }
 
     assert(m_layers[0].m_nodes[0].m_weights[0] != before);
+}
+
+template <typename T>
+void MLP<T>::MoveWeightsSpread(T speed, T spread) {
+    const T decay = static_cast<T>(1.0) - static_cast<T>(0.1) * spread;
+    // spread=0 → decay=1.0 (no decay), spread=1 → decay=0.9
+
+    for (size_t n = 0; n < m_layers.size(); n++) {
+        const size_t fanIn = m_layers_nodes[n];
+        const T xavierScale = static_cast<T>(1.0) / std::sqrt(static_cast<T>(fanIn));
+        const T layerScale = static_cast<T>(1.0) * (static_cast<T>(1.0) - spread) + xavierScale * spread;
+
+        for (size_t k = 0; k < m_layers[n].m_nodes.size(); k++) {
+            for (size_t j = 0; j < m_layers[n].m_nodes[k].m_weights.size(); j++) {
+                // Decay toward zero
+                m_layers[n].m_nodes[k].m_weights[j] *= decay;
+
+                // Sum of 3 uniform randoms × kN_times(3) × speed × layerScale
+                T accum = static_cast<T>(0);
+                for (int i = 0; i < 3; i++) {
+                    accum += static_cast<T>(rand()) / static_cast<T>(RAND_MAX) * static_cast<T>(2) - static_cast<T>(1);
+                }
+                m_layers[n].m_nodes[k].m_weights[j] += static_cast<T>(3) * accum * speed * layerScale;
+            }
+        }
+    }
 }
 
 template <typename T>

@@ -229,6 +229,17 @@ public:
     [[deprecated]]
     void DrawWeights(float scale=1.f);
 
+    /**
+     * @brief Randomize weights with spread-controlled scaling
+     * @param spread 0 = uniform [-1,1] (polarised outputs), 1 = Xavier-scaled (centered outputs)
+     *
+     * Interpolates weight scale between uniform and Xavier initialization per layer.
+     * At spread=0: weights are uniform [-1,1] (original behavior).
+     * At spread=1: weights are scaled by 1/sqrt(fan_in) per layer (Xavier).
+     * Biases are set to 0.
+     */
+    void DrawWeightsSpread(T spread);
+
     void RandomiseWeightsAndBiasesLin(T weightMin, T weightMax, T biasMin, T biasMax);
 
     void InitXavier();
@@ -238,6 +249,17 @@ public:
      * @param speed Standard deviation of the noise
      */
     void MoveWeights(T speed);
+
+    /**
+     * @brief Add Gaussian noise to weights with spread-controlled scaling and decay
+     * @param speed Base noise standard deviation
+     * @param spread 0 = flat noise (original), 1 = Xavier-scaled noise with weight decay
+     *
+     * At spread=0: noise is uniform across all layers, no weight decay (original behavior).
+     * At spread=1: noise is scaled by 1/sqrt(fan_in) per layer, weights decay 10% per call.
+     * Weight decay prevents unbounded magnitude drift from repeated perturbation.
+     */
+    void MoveWeightsSpread(T speed, T spread);
 
     /**
      * @brief Enable/disable caching of layer outputs

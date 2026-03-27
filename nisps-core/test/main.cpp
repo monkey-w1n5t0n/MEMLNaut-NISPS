@@ -217,6 +217,244 @@ bool test_multi_output_training() {
     return true;
 }
 
+bool test_draw_weights_spread_zero() {
+    std::cout << "--- Test: DrawWeightsSpread(0) — uniform [-1, 1] ---\n";
+
+    std::vector<size_t> layers = {3, 8, 4};
+    std::vector<nisps::ACTIVATION_FUNCTIONS> activs = {
+        nisps::ACTIVATION_FUNCTIONS::RELU,
+        nisps::ACTIVATION_FUNCTIONS::SIGMOID
+    };
+    nisps::MLP<float> mlp(layers, activs);
+    mlp.DrawWeightsSpread(0.0f);
+
+    for (size_t l = 0; l < mlp.m_layers.size(); l++) {
+        for (size_t k = 0; k < mlp.m_layers[l].m_nodes.size(); k++) {
+            // Check bias is 0
+            if (std::abs(mlp.m_layers[l].m_nodes[k].m_bias) > 1e-6f) {
+                std::cerr << "FAIL: Bias not zero at layer " << l << " node " << k
+                          << " (got " << mlp.m_layers[l].m_nodes[k].m_bias << ")\n";
+                return false;
+            }
+            for (size_t j = 0; j < mlp.m_layers[l].m_nodes[k].m_weights.size(); j++) {
+                float w = mlp.m_layers[l].m_nodes[k].m_weights[j];
+                if (std::isnan(w) || std::isinf(w)) {
+                    std::cerr << "FAIL: NaN/Inf weight at layer " << l << " node " << k << " weight " << j << "\n";
+                    return false;
+                }
+                if (w < -1.0f || w > 1.0f) {
+                    std::cerr << "FAIL: Weight " << w << " outside [-1, 1] at layer " << l
+                              << " node " << k << " weight " << j << "\n";
+                    return false;
+                }
+            }
+        }
+    }
+
+    std::cout << "PASS\n\n";
+    return true;
+}
+
+bool test_draw_weights_spread_one() {
+    std::cout << "--- Test: DrawWeightsSpread(1) — Xavier-scaled weights ---\n";
+
+    std::vector<size_t> layers = {3, 8, 4};
+    std::vector<nisps::ACTIVATION_FUNCTIONS> activs = {
+        nisps::ACTIVATION_FUNCTIONS::RELU,
+        nisps::ACTIVATION_FUNCTIONS::SIGMOID
+    };
+    nisps::MLP<float> mlp(layers, activs);
+    mlp.DrawWeightsSpread(1.0f);
+
+    // Layer 0: fan_in=3, xavier=1/sqrt(3)≈0.577
+    // Layer 1: fan_in=8, xavier=1/sqrt(8)≈0.354
+    float expected_xavier[] = {
+        1.0f / std::sqrt(3.0f),   // layer 0
+        1.0f / std::sqrt(8.0f)    // layer 1
+    };
+
+    for (size_t l = 0; l < mlp.m_layers.size(); l++) {
+        float max_abs = 0.0f;
+        float xavier = expected_xavier[l];
+        float limit = xavier * 1.1f;
+
+        for (size_t k = 0; k < mlp.m_layers[l].m_nodes.size(); k++) {
+            // Check bias is 0
+            if (std::abs(mlp.m_layers[l].m_nodes[k].m_bias) > 1e-6f) {
+                std::cerr << "FAIL: Bias not zero at layer " << l << " node " << k << "\n";
+                return false;
+            }
+            for (size_t j = 0; j < mlp.m_layers[l].m_nodes[k].m_weights.size(); j++) {
+                float w = mlp.m_layers[l].m_nodes[k].m_weights[j];
+                float aw = std::abs(w);
+                if (aw > max_abs) max_abs = aw;
+                if (aw > limit) {
+                    std::cerr << "FAIL: Weight " << w << " exceeds xavier limit " << limit
+                              << " at layer " << l << " node " << k << " weight " << j << "\n";
+                    return false;
+                }
+            }
+        }
+        std::cout << "  Layer " << l << ": xavier=" << xavier
+                  << ", limit=" << limit << ", max|w|=" << max_abs << "\n";
+    }
+
+    std::cout << "PASS\n\n";
+    return true;
+}
+
+bool test_move_weights_spread_decay() {
+    std::cout << "--- Test: MoveWeightsSpread decay (speed=0, spread=1) ---\n";
+
+    std::vector<size_t> layers = {3, 8, 4};
+    std::vector<nisps::ACTIVATION_FUNCTIONS> activs = {
+        nisps::ACTIVATION_FUNCTIONS::RELU,
+        nisps::ACTIVATION_FUNCTIONS::SIGMOID
+    };
+    nisps::MLP<float> mlp(layers, activs);
+
+    // Set all weights to 1.0 via SetWeights
+    auto weights = mlp.GetWeights();
+    for (auto& layer_w : weights) {
+        for (auto& node_w : layer_w) {
+            for (auto& w : node_w) {
+                w = 1.0f;
+            }
+        }
+    }
+    mlp.SetWeights(weights);
+
+    // Call with speed=0 (no noise), spread=1 (full decay: multiply by 0.9)
+    mlp.MoveWeightsSpread(0.0f, 1.0f);
+
+    // Verify weights are approximately 0.9
+    for (size_t l = 0; l < mlp.m_layers.size(); l++) {
+        for (size_t k = 0; k < mlp.m_layers[l].m_nodes.size(); k++) {
+            for (size_t j = 0; j < mlp.m_layers[l].m_nodes[k].m_weights.size(); j++) {
+                float w = mlp.m_layers[l].m_nodes[k].m_weights[j];
+                if (std::abs(w - 0.9f) > 0.01f) {
+                    std::cerr << "FAIL: After first decay, weight=" << w
+                              << " (expected ~0.9) at layer " << l << "\n";
+                    return false;
+                }
+            }
+        }
+    }
+    std::cout << "  After 1st call: weights ~0.9 (OK)\n";
+
+    // Call again: 0.9 * 0.9 = 0.81
+    mlp.MoveWeightsSpread(0.0f, 1.0f);
+
+    for (size_t l = 0; l < mlp.m_layers.size(); l++) {
+        for (size_t k = 0; k < mlp.m_layers[l].m_nodes.size(); k++) {
+            for (size_t j = 0; j < mlp.m_layers[l].m_nodes[k].m_weights.size(); j++) {
+                float w = mlp.m_layers[l].m_nodes[k].m_weights[j];
+                if (std::abs(w - 0.81f) > 0.01f) {
+                    std::cerr << "FAIL: After second decay, weight=" << w
+                              << " (expected ~0.81) at layer " << l << "\n";
+                    return false;
+                }
+            }
+        }
+    }
+    std::cout << "  After 2nd call: weights ~0.81 (OK)\n";
+
+    std::cout << "PASS\n\n";
+    return true;
+}
+
+bool test_move_weights_spread_no_decay() {
+    std::cout << "--- Test: MoveWeightsSpread no decay (speed=0, spread=0) ---\n";
+
+    std::vector<size_t> layers = {3, 8, 4};
+    std::vector<nisps::ACTIVATION_FUNCTIONS> activs = {
+        nisps::ACTIVATION_FUNCTIONS::RELU,
+        nisps::ACTIVATION_FUNCTIONS::SIGMOID
+    };
+    nisps::MLP<float> mlp(layers, activs);
+
+    // Set all weights to 1.0
+    auto weights = mlp.GetWeights();
+    for (auto& layer_w : weights) {
+        for (auto& node_w : layer_w) {
+            for (auto& w : node_w) {
+                w = 1.0f;
+            }
+        }
+    }
+    mlp.SetWeights(weights);
+
+    // speed=0, spread=0 → no noise, no decay
+    mlp.MoveWeightsSpread(0.0f, 0.0f);
+
+    for (size_t l = 0; l < mlp.m_layers.size(); l++) {
+        for (size_t k = 0; k < mlp.m_layers[l].m_nodes.size(); k++) {
+            for (size_t j = 0; j < mlp.m_layers[l].m_nodes[k].m_weights.size(); j++) {
+                float w = mlp.m_layers[l].m_nodes[k].m_weights[j];
+                if (std::abs(w - 1.0f) > 1e-6f) {
+                    std::cerr << "FAIL: Weight changed to " << w
+                              << " (expected 1.0) at layer " << l << "\n";
+                    return false;
+                }
+            }
+        }
+    }
+    std::cout << "  All weights still 1.0 (OK)\n";
+
+    std::cout << "PASS\n\n";
+    return true;
+}
+
+bool test_iml_spread_api() {
+    std::cout << "--- Test: IML spread API (randomise_weights / move_weights) ---\n";
+
+    nisps::IML<float> iml(2, 4, {8});
+    iml.set_logger(log_callback);
+    iml.set_mode(nisps::IML<float>::Mode::Training);
+
+    // randomise_weights with spread should not crash
+    iml.randomise_weights(0.5f);
+
+    // Set inputs and process
+    iml.set_input(0, 0.3f);
+    iml.set_input(1, 0.7f);
+    iml.process();
+
+    const float* out_before = iml.get_outputs();
+    float saved[4];
+    for (int i = 0; i < 4; i++) saved[i] = out_before[i];
+
+    // move_weights with spread should not crash and should change outputs
+    iml.move_weights(0.1f, 0.5f);
+    iml.process();
+
+    const float* out_after = iml.get_outputs();
+
+    bool any_changed = false;
+    for (int i = 0; i < 4; i++) {
+        if (std::isnan(out_after[i]) || std::isinf(out_after[i])) {
+            std::cerr << "FAIL: Output " << i << " is NaN/Inf\n";
+            return false;
+        }
+        if (out_after[i] < 0.0f || out_after[i] > 1.0f) {
+            std::cerr << "FAIL: Output " << i << " = " << out_after[i] << " outside [0, 1]\n";
+            return false;
+        }
+        if (std::abs(out_after[i] - saved[i]) > 1e-6f) {
+            any_changed = true;
+        }
+    }
+
+    if (!any_changed) {
+        std::cerr << "FAIL: move_weights did not change any outputs\n";
+        return false;
+    }
+
+    std::cout << "  Outputs valid and changed after move_weights\n";
+    std::cout << "PASS\n\n";
+    return true;
+}
+
 int main() {
     std::cout << "\n=== NISPS Core Test Suite ===\n\n";
 
@@ -230,6 +468,11 @@ int main() {
     run(test_add_example_api());
     run(test_training_convergence());
     run(test_multi_output_training());
+    run(test_draw_weights_spread_zero());
+    run(test_draw_weights_spread_one());
+    run(test_move_weights_spread_decay());
+    run(test_move_weights_spread_no_decay());
+    run(test_iml_spread_api());
 
     std::cout << "=== Results: " << passed << " passed, " << failed << " failed ===\n\n";
 

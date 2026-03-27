@@ -163,6 +163,33 @@ void IML<Float>::randomise_weights() {
 }
 
 template<typename Float>
+void IML<Float>::randomise_weights(Float spread) {
+    if (mode_ == Mode::Training) {
+        stored_weights_ = mlp_->GetWeights();
+        mlp_->DrawWeightsSpread(spread);
+        weights_randomised_ = true;
+
+        // Run inference to show effect
+        std::vector<Float> input_with_bias = input_state_;
+        input_with_bias.push_back(static_cast<Float>(1.0));
+        std::vector<Float> output(n_outputs_);
+        mlp_->GetOutput(input_with_bias, &output);
+        output_state_ = output;
+
+        log("Weights randomised (spread).");
+    }
+}
+
+template<typename Float>
+void IML<Float>::move_weights(Float speed, Float spread) {
+    mlp_->MoveWeightsSpread(speed, spread);
+
+    // Run inference to show effect of perturbation
+    input_updated_ = true;
+    process();
+}
+
+template<typename Float>
 void IML<Float>::train() {
     // Restore weights if they were randomised
     if (weights_randomised_) {

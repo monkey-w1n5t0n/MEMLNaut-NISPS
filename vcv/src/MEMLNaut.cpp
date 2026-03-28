@@ -14,7 +14,7 @@ static constexpr int NUM_ML_OUTPUTS = 12;
 static constexpr int MAX_ML_INPUTS = 8;
 
 // ── Background job types ──────────────────────────────────────────────
-enum class JobType { Train, Perturb };
+enum class JobType { Train, Perturb, Randomize, Clear };
 struct Job {
     JobType type;
     float noiseLevel;
@@ -65,28 +65,45 @@ struct MEMLNaut : Module {
     };
 
     // ── ML Engine (double-buffered) ─────────────────────────────────
-    // Audio thread reads from `iml` (inference only).
-    // Background thread clones weights into `imlShadow`, trains/perturbs
-    // the shadow, then copies new weights back via atomic swap flag.
+    // THREADING INVARIANT: Only the audio thread touches `iml`.
+    // The worker thread operates exclusively on `imlShadow`.
+    // Communication is through atomic-flagged staging buffers:
+    //   Audio → Worker: exampleStaging (mutex-protected)
+    //   Worker → Audio: pendingWeights (atomic flag)
+    //   OSC → Audio: oscStaging (atomic flag)
     nisps::IML<float> iml{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
     nisps::IML<float> imlShadow{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
-    nisps::MLP<float>::mlp_weights pendingWeights; // new weights from shadow, waiting for swap
-    std::atomic<bool> weightsPending{false};       // true when pendingWeights is ready
+
+    // Worker → Audio: staged weights ready for swap
+    nisps::MLP<float>::mlp_weights pendingWeights;
+    std::atomic<bool> weightsPending{false};
+
+    // Audio → Worker: staged weight snapshot for the worker to start from
+    nisps::MLP<float>::mlp_weights stagedWeightsForWorker;
+    std::vector<std::vector<float>> stagedFeatures;
+    std::vector<std::vector<float>> stagedLabels;
+    std::mutex stagingMutex; // protects stagedWeightsForWorker, stagedFeatures, stagedLabels
 
     // ── State ─────────────────────────────────────────────────────────
-    float noiseLevel = 0.1f;
+    std::atomic<float> noiseLevel{0.1f};
     float cachedOutputs[NUM_ML_OUTPUTS] = {};
     float prevOutputs[NUM_ML_OUTPUTS] = {};
     float slewOutputs[NUM_ML_OUTPUTS] = {};
+    float lastInferenceOutputs[NUM_ML_OUTPUTS] = {}; // for linear interpolation
+    float lastOutputsForDelta[NUM_ML_OUTPUTS] = {};  // per-instance (NOT static)
     float crossfadeProgress = 1.f; // 1 = no crossfade active
     float slewMs = 10.f;
     int sampleCounter = 0;
     bool outputRangeUnipolar[NUM_ML_OUTPUTS] = {}; // true = 0-10V, false = ±5V
     bool inputRangeUnipolar[MAX_ML_INPUTS] = {};   // true = 0-10V, false = ±5V
     float clearHoldTime = 0.f;
-    float cachedNovelty = 10.f;   // default: everything novel (10V)
-    float cachedConfidence = 0.f; // default: no confidence (0V)
+    std::atomic<float> cachedNovelty{10.f};   // default: everything novel (10V)
+    std::atomic<float> cachedConfidence{0.f}; // default: no confidence (0V)
     float lastInputs[MAX_ML_INPUTS] = {};
+
+    // OSC → Audio: staged data from OSC recv thread
+    std::string oscStagedJson;
+    std::atomic<bool> oscJsonPending{false};
 
     // ── OSC bridge ────────────────────────────────────────────────────
     std::unique_ptr<memlnaut::OscServer> oscServer;
@@ -99,39 +116,19 @@ struct MEMLNaut : Module {
         if (oscServer && oscServer->isRunning()) return;
         oscServer = std::make_unique<memlnaut::OscServer>();
 
-        // When we receive full state JSON, apply it
+        // Stage received data for audio thread to apply (no direct mutation)
         oscServer->onState([this](const std::string& json) {
-            json_error_t error;
-            json_t* root = json_loads(json.c_str(), 0, &error);
-            if (!root) return;
-            dataFromJson(root);
-            json_decref(root);
+            if (!oscJsonPending.load()) {
+                oscStagedJson = json;
+                oscJsonPending.store(true);
+            }
         });
 
-        // When we receive weights JSON, apply just the weights
         oscServer->onWeights([this](const std::string& json) {
-            json_error_t error;
-            json_t* root = json_loads(json.c_str(), 0, &error);
-            if (!root) return;
-            json_t* jWeights = json_object_get(root, "weights");
-            if (jWeights && json_is_array(jWeights)) {
-                nisps::MLP<float>::mlp_weights weights;
-                for (size_t li = 0; li < json_array_size(jWeights); li++) {
-                    json_t* jLayer = json_array_get(jWeights, li);
-                    std::vector<std::vector<float>> layer;
-                    for (size_t ni = 0; ni < json_array_size(jLayer); ni++) {
-                        json_t* jNode = json_array_get(jLayer, ni);
-                        std::vector<float> node;
-                        for (size_t wi = 0; wi < json_array_size(jNode); wi++) {
-                            node.push_back(json_real_value(json_array_get(jNode, wi)));
-                        }
-                        layer.push_back(node);
-                    }
-                    weights.push_back(layer);
-                }
-                iml.set_weights(weights);
+            if (!oscJsonPending.load()) {
+                oscStagedJson = json;
+                oscJsonPending.store(true);
             }
-            json_decref(root);
         });
 
         if (!oscServer->start(oscPort)) {
@@ -162,13 +159,10 @@ struct MEMLNaut : Module {
     std::mutex jobMutex;
     std::condition_variable jobCv;
     std::atomic<bool> shouldStop{false};
-    std::atomic<bool> swapReady{false};
     std::atomic<bool> isTraining{false};
     Job currentJob{};
+    Job pendingJob{};
     bool hasJob = false;
-    // Pending examples buffer (for rapid feedback queueing)
-    std::vector<float> pendingInputs;
-    std::vector<float> pendingOutputs;
     bool hasPending = false;
 
     MEMLNaut() {
@@ -245,49 +239,60 @@ struct MEMLNaut : Module {
 
             isTraining.store(true);
 
-            // Double-buffering: clone weights to shadow, mutate shadow,
-            // stage new weights for the audio thread to pick up.
-            auto weights = iml.get_weights();
-            imlShadow.set_weights(weights);
-
-            if (job.type == JobType::Train) {
-                // Copy examples to shadow, train it
-                auto features = iml.get_example_features();
-                auto labels = iml.get_example_labels();
-                imlShadow.load_examples(features, labels);
-                imlShadow.set_mode(nisps::IML<float>::Mode::Training);
-                imlShadow.set_mode(nisps::IML<float>::Mode::Inference);
-            } else {
-                // Perturb shadow weights
-                imlShadow.move_weights(job.noiseLevel, job.spread);
+            // Load staged weights + examples into shadow (safe: staging is mutex-protected)
+            {
+                std::lock_guard<std::mutex> lock(stagingMutex);
+                imlShadow.set_weights(stagedWeightsForWorker);
+                imlShadow.load_examples(stagedFeatures, stagedLabels);
             }
 
-            // Stage new weights for audio thread to swap in
+            if (job.type == JobType::Train) {
+                imlShadow.set_mode(nisps::IML<float>::Mode::Training);
+                imlShadow.set_mode(nisps::IML<float>::Mode::Inference);
+            } else if (job.type == JobType::Perturb) {
+                imlShadow.move_weights(job.noiseLevel, job.spread);
+            } else if (job.type == JobType::Randomize) {
+                imlShadow.set_mode(nisps::IML<float>::Mode::Training);
+                imlShadow.randomise_weights(job.spread);
+                imlShadow.set_mode(nisps::IML<float>::Mode::Inference);
+            } else if (job.type == JobType::Clear) {
+                imlShadow.set_mode(nisps::IML<float>::Mode::Training);
+                imlShadow.clear_dataset();
+                imlShadow.randomise_weights(job.spread);
+                imlShadow.set_mode(nisps::IML<float>::Mode::Inference);
+                noiseLevel.store(0.1f);
+            }
+
+            // Wait for audio thread to consume previous weights before staging new ones
+            while (weightsPending.load() && !shouldStop.load()) {
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+            if (shouldStop.load()) break;
+
             pendingWeights = imlShadow.get_weights();
             weightsPending.store(true);
 
-            // Update novelty/confidence for current input position
-            if (iml.get_example_count() > 0) {
-                float dist = iml.nearest_example_distance(lastInputs, NUM_ML_INPUTS);
-                // Novelty: scale distance to 0-10V (1.0 distance = 10V, saturates)
-                cachedNovelty = std::min(dist * 10.f, 10.f);
-                // Confidence: inverse of distance (close = high confidence)
-                cachedConfidence = std::max(0.f, 10.f - dist * 10.f);
+            // Compute novelty/confidence on shadow's dataset (safe: no concurrent access)
+            if (imlShadow.get_example_count() > 0) {
+                float inputs[MAX_ML_INPUTS];
+                for (int i = 0; i < NUM_ML_INPUTS; i++) inputs[i] = lastInputs[i];
+                float dist = imlShadow.nearest_example_distance(inputs, NUM_ML_INPUTS);
+                cachedNovelty.store(std::min(dist * 10.f, 10.f));
+                cachedConfidence.store(std::max(0.f, 10.f - dist * 10.f));
             } else {
-                cachedNovelty = 10.f;
-                cachedConfidence = 0.f;
+                cachedNovelty.store(10.f);
+                cachedConfidence.store(0.f);
             }
 
-            swapReady.store(true);
             isTraining.store(false);
 
             // Check for pending work
             {
                 std::unique_lock<std::mutex> lock(jobMutex);
                 if (hasPending) {
+                    currentJob = pendingJob;
                     hasPending = false;
                     hasJob = true;
-                    // Pending becomes current job (already set)
                 }
             }
         }
@@ -297,8 +302,8 @@ struct MEMLNaut : Module {
         std::unique_lock<std::mutex> lock(jobMutex);
         if (hasJob || isTraining.load()) {
             // Queue as pending (max depth 1, latest wins)
+            pendingJob = {type, noise, spread};
             hasPending = true;
-            currentJob = {type, noise, spread};
         } else {
             currentJob = {type, noise, spread};
             hasJob = true;
@@ -352,36 +357,52 @@ struct MEMLNaut : Module {
         lights[LIGHT_LEARN].setBrightness(learn ? 1.f : 0.f);
         lights[LIGHT_TRAINING].setBrightness(isTraining.load() ? 1.f : 0.f);
 
+        // ── Apply staged OSC data ─────────────────────────────────────
+        if (oscJsonPending.load()) {
+            json_error_t error;
+            json_t* root = json_loads(oscStagedJson.c_str(), 0, &error);
+            if (root) {
+                dataFromJson(root);
+                json_decref(root);
+            }
+            oscJsonPending.store(false);
+        }
+
         // ── Apply new weights from background thread ─────────────────
         if (weightsPending.load()) {
             iml.set_weights(pendingWeights);
             weightsPending.store(false);
-            // Start crossfade: save current outputs as "old"
+            // Also sync examples from shadow → main (for future training rounds)
+            auto newFeats = imlShadow.get_example_features();
+            auto newLabels = imlShadow.get_example_labels();
+            iml.load_examples(newFeats, newLabels);
+            // Start crossfade
             for (int i = 0; i < NUM_ML_OUTPUTS; i++) {
                 prevOutputs[i] = cachedOutputs[i];
             }
             crossfadeProgress = 0.f;
         }
-        if (swapReady.load()) {
-            swapReady.store(false);
-        }
 
-        // ── Handle RAND button ────────────────────────────────────────
+        // ── Helper: stage current iml state for worker thread ─────────
+        auto stageForWorker = [&]() {
+            std::lock_guard<std::mutex> lock(stagingMutex);
+            stagedWeightsForWorker = iml.get_weights();
+            stagedFeatures = iml.get_example_features();
+            stagedLabels = iml.get_example_labels();
+        };
+
+        // ── Handle RAND button → enqueue Randomize job ────────────────
         if (randTrigger.process(params[PARAM_RAND].getValue() > 0.f)) {
-            iml.set_mode(nisps::IML<float>::Mode::Training);
-            iml.randomise_weights(spread);
-            iml.set_mode(nisps::IML<float>::Mode::Inference);
+            stageForWorker();
+            enqueueJob(JobType::Randomize, 0.f, spread);
         }
 
-        // ── Handle CLEAR button (long-press ~1s) ─────────────────────
+        // ── Handle CLEAR button (long-press ~1s) → enqueue Clear job ─
         if (params[PARAM_CLEAR].getValue() > 0.f) {
             clearHoldTime += args.sampleTime;
             if (clearHoldTime >= 1.f) {
-                iml.set_mode(nisps::IML<float>::Mode::Training);
-                iml.clear_dataset();
-                iml.randomise_weights(spread);
-                iml.set_mode(nisps::IML<float>::Mode::Inference);
-                noiseLevel = 0.1f;
+                stageForWorker();
+                enqueueJob(JobType::Clear, 0.f, spread);
                 clearHoldTime = 0.f;
             }
         } else {
@@ -395,7 +416,7 @@ struct MEMLNaut : Module {
             bool trigPos = trigPosTrigger.process(
                 inputs[INPUT_TRIG_POS].getVoltage());
             if (thumbsUp || trigPos) {
-                // Capture current input → output as training example
+                // Add example to iml's dataset (audio thread owns iml)
                 const float* curOuts = iml.get_outputs();
                 float curInputs[2] = {
                     normalizeInput(INPUT_X, 0),
@@ -404,10 +425,10 @@ struct MEMLNaut : Module {
                 iml.set_mode(nisps::IML<float>::Mode::Training);
                 iml.add_example(curInputs, 2, curOuts, NUM_ML_OUTPUTS);
                 iml.set_mode(nisps::IML<float>::Mode::Inference);
-                // Enqueue training
+                // Stage and enqueue training
+                stageForWorker();
                 enqueueJob(JobType::Train);
-                // Decay noise
-                noiseLevel *= 0.97f;
+                noiseLevel.store(noiseLevel.load() * 0.97f);
             }
 
             bool thumbsDown = thumbsDownTrigger.process(
@@ -416,8 +437,10 @@ struct MEMLNaut : Module {
                 inputs[INPUT_TRIG_NEG].getVoltage());
             if (thumbsDown || trigNeg) {
                 float noiseCap = 0.3f * (1.f - spread) + 0.05f * spread;
-                noiseLevel = std::min(noiseLevel * 1.5f, noiseCap);
-                enqueueJob(JobType::Perturb, noiseLevel, spread);
+                float nl = std::min(noiseLevel.load() * 1.5f, noiseCap);
+                noiseLevel.store(nl);
+                stageForWorker();
+                enqueueJob(JobType::Perturb, nl, spread);
             }
         }
 
@@ -498,18 +521,17 @@ struct MEMLNaut : Module {
         outputs[OUTPUT_STD].setVoltage(stddev * 10.f);
 
         // Delta (L2 norm of change)
-        static float lastOutputs[NUM_ML_OUTPUTS] = {};
         float delta = 0.f;
         for (int i = 0; i < NUM_ML_OUTPUTS; i++) {
-            float d = slewOutputs[i] - lastOutputs[i];
+            float d = slewOutputs[i] - lastOutputsForDelta[i];
             delta += d * d;
-            lastOutputs[i] = slewOutputs[i];
+            lastOutputsForDelta[i] = slewOutputs[i];
         }
         outputs[OUTPUT_DELTA].setVoltage(std::sqrt(delta) * 10.f);
 
         // Novelty + Confidence (computed on background thread, cached)
-        outputs[OUTPUT_NOVELTY].setVoltage(cachedNovelty);
-        outputs[OUTPUT_CONFIDENCE].setVoltage(cachedConfidence);
+        outputs[OUTPUT_NOVELTY].setVoltage(cachedNovelty.load());
+        outputs[OUTPUT_CONFIDENCE].setVoltage(cachedConfidence.load());
 
         // ── OSC send (throttled to ~100ms) ───────────────────────────
         if (oscServer && oscServer->isRunning()) {

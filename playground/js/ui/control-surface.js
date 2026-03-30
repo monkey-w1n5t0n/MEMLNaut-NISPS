@@ -23,8 +23,8 @@ const MEMORY_TABLE = [
 
 const PRECISION_TABLE = [
   [0.0, { inputCurve: 1.0, deadzone: 0.0,  smoothing: 0.0,  slewRate: 1.0, momentumZoom: 'off' }],
-  [0.5, { inputCurve: 1.5, deadzone: 0.05, smoothing: 0.15, slewRate: 0.3, momentumZoom: 'gentle' }],
-  [1.0, { inputCurve: 3.0, deadzone: 0.15, smoothing: 0.40, slewRate: 0.1, momentumZoom: 'strong' }],
+  [0.5, { inputCurve: 1.5, deadzone: 0.05, smoothing: 0.15, slewRate: 0.3, momentumZoom: 'off' }],
+  [1.0, { inputCurve: 3.0, deadzone: 0.15, smoothing: 0.40, slewRate: 0.1, momentumZoom: 'off' }],
 ];
 
 // ---- Control Presets ----

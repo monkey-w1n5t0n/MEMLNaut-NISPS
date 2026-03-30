@@ -54,19 +54,26 @@
     </select>
   </div>
 
+  <!-- MIDI CC quick controls (shown in midi-cc mode, mirrors synth quick controls layout) -->
+  <div class="midi-cc-quick-controls hidden" id="midi-cc-quick-controls">
+    <button class="play-btn" id="midi-cc-enable-btn" title="Enable MIDI output">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M4 9v2M6 7v4M8 8v3M10 7v4M12 9v2"/>
+      </svg>
+    </button>
+    <select class="preset-select" id="midi-cc-output-select" title="MIDI output device">
+      <option value="">No device</option>
+    </select>
+    <span class="synth-status" id="midi-cc-status" style="font-size:0.65rem;opacity:0.7"></span>
+  </div>
+
   <!-- Fullscreen flow field canvas -->
   <canvas id="vis-canvas"></canvas>
 
   <!-- Synth visualization canvas -->
   <canvas id="synth-vis-canvas"></canvas>
 
-  <!-- ShapeSeq UI (hidden by default, enabled with ?shapeseq=1) -->
-  <div class="shapeseq-container hidden" id="shapeseq-container">
-    <canvas id="shapeseq-viz"></canvas>
-    <div class="shapeseq-chain-wrap" id="shapeseq-chain"></div>
-  </div>
-
-  <!-- Heatmap strip (top) -->
+  <!-- Heatmap strip (top) — bars are click/draggable -->
   <div class="heatmap-strip" id="heatmap-strip">
     <div class="heatmap-cells" id="heatmap-cells"></div>
     <div class="heatmap-tooltip" id="heatmap-tooltip"></div>
@@ -95,60 +102,122 @@
     </div>
   </div>
 
-  <!-- RL floating buttons -->
+  <!-- RL floating buttons (with undo between/below) -->
   <div class="rl-buttons" id="rl-buttons">
     <button class="rl-btn rl-down" id="btn-thumbsdown" title="Explore more"><span class="rl-icon">&minus;</span><span class="key-num">1</span></button>
     <button class="rl-btn rl-up" id="btn-thumbsup" title="Keep this"><span class="rl-icon">+</span><span class="key-num">2</span></button>
+    <button class="rl-undo-btn" id="btn-undo" title="Undo last action">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7h6a4 4 0 0 1 0 8H7"/><path d="M3 7l3-3M3 7l3 3"/>
+      </svg>
+    </button>
   </div>
 
-  <!-- Bottom sheet -->
-  <div class="bottom-sheet collapsed" id="bottom-sheet">
-    <!-- Floating mode bar (sticky inside sheet) -->
-    <div class="floating-bar" id="floating-bar">
-      <div class="pill-toggle pill-toggle-sm" id="input-toggle">
-        <button class="pill-opt active" data-input="joystick">Joystick</button>
-        <button class="pill-opt" data-input="hands">Hands</button>
+  <!-- Status line (floating, minimal) -->
+  <div class="status-line" id="status-line">
+    <span id="status-text">0 examples &middot; untrained</span>
+  </div>
+
+  <!-- Right-side dock (macOS-style) -->
+  <div class="dock" id="dock">
+    <button class="dock-icon" data-drawer="training" title="Training">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 8h10"/><rect x="1" y="5" width="3" height="6" rx="0.5"/><rect x="12" y="5" width="3" height="6" rx="0.5"/><rect x="3" y="6.5" width="2" height="3" rx="0.3"/><rect x="11" y="6.5" width="2" height="3" rx="0.3"/>
+      </svg>
+      <span class="dock-label">Train</span>
+    </button>
+    <button class="dock-icon" data-drawer="mode" title="Input / Output mode">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="5" cy="5" r="2"/><circle cx="11" cy="11" r="2"/><path d="M3 13L13 3"/>
+      </svg>
+      <span class="dock-label">Mode</span>
+    </button>
+    <button class="dock-icon" data-drawer="synth" title="Synth controls">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 10c2-4 4-4 6 0s4-4 6 0"/>
+      </svg>
+      <span class="dock-label">Synth</span>
+    </button>
+    <button class="dock-icon" data-drawer="params" title="Engine parameters">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/>
+      </svg>
+      <span class="dock-label">Engine</span>
+    </button>
+    <button class="dock-icon" data-drawer="help" title="Help">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="6"/><path d="M6 6a2 2 0 0 1 4 0c0 1.5-2 1.5-2 3"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/>
+      </svg>
+      <span class="dock-label">Help</span>
+    </button>
+  </div>
+
+  <!-- Drawer panels (stack on right side, left of dock) -->
+  <div class="drawer-stack" id="drawer-stack">
+    <!-- Training drawer -->
+    <div class="drawer hidden" id="drawer-training" data-drawer="training">
+      <div class="drawer-header">
+        <span>Training</span>
+        <button class="drawer-close" data-drawer="training">&times;</button>
       </div>
-      <div class="pill-toggle pill-toggle-sm" id="output-toggle-float">
-        <button class="pill-opt active" data-mode="visual">Visual</button>
-        <button class="pill-opt" data-mode="synth">Synth</button>
+      <div class="drawer-body">
+        <div class="action-row" id="examples-actions">
+          <button class="action-btn" id="btn-add-example">Add Example</button>
+          <button class="action-btn accent" id="btn-train">Train</button>
+          <button class="action-btn dim" id="btn-clear-examples">Clear Ex</button>
+          <button class="action-btn dim" id="btn-clear">Clear All</button>
+          <button class="action-btn dim" id="btn-randomize">Randomize</button>
+        </div>
+        <div class="preset-row" id="preset-row">
+          <span class="preset-label">Presets</span>
+          <button class="preset-chip" data-preset="calm-to-chaotic">Calm/Chaos</button>
+          <button class="preset-chip" data-preset="rainbow-sweep">Rainbow</button>
+          <button class="preset-chip" data-preset="vortex">Vortex</button>
+          <button class="preset-chip" data-preset="spiral">Spiral</button>
+          <button class="preset-chip" data-preset="embers">Embers</button>
+        </div>
+        <div class="loss-section">
+          <label>Loss History</label>
+          <canvas id="loss-canvas" width="280" height="80"></canvas>
+        </div>
       </div>
-      <button class="float-btn accent" id="btn-train-bar" title="Train on examples">Train</button>
-      <button class="float-btn" id="btn-randomize-bar" title="Randomize weights">Randomize</button>
-      <button class="float-btn" id="btn-clear-examples-bar" title="Clear examples">Clear Ex</button>
-      <button class="follow-pill" id="follow-pill" title="Toggle follow mode">Follow</button>
-      <button class="osc-pill" id="osc-pill" title="Connect OSC output">OSC</button>
-      <button class="chevron-btn" id="chevron-btn" title="Expand panel">&#9650;</button>
     </div>
 
-    <!-- Status line -->
-    <div class="sheet-status" id="sheet-status">
-      <span id="status-text">0 examples &middot; untrained</span>
+    <!-- Mode drawer -->
+    <div class="drawer hidden" id="drawer-mode" data-drawer="mode">
+      <div class="drawer-header">
+        <span>Mode</span>
+        <button class="drawer-close" data-drawer="mode">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="mode-group">
+          <span class="mode-label">Input</span>
+          <div class="pill-toggle pill-toggle-sm" id="input-toggle">
+            <button class="pill-opt active" data-input="joystick">Joystick</button>
+            <button class="pill-opt" data-input="hands">Hands</button>
+          </div>
+        </div>
+        <div class="mode-group">
+          <span class="mode-label">Output</span>
+          <div class="pill-toggle pill-toggle-sm" id="output-toggle-float">
+            <button class="pill-opt active" data-mode="visual">Visual</button>
+            <button class="pill-opt" data-mode="synth">Synth</button>
+            <button class="pill-opt" data-mode="midi-cc">MIDI CC</button>
+          </div>
+        </div>
+        <div class="mode-group">
+          <button class="follow-pill" id="follow-pill" title="Toggle follow mode">Follow</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Sheet content -->
-    <div class="sheet-content" id="sheet-content">
-      <!-- Examples mode actions -->
-      <div class="action-row" id="examples-actions">
-        <button class="action-btn" id="btn-add-example">Add Example</button>
-        <button class="action-btn accent" id="btn-train">Train</button>
-        <button class="action-btn dim" id="btn-clear-examples">Clear Examples</button>
-        <button class="action-btn dim" id="btn-clear">Clear All</button>
-        <button class="action-btn dim" id="btn-randomize">Randomize</button>
+    <!-- Synth drawer -->
+    <div class="drawer hidden" id="drawer-synth" data-drawer="synth">
+      <div class="drawer-header">
+        <span>Synth</span>
+        <button class="drawer-close" data-drawer="synth">&times;</button>
       </div>
-
-      <!-- Preset palette -->
-      <div class="preset-row" id="preset-row">
-        <span class="preset-label">Presets</span>
-        <button class="preset-chip" data-preset="calm-to-chaotic">Calm/Chaos</button>
-        <button class="preset-chip" data-preset="rainbow-sweep">Rainbow</button>
-        <button class="preset-chip" data-preset="vortex">Vortex</button>
-        <button class="preset-chip" data-preset="spiral">Spiral</button>
-        <button class="preset-chip" data-preset="embers">Embers</button>
-      </div>
-
-      <!-- Synth controls -->
-      <div class="synth-panel hidden" id="synth-panel">
+      <div class="drawer-body" id="synth-panel">
         <div class="synth-row">
           <button class="action-btn accent" id="synth-start">Start Audio</button>
           <span class="synth-status" id="synth-status">Stopped</span>
@@ -190,31 +259,43 @@
         <div class="synth-row" id="midi-status-row" style="display:none">
           <span class="synth-status" id="midi-status"></span>
         </div>
-        <div class="synth-row osc-row-panel" id="osc-row">
-          <label>OSC Output</label>
-          <button class="action-btn" id="osc-toggle">Connect</button>
-          <span class="synth-status" id="osc-status">Off</span>
+      </div>
+    </div>
+
+    <!-- MIDI CC drawer (param management) -->
+    <div class="drawer hidden" id="drawer-midi-cc" data-drawer="midi-cc">
+      <div class="drawer-header">
+        <span>MIDI CC</span>
+        <button class="drawer-close" data-drawer="midi-cc">&times;</button>
+      </div>
+      <div class="drawer-body" id="midi-cc-panel">
+        <div class="synth-row">
+          <label>Parameters</label>
+          <span id="midi-cc-count">8</span>
+          <button class="action-btn" id="midi-cc-add" title="Add CC parameter">+</button>
+          <button class="action-btn" id="midi-cc-remove" title="Remove last CC parameter">&minus;</button>
         </div>
+        <div class="synth-row">
+          <button class="action-btn" id="midi-cc-import">Import</button>
+          <button class="action-btn" id="midi-cc-export">Export</button>
+        </div>
+        <div id="midi-cc-param-list"></div>
       </div>
+    </div>
 
-      <!-- Loss plot -->
-      <div class="loss-section">
-        <label>Loss History</label>
-        <canvas id="loss-canvas" width="280" height="80"></canvas>
+    <!-- Params drawer (NISPS engine tuning) -->
+    <div class="drawer hidden" id="drawer-params" data-drawer="params">
+      <div class="drawer-header">
+        <span>Engine</span>
+        <button class="drawer-close" data-drawer="params">&times;</button>
       </div>
-
-      <!-- Advanced: raw param sliders -->
-      <details class="advanced-section">
-        <summary>Advanced: Raw Parameters</summary>
-        <div class="raw-params" id="raw-params"></div>
-      </details>
+      <div class="drawer-body">
+        <div class="engine-params" id="engine-params"></div>
+      </div>
     </div>
   </div>
 
-  <!-- Help button -->
-  <button class="help-btn" id="help-btn" title="Help">?</button>
-
-  <!-- Help modal -->
+  <!-- Help modal (unchanged) -->
   <div class="help-overlay hidden" id="help-overlay">
     <div class="help-modal" id="help-modal">
       <button class="help-close" id="help-close">&times;</button>
@@ -243,7 +324,7 @@
           <li><strong>Train</strong> fits the network to your saved examples</li>
           <li><strong>+ / &minus; feedback</strong> nudges the network: + reinforces the current mapping, &minus; adds exploration noise</li>
           <li>Switch between <strong>Visual</strong> (particle flow field) and <strong>Synth</strong> (C15 synthesizer) output modes</li>
-          <li>The <strong>heatmap bar</strong> at the top shows all output parameters at a glance</li>
+          <li>The <strong>heatmap bar</strong> at the top shows all output parameters at a glance &mdash; drag any bar to set its value</li>
         </ul>
       </div>
 
@@ -253,10 +334,13 @@
           <tr><th colspan="2">Touch / Mouse</th></tr>
           <tr><td>Drag joystick</td><td>Move through parameter space</td></tr>
           <tr><td>+ / &minus; buttons</td><td>Positive / negative feedback</td></tr>
-          <tr><td>Bottom bar</td><td>Train, Randomize, Clear, Follow mode</td></tr>
+          <tr><td>Undo (between +/&minus;)</td><td>Revert last feedback action</td></tr>
+          <tr><td>Drag heatmap bar</td><td>Set parameter value directly</td></tr>
+          <tr><td>Right-side dock</td><td>Training, Mode, Synth, Params drawers</td></tr>
           <tr><th colspan="2">Keyboard</th></tr>
           <tr><td><kbd>1</kbd></td><td>Negative feedback (&minus;)</td></tr>
           <tr><td><kbd>2</kbd></td><td>Positive feedback (+)</td></tr>
+          <tr><td><kbd>Z</kbd></td><td>Undo</td></tr>
           <tr><th colspan="2">Gamepad (Steam Deck, Xbox, etc.)</th></tr>
           <tr><td>Left stick</td><td>Joystick control</td></tr>
           <tr><td>LB (left bumper)</td><td>Negative feedback</td></tr>
@@ -269,7 +353,7 @@
 
       <div class="help-section">
         <h3>Hand Tracking</h3>
-        <p>Toggle to <strong>Hands</strong> mode in the bottom bar to use your webcam for input.</p>
+        <p>Toggle to <strong>Hands</strong> mode in the Mode drawer to use your webcam for input.</p>
         <ul>
           <li><strong>Right hand</strong> controls parameters &mdash; palm position, finger curls, spread, rotation, and pinch map to 14 input dimensions</li>
           <li><strong>Left hand</strong> gives feedback via gestures:</li>
@@ -283,98 +367,20 @@
       </div>
 
       <div class="help-section">
-        <h3>Tips</h3>
-        <ul>
-          <li>Start with <strong>Randomize</strong> a few times to hear/see different mappings, then use feedback to refine</li>
-          <li>Use <strong>Follow</strong> mode to let the joystick wander automatically while you give feedback</li>
-          <li>In Synth mode, press the <strong>play button</strong> (top left, pulses orange when audio is off) to start audio, then explore</li>
-          <li>Tap a heatmap cell to see which parameter it controls</li>
-        </ul>
-      </div>
-
-      <div class="help-section">
         <h3>Synth Controls</h3>
         <ul>
           <li><strong>Presets</strong> &mdash; use the dropdown (top left, next to play) to choose a parameter preset. Lower tiers (1.x) expose fewer parameters for simpler exploration; higher tiers (3.x, 4.x) unlock cross-modulation, feedback, and the full engine. You can tweak any preset afterwards using the controls below.</li>
           <li><strong>Hover any bar</strong> in the synth visualizer to see parameter name, current value, range, and curve</li>
           <li><strong>Hover a group name</strong> (e.g. "Env A", "Osc B") at the top to open its control drawer:</li>
           <ul>
-            <li><strong>Group curve</strong> &mdash; drag the top graph vertically to shape the response curve for the whole group (adjusts all param curves relatively)</li>
-            <li><strong>Per-param curve</strong> &mdash; drag each small graph to shape that parameter individually (down&nbsp;=&nbsp;exponential, up&nbsp;=&nbsp;logarithmic)</li>
+            <li><strong>Group curve</strong> &mdash; drag the top graph vertically to shape the response curve for the whole group</li>
+            <li><strong>Per-param curve</strong> &mdash; drag each small graph to shape that parameter individually</li>
             <li><strong>Min/Max range</strong> &mdash; dual-thumb slider constrains the parameter's output range</li>
-            <li><strong>Mute (M)</strong> &mdash; removes the parameter from NISPS control; its bar disappears and you get a manual value slider instead</li>
+            <li><strong>Mute (M)</strong> &mdash; removes the parameter from NISPS control</li>
           </ul>
-          <li><strong>MIDI input</strong> &mdash; connect a MIDI controller and it will be detected automatically; MIDI notes trigger the synth directly</li>
-          <li><strong>Arpeggiator</strong> &mdash; expand the bottom bar to access the built-in arpeggiator with tempo, octave range, offset, and chord progression controls; press Pause to stop it</li>
+          <li><strong>MIDI input</strong> &mdash; connect a MIDI controller and it will be detected automatically</li>
+          <li><strong>Arpeggiator</strong> &mdash; open the Synth drawer in the dock to access tempo, octave range, offset, and chord progression controls</li>
         </ul>
-      </div>
-
-      <div class="help-section">
-        <h3>OSC Output</h3>
-        <p>Send NISPS parameters to any OSC-capable software (SuperCollider, Max/MSP, Pure Data, TouchDesigner, Ableton, etc.) via a small bridge script that runs on your computer.</p>
-
-        <div class="help-osc-steps">
-          <p><strong>1. Download the bridge</strong></p>
-          <div class="help-download-row">
-            <button class="help-download-btn" id="osc-download-bin">Download for <span id="osc-platform-name">your OS</span></button>
-            <button class="help-download-btn help-download-alt" id="osc-download-src">Source (.ts)</button>
-          </div>
-          <p class="help-dim">Binary is standalone, no runtime needed. Source requires <a href="https://deno.land" target="_blank" rel="noopener">Deno</a> or <a href="https://nodejs.org" target="_blank" rel="noopener">Node.js</a>.</p>
-
-          <p><strong>2. Run</strong></p>
-          <pre class="help-code" id="osc-run-instructions">./nisps-osc-bridge</pre>
-
-          <p><strong>3. Connect</strong></p>
-          <p>Click the <strong>OSC</strong> button in the bottom bar (visible in all modes). The dot turns green when connected. You can also find a Connect button in the synth panel when expanded.</p>
-        </div>
-
-        <p style="margin-top:10px"><strong>Configuration</strong></p>
-        <table class="help-keys">
-          <tr><td><kbd>--osc-port 9000</kbd></td><td>Target port (default: 57120 / SuperCollider)</td></tr>
-          <tr><td><kbd>--osc-host 192.168.1.5</kbd></td><td>Target IP (default: 127.0.0.1)</td></tr>
-          <tr><td><kbd>--osc-prefix /my</kbd></td><td>Address prefix (default: /nisps)</td></tr>
-          <tr><td><kbd>--ws-port 8000</kbd></td><td>WebSocket listen port (default: 8765)</td></tr>
-          <tr><td><kbd>--bundle</kbd></td><td>Send OSC bundles instead of individual messages</td></tr>
-        </table>
-
-        <p style="margin-top:10px"><strong>OSC addresses</strong></p>
-        <p>Each parameter is sent as <code>/nisps/&lt;Param_Name&gt; &lt;float 0&ndash;1&gt;</code>. All 126 synth parameters are available. Values reflect your current preset, curves, and tame settings. Examples:</p>
-        <pre class="help-code">/nisps/Env_A_Att 0.35
-/nisps/SVF_Flt_Cut 0.72
-/nisps/Reverb_Mix 0.15</pre>
-
-        <details class="help-details">
-          <summary>SuperCollider example</summary>
-          <pre class="help-code">// Listen for all NISPS params
-OSCdef(\nisps, { |msg, time|
-    msg.postln;
-}, '/nisps/*');
-
-// Map a specific param to a synth
-OSCdef(\cutoff, { |msg|
-    ~synth.set(\freq, msg[1].linexp(0, 1, 200, 8000));
-}, '/nisps/SVF_Flt_Cut');</pre>
-        </details>
-
-        <details class="help-details">
-          <summary>Pure Data example</summary>
-          <pre class="help-code">[netreceive -u -b 57120]
-|
-[oscparse]
-|
-[route /nisps]
-|
-[route /Env_A_Att /SVF_Flt_Cut ...]</pre>
-        </details>
-
-        <details class="help-details">
-          <summary>Max/MSP example</summary>
-          <pre class="help-code">[udpreceive 57120]
-|
-[OSC-route /nisps/Env_A_Att]
-|
-[scale 0. 1. 200. 8000.]</pre>
-        </details>
       </div>
 
       <button class="help-got-it" id="help-got-it">Got it</button>

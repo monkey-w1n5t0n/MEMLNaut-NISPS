@@ -6,48 +6,9 @@ import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
-import { InputPipeline } from './ui/input-pipeline.js';
-import { initControlSurfaceUI } from './ui/control-surface-ui.js';
-import { JoyMapEnhanced } from './ui/joy-map-enhanced.js';
-
-// Phase 2: Pinning + History
-import { SnapshotStack } from './ui/snapshot-stack.js';
-import { ABCompare } from './ui/ab-compare.js';
-import { RegionPinManager } from './ui/region-pin.js';
-import { ParamPinManager } from './ui/param-pin.js';
-import { initPhase2UI } from './ui/phase2-ui.js';
-
-// Phase 3: Pressure, Auto-Explore, Heatmap
-import { initPhase3UI } from './ui/phase3-ui.js';
-
-// Phase 4: Output Pipeline + Visualization + Polish
-import { OutputPipeline } from './ui/output-pipeline.js';
-import { initPhase4UI } from './ui/phase4-ui.js';
-
-// ---- ShapeSeq (feature-flagged, enable with ?shapeseq=1) ----
-const ENABLE_SHAPESEQ = new URLSearchParams(window.location.search).get('shapeseq') === '1';
-let _shapeSeqImports = null;
-async function getShapeSeqModules() {
-  if (_shapeSeqImports) return _shapeSeqImports;
-  const [seqMod, vizMod, uiMod, busMod] = await Promise.all([
-    import('./shapeseq/sequencer.js'),
-    import('./shapeseq/step-viz.js'),
-    import('./shapeseq/chain-ui.js'),
-    import('./shapeseq/event-bus.js'),
-  ]);
-  _shapeSeqImports = {
-    ShapeSeqEngine: seqMod.ShapeSeqEngine,
-    StepVisualizer: vizMod.StepVisualizer,
-    ChainBuilderUI: uiMod.ChainBuilderUI,
-    getDefaultBus: busMod.getDefaultBus,
-  };
-  return _shapeSeqImports;
-}
-let shapeSeq = null;
-let stepViz = null;
-let chainUI = null;
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
-import { OSCOutput } from './synth/osc-output.js';
+import { MIDIOutput } from './midi/midi-output.js';
+import { loadCCMap, saveCCMap, createCCParam, exportCCMap, importCCMap, CC_NAMES } from './midi/midi-cc-map.js';
 import { GamepadInput } from './ui/gamepad.js';
 import { HandTracker } from './ui/hand-tracker.js';
 import { createDevPanel } from './ui/dev-panel.js';
@@ -59,7 +20,7 @@ const N_HAND_INPUTS = 14;
 const N_INPUTS = N_JOY_INPUTS; // default (joystick)
 const N_VISUAL_OUTPUTS = 20;
 const N_SYNTH_OUTPUTS = SYNTH_PARAM_MAP.length; // 126
-const N_OUTPUTS = N_SYNTH_OUTPUTS; // MLP always produces full output; visual uses first 20
+let N_OUTPUTS = N_SYNTH_OUTPUTS; // Dynamic — changes with output mode
 const STORAGE_KEY = 'nisps-a-immersive';
 
 const VISUAL_PARAM_NAMES = [
@@ -114,36 +75,33 @@ let handTracker = null;
 let visualizer;
 let synthVisualizer;
 let c15 = null;
-let oscOutput = null;
 let arpeggiator = null;
 let midiInput = null;
 
 let outputMode = 'visual';
+
+// ---- MIDI CC state ----
+let midiOutput = null;
+let midiCCMap = loadCCMap();
+// Per-param overrides for MIDI CC mode (same shape as visual overrides)
+let midiCCOverrides = midiCCMap.map(p => ({
+  min: p.min, max: p.max, curve: p.curve, frozen: p.muted, fixedValue: p.fixedValue,
+}));
+const MIDI_CC_PARAM_COLORS = [];
+// Generate distinct colors for CC params
+function _generateCCColors(n) {
+  MIDI_CC_PARAM_COLORS.length = 0;
+  for (let i = 0; i < n; i++) {
+    const hue = (i * 137.508) % 360; // golden angle
+    MIDI_CC_PARAM_COLORS.push(`hsl(${hue}, 70%, 60%)`);
+  }
+}
+_generateCCColors(midiCCMap.length);
+
 // tame level is now baked into groupOverrides defaults at init time (see ?tame URL param)
 let spreadLevel = 0.6;
 let noiseLevel = 0.05;
-const rlExplorationDecay = 0.97;
-
-// Control surface (Phase 1)
-let inputPipeline = null;
-let controlSurface = null;
-let joyMapEnhanced = null;
-let _lastFrameTime = 0;
-let _lastPipeX = 0.5, _lastPipeY = 0.5; // cached pipeline output for getCurrentInputs()
-
-// Phase 2: Pinning + History
-let snapshotStack = null;
-let abCompare = null;
-let regionPins = null;
-let paramPins = null;
-let phase2UI = null;
-
-// Phase 3: Pressure, Auto-Explore, Heatmap
-let phase3 = null;
-
-// Phase 4: Output Pipeline + Visualization + Polish
-let outputPipeline = null;
-let phase4 = null;
+let rlExplorationDecay = 0.97;
 
 // Joystick state
 let joyX = 0.5;
@@ -151,9 +109,6 @@ let joyY = 0.5;
 let joyDragging = false;
 let joyFollowMode = false;
 let joyTrail = [];
-
-// Sheet state
-let sheetExpanded = false;
 
 // Gamepad
 let gamepad;
@@ -166,12 +121,24 @@ let $canvas, $heatmapCells, $heatmapTooltip;
 let $joystickContainer, $joyMap, $joyMapCtx;
 let $noiseRing, $followBadge;
 let $rlButtons, $btnThumbsUp, $btnThumbsDown;
-let $bottomSheet, $statusText;
-let $sheetContent;
-let $synthPanel, $lossCanvas, $lossCtx;
-let $rawParams;
-let $floatingBar, $chevronBtn, $followPill;
+let $statusText;
+let $lossCanvas, $lossCtx;
+let $engineParams;
+let $followPill;
 let $synthVisCanvas;
+
+// Undo stack — stores weight snapshots before RL actions
+const undoStack = [];
+const MAX_UNDO = 20;
+
+// ---- Visual Overrides: per-param curve/min/max/freeze for visual mode ----
+const visualOverrides = VISUAL_PARAM_NAMES.map(() => ({
+  min: 0,
+  max: 1,
+  curve: 0.5,
+  frozen: false,
+  fixedValue: 0.5,
+}));
 
 // ---- Synth Sections (for SynthVisualizer) ----
 const SYNTH_SECTIONS = [
@@ -518,27 +485,13 @@ class SynthVisualizer {
       const barH = val * maxBarHeight;
       const barY = topPad + usableHeight - barH;
 
-      // Phase 2: Dim pinned param bars
-      const isPinned = paramPins && paramPins.isPinned(i);
-
-      // Bar with slight transparency (dimmer if pinned)
-      ctx.fillStyle = sec.color + (isPinned ? '66' : 'cc');
+      // Bar with slight transparency
+      ctx.fillStyle = sec.color + 'cc';
       ctx.fillRect(x, barY, Math.max(barWidth - 0.5, 1), barH);
 
       // Bright top edge
-      ctx.fillStyle = isPinned ? (sec.color + '88') : sec.color;
+      ctx.fillStyle = sec.color;
       ctx.fillRect(x, barY, Math.max(barWidth - 0.5, 1), Math.min(2 * dpr, barH));
-
-      // Phase 2: Draw small lock indicator on pinned params
-      if (isPinned) {
-        const dotR = Math.max(2 * dpr, barWidth * 0.2);
-        const dotX = x + barWidth / 2;
-        const dotY = topPad + usableHeight + 6 * dpr;
-        ctx.fillStyle = 'rgba(255, 180, 0, 0.8)';
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
-        ctx.fill();
-      }
 
       x += barWidth;
     }
@@ -749,6 +702,44 @@ function padPresetOutputs(outputs) {
   return padded;
 }
 
+// ---- MLP Resize ----
+// Returns the target output count for a given mode
+function outputCountForMode(mode) {
+  if (mode === 'visual') return N_VISUAL_OUTPUTS;
+  if (mode === 'synth') return N_SYNTH_OUTPUTS;
+  if (mode === 'midi-cc') return midiCCMap.length;
+  return N_SYNTH_OUTPUTS;
+}
+
+/**
+ * Recreate IML instances with a new output count.
+ * Resets all weights and training data.
+ */
+async function resizeMLP(newOutputCount) {
+  if (newOutputCount === N_OUTPUTS) return;
+  N_OUTPUTS = newOutputCount;
+
+  imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+  imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
+  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, [48, 48, 64], 1000, 1.0, 0.00001);
+  imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
+  iml = (inputMode === 'joystick') ? imlJoy : imlHand;
+
+  // Reset dependent state
+  rawParamValues = new Array(N_OUTPUTS).fill(0.5);
+
+  // Randomize with current spread
+  imlJoy.drawWeights(spreadLevel);
+  imlHand.drawWeights(spreadLevel);
+
+  // Re-run inference
+  iml.setInput(0, joyX);
+  iml.setInput(1, joyY);
+  iml.process();
+
+  console.log(`[NISPS] MLP resized to ${N_OUTPUTS} outputs`);
+}
+
 // ---- Init ----
 async function init() {
   // Parse ?tame URL param
@@ -784,21 +775,9 @@ async function init() {
   midiInput = new MIDIInput(c15);
   initMIDIControls();
 
-  // OSC output
-  oscOutput = new OSCOutput();
-  oscOutput.onStatusChange = (msg, connected) => {
-    const el = document.getElementById('osc-status');
-    const btn = document.getElementById('osc-toggle');
-    const pill = document.getElementById('osc-pill');
-    if (el) el.textContent = msg;
-    if (btn) btn.textContent = connected ? 'Disconnect' : 'Connect';
-    if (pill) {
-      pill.classList.toggle('connected', connected);
-      pill.classList.toggle('connecting', oscOutput.enabled && !connected);
-      pill.title = connected ? `OSC connected: ${msg}` : 'Connect OSC output';
-    }
-  };
-  wireOSCControls();
+  // MIDI Output
+  midiOutput = new MIDIOutput();
+  initMIDICCControls();
 
   // DOM refs
   $heatmapCells = document.getElementById('heatmap-cells');
@@ -814,28 +793,23 @@ async function init() {
   $btnThumbsUp = document.getElementById('btn-thumbsup');
   $btnThumbsDown = document.getElementById('btn-thumbsdown');
 
-  $bottomSheet = document.getElementById('bottom-sheet');
   $statusText = document.getElementById('status-text');
 
-  $sheetContent = document.getElementById('sheet-content');
-  $synthPanel = document.getElementById('synth-panel');
   $lossCanvas = document.getElementById('loss-canvas');
   $lossCtx = $lossCanvas.getContext('2d');
-  $rawParams = document.getElementById('raw-params');
+  $engineParams = document.getElementById('engine-params');
 
-  $floatingBar = document.getElementById('floating-bar');
-  $chevronBtn = document.getElementById('chevron-btn');
   $followPill = document.getElementById('follow-pill');
 
   // Build heatmap cells
   buildHeatmap();
 
   // Build raw param sliders
-  buildRawParams();
+  buildEngineParams();
 
   // Wire events
   wireJoystick();
-  wireBottomSheet();
+  wireDock();
   wireControls();
   wireSynthControls();
   wireGamepad();
@@ -844,25 +818,15 @@ async function init() {
   createDevPanel(() => handTracker);
   wireQuickPlayControls();
   wireGroupDrawer();
+  wireParamPopup();
   wireHelp();
 
   // Resize
   window.addEventListener('resize', onResize);
   onResize();
 
-  // ---- Control Surface (Phase 1) — init before loadState so restore works ----
-  inputPipeline = new InputPipeline();
-  const csUI = initControlSurfaceUI();
-  controlSurface = csUI.surface;
-
-  // ---- Phase 2: Data models — init before loadState so restore works ----
-  snapshotStack = new SnapshotStack(20);
-  abCompare = new ABCompare();
-  regionPins = new RegionPinManager();
-  paramPins = new ParamPinManager(N_OUTPUTS);
-
   // Restore saved state (if any)
-  loadState();
+  await loadState();
 
   // Wire synth preset selector
   wireSynthPresets();
@@ -877,150 +841,12 @@ async function init() {
     if ($ps) $ps.value = activeSynthPresetId;
   }
 
-  // Enhanced joy-map (replaces drawJoyMap)
-  joyMapEnhanced = new JoyMapEnhanced($joyMap, {
-    onTrailTap: (pos) => {
-      joyX = pos.x;
-      joyY = pos.y;
-      onJoystickMove();
-    },
-    getTrainingData: () => ({
-      features: iml.dataset.features,
-      labels: iml.dataset.labels,
-    }),
-  });
-
-  // ---- Phase 2: UI (data models already created above, before loadState) ----
-  phase2UI = initPhase2UI({
-    snapshotStack,
-    abCompare,
-    regionPins,
-    paramPins,
-    getWeights: () => iml._getFlatWeights(),
-    setWeights: (w) => { iml._setFlatWeights(w); },
-    getNoiseLevel: () => noiseLevel,
-    setNoiseLevel: (n) => { noiseLevel = n; updateNoiseRing(); },
-    getZoomLevel: () => inputPipeline ? inputPipeline.getZoomLevel() : 1.0,
-    getZoomWindow: () => inputPipeline ? inputPipeline.getZoomWindow() : null,
-    getTrainingData: () => ({
-      features: iml.dataset.features,
-      labels: iml.dataset.labels,
-    }),
-    runInference: () => {
-      iml.inputUpdated = true;
-      iml.process();
-      const outputs = iml.getOutputs();
-      routeOutputs(outputs);
-      updateHeatmap(outputs);
-      syncRawParamsFromOutputs(outputs);
-      updateStatus();
-    },
-    joyMapCanvas: $joyMap,
-    synthVisualizer,
-  });
-
-  // Sync region pin overlays to the enhanced joy-map
-  document.addEventListener('regionpin:sync', (e) => {
-    if (joyMapEnhanced) {
-      joyMapEnhanced.setPinnedRegions(e.detail.regions);
-    }
-  });
-
-  // ---- Phase 3: Pressure, Auto-Explore, Input Heatmap ----
-  phase3 = initPhase3UI({
-    onAutoExplore: ({ intensity }) => {
-      const csParams = controlSurface ? controlSurface.getParams() : null;
-      const noiseCap = csParams ? csParams.noiseCap : (0.3 * (1 - spreadLevel) + 0.05 * spreadLevel);
-      const growth = csParams ? csParams.noiseGrowth : 1.5;
-      let effectiveGrowth = growth * intensity;
-      if (csParams && csParams.zoomAwareFeedback && inputPipeline) {
-        effectiveGrowth *= inputPipeline.getZoomLevel();
-      }
-      noiseLevel = Math.min(noiseLevel * effectiveGrowth, noiseCap);
-      const pinMask = paramPins ? paramPins.getPinMask() : null;
-      iml.moveWeights(noiseLevel, spreadLevel, pinMask);
-      const outputs = iml.getOutputs();
-      routeOutputs(outputs);
-      updateHeatmap(outputs);
-      syncRawParamsFromOutputs(outputs);
-      updateStatus();
-      updateNoiseRing();
-      if (phase3) phase3.updateHeatmap();
-    },
-    getZoomLevel: () => inputPipeline ? inputPipeline.getZoomLevel() : 1.0,
-    inferFn: (inputs) => {
-      if (inputMode === 'hands') return [];
-      const savedInput = [...iml.inputState];
-      const savedUpdated = iml.inputUpdated;
-      iml.setInput(0, inputs[0]);
-      iml.setInput(1, inputs[1]);
-      iml.inputUpdated = true;
-      iml.process();
-      const result = [...iml.getOutputs()];
-      for (let i = 0; i < savedInput.length; i++) iml.inputState[i] = savedInput[i];
-      iml.inputUpdated = savedUpdated;
-      return result;
-    },
-    getZoomWindow: () => inputPipeline ? inputPipeline.getZoomWindow() : null,
-  });
-
-  // Wire heatmap into the enhanced joy-map
-  if (joyMapEnhanced && phase3) {
-    joyMapEnhanced.setHeatmap(phase3.heatmap);
-  }
-
-  // ---- Phase 4: Output Pipeline + Visualization + Polish ----
-  outputPipeline = new OutputPipeline(N_OUTPUTS);
-  phase4 = initPhase4UI({
-    outputPipeline,
-    iml,
-    controlSurface,
-    getGroupOverrides: () => groupOverrides,
-    getActiveSynthPresetId: () => activeSynthPresetId,
-    inputPipeline,
-    onSessionLoad: (preset) => {
-      if (preset.controlSurface && controlSurface) {
-        controlSurface.setState(preset.controlSurface);
-      }
-      if (preset.inputPipeline && inputPipeline) {
-        inputPipeline.setConfig(preset.inputPipeline);
-      }
-      if (preset.outputPipeline && outputPipeline) {
-        outputPipeline.setConfig(preset.outputPipeline);
-      }
-      if (preset.synthPresetId) {
-        applyPreset(preset.synthPresetId);
-      }
-      if (inputMode === 'joystick') onJoystickMove();
-    },
-  });
-
-  // Wire control surface changes to pipeline + RL params
-  document.addEventListener('controlsurface:change', (e) => {
-    const p = e.detail;
-    if (p._phase3) return; // Phase 3 drawer events handled internally
-    // Input pipeline
-    inputPipeline.setConfig({
-      zoom: p.zoom,
-      deadzone: p.deadzone,
-      inputCurve: p.inputCurve,
-      smoothing: p.smoothing,
-      momentumZoom: p.momentumZoom,
-      invertX: p.invertX,
-      invertY: p.invertY,
-    });
-    // Sync spread (used by moveWeights and randomise)
-    spreadLevel = p.spread;
-    // Phase 4: wire output pipeline params
-    if (outputPipeline) {
-      if (p.outputSmoothing !== undefined) outputPipeline.setSmoothing(p.outputSmoothing);
-      if (p.outputSlewRate !== undefined) outputPipeline.setSlewRate(p.outputSlewRate);
-      if (p.globalCurve !== undefined) outputPipeline.setGlobalCurve(p.globalCurve);
-    }
-  });
-
-  // Initial inference — run through pipeline for consistency
-  if (inputMode === 'joystick') onJoystickMove();
+  // Initial inference
+  iml.setInput(0, joyX);
+  iml.setInput(1, joyY);
+  iml.process();
+  routeOutputs(iml.getOutputs());
+  updateHeatmap(iml.getOutputs());
   updateStatus();
   drawJoyMap();
   drawLossPlot();
@@ -1036,9 +862,10 @@ async function init() {
 function buildHeatmap() {
   $heatmapCells.innerHTML = '';
   const isSynth = outputMode === 'synth';
-  const count = isSynth ? N_SYNTH_OUTPUTS : N_VISUAL_OUTPUTS;
-  const names = isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
-  const colors = isSynth ? SYNTH_PARAM_COLORS : VISUAL_PARAM_COLORS;
+  const isMidiCC = outputMode === 'midi-cc';
+  const count = isMidiCC ? midiCCMap.length : isSynth ? N_SYNTH_OUTPUTS : N_VISUAL_OUTPUTS;
+  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
+  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : VISUAL_PARAM_COLORS;
 
   for (let i = 0; i < count; i++) {
     const cell = document.createElement('div');
@@ -1052,19 +879,81 @@ function buildHeatmap() {
     bar.style.height = '100%';
     cell.appendChild(bar);
 
+    // Tooltip on hover (quick info) + click to open popup
     cell.addEventListener('pointerenter', (e) => {
+      if (cell._dragging) return;
       const outputs = iml.getOutputs();
-      $heatmapTooltip.textContent = `${names[i]}: ${outputs[i].toFixed(3)}`;
+      $heatmapTooltip.textContent = `${names[i]}: ${outputs[i].toFixed(3)}  ▾`;
       $heatmapTooltip.classList.add('visible');
       const rect = cell.getBoundingClientRect();
       $heatmapTooltip.style.left = `${rect.left}px`;
     });
     cell.addEventListener('pointerleave', () => {
-      $heatmapTooltip.classList.remove('visible');
+      if (!cell._dragging) $heatmapTooltip.classList.remove('visible');
+      // Delay hide popup so user can move to it
+      if (activePopupParam === i) {
+        popupHideTimer = setTimeout(() => hideParamPopup(), 300);
+      }
+    });
+
+    // Click opens popup; drag sets parameter value
+    cell.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      cell._downX = e.clientX;
+      cell._downY = e.clientY;
+      cell._didDrag = false;
+      cell._dragging = true;
+      cell.classList.add('dragging');
+      cell.setPointerCapture(e.pointerId);
+    });
+    cell.addEventListener('pointermove', (e) => {
+      if (!cell._dragging) return;
+      const dx = Math.abs(e.clientX - cell._downX);
+      const dy = Math.abs(e.clientY - cell._downY);
+      if (dx > 3 || dy > 3) cell._didDrag = true;
+      if (cell._didDrag) setHeatmapValue(i, e, cell);
+    });
+    cell.addEventListener('pointerup', () => {
+      cell._dragging = false;
+      cell.classList.remove('dragging');
+      if (!cell._didDrag) {
+        // Click — toggle popup
+        clearTimeout(popupHideTimer);
+        if (activePopupParam === i) {
+          hideParamPopup();
+        } else {
+          showParamPopup(i, cell);
+        }
+      }
+    });
+    cell.addEventListener('pointercancel', () => {
+      cell._dragging = false;
+      cell.classList.remove('dragging');
     });
 
     $heatmapCells.appendChild(cell);
   }
+}
+
+function setHeatmapValue(paramIndex, e, cell) {
+  const rect = cell.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  // If frozen, dragging updates the fixed value directly
+  const ov = getParamOverride(paramIndex);
+  if (ov && ov.frozen) {
+    ov.fixedValue = x;
+  }
+  rawParamValues[paramIndex] = x;
+  routeOutputs(rawParamValues);
+  updateHeatmap(rawParamValues);
+  syncRawParamsFromOutputs(rawParamValues);
+  // Update tooltip
+  const isSynth = outputMode === 'synth';
+  const isMidiCC = outputMode === 'midi-cc';
+  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
+  $heatmapTooltip.textContent = `${names[paramIndex]}: ${x.toFixed(3)}`;
+  $heatmapTooltip.classList.add('visible');
+  $heatmapTooltip.style.left = `${rect.left}px`;
 }
 
 function updateHeatmap(outputs) {
@@ -1075,27 +964,298 @@ function updateHeatmap(outputs) {
       const pct = Math.max(2, Math.round(outputs[i] * 100));
       bar.style.width = pct + '%';
     }
+    // Dim frozen/muted cells
+    const ov = getParamOverride(i);
+    if (ov) {
+      cells[i].classList.toggle('heatmap-cell-frozen', !!ov.frozen);
+    }
   }
+}
+
+/** Get the override object for a heatmap param (works in both visual & synth mode) */
+function getParamOverride(paramIndex) {
+  if (outputMode === 'synth') {
+    const mapping = paramToSection[paramIndex];
+    if (!mapping) return null;
+    const p = groupOverrides[mapping.si].params[mapping.li];
+    // Expose as { min, max, curve, frozen, fixedValue } — map 'muted' to 'frozen'
+    return {
+      get min() { return p.min; }, set min(v) { p.min = v; },
+      get max() { return p.max; }, set max(v) { p.max = v; },
+      get curve() { return p.curve; }, set curve(v) { p.curve = v; },
+      get frozen() { return p.muted; }, set frozen(v) { p.muted = v; },
+      get fixedValue() { return p.fixedValue; }, set fixedValue(v) { p.fixedValue = v; },
+    };
+  } else if (outputMode === 'midi-cc') {
+    return midiCCOverrides[paramIndex] || null;
+  } else {
+    return visualOverrides[paramIndex] || null;
+  }
+}
+
+// ---- Param Popup (hover menu on heatmap cells) ----
+function wireParamPopup() {
+  $paramPopup = document.createElement('div');
+  $paramPopup.className = 'param-popup';
+  $paramPopup.innerHTML = '<div class="pp-header"></div><div class="pp-body"></div>';
+  document.body.appendChild($paramPopup);
+
+  $paramPopup.addEventListener('pointerenter', () => {
+    clearTimeout(popupHideTimer);
+  });
+  $paramPopup.addEventListener('pointerleave', () => {
+    popupHideTimer = setTimeout(() => hideParamPopup(), 300);
+  });
+}
+
+function showParamPopup(paramIndex, cell) {
+  if (activePopupParam === paramIndex) return;
+  activePopupParam = paramIndex;
+
+  const isSynth = outputMode === 'synth';
+  const isMidiCC = outputMode === 'midi-cc';
+  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
+  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : VISUAL_PARAM_COLORS;
+  const name = names[paramIndex];
+  const color = colors[paramIndex];
+  const ov = getParamOverride(paramIndex);
+  if (!ov) return;
+
+  const header = $paramPopup.querySelector('.pp-header');
+  header.textContent = name;
+  header.style.color = color;
+
+  const body = $paramPopup.querySelector('.pp-body');
+  body.innerHTML = '';
+
+  // -- MIDI CC specific: name, CC#, channel editors --
+  if (isMidiCC) {
+    const ccParam = midiCCMap[paramIndex];
+    // Editable name
+    const nameRow = document.createElement('div');
+    nameRow.className = 'pp-row';
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'pp-label';
+    nameLabel.textContent = 'Name';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = ccParam.name;
+    nameInput.className = 'pp-text-input';
+    nameInput.addEventListener('change', () => {
+      ccParam.name = nameInput.value;
+      header.textContent = nameInput.value;
+      buildHeatmap();
+      updateHeatmap(iml.getOutputs());
+      saveCCMap(midiCCMap);
+    });
+    nameRow.appendChild(nameLabel);
+    nameRow.appendChild(nameInput);
+    body.appendChild(nameRow);
+
+    // CC number
+    const ccRow = document.createElement('div');
+    ccRow.className = 'pp-row';
+    const ccLabel = document.createElement('span');
+    ccLabel.className = 'pp-label';
+    ccLabel.textContent = 'CC#';
+    const ccInput = document.createElement('input');
+    ccInput.type = 'number';
+    ccInput.min = '0';
+    ccInput.max = '127';
+    ccInput.value = ccParam.cc;
+    ccInput.className = 'pp-num-input';
+    ccInput.addEventListener('change', () => {
+      ccParam.cc = parseInt(ccInput.value) || 0;
+      // Auto-name if name matches old CC name
+      if (CC_NAMES[ccParam.cc]) {
+        ccParam.name = CC_NAMES[ccParam.cc];
+        nameInput.value = ccParam.name;
+        header.textContent = ccParam.name;
+        buildHeatmap();
+        updateHeatmap(iml.getOutputs());
+      }
+      saveCCMap(midiCCMap);
+    });
+    ccRow.appendChild(ccLabel);
+    ccRow.appendChild(ccInput);
+    body.appendChild(ccRow);
+
+    // Channel
+    const chRow = document.createElement('div');
+    chRow.className = 'pp-row';
+    const chLabel = document.createElement('span');
+    chLabel.className = 'pp-label';
+    chLabel.textContent = 'Ch';
+    const chInput = document.createElement('input');
+    chInput.type = 'number';
+    chInput.min = '1';
+    chInput.max = '16';
+    chInput.value = ccParam.channel;
+    chInput.className = 'pp-num-input';
+    chInput.addEventListener('change', () => {
+      ccParam.channel = Math.max(1, Math.min(16, parseInt(chInput.value) || 1));
+      chInput.value = ccParam.channel;
+      saveCCMap(midiCCMap);
+    });
+    chRow.appendChild(chLabel);
+    chRow.appendChild(chInput);
+    body.appendChild(chRow);
+  }
+
+  // -- Curve row --
+  const curveRow = document.createElement('div');
+  curveRow.className = 'pp-row';
+
+  const curveLabel = document.createElement('span');
+  curveLabel.className = 'pp-label';
+  curveLabel.textContent = 'Curve';
+
+  const curveCanvas = document.createElement('canvas');
+  curveCanvas.className = 'pp-curve-canvas';
+  curveCanvas.width = 36;
+  curveCanvas.height = 36;
+
+  const curveVal = document.createElement('span');
+  curveVal.className = 'pp-val';
+  curveVal.textContent = ov.curve.toFixed(2);
+
+  function redrawCurve() {
+    _drawCurveOnCanvas(curveCanvas, ov.curve, color);
+  }
+
+  _wireCurveDrag(curveCanvas, () => ov.curve, (v) => {
+    ov.curve = v;
+    curveVal.textContent = v.toFixed(2);
+    redrawCurve();
+    routeOutputs(iml.getOutputs());
+  });
+  redrawCurve();
+
+  curveRow.appendChild(curveLabel);
+  curveRow.appendChild(curveCanvas);
+  curveRow.appendChild(curveVal);
+  body.appendChild(curveRow);
+
+  // -- Min/Max row --
+  const rangeRow = document.createElement('div');
+  rangeRow.className = 'pp-row';
+
+  const rangeLabel = document.createElement('span');
+  rangeLabel.className = 'pp-label';
+  rangeLabel.textContent = 'Range';
+
+  const rangeWrap = document.createElement('div');
+  rangeWrap.className = 'pp-range-wrap';
+
+  const rangeFill = document.createElement('div');
+  rangeFill.className = 'gd-range-fill';
+
+  const minSlider = document.createElement('input');
+  minSlider.type = 'range'; minSlider.min = '0'; minSlider.max = '1'; minSlider.step = '0.01';
+  minSlider.value = ov.min;
+  minSlider.className = 'gd-range-input gd-range-min';
+
+  const maxSlider = document.createElement('input');
+  maxSlider.type = 'range'; maxSlider.min = '0'; maxSlider.max = '1'; maxSlider.step = '0.01';
+  maxSlider.value = ov.max;
+  maxSlider.className = 'gd-range-input gd-range-max';
+
+  const rangeValSpan = document.createElement('span');
+  rangeValSpan.className = 'pp-val';
+
+  function updateRangeFill() {
+    rangeFill.style.left = `${ov.min * 100}%`;
+    rangeFill.style.width = `${(ov.max - ov.min) * 100}%`;
+    rangeValSpan.textContent = `${ov.min.toFixed(2)}–${ov.max.toFixed(2)}`;
+  }
+  updateRangeFill();
+
+  minSlider.addEventListener('input', () => {
+    ov.min = parseFloat(minSlider.value);
+    if (ov.min > ov.max) { ov.max = ov.min; maxSlider.value = ov.max; }
+    updateRangeFill();
+    routeOutputs(iml.getOutputs());
+  });
+  maxSlider.addEventListener('input', () => {
+    ov.max = parseFloat(maxSlider.value);
+    if (ov.max < ov.min) { ov.min = ov.max; minSlider.value = ov.min; }
+    updateRangeFill();
+    routeOutputs(iml.getOutputs());
+  });
+
+  rangeWrap.appendChild(rangeFill);
+  rangeWrap.appendChild(minSlider);
+  rangeWrap.appendChild(maxSlider);
+
+  rangeRow.appendChild(rangeLabel);
+  rangeRow.appendChild(rangeWrap);
+  rangeRow.appendChild(rangeValSpan);
+  body.appendChild(rangeRow);
+
+  // -- Freeze row --
+  const freezeRow = document.createElement('div');
+  freezeRow.className = 'pp-row pp-freeze-row';
+
+  const freezeBtn = document.createElement('button');
+  freezeBtn.className = 'pp-freeze-btn' + (ov.frozen ? ' frozen' : '');
+  freezeBtn.textContent = ov.frozen ? 'Frozen' : 'Freeze';
+  freezeBtn.title = ov.frozen ? 'Unfreeze — re-enable NISPS control' : 'Freeze — lock value, disable NISPS';
+
+  const valSlider = document.createElement('input');
+  valSlider.type = 'range'; valSlider.min = '0'; valSlider.max = '1'; valSlider.step = '0.01';
+  valSlider.value = ov.fixedValue;
+  valSlider.className = 'pp-val-slider';
+  if (!ov.frozen) valSlider.style.display = 'none';
+
+  const valDisplay = document.createElement('span');
+  valDisplay.className = 'pp-val';
+  valDisplay.textContent = ov.frozen ? ov.fixedValue.toFixed(2) : '';
+
+  freezeBtn.addEventListener('click', () => {
+    ov.frozen = !ov.frozen;
+    freezeBtn.classList.toggle('frozen', ov.frozen);
+    freezeBtn.textContent = ov.frozen ? 'Frozen' : 'Freeze';
+    freezeBtn.title = ov.frozen ? 'Unfreeze — re-enable NISPS control' : 'Freeze — lock value, disable NISPS';
+    valSlider.style.display = ov.frozen ? '' : 'none';
+    valDisplay.textContent = ov.frozen ? ov.fixedValue.toFixed(2) : '';
+    // When freezing, capture the current output value
+    if (ov.frozen) {
+      const outputs = iml.getOutputs();
+      ov.fixedValue = outputs[paramIndex];
+      valSlider.value = ov.fixedValue;
+      valDisplay.textContent = ov.fixedValue.toFixed(2);
+    }
+    routeOutputs(iml.getOutputs());
+  });
+
+  valSlider.addEventListener('input', () => {
+    ov.fixedValue = parseFloat(valSlider.value);
+    valDisplay.textContent = ov.fixedValue.toFixed(2);
+    routeOutputs(iml.getOutputs());
+  });
+
+  freezeRow.appendChild(freezeBtn);
+  freezeRow.appendChild(valSlider);
+  freezeRow.appendChild(valDisplay);
+  body.appendChild(freezeRow);
+
+  // Position below the heatmap cell
+  const cellRect = cell.getBoundingClientRect();
+  const popupWidth = 260;
+  let left = cellRect.left + cellRect.width / 2 - popupWidth / 2;
+  left = Math.max(4, Math.min(left, window.innerWidth - popupWidth - 4));
+  $paramPopup.style.left = `${left}px`;
+  $paramPopup.style.top = `${cellRect.bottom + 4}px`;
+  $paramPopup.classList.add('visible');
+}
+
+function hideParamPopup() {
+  activePopupParam = -1;
+  if ($paramPopup) $paramPopup.classList.remove('visible');
 }
 
 // ---- Joy Map (merged joystick + minimap) ----
 function drawJoyMap() {
-  // Use enhanced joy-map if available
-  if (joyMapEnhanced) {
-    joyMapEnhanced.draw({
-      joyX,
-      joyY,
-      // effectiveX/Y are set in onJoystickMove; for draw we show zoom window + cursor
-      zoomWindow: inputPipeline ? inputPipeline.getZoomWindow() : null,
-      zoomLevel: inputPipeline ? inputPipeline.getZoomLevel() : 1.0,
-      noiseLevel,
-      outputMode,
-      frozen: inputPipeline ? inputPipeline.isFrozen() : false,
-    });
-    return;
-  }
-
-  // Legacy fallback
   const canvas = $joyMap;
   const ctx = $joyMapCtx;
   const w = canvas.width;
@@ -1282,24 +1442,8 @@ function updateFollowUI() {
 
 function onJoystickMove() {
   if (inputMode !== 'joystick') return;
-
-  // Process through input pipeline (zoom, deadzone, curve, smoothing, momentum)
-  const now = performance.now();
-  const dt = _lastFrameTime > 0 ? (now - _lastFrameTime) / 1000 : 1 / 60;
-  _lastFrameTime = now;
-
-  const pipeResult = inputPipeline
-    ? inputPipeline.process(joyX, joyY, dt)
-    : { x: joyX, y: joyY, frozen: false };
-
-  // Cache for getCurrentInputs() (avoids re-processing and mutating state)
-  _lastPipeX = pipeResult.x;
-  _lastPipeY = pipeResult.y;
-
-  if (pipeResult.frozen) return; // Input frozen (zoom at zero)
-
-  iml.setInput(0, pipeResult.x);
-  iml.setInput(1, pipeResult.y);
+  iml.setInput(0, joyX);
+  iml.setInput(1, joyY);
   iml.process();
 
   const outputs = iml.getOutputs();
@@ -1308,14 +1452,9 @@ function onJoystickMove() {
 
   syncRawParamsFromOutputs(outputs);
 
-  // Trail (enhanced joy-map handles this now, legacy trail kept for compat)
+  // Trail
   joyTrail.push({ x: joyX, y: joyY, t: Date.now() });
   if (joyTrail.length > 30) joyTrail.shift();
-
-  // Enhanced trail records in input-space coords
-  if (joyMapEnhanced) {
-    joyMapEnhanced.addTrailPoint(joyX, joyY, inputPipeline ? inputPipeline.getZoomLevel() : 1.0);
-  }
 }
 
 // ---- Output routing ----
@@ -1324,25 +1463,13 @@ function onJoystickMove() {
 const _lastSentParams = new Float32Array(N_OUTPUTS);
 const PARAM_DEAD_ZONE = 0.002; // ~0.2% change threshold
 let _lastParamSendTime = 0;
-let _lastRouteTime = 0;
 const PARAM_SEND_INTERVAL = 50; // max ~20fps for synth param updates
 
 function routeOutputs(outputs) {
-  // Phase 4: Output Pipeline (curve, smoothing, slew, freeze)
-  let pipelined = outputs;
-  if (outputPipeline) {
-    const now = performance.now();
-    const dt = _lastRouteTime > 0 ? (now - _lastRouteTime) / 1000 : 1 / 60;
-    _lastRouteTime = now;
-    pipelined = outputPipeline.process(outputs, dt);
-  }
-
-  let overridden = null;
-
   if (outputMode === 'synth') {
-    overridden = new Array(pipelined.length);
-    for (let i = 0; i < pipelined.length; i++) {
-      overridden[i] = applyGroupOverrides(pipelined[i], i);
+    const overridden = new Array(outputs.length);
+    for (let i = 0; i < outputs.length; i++) {
+      overridden[i] = applyGroupOverrides(outputs[i], i);
     }
     // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);
@@ -1361,29 +1488,75 @@ function routeOutputs(outputs) {
         }
       }
     }
+  } else if (outputMode === 'midi-cc') {
+    // MIDI CC output — route through overrides then send CC messages
+    if (midiOutput && midiOutput.enabled && midiOutput.activeOutput) {
+      const messages = [];
+      for (let i = 0; i < midiCCMap.length && i < outputs.length; i++) {
+        const ccParam = midiCCMap[i];
+        const ov = midiCCOverrides[i];
+        if (!ov || ov.frozen) {
+          if (ov) messages.push({ channel: ccParam.channel, cc: ccParam.cc, value: Math.round(ov.fixedValue * 127) });
+          continue;
+        }
+        const v = applyGroupOverride(outputs[i], ov.curve, ov.min, ov.max);
+        messages.push({ channel: ccParam.channel, cc: ccParam.cc, value: Math.round(v * 127) });
+      }
+      midiOutput.sendBatch(messages);
+    }
   } else {
-    visualizer.setParams(Array.from(pipelined).slice(0, N_VISUAL_OUTPUTS));
-  }
-
-  // OSC output — sends in both modes (has its own throttle + dead-zone).
-  // In synth mode sends post-override values; in visual mode sends raw outputs.
-  if (oscOutput) {
-    oscOutput.sendParams(overridden || Array.from(pipelined));
+    const vis = new Array(N_VISUAL_OUTPUTS);
+    for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
+      const vo = visualOverrides[i];
+      if (vo.frozen) {
+        vis[i] = vo.fixedValue;
+      } else {
+        vis[i] = applyGroupOverride(outputs[i], vo.curve, vo.min, vo.max);
+      }
+    }
+    visualizer.setParams(vis);
   }
 }
 
 // ---- Bottom sheet ----
-function wireBottomSheet() {
-  // Chevron toggle
-  $chevronBtn.addEventListener('click', () => {
-    sheetExpanded = !sheetExpanded;
-    if (sheetExpanded) {
-      $bottomSheet.classList.add('expanded');
-      $chevronBtn.classList.add('open');
-    } else {
-      $bottomSheet.classList.remove('expanded');
-      $chevronBtn.classList.remove('open');
+// ---- Dock & Drawer system ----
+function wireDock() {
+  const dock = document.getElementById('dock');
+
+  // Toggle drawers on dock icon click
+  dock.addEventListener('click', (e) => {
+    const icon = e.target.closest('.dock-icon');
+    if (!icon) return;
+    const drawerId = icon.dataset.drawer;
+
+    // Special case: help opens modal instead of drawer
+    if (drawerId === 'help') {
+      document.getElementById('help-overlay').classList.remove('hidden');
+      return;
     }
+
+    const drawer = document.getElementById(`drawer-${drawerId}`);
+    if (!drawer) return;
+
+    const isOpen = !drawer.classList.contains('hidden');
+    if (isOpen) {
+      drawer.classList.add('hidden');
+      icon.classList.remove('active');
+    } else {
+      drawer.classList.remove('hidden');
+      icon.classList.add('active');
+    }
+  });
+
+  // Close buttons inside drawers
+  document.querySelectorAll('.drawer-close').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const drawerId = btn.dataset.drawer;
+      const drawer = document.getElementById(`drawer-${drawerId}`);
+      if (drawer) drawer.classList.add('hidden');
+      const icon = dock.querySelector(`.dock-icon[data-drawer="${drawerId}"]`);
+      if (icon) icon.classList.remove('active');
+    });
   });
 
   // Follow pill toggle
@@ -1394,7 +1567,7 @@ function wireBottomSheet() {
 
 // ---- Controls wiring ----
 function wireControls() {
-  // Output mode toggle (floating bar)
+  // Output mode toggle (in mode drawer)
   document.querySelectorAll('#output-toggle-float .pill-opt').forEach(btn => {
     btn.addEventListener('click', () => {
       syncOutputToggles(btn.dataset.mode);
@@ -1402,19 +1575,19 @@ function wireControls() {
     });
   });
 
-  // Action buttons
+  // Action buttons (in training drawer)
   document.getElementById('btn-add-example').addEventListener('click', onAddExample);
   document.getElementById('btn-train').addEventListener('click', onTrain);
-  document.getElementById('btn-train-bar').addEventListener('click', onTrain);
   document.getElementById('btn-clear').addEventListener('click', onClear);
   document.getElementById('btn-clear-examples').addEventListener('click', onClearExamples);
-  document.getElementById('btn-clear-examples-bar').addEventListener('click', onClearExamples);
   document.getElementById('btn-randomize').addEventListener('click', onRandomize);
-  document.getElementById('btn-randomize-bar').addEventListener('click', onRandomize);
 
   // RL buttons
   $btnThumbsUp.addEventListener('click', onThumbsUp);
   $btnThumbsDown.addEventListener('click', onThumbsDown);
+
+  // Undo button
+  document.getElementById('btn-undo').addEventListener('click', onUndo);
 
   // Presets
   document.querySelectorAll('.preset-chip').forEach(chip => {
@@ -1507,8 +1680,11 @@ async function _setInputModeInner(mode) {
       document.getElementById('hand-status').classList.remove('tracking');
     }
 
-    // Re-run through pipeline so MLP sees processed coords
-    onJoystickMove();
+    iml.setInput(0, joyX);
+    iml.setInput(1, joyY);
+    iml.process();
+    routeOutputs(iml.getOutputs());
+    updateHeatmap(iml.getOutputs());
   }
 
   updateStatus();
@@ -1519,9 +1695,7 @@ function getCurrentInputs() {
   if (inputMode === 'hands' && handTracker) {
     return [...handTracker.features];
   }
-  // Return pipeline-processed coords (what the MLP actually sees),
-  // not raw joyX/joyY, so examples are recorded in the correct input space
-  return [_lastPipeX, _lastPipeY];
+  return [joyX, joyY];
 }
 
 function setCurrentInputs() {
@@ -1529,9 +1703,8 @@ function setCurrentInputs() {
     const f = handTracker.features;
     for (let i = 0; i < f.length; i++) iml.setInput(i, f[i]);
   } else {
-    // Use cached pipeline output (matches what MLP sees during inference)
-    iml.setInput(0, _lastPipeX);
-    iml.setInput(1, _lastPipeY);
+    iml.setInput(0, joyX);
+    iml.setInput(1, joyY);
   }
 }
 
@@ -1590,60 +1763,65 @@ function syncOutputToggles(mode) {
   document.querySelectorAll('#output-toggle-float .pill-opt').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
 }
 
-function setOutputMode(mode) {
+async function setOutputMode(mode, { skipConfirm = false } = {}) {
+  const targetOutputs = outputCountForMode(mode);
+  const needsResize = targetOutputs !== N_OUTPUTS;
+
+  // Warn about weight reset if resizing (skip during state restore)
+  if (needsResize && !skipConfirm && iml.dataset.features.length > 0) {
+    if (!confirm(`Switching to ${mode} mode requires ${targetOutputs} outputs (currently ${N_OUTPUTS}). This will reset the neural network weights and training data. Continue?`)) {
+      syncOutputToggles(outputMode); // revert pill UI
+      return;
+    }
+  }
+
   outputMode = mode;
   hideGroupDrawer();
+  hideParamPopup();
+
+  // Resize MLP if needed
+  if (needsResize) {
+    await resizeMLP(targetOutputs);
+  }
+
   buildHeatmap();
   updateHeatmap(iml.getOutputs());
 
   const heatmapStrip = document.getElementById('heatmap-strip');
   const synthQuickControls = document.getElementById('synth-quick-controls');
-
-  const shapeseqContainer = document.getElementById('shapeseq-container');
+  const midiCCQuickControls = document.getElementById('midi-cc-quick-controls');
 
   if (mode === 'synth') {
-    $synthPanel.classList.remove('hidden');
     $canvas.classList.add('hidden-canvas');
     $synthVisCanvas.classList.add('active');
     heatmapStrip.classList.add('hidden');
     synthQuickControls.classList.remove('hidden');
+    if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(true);
-    // Pulse play button if audio not yet started
     const qp = document.getElementById('quick-play');
     if (qp) qp.classList.toggle('audio-needs-init', !(c15 && c15.running));
-    // Show ShapeSeq UI if feature-flagged
-    if (ENABLE_SHAPESEQ && shapeseqContainer) {
-      shapeseqContainer.classList.remove('hidden');
-      if (stepViz) {
-        const vizCanvas = document.getElementById('shapeseq-viz');
-        if (vizCanvas) {
-          const rect = vizCanvas.getBoundingClientRect();
-          stepViz.resize(rect.width, rect.height);
-        }
-      }
-    }
+  } else if (mode === 'midi-cc') {
+    $canvas.classList.add('hidden-canvas');
+    $synthVisCanvas.classList.remove('active');
+    heatmapStrip.classList.remove('hidden');
+    synthQuickControls.classList.add('hidden');
+    if (midiCCQuickControls) midiCCQuickControls.classList.remove('hidden');
+    synthVisualizer.enableInteraction(false);
   } else {
-    $synthPanel.classList.add('hidden');
     $canvas.classList.remove('hidden-canvas');
     $synthVisCanvas.classList.remove('active');
     heatmapStrip.classList.remove('hidden');
     synthQuickControls.classList.add('hidden');
+    if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(false);
-    // Hide ShapeSeq UI
-    if (shapeseqContainer) shapeseqContainer.classList.add('hidden');
   }
 
   routeOutputs(iml.getOutputs());
-  buildRawParams();
+  buildEngineParams();
   syncRawParamsFromOutputs(iml.getOutputs());
 }
 
 function updateNoiseRing() {
-  // When enhanced joy-map is active, noise ring is drawn on canvas — hide CSS version
-  if (joyMapEnhanced) {
-    $noiseRing.className = 'noise-ring';
-    return;
-  }
   if (noiseLevel > 0.15) {
     $noiseRing.className = 'noise-ring active high';
   } else if (noiseLevel > 0.01) {
@@ -1665,15 +1843,11 @@ function onAddExample() {
 
 function onTrain() {
   if (iml.isTraining) return;
-  // Phase 2: auto-snapshot before training
-  if (phase2UI) phase2UI.pushSnapshot('before train');
   flash('btn-train');
   trainModelAsync();
 }
 
 function onRandomize() {
-  // Phase 2: auto-snapshot before randomize
-  if (phase2UI) phase2UI.pushSnapshot('before randomize');
   iml.randomiseWeights(spreadLevel);
   setCurrentInputs();
   iml.process();
@@ -1683,7 +1857,6 @@ function onRandomize() {
   syncRawParamsFromOutputs(outputs);
   noiseLevel = 0.05;
   updateStatus();
-  if (phase3) phase3.updateHeatmap();
 }
 
 function onClearExamples() {
@@ -1704,53 +1877,68 @@ function onClear() {
   drawJoyMap();
 }
 
+// ---- Undo ----
+function pushUndoSnapshot() {
+  const snapshot = {
+    weights: iml._getFlatWeights ? iml._getFlatWeights() : (iml.mlp ? iml.mlp.getWeights() : null),
+    noiseLevel,
+    exampleCount: iml.exampleCount,
+  };
+  if (snapshot.weights) {
+    undoStack.push(snapshot);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    updateUndoButton();
+  }
+}
+
+function onUndo() {
+  if (undoStack.length === 0) return;
+  const snapshot = undoStack.pop();
+  if (iml._setFlatWeights && Array.isArray(snapshot.weights)) {
+    iml._setFlatWeights(snapshot.weights);
+  } else if (iml.mlp && snapshot.weights) {
+    iml.mlp.setWeights(snapshot.weights);
+  }
+  noiseLevel = snapshot.noiseLevel;
+  iml.process();
+  const outputs = iml.getOutputs();
+  routeOutputs(outputs);
+  updateHeatmap(outputs);
+  syncRawParamsFromOutputs(outputs);
+  updateStatus();
+  updateNoiseRing();
+  updateUndoButton();
+  flash('btn-undo');
+}
+
+function updateUndoButton() {
+  const btn = document.getElementById('btn-undo');
+  if (btn) btn.classList.toggle('has-undo', undoStack.length > 0);
+}
+
 // ---- RL mode ----
 function onThumbsUp() {
   if (iml.isTraining) return;
 
+  pushUndoSnapshot();
   const inputs = getCurrentInputs();
   const outputs = [...iml.getOutputs()];
   iml.addExample(inputs, outputs);
 
-  // Use control surface params if available, else legacy
-  const csParams = controlSurface ? controlSurface.getParams() : null;
-  const decay = csParams ? csParams.noiseDecay : rlExplorationDecay;
-  const floor = csParams ? csParams.noiseFloor : 0.005;
-  // Phase 3: pressure/hold modulates decay strength
-  const p3Intensity = phase3 ? phase3.pressure.getIntensity() : 1.0;
-  const modulatedDecay = 1 - (1 - decay) * p3Intensity;
-  noiseLevel *= modulatedDecay;
-  noiseLevel = Math.max(noiseLevel, floor);
+  noiseLevel *= rlExplorationDecay;
+  noiseLevel = Math.max(noiseLevel, 0.005);
 
   flash('btn-thumbsup');
   updateNoiseRing();
   trainModelAsync();
-  if (phase3) phase3.updateHeatmap();
 }
 
 function onThumbsDown() {
-  // Phase 2: auto-snapshot before thumbs-down
-  if (phase2UI) phase2UI.pushSnapshot('before thumbs-down');
+  pushUndoSnapshot();
+  const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
+  noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
 
-  // Use control surface params if available, else legacy
-  const csParams = controlSurface ? controlSurface.getParams() : null;
-  const noiseCap = csParams ? csParams.noiseCap : (0.3 * (1 - spreadLevel) + 0.05 * spreadLevel);
-  const growth = csParams ? csParams.noiseGrowth : 1.5;
-
-  // Zoom-aware feedback: scale noise by zoom level
-  let effectiveGrowth = growth;
-  if (csParams && csParams.zoomAwareFeedback && inputPipeline) {
-    effectiveGrowth *= inputPipeline.getZoomLevel();
-  }
-  // Phase 3: pressure/hold modulates noise growth
-  const p3DownIntensity = phase3 ? phase3.pressure.getIntensity() : 1.0;
-  effectiveGrowth *= p3DownIntensity;
-
-  noiseLevel = Math.min(noiseLevel * effectiveGrowth, noiseCap);
-
-  // Phase 2: pass param pin mask to moveWeights (pinned outputs are not perturbed)
-  const pinMask = paramPins ? paramPins.getPinMask() : null;
-  iml.moveWeights(noiseLevel, spreadLevel, pinMask);
+  iml.moveWeights(noiseLevel, spreadLevel);
 
   const outputs = iml.getOutputs();
   routeOutputs(outputs);
@@ -1759,7 +1947,6 @@ function onThumbsDown() {
   updateStatus();
   updateNoiseRing();
   flash('btn-thumbsdown');
-  if (phase3) phase3.updateHeatmap();
 }
 
 // ---- Training ----
@@ -1769,39 +1956,8 @@ function trainModel() {
 }
 
 // Async — used for interactive training (thumbs-up, train button)
-// Phase 2: includes pinned region examples and freezes pinned param labels.
 function trainModelAsync(onDone) {
-  // Phase 2: Inject pinned region examples into the dataset before training.
-  // These anchor behavior in pinned regions and can't be evicted by FIFO.
-  if (regionPins && regionPins.count > 0) {
-    const pinned = regionPins.getPinnedExamples();
-    for (let i = 0; i < pinned.features.length; i++) {
-      iml.addExample(pinned.features[i], pinned.labels[i]);
-    }
-  }
-
-  // Phase 2: If any output params are pinned, freeze their labels to current
-  // inferred values so the network maintains its mapping for those outputs.
-  if (paramPins && paramPins.pinnedCount > 0) {
-    const mask = paramPins.getPinMask();
-    const currentOutputs = iml.getOutputs();
-    const labels = iml.dataset.labels;
-    for (let i = 0; i < labels.length; i++) {
-      for (let j = 0; j < labels[i].length; j++) {
-        if (mask[j]) {
-          labels[i][j] = currentOutputs[j];
-        }
-      }
-    }
-  }
-
-  // Phase 4: Capture weights before training for gradient flow analysis
-  if (phase4) phase4.captureBeforeTrain();
-
   iml.trainAsync(({ loss, outputs }) => {
-    // Phase 4: Capture weights after training for gradient flow analysis
-    if (phase4) phase4.captureAfterTrain();
-
     routeOutputs(outputs);
     updateHeatmap(outputs);
     syncRawParamsFromOutputs(outputs);
@@ -1857,6 +2013,7 @@ function updateStatus() {
   text += ` \u00b7 noise ${noiseLevel.toFixed(3)}`;
 
   $statusText.textContent = text;
+  syncEngineParams();
 }
 
 // ---- Loss plot ----
@@ -1888,89 +2045,110 @@ function drawLossPlot() {
 }
 
 // ---- Raw param sliders ----
-function buildRawParams() {
-  $rawParams.innerHTML = '';
-  const isSynth = outputMode === 'synth';
-  const count = isSynth ? N_SYNTH_OUTPUTS : N_VISUAL_OUTPUTS;
-  const names = isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
+// ---- Engine Parameters (NISPS tuning) ----
+function buildEngineParams() {
+  const container = $engineParams;
+  if (!container) return;
+  container.innerHTML = '';
 
-  for (let i = 0; i < count; i++) {
+  const params = [
+    {
+      label: 'Spread', key: 'spread',
+      get: () => spreadLevel, set: (v) => { spreadLevel = v; },
+      min: 0, max: 1, step: 0.01,
+      desc: 'Weight init scale & RL noise regime (0=polarised, 1=centered)',
+    },
+    {
+      label: 'Noise', key: 'noise',
+      get: () => noiseLevel, set: (v) => { noiseLevel = v; updateNoiseRing(); },
+      min: 0, max: 0.5, step: 0.001,
+      desc: 'Current RL exploration noise level',
+    },
+    {
+      label: 'RL Decay', key: 'rlDecay',
+      get: () => rlExplorationDecay, set: (v) => { rlExplorationDecay = v; },
+      min: 0.8, max: 1.0, step: 0.005,
+      desc: 'Noise decay per thumbs-up (lower = faster convergence)',
+    },
+    {
+      label: 'Learn Rate', key: 'lr',
+      get: () => iml.learningRate, set: (v) => { iml.learningRate = v; },
+      min: 0.01, max: 5.0, step: 0.01,
+      desc: 'MLP training learning rate',
+    },
+    {
+      label: 'Max Iters', key: 'maxIter',
+      get: () => iml.maxIterations, set: (v) => { iml.maxIterations = Math.round(v); },
+      min: 50, max: 5000, step: 50,
+      desc: 'Max training iterations per train() call',
+    },
+    {
+      label: 'Convergence', key: 'conv',
+      get: () => iml.convergenceThreshold, set: (v) => { iml.convergenceThreshold = v; },
+      min: 0.000001, max: 0.01, step: 0.000001,
+      desc: 'Stop training when loss drops below this',
+    },
+  ];
+
+  for (const p of params) {
     const row = document.createElement('div');
-    row.className = 'raw-param';
-    row.dataset.tooltip = `${names[i]}: ${rawParamValues[i].toFixed(2)}`;
+    row.className = 'engine-param';
 
     const label = document.createElement('span');
-    label.className = 'raw-param-label';
-    label.textContent = names[i];
+    label.className = 'engine-param-label';
+    label.textContent = p.label;
+    label.title = p.desc;
 
     const slider = document.createElement('input');
     slider.type = 'range';
-    slider.min = '0';
-    slider.max = '1';
-    slider.step = '0.01';
-    slider.value = rawParamValues[i];
-    slider.dataset.index = i;
+    slider.min = String(p.min);
+    slider.max = String(p.max);
+    slider.step = String(p.step);
+    slider.value = p.get();
 
     const val = document.createElement('span');
-    val.className = 'raw-param-val';
-    val.textContent = rawParamValues[i].toFixed(2);
+    val.className = 'engine-param-val';
+    val.textContent = formatEngineVal(p.get(), p.step);
 
     slider.addEventListener('input', () => {
-      const idx = parseInt(slider.dataset.index);
-      rawParamValues[idx] = parseFloat(slider.value);
-      val.textContent = rawParamValues[idx].toFixed(2);
-      row.dataset.tooltip = `${names[idx]}: ${rawParamValues[idx].toFixed(2)}`;
-      routeOutputs(rawParamValues);
-      updateHeatmap(rawParamValues);
+      const v = parseFloat(slider.value);
+      p.set(v);
+      val.textContent = formatEngineVal(v, p.step);
     });
 
     row.appendChild(label);
     row.appendChild(slider);
     row.appendChild(val);
-    $rawParams.appendChild(row);
+    container.appendChild(row);
+
+    // Store ref for live updates
+    row._paramDef = p;
+    row._slider = slider;
+    row._val = val;
   }
+}
+
+function formatEngineVal(v, step) {
+  if (step < 0.0001) return v.toExponential(1);
+  if (step < 0.01) return v.toFixed(3);
+  if (step < 1) return v.toFixed(2);
+  return String(Math.round(v));
+}
+
+function syncEngineParams() {
+  if (!$engineParams) return;
+  const rows = $engineParams.querySelectorAll('.engine-param');
+  rows.forEach(row => {
+    const p = row._paramDef;
+    if (!p) return;
+    const v = p.get();
+    row._slider.value = v;
+    row._val.textContent = formatEngineVal(v, parseFloat(row._slider.step));
+  });
 }
 
 function syncRawParamsFromOutputs(outputs) {
   rawParamValues = [...outputs];
-  const rows = $rawParams.querySelectorAll('.raw-param');
-  rows.forEach((row, i) => {
-    if (i < outputs.length) {
-      const s = row.querySelector('input[type="range"]');
-      if (s) {
-        s.value = outputs[i];
-        s.nextElementSibling.textContent = outputs[i].toFixed(2);
-      }
-      const name = row.querySelector('.raw-param-label')?.textContent || `p${i}`;
-      row.dataset.tooltip = `${name}: ${outputs[i].toFixed(2)}`;
-    }
-  });
-}
-
-// ---- ShapeSeq lazy init (feature-flagged) ----
-async function ensureShapeSeqInit() {
-  if (!ENABLE_SHAPESEQ) return;
-  if (shapeSeq) return;
-  if (!c15 || !c15.audioContext) return;
-  try {
-    const mods = await getShapeSeqModules();
-    const eventBus = mods.getDefaultBus(c15.audioContext);
-    shapeSeq = new mods.ShapeSeqEngine({ audioContext: c15.audioContext, eventBus, c15Bridge: c15 });
-    await shapeSeq.init();
-    const seqVizCanvas = document.getElementById('shapeseq-viz');
-    const seqChainContainer = document.getElementById('shapeseq-chain');
-    if (seqVizCanvas && !stepViz) {
-      stepViz = new mods.StepVisualizer({ canvas: seqVizCanvas, eventBus });
-      const rect = seqVizCanvas.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) stepViz.resize(rect.width, rect.height);
-    }
-    if (seqChainContainer && !chainUI) {
-      chainUI = new mods.ChainBuilderUI({ container: seqChainContainer, chain: shapeSeq.getChain(), eventBus });
-    }
-    console.log('[NISPS] ShapeSeq initialized');
-  } catch (err) {
-    console.error('[NISPS] ShapeSeq init failed:', err);
-  }
 }
 
 // ---- Synth controls ----
@@ -1982,6 +2160,7 @@ function wireSynthControls() {
   const arpTempo = document.getElementById('arp-tempo');
   const arpOctaves = document.getElementById('arp-octaves');
   const arpOffset = document.getElementById('arp-offset');
+  if (!startBtn || !volumeSlider || !arpToggle) return;
 
   startBtn.addEventListener('click', async () => {
     const quickPlay = document.getElementById('quick-play');
@@ -1993,7 +2172,6 @@ function wireSynthControls() {
       if (quickPlay) quickPlay.classList.add('audio-needs-init');
     } else {
       await c15.start();
-      await ensureShapeSeqInit();
       startBtn.textContent = 'Stop Audio';
       if (quickPlay) quickPlay.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
@@ -2044,22 +2222,6 @@ function wireSynthControls() {
   });
 }
 
-// ---- OSC Output ----
-function toggleOSC() {
-  if (oscOutput.connected || oscOutput.enabled) {
-    oscOutput.disconnect();
-  } else {
-    oscOutput.connect();
-  }
-}
-
-function wireOSCControls() {
-  const toggle = document.getElementById('osc-toggle');
-  const pill = document.getElementById('osc-pill');
-  if (toggle) toggle.addEventListener('click', toggleOSC);
-  if (pill) pill.addEventListener('click', toggleOSC);
-}
-
 // ---- MIDI Input ----
 async function initMIDIControls() {
   const row = document.getElementById('midi-row');
@@ -2107,6 +2269,164 @@ async function initMIDIControls() {
   });
 }
 
+// ---- MIDI CC Controls ----
+async function initMIDICCControls() {
+  const enableBtn = document.getElementById('midi-cc-enable-btn');
+  const outputSelect = document.getElementById('midi-cc-output-select');
+  const statusEl = document.getElementById('midi-cc-status');
+  const countEl = document.getElementById('midi-cc-count');
+  const addBtn = document.getElementById('midi-cc-add');
+  const removeBtn = document.getElementById('midi-cc-remove');
+  const importBtn = document.getElementById('midi-cc-import');
+  const exportBtn = document.getElementById('midi-cc-export');
+
+  if (!enableBtn || !outputSelect) return;
+
+  const available = await midiOutput.init();
+
+  function populateOutputs() {
+    const outputs = midiOutput.getOutputs();
+    outputSelect.innerHTML = '<option value="">No device</option>' +
+      outputs.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
+  }
+
+  if (available) {
+    populateOutputs();
+    midiOutput.onOutputsChange = () => populateOutputs();
+  }
+
+  midiOutput.onStatusChange = (msg) => {
+    if (statusEl) statusEl.textContent = msg;
+  };
+
+  enableBtn.addEventListener('click', () => {
+    midiOutput.toggle();
+    enableBtn.classList.toggle('playing', midiOutput.enabled);
+  });
+
+  outputSelect.addEventListener('change', (e) => {
+    midiOutput.selectOutput(e.target.value || null);
+    if (e.target.value) midiOutput.enable();
+    enableBtn.classList.toggle('playing', midiOutput.enabled);
+  });
+
+  // Update count display
+  function updateCountDisplay() {
+    if (countEl) countEl.textContent = midiCCMap.length;
+  }
+  updateCountDisplay();
+
+  // Add CC param
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      midiCCMap.push(createCCParam(74, 1));
+      midiCCOverrides.push({ min: 0, max: 1, curve: 0.5, frozen: false, fixedValue: 0.5 });
+      _generateCCColors(midiCCMap.length);
+      saveCCMap(midiCCMap);
+      updateCountDisplay();
+
+      // Resize MLP if we're in midi-cc mode
+      if (outputMode === 'midi-cc') {
+        await resizeMLP(midiCCMap.length);
+        buildHeatmap();
+        updateHeatmap(iml.getOutputs());
+      }
+    });
+  }
+
+  // Remove last CC param
+  if (removeBtn) {
+    removeBtn.addEventListener('click', async () => {
+      if (midiCCMap.length <= 1) return;
+      midiCCMap.pop();
+      midiCCOverrides.pop();
+      _generateCCColors(midiCCMap.length);
+      saveCCMap(midiCCMap);
+      updateCountDisplay();
+
+      if (outputMode === 'midi-cc') {
+        await resizeMLP(midiCCMap.length);
+        buildHeatmap();
+        updateHeatmap(iml.getOutputs());
+      }
+    });
+  }
+
+  // Export
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      const json = exportCCMap(midiCCMap);
+      navigator.clipboard.writeText(json).then(
+        () => { if (statusEl) statusEl.textContent = 'Copied to clipboard'; },
+        () => {
+          // Fallback: prompt
+          prompt('Copy this JSON:', json);
+        }
+      );
+    });
+  }
+
+  // Import
+  if (importBtn) {
+    importBtn.addEventListener('click', async () => {
+      const json = prompt('Paste MIDI CC map JSON:');
+      if (!json) return;
+      const parsed = importCCMap(json);
+      if (!parsed) {
+        alert('Invalid MIDI CC map JSON');
+        return;
+      }
+      midiCCMap.length = 0;
+      midiCCMap.push(...parsed);
+      midiCCOverrides.length = 0;
+      midiCCOverrides.push(...parsed.map(p => ({
+        min: p.min ?? 0, max: p.max ?? 1, curve: p.curve ?? 0.5,
+        frozen: p.muted ?? false, fixedValue: p.fixedValue ?? 0.5,
+      })));
+      _generateCCColors(midiCCMap.length);
+      saveCCMap(midiCCMap);
+      updateCountDisplay();
+
+      if (outputMode === 'midi-cc') {
+        await resizeMLP(midiCCMap.length);
+        buildHeatmap();
+        updateHeatmap(iml.getOutputs());
+      }
+    });
+  }
+
+  // Build the per-param editor in the drawer
+  buildMidiCCParamList();
+}
+
+function buildMidiCCParamList() {
+  const container = document.getElementById('midi-cc-param-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  for (let i = 0; i < midiCCMap.length; i++) {
+    const p = midiCCMap[i];
+    const row = document.createElement('div');
+    row.className = 'synth-row midi-cc-param-row';
+    row.style.borderLeft = `3px solid ${MIDI_CC_PARAM_COLORS[i] || '#888'}`;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'midi-cc-param-name';
+    nameSpan.textContent = `${p.name}`;
+    nameSpan.style.flex = '1';
+    nameSpan.style.fontSize = '0.75rem';
+
+    const ccSpan = document.createElement('span');
+    ccSpan.style.opacity = '0.6';
+    ccSpan.style.fontSize = '0.65rem';
+    ccSpan.textContent = `CC${p.cc} Ch${p.channel}`;
+
+    row.appendChild(nameSpan);
+    row.appendChild(ccSpan);
+    container.appendChild(row);
+  }
+}
+
 // ---- Gamepad ----
 function wireGamepad() {
   gamepad = new GamepadInput({
@@ -2142,15 +2462,6 @@ function wireKeyboard() {
   window.addEventListener('keydown', (e) => {
     if (e.repeat) return;
 
-    if (e.key === 'Escape') {
-      if (sheetExpanded) {
-        sheetExpanded = false;
-        $bottomSheet.classList.remove('expanded');
-        $chevronBtn.classList.remove('open');
-        return;
-      }
-    }
-
     // Don't intercept keys when an input/select has focus
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
@@ -2161,6 +2472,9 @@ function wireKeyboard() {
     } else if (e.key === '2' || e.code === 'Numpad2') {
       e.preventDefault();
       onThumbsUp();
+    } else if (e.key === 'z' || e.key === 'Z') {
+      e.preventDefault();
+      onUndo();
     }
   });
 }
@@ -2189,6 +2503,8 @@ function wireQuickPlayControls() {
   const quickBpm = document.getElementById('quick-bpm');
   const quickBpmVal = document.getElementById('quick-bpm-val');
 
+  if (!quickPlay || !quickPlayIcon || !quickVol || !quickBpm) return;
+
   const playIconSVG = '<path d="M4 2l10 6-10 6z"/>';
   const pauseIconSVG = '<rect x="3" y="2" width="4" height="12"/><rect x="9" y="2" width="4" height="12"/>';
 
@@ -2210,7 +2526,6 @@ function wireQuickPlayControls() {
       if (arpToggle) arpToggle.textContent = 'Play';
     } else {
       await c15.start();
-      await ensureShapeSeqInit();
       arpeggiator.start();
       routeOutputs(iml.getOutputs());
       // Also update the bottom sheet controls
@@ -2245,6 +2560,11 @@ function wireQuickPlayControls() {
 let $groupDrawer = null;
 let activeDrawerSection = -1;
 let drawerHideTimer = null;
+
+// ---- Heatmap param popup ----
+let $paramPopup = null;
+let activePopupParam = -1;
+let popupHideTimer = null;
 
 function wireGroupDrawer() {
   // Create the drawer DOM element once
@@ -2562,18 +2882,10 @@ function hideGroupDrawer() {
 // ---- Resize ----
 function onResize() {
   hideGroupDrawer();
+  hideParamPopup();
   visualizer.resize();
   visualizer.initParticles();
   synthVisualizer.resize();
-
-  // Resize ShapeSeq step viz if visible
-  if (ENABLE_SHAPESEQ && stepViz && outputMode === 'synth') {
-    const vizCanvas = document.getElementById('shapeseq-viz');
-    if (vizCanvas) {
-      const rect = vizCanvas.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) stepViz.resize(rect.width, rect.height);
-    }
-  }
 
   // Resize joy-map canvas to match container
   const size = $joystickContainer.offsetWidth;
@@ -2584,127 +2896,29 @@ function onResize() {
   }
 }
 
-// ---- OSC bridge download ----
-// GitHub releases URL — update this when the repo is set up
-const OSC_RELEASE_BASE = 'https://github.com/MusicallyEmbodiedML/MEMLNaut-NISPS/releases/latest/download';
-
-function detectPlatform() {
-  const ua = navigator.userAgent.toLowerCase();
-  const platform = navigator.platform?.toLowerCase() || '';
-
-  if (ua.includes('win')) return { os: 'windows', arch: 'x86_64', label: 'Windows', ext: '.exe' };
-  if (ua.includes('mac') || platform.includes('mac')) {
-    // Check for Apple Silicon via WebGL renderer or default to ARM (most modern Macs)
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl');
-    const renderer = gl?.getParameter(gl.RENDERER)?.toLowerCase() || '';
-    const isIntel = renderer.includes('intel') || ua.includes('intel');
-    return isIntel
-      ? { os: 'macos', arch: 'x86_64', label: 'macOS (Intel)', ext: '' }
-      : { os: 'macos', arch: 'arm64', label: 'macOS (Apple Silicon)', ext: '' };
-  }
-  if (ua.includes('linux')) {
-    const isArm = platform.includes('arm') || platform.includes('aarch');
-    return isArm
-      ? { os: 'linux', arch: 'arm64', label: 'Linux (ARM)', ext: '' }
-      : { os: 'linux', arch: 'x86_64', label: 'Linux', ext: '' };
-  }
-  return { os: 'linux', arch: 'x86_64', label: 'Linux', ext: '' };
-}
-
-function downloadOSCBinary() {
-  const p = detectPlatform();
-  const filename = `nisps-osc-bridge-${p.os}-${p.arch}${p.ext}`;
-  const url = `${OSC_RELEASE_BASE}/${filename}`;
-  window.open(url, '_blank');
-}
-
-function downloadOSCSource() {
-  // Download bridge.ts directly — it's self-contained with Deno
-  fetch('osc-bridge/bridge.ts').then(r => r.blob()).then(blob => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'nisps-osc-bridge.ts';
-    a.click();
-    URL.revokeObjectURL(url);
-  }).catch(() => {
-    alert('Failed to download. Make sure the server is serving the osc-bridge/ directory.');
-  });
-}
-
-function initOSCDownloadUI() {
-  const p = detectPlatform();
-
-  // Set platform name in button
-  const platformName = document.getElementById('osc-platform-name');
-  if (platformName) platformName.textContent = p.label;
-
-  // Set run instructions based on OS
-  const instructions = document.getElementById('osc-run-instructions');
-  if (instructions) {
-    if (p.os === 'windows') {
-      instructions.textContent = 'nisps-osc-bridge-windows-x86_64.exe';
-    } else if (p.os === 'macos') {
-      instructions.textContent =
-        `# First time only: allow the binary to run\n` +
-        `chmod +x nisps-osc-bridge-macos-${p.arch}\n` +
-        `xattr -d com.apple.quarantine nisps-osc-bridge-macos-${p.arch}\n\n` +
-        `./nisps-osc-bridge-macos-${p.arch}`;
-    } else {
-      instructions.textContent =
-        `chmod +x nisps-osc-bridge-linux-${p.arch}\n` +
-        `./nisps-osc-bridge-linux-${p.arch}`;
-    }
-  }
-}
-
 // ---- Help modal ----
 function wireHelp() {
   const overlay = document.getElementById('help-overlay');
-  const btnOpen = document.getElementById('help-btn');
   const btnClose = document.getElementById('help-close');
   const btnGotIt = document.getElementById('help-got-it');
 
-  function show() { overlay.classList.remove('hidden'); }
   function hide() { overlay.classList.add('hidden'); localStorage.setItem('nisps-help-seen', '1'); }
 
-  btnOpen.addEventListener('click', show);
+  // Help is opened via dock icon (handled in wireDock)
   btnClose.addEventListener('click', hide);
   btnGotIt.addEventListener('click', hide);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) hide(); });
 
-  // OSC bridge download buttons
-  initOSCDownloadUI();
-  const oscDlBin = document.getElementById('osc-download-bin');
-  const oscDlSrc = document.getElementById('osc-download-src');
-  if (oscDlBin) oscDlBin.addEventListener('click', (e) => { e.stopPropagation(); downloadOSCBinary(); });
-  if (oscDlSrc) oscDlSrc.addEventListener('click', (e) => { e.stopPropagation(); downloadOSCSource(); });
-
   // Show on first visit
-  if (!localStorage.getItem('nisps-help-seen')) show();
+  if (!localStorage.getItem('nisps-help-seen')) overlay.classList.remove('hidden');
 }
 
 // ---- Animation ----
 function animate() {
-  // Phase 3: tick auto-explore timer and pressure indicators
-  const _animNow = performance.now();
-  const _animDt = _lastFrameTime > 0 ? (_animNow - _lastFrameTime) / 1000 : 1 / 60;
-  if (phase3) phase3.tick(_animDt);
-
   if (gamepad) gamepad.poll();
   if (outputMode === 'synth') {
     synthVisualizer.draw();
-    // ShapeSeq: route inputs and render step viz (feature-flagged)
-    if (ENABLE_SHAPESEQ && shapeSeq && shapeSeq.isPlaying) {
-      if (inputMode === 'hands' && handTracker && handTracker.active && handTracker.features) {
-        shapeSeq.setSequenceInputs([handTracker.features[0], handTracker.features[1]]);
-      } else {
-        shapeSeq.setSequenceInputs([joyX, joyY]);
-      }
-    }
-    if (ENABLE_SHAPESEQ && stepViz) stepViz.render();
-  } else {
+  } else if (outputMode === 'visual') {
     visualizer.draw();
   }
   requestAnimationFrame(animate);
@@ -2732,17 +2946,9 @@ function saveState() {
       joyX,
       joyY,
       groupOverrides,
+      visualOverrides,
+      midiCCOverrides,
       synthPresetId: activeSynthPresetId,
-      controlSurface: controlSurface ? controlSurface.getState() : null,
-      inputPipeline: inputPipeline ? inputPipeline.getConfig() : null,
-      // Phase 2: Pinning + History
-      snapshotStack: snapshotStack ? snapshotStack.getState() : null,
-      regionPins: regionPins ? regionPins.getState() : null,
-      paramPins: paramPins ? paramPins.getState() : null,
-      // Phase 3
-      phase3: phase3 ? phase3.getConfig() : null,
-      // Phase 4
-      outputPipeline: outputPipeline ? outputPipeline.getConfig() : null,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -2750,7 +2956,7 @@ function saveState() {
   }
 }
 
-function loadState() {
+async function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
@@ -2802,6 +3008,30 @@ function loadState() {
       }
     }
 
+    // Restore visual overrides
+    if (Array.isArray(state.visualOverrides)) {
+      for (let i = 0; i < state.visualOverrides.length && i < visualOverrides.length; i++) {
+        const sv = state.visualOverrides[i], vo = visualOverrides[i];
+        if (typeof sv.min === 'number') vo.min = sv.min;
+        if (typeof sv.max === 'number') vo.max = sv.max;
+        if (typeof sv.curve === 'number') vo.curve = sv.curve;
+        if (typeof sv.frozen === 'boolean') vo.frozen = sv.frozen;
+        if (typeof sv.fixedValue === 'number') vo.fixedValue = sv.fixedValue;
+      }
+    }
+
+    // Restore MIDI CC overrides
+    if (Array.isArray(state.midiCCOverrides)) {
+      for (let i = 0; i < state.midiCCOverrides.length && i < midiCCOverrides.length; i++) {
+        const sv = state.midiCCOverrides[i], ov = midiCCOverrides[i];
+        if (typeof sv.min === 'number') ov.min = sv.min;
+        if (typeof sv.max === 'number') ov.max = sv.max;
+        if (typeof sv.curve === 'number') ov.curve = sv.curve;
+        if (typeof sv.frozen === 'boolean') ov.frozen = sv.frozen;
+        if (typeof sv.fixedValue === 'number') ov.fixedValue = sv.fixedValue;
+      }
+    }
+
     // Restore synth preset id (just track it, don't re-apply — groupOverrides already restored above)
     if (typeof state.synthPresetId === 'string') {
       activeSynthPresetId = state.synthPresetId;
@@ -2809,35 +3039,8 @@ function loadState() {
 
     // Restore output mode
     if (state.outputMode && state.outputMode !== outputMode) {
-      setOutputMode(state.outputMode);
+      await setOutputMode(state.outputMode, { skipConfirm: true });
       syncOutputToggles(outputMode);
-    }
-
-    // Restore control surface state
-    if (state.controlSurface && controlSurface) {
-      controlSurface.setState(state.controlSurface);
-    }
-    if (state.inputPipeline && inputPipeline) {
-      inputPipeline.setConfig(state.inputPipeline);
-    }
-
-    // Phase 2: Restore pinning + history state
-    if (state.snapshotStack && snapshotStack) {
-      snapshotStack.setState(state.snapshotStack);
-    }
-    if (state.regionPins && regionPins) {
-      regionPins.setState(state.regionPins);
-    }
-    if (state.paramPins && paramPins) {
-      paramPins.setState(state.paramPins);
-    }
-    // Phase 3: restore config
-    if (state.phase3 && phase3) {
-      phase3.setConfig(state.phase3);
-    }
-    // Phase 4: restore output pipeline
-    if (state.outputPipeline && outputPipeline) {
-      outputPipeline.setConfig(state.outputPipeline);
     }
 
     // Note: don't auto-restore inputMode='hands' — requires camera permission

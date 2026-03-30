@@ -144,8 +144,8 @@ export function initPhase4UI(opts) {
 // ---------------------------------------------------------------------------
 
 function createFreezeButton(outputPipeline) {
-  const $floatingBar = document.getElementById('floating-bar');
-  if (!$floatingBar) {
+  const $barContent = document.querySelector('.floating-bar-content') || document.getElementById('floating-bar');
+  if (!$barContent) {
     console.warn('[Phase4] floating-bar not found');
     return document.createElement('button');
   }
@@ -163,13 +163,7 @@ function createFreezeButton(outputPipeline) {
     btn.title = frozen ? 'Unfreeze output' : 'Freeze output';
   });
 
-  // Insert before the chevron
-  const $chevron = document.getElementById('chevron-btn');
-  if ($chevron) {
-    $floatingBar.insertBefore(btn, $chevron);
-  } else {
-    $floatingBar.appendChild(btn);
-  }
+  $barContent.appendChild(btn);
 
   return btn;
 }

@@ -311,53 +311,39 @@ export class JoyMapEnhanced {
 
   // ---- Zoom window ----
 
+  /**
+   * Normalize zoom window to { cx, cy, r } circle format.
+   */
   _normalizeZoomWindow(zw, zoomLevel) {
-    if (zw && typeof zw.x1 === 'number') return zw;
+    if (zw && typeof zw.cx === 'number') return zw;
     // Synthesize from zoomLevel centered on 0.5
-    const half = zoomLevel / 2;
-    return {
-      x1: 0.5 - half,
-      y1: 0.5 - half,
-      x2: 0.5 + half,
-      y2: 0.5 + half
-    };
+    return { cx: 0.5, cy: 0.5, r: zoomLevel / 2 };
   }
 
   // ---- Drawing layers ----
 
   _drawDimOverlay(ctx, w, h, zw) {
-    if (zw.x1 <= 0 && zw.y1 <= 0 && zw.x2 >= 1 && zw.y2 >= 1) return; // no zoom
+    if (zw.r >= 0.5) return; // no zoom — circle covers entire space
 
-    // Draw dim overlay over the entire area, then clear the zoom window
+    // Draw dim overlay over the entire area, cut out the zoom circle
     ctx.save();
     ctx.fillStyle = DIM_OVERLAY;
 
-    // Use even-odd rule: outer rect minus zoom rect
+    const zcx = zw.cx * w;
+    const zcy = (1 - zw.cy) * h;
+    const zr = zw.r * Math.min(w, h);
+
+    // Even-odd: outer rect minus inner circle
     ctx.beginPath();
     ctx.rect(0, 0, w, h);
-    // Zoom window rect (Y inverted)
-    const zx1 = zw.x1 * w;
-    const zy1 = (1 - zw.y2) * h;
-    const zx2 = zw.x2 * w;
-    const zy2 = (1 - zw.y1) * h;
-    const zw_ = zx2 - zx1;
-    const zh_ = zy2 - zy1;
-    // Draw inner rect counter-clockwise for even-odd
-    ctx.moveTo(zx1, zy1);
-    ctx.lineTo(zx1, zy1 + zh_);
-    ctx.lineTo(zx1 + zw_, zy1 + zh_);
-    ctx.lineTo(zx1 + zw_, zy1);
-    ctx.closePath();
+    ctx.arc(zcx, zcy, zr, 0, Math.PI * 2, true); // counter-clockwise for cutout
     ctx.fill('evenodd');
     ctx.restore();
   }
 
   _drawGrid(ctx, w, h, zw, zoomLevel) {
     // Determine grid density based on zoom
-    // zoom 1.0 -> 4x4, 0.5 -> 8x8, 0.25 -> 16x16, etc.
-    // Base divisions = 4, multiply by 1/zoomLevel
-    const baseDivisions = 4;
-    const zoomScale = Math.max(zw.x2 - zw.x1, zw.y2 - zw.y1);
+    const zoomScale = zw.r * 2;
 
     // We draw multiple grid levels with fading
     // Level 0: 4x4 (always)
@@ -418,22 +404,25 @@ export class JoyMapEnhanced {
   }
 
   _drawZoomWindowBorder(ctx, w, h, zw) {
-    if (zw.x1 <= 0 && zw.y1 <= 0 && zw.x2 >= 1 && zw.y2 >= 1) return;
+    if (zw.r >= 0.5) return; // no zoom
 
-    const x1 = zw.x1 * w;
-    const y1 = (1 - zw.y2) * h;
-    const rw = (zw.x2 - zw.x1) * w;
-    const rh = (zw.y2 - zw.y1) * h;
+    const zcx = zw.cx * w;
+    const zcy = (1 - zw.cy) * h;
+    const zr = zw.r * Math.min(w, h);
 
     // Fill
+    ctx.beginPath();
+    ctx.arc(zcx, zcy, zr, 0, Math.PI * 2);
     ctx.fillStyle = ZOOM_WINDOW_FILL;
-    ctx.fillRect(x1, y1, rw, rh);
+    ctx.fill();
 
     // Border
+    ctx.beginPath();
+    ctx.arc(zcx, zcy, zr, 0, Math.PI * 2);
     ctx.strokeStyle = ZOOM_WINDOW_BORDER;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 3]);
-    ctx.strokeRect(x1, y1, rw, rh);
+    ctx.stroke();
     ctx.setLineDash([]);
   }
 

@@ -106,7 +106,7 @@ export function initControlSurfaceUI() {
   surface.applyPreset('default');
 
   // --- Floating bar: compound axis sliders ---
-  const $floatingBar = document.getElementById('floating-bar');
+  const $barContent = document.querySelector('.floating-bar-content') || document.getElementById('floating-bar');
   const axisContainer = document.createElement('div');
   axisContainer.className = 'cs-axes';
   axisContainer.innerHTML = `
@@ -124,13 +124,7 @@ export function initControlSurfaceUI() {
     </div>
   `;
 
-  // Insert before the chevron button
-  const $chevron = document.getElementById('chevron-btn');
-  if ($chevron) {
-    $floatingBar.insertBefore(axisContainer, $chevron);
-  } else {
-    $floatingBar.appendChild(axisContainer);
-  }
+  $barContent.appendChild(axisContainer);
 
   // Wire axis sliders
   const axisSliders = {};

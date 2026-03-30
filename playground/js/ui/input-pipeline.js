@@ -40,7 +40,7 @@ export const SMOOTHING_MAX = 0.95;
 /** @type {string} Default momentum-zoom mode */
 export const DEFAULT_MOMENTUM_ZOOM = 'off';
 /** @type {string} Default anchor mode */
-export const DEFAULT_ANCHOR_MODE = 'auto';
+export const DEFAULT_ANCHOR_MODE = 'center';
 /** @type {number} Default velocity estimation window in ms */
 export const DEFAULT_VELOCITY_WINDOW = 150;
 
@@ -217,6 +217,18 @@ export class InputPipeline {
     // --- 1. Deadzone ---
     x = applyDeadzone(x, this._deadzone);
     y = applyDeadzone(y, this._deadzone);
+
+    // --- 1.5. Circular clamp ---
+    // Constrain input to a unit circle (radius 0.5 centered at 0.5,0.5)
+    // so the reachable input space matches the circular joystick UI.
+    const cx = x - 0.5;
+    const cy = y - 0.5;
+    const dist = Math.sqrt(cx * cx + cy * cy);
+    if (dist > 0.5) {
+      const scale = 0.5 / dist;
+      x = 0.5 + cx * scale;
+      y = 0.5 + cy * scale;
+    }
 
     // --- 2. Zoom ---
     const anchorX = this._resolveAnchorX();
@@ -401,24 +413,34 @@ export class InputPipeline {
   }
 
   /**
-   * Get the zoom window bounds in [0,1] space — useful for minimap rendering.
-   * Returns the rectangle of input space that the joystick currently covers.
-   * @returns {{ x1: number, y1: number, x2: number, y2: number }}
+   * Get the zoom window as a circle in [0,1] space — for minimap rendering.
+   * Returns center + radius of the input space the joystick currently covers.
+   * @returns {{ cx: number, cy: number, r: number }}
    */
   getZoomWindow() {
     const anchorX = this._resolveAnchorX();
     const anchorY = this._resolveAnchorY();
-    const baseZoomX = this._zoomX != null ? this._zoomX : this._zoom;
-    const baseZoomY = this._zoomY != null ? this._zoomY : this._zoom;
-    const effZoomX = clamp(baseZoomX * this._momentumZoomMultiplier, ZOOM_MIN, ZOOM_MAX);
-    const effZoomY = clamp(baseZoomY * this._momentumZoomMultiplier, ZOOM_MIN, ZOOM_MAX);
-    const halfX = effZoomX / 2;
-    const halfY = effZoomY / 2;
+    const baseZoom = this._zoomX != null ? this._zoomX : this._zoom;
+    const effZoom = clamp(baseZoom * this._momentumZoomMultiplier, ZOOM_MIN, ZOOM_MAX);
     return {
-      x1: clamp(anchorX - halfX, 0, 1),
-      y1: clamp(anchorY - halfY, 0, 1),
-      x2: clamp(anchorX + halfX, 0, 1),
-      y2: clamp(anchorY + halfY, 0, 1),
+      cx: anchorX,
+      cy: anchorY,
+      r: effZoom / 2,
+    };
+  }
+
+  /**
+   * Get the zoom window as an axis-aligned bounding rect in [0,1] space.
+   * For consumers that need {x1, y1, x2, y2} (heatmap, region pinning).
+   * @returns {{ x1: number, y1: number, x2: number, y2: number }}
+   */
+  getZoomWindowRect() {
+    const { cx, cy, r } = this.getZoomWindow();
+    return {
+      x1: clamp(cx - r, 0, 1),
+      y1: clamp(cy - r, 0, 1),
+      x2: clamp(cx + r, 0, 1),
+      y2: clamp(cy + r, 0, 1),
     };
   }
 

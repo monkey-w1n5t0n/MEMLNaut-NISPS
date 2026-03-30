@@ -11,11 +11,16 @@ export class Arpeggiator {
     this._bpm = 120;
     this._octaves = 2;
     this._octaveOffset = 0;
-    this._progression = 'I-vi-IV-V';
+    this._progression = 'Cmin7-rand';
+    this._direction = 'updown';
   }
 
   get progressionNames() {
-    return ['I-vi-IV-V', 'I-IV-vi-V', 'i-VI-III-VII', 'I-V-vi-IV'];
+    return ['Cmin7-rand', 'I-vi-IV-V', 'I-IV-vi-V', 'i-VI-III-VII', 'I-V-vi-IV'];
+  }
+
+  get directionNames() {
+    return ['up', 'updown'];
   }
 
   get playing() { return this._playing; }
@@ -44,6 +49,12 @@ export class Arpeggiator {
     this._send('set', { progression: v });
   }
 
+  get direction() { return this._direction; }
+  set direction(v) {
+    this._direction = v;
+    this._send('set', { direction: v });
+  }
+
   _ensureWorker() {
     if (this._worker) return;
 
@@ -70,6 +81,7 @@ export class Arpeggiator {
       octaves: this._octaves,
       octaveOffset: this._octaveOffset,
       progression: this._progression,
+      direction: this._direction,
     });
   }
 

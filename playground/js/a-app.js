@@ -3,6 +3,7 @@
 
 import { WasmIML } from './nisps/nisps-wasm.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
+import { AudioCanvas, N_AUDIO_OUTPUTS, AUDIO_PARAM_NAMES, AUDIO_PARAM_COLORS } from './audio/audio-canvas.js';
 import { C15Bridge } from './synth/c15-bridge.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
@@ -21,7 +22,10 @@ const N_HAND_INPUTS = 14;
 const N_INPUTS = N_JOY_INPUTS; // default (joystick)
 const N_VISUAL_OUTPUTS = 20;
 const N_SYNTH_OUTPUTS = SYNTH_PARAM_MAP.length; // 126
+// N_AUDIO_OUTPUTS = 36 — imported from audio-canvas.js
 let N_OUTPUTS = N_SYNTH_OUTPUTS; // Dynamic — changes with output mode
+
+let audioCanvas = null; // lazily created on first switch to audio-canvas mode
 const STORAGE_KEY = 'nisps-a-immersive';
 
 const VISUAL_PARAM_NAMES = [
@@ -139,6 +143,11 @@ const visualOverrides = VISUAL_PARAM_NAMES.map(() => ({
   curve: 0.5,
   frozen: false,
   fixedValue: 0.5,
+}));
+
+// ---- Audio Canvas Overrides ----
+const audioCanvasOverrides = Array.from({ length: N_AUDIO_OUTPUTS }, () => ({
+  min: 0, max: 1, curve: 0.5, frozen: false, fixedValue: 0.5,
 }));
 
 // ---- Synth Sections (for SynthVisualizer) ----
@@ -709,6 +718,7 @@ function outputCountForMode(mode) {
   if (mode === 'visual') return N_VISUAL_OUTPUTS;
   if (mode === 'synth') return N_SYNTH_OUTPUTS;
   if (mode === 'midi-cc') return midiCCMap.length;
+  if (mode === 'audio-canvas') return N_AUDIO_OUTPUTS;
   return N_SYNTH_OUTPUTS;
 }
 
@@ -868,9 +878,10 @@ function buildHeatmap() {
   $heatmapCells.innerHTML = '';
   const isSynth = outputMode === 'synth';
   const isMidiCC = outputMode === 'midi-cc';
-  const count = isMidiCC ? midiCCMap.length : isSynth ? N_SYNTH_OUTPUTS : N_VISUAL_OUTPUTS;
-  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
-  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : VISUAL_PARAM_COLORS;
+  const isAudioCanvas = outputMode === 'audio-canvas';
+  const count = isMidiCC ? midiCCMap.length : isSynth ? N_SYNTH_OUTPUTS : isAudioCanvas ? N_AUDIO_OUTPUTS : N_VISUAL_OUTPUTS;
+  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
+  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : isAudioCanvas ? AUDIO_PARAM_COLORS : VISUAL_PARAM_COLORS;
 
   for (let i = 0; i < count; i++) {
     const cell = document.createElement('div');
@@ -955,7 +966,8 @@ function setHeatmapValue(paramIndex, e, cell) {
   // Update tooltip
   const isSynth = outputMode === 'synth';
   const isMidiCC = outputMode === 'midi-cc';
-  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
+  const isAudioCanvas = outputMode === 'audio-canvas';
+  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
   $heatmapTooltip.textContent = `${names[paramIndex]}: ${x.toFixed(3)}`;
   $heatmapTooltip.classList.add('visible');
   $heatmapTooltip.style.left = `${rect.left}px`;
@@ -993,6 +1005,8 @@ function getParamOverride(paramIndex) {
     };
   } else if (outputMode === 'midi-cc') {
     return midiCCOverrides[paramIndex] || null;
+  } else if (outputMode === 'audio-canvas') {
+    return audioCanvasOverrides[paramIndex] || null;
   } else {
     return visualOverrides[paramIndex] || null;
   }
@@ -1019,8 +1033,9 @@ function showParamPopup(paramIndex, cell) {
 
   const isSynth = outputMode === 'synth';
   const isMidiCC = outputMode === 'midi-cc';
-  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : VISUAL_PARAM_NAMES;
-  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : VISUAL_PARAM_COLORS;
+  const isAudioCanvas = outputMode === 'audio-canvas';
+  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
+  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : isAudioCanvas ? AUDIO_PARAM_COLORS : VISUAL_PARAM_COLORS;
   const name = names[paramIndex];
   const color = colors[paramIndex];
   const ov = getParamOverride(paramIndex);
@@ -1509,6 +1524,8 @@ function routeOutputs(outputs) {
       }
       midiOutput.sendBatch(messages);
     }
+  } else if (outputMode === 'audio-canvas') {
+    if (audioCanvas) audioCanvas.setOutputs(outputs);
   } else {
     const vis = new Array(N_VISUAL_OUTPUTS);
     for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
@@ -1795,6 +1812,15 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
   const heatmapStrip = document.getElementById('heatmap-strip');
   const synthQuickControls = document.getElementById('synth-quick-controls');
   const midiCCQuickControls = document.getElementById('midi-cc-quick-controls');
+  const audioCanvasWrap = document.getElementById('audio-canvas-wrap');
+
+  // Lazily create AudioCanvas on first switch
+  if (mode === 'audio-canvas' && !audioCanvas) {
+    audioCanvas = new AudioCanvas(audioCanvasWrap);
+  }
+
+  // Hide/show audio-canvas wrap
+  if (audioCanvasWrap) audioCanvasWrap.style.display = mode === 'audio-canvas' ? 'block' : 'none';
 
   if (mode === 'synth') {
     $canvas.classList.add('hidden-canvas');
@@ -1811,6 +1837,13 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     heatmapStrip.classList.remove('hidden');
     synthQuickControls.classList.add('hidden');
     if (midiCCQuickControls) midiCCQuickControls.classList.remove('hidden');
+    synthVisualizer.enableInteraction(false);
+  } else if (mode === 'audio-canvas') {
+    $canvas.classList.add('hidden-canvas');
+    $synthVisCanvas.classList.remove('active');
+    heatmapStrip.classList.remove('hidden');
+    synthQuickControls.classList.add('hidden');
+    if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(false);
   } else {
     $canvas.classList.remove('hidden-canvas');
@@ -3065,6 +3098,7 @@ function saveState() {
       groupOverrides,
       visualOverrides,
       midiCCOverrides,
+      audioCanvasState: audioCanvas ? audioCanvas.getState() : null,
       synthPresetId: activeSynthPresetId,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -3152,6 +3186,11 @@ async function loadState() {
     // Restore synth preset id (just track it, don't re-apply — groupOverrides already restored above)
     if (typeof state.synthPresetId === 'string') {
       activeSynthPresetId = state.synthPresetId;
+    }
+
+    // Restore audio canvas state (pan/zoom/submode)
+    if (state.audioCanvasState && audioCanvas) {
+      audioCanvas.setState(state.audioCanvasState);
     }
 
     // Restore output mode

@@ -130,7 +130,8 @@ public:
                 float learning_rate,
                 int max_iterations = 5000,
                 float min_error_cost = 0.001,
-                bool output_log = true);
+                bool output_log = true,
+                const std::vector<T>* sample_weights = nullptr);
 
     /**
      * @brief Training with batch support

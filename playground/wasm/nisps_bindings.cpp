@@ -90,6 +90,7 @@ EMSCRIPTEN_KEEPALIVE
 float nisps_mlp_train(void* ptr,
     float* features_flat, int n_samples, int feature_dim,
     float* labels_flat, int label_dim,
+    float* sample_weights,
     float learning_rate, int max_iterations, float min_error) {
 
     auto* mlp = static_cast<nisps::MLP<float>*>(ptr);
@@ -104,8 +105,16 @@ float nisps_mlp_train(void* ptr,
                          labels_flat + (i + 1) * label_dim);
     }
 
+    // Build weights vector if provided (non-null pointer)
+    std::vector<float> weights_vec;
+    const std::vector<float>* weights_ptr = nullptr;
+    if (sample_weights) {
+        weights_vec.assign(sample_weights, sample_weights + n_samples);
+        weights_ptr = &weights_vec;
+    }
+
     nisps::MLP<float>::training_pair_t data(features, labels);
-    return mlp->Train(data, learning_rate, max_iterations, min_error, false);
+    return mlp->Train(data, learning_rate, max_iterations, min_error, false, weights_ptr);
 }
 
 // ---- Weight manipulation with spread ----

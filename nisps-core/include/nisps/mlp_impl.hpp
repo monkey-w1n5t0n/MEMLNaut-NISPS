@@ -516,39 +516,33 @@ T MLP<T>::Train(const training_pair_t& training_sample_set_with_bias,
     float learning_rate,
     int max_iterations,
     float min_error_cost,
-    bool) {
+    bool,
+    const std::vector<T>* sample_weights) {
 
     int i = 0;
     T current_iteration_cost_function = 0.f;
 
-    T sampleSizeReciprocal = 1.f / training_sample_set_with_bias.first.size();
+    const size_t n_samples = training_sample_set_with_bias.first.size();
+    T sampleSizeReciprocal = 1.f / n_samples;
 
     for (i = 0; i < max_iterations; i++) {
         current_iteration_cost_function = 0.f;
 
         auto training_features = training_sample_set_with_bias.first;
         auto training_labels = training_sample_set_with_bias.second;
-        auto t_feat = training_features.begin();
-        auto t_label = training_labels.begin();
 
-        while (t_feat != training_features.end() || t_label != training_labels.end()) {
+        for (size_t s = 0; s < n_samples; s++) {
+            T weight = sample_weights ? (*sample_weights)[s] : sampleSizeReciprocal;
 
-            // Payload
             current_iteration_cost_function +=
-                _TrainOnExample(*t_feat, *t_label, learning_rate, sampleSizeReciprocal);
-
-            // \Payload
-            if (t_feat != training_features.end())
-            {
-                ++t_feat;
-            }
-            if (t_label != training_labels.end())
-            {
-                ++t_label;
-            }
+                _TrainOnExample(training_features[s], training_labels[s], learning_rate, weight);
         }
 
-        current_iteration_cost_function *= sampleSizeReciprocal;
+        // When using custom weights (already normalized to sum to 1), loss is already scaled.
+        // With uniform weights, multiply by sampleSizeReciprocal for backward compat.
+        if (!sample_weights) {
+            current_iteration_cost_function *= sampleSizeReciprocal;
+        }
 
         ReportProgress(true, 100, i, current_iteration_cost_function);
 

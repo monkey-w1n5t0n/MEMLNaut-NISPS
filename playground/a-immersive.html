@@ -64,6 +64,9 @@
     <select class="preset-select" id="midi-cc-output-select" title="MIDI output device">
       <option value="">No device</option>
     </select>
+    <select class="preset-select" id="midi-cc-quick-preset" title="MIDI CC preset" style="max-width:130px">
+      <option value="">Manual</option>
+    </select>
     <span class="synth-status" id="midi-cc-status" style="font-size:0.65rem;opacity:0.7"></span>
   </div>
 
@@ -270,14 +273,21 @@
       </div>
       <div class="drawer-body" id="midi-cc-panel">
         <div class="synth-row">
+          <label>Preset</label>
+          <select id="midi-cc-preset-select" style="flex:1;min-width:0">
+            <option value="">Manual</option>
+          </select>
+          <button class="action-btn" id="midi-cc-file-import" title="Load preset from JSON file">File</button>
+        </div>
+        <div class="synth-row">
           <label>Parameters</label>
           <span id="midi-cc-count">8</span>
           <button class="action-btn" id="midi-cc-add" title="Add CC parameter">+</button>
           <button class="action-btn" id="midi-cc-remove" title="Remove last CC parameter">&minus;</button>
         </div>
         <div class="synth-row">
-          <button class="action-btn" id="midi-cc-import">Import</button>
-          <button class="action-btn" id="midi-cc-export">Export</button>
+          <button class="action-btn" id="midi-cc-import">Paste JSON</button>
+          <button class="action-btn" id="midi-cc-export">Copy JSON</button>
         </div>
         <div id="midi-cc-param-list"></div>
       </div>

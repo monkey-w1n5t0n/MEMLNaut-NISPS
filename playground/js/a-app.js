@@ -9,6 +9,7 @@ import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
 import { MIDIOutput } from './midi/midi-output.js';
 import { loadCCMap, saveCCMap, createCCParam, exportCCMap, importCCMap, CC_NAMES } from './midi/midi-cc-map.js';
+import { listPresets as listMidiPresets, loadPreset as loadMidiPreset, loadPresetFromFile as loadMidiPresetFromFile } from './midi/midi-cc-presets.js';
 import { GamepadInput } from './ui/gamepad.js';
 import { HandTracker } from './ui/hand-tracker.js';
 import { createDevPanel } from './ui/dev-panel.js';
@@ -719,6 +720,10 @@ async function resizeMLP(newOutputCount) {
   if (newOutputCount === N_OUTPUTS) return;
   N_OUTPUTS = newOutputCount;
 
+  // Destroy old IML instances (free WASM memory)
+  if (imlJoy) imlJoy.destroy();
+  if (imlHand) imlHand.destroy();
+
   imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
   imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
   imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, [48, 48, 64], 1000, 1.0, 0.00001);
@@ -729,8 +734,8 @@ async function resizeMLP(newOutputCount) {
   rawParamValues = new Array(N_OUTPUTS).fill(0.5);
 
   // Randomize with current spread
-  imlJoy.drawWeights(spreadLevel);
-  imlHand.drawWeights(spreadLevel);
+  imlJoy.randomiseWeights(spreadLevel);
+  imlHand.randomiseWeights(spreadLevel);
 
   // Re-run inference
   iml.setInput(0, joyX);
@@ -1922,7 +1927,7 @@ function onThumbsUp() {
 
   pushUndoSnapshot();
   const inputs = getCurrentInputs();
-  const outputs = [...iml.getOutputs()];
+  const outputs = [...rawParamValues];
   iml.addExample(inputs, outputs);
 
   noiseLevel *= rlExplorationDecay;
@@ -2269,6 +2274,37 @@ async function initMIDIControls() {
   });
 }
 
+// ---- MIDI CC Preset Application ----
+async function applyMidiCCPreset(preset) {
+  // Replace the CC map with preset params
+  midiCCMap.length = 0;
+  midiCCMap.push(...preset.params.map(p => ({ ...p })));
+
+  // Rebuild overrides
+  midiCCOverrides.length = 0;
+  midiCCOverrides.push(...preset.params.map(p => ({
+    min: p.min ?? 0, max: p.max ?? 1, curve: p.curve ?? 0.5,
+    frozen: p.muted ?? false, fixedValue: p.fixedValue ?? 0.5,
+  })));
+
+  _generateCCColors(midiCCMap.length);
+  saveCCMap(midiCCMap);
+
+  // Resize MLP if in midi-cc mode
+  if (outputMode === 'midi-cc') {
+    await resizeMLP(midiCCMap.length);
+    buildHeatmap();
+    updateHeatmap(iml.getOutputs());
+  }
+
+  // Update UI
+  const countEl = document.getElementById('midi-cc-count');
+  if (countEl) countEl.textContent = midiCCMap.length;
+  buildMidiCCParamList();
+
+  console.log(`[NISPS] Applied MIDI CC preset: ${preset.name} (${preset.params.length} params)`);
+}
+
 // ---- MIDI CC Controls ----
 async function initMIDICCControls() {
   const enableBtn = document.getElementById('midi-cc-enable-btn');
@@ -2279,6 +2315,8 @@ async function initMIDICCControls() {
   const removeBtn = document.getElementById('midi-cc-remove');
   const importBtn = document.getElementById('midi-cc-import');
   const exportBtn = document.getElementById('midi-cc-export');
+  const presetSelect = document.getElementById('midi-cc-preset-select');
+  const fileImportBtn = document.getElementById('midi-cc-file-import');
 
   if (!enableBtn || !outputSelect) return;
 
@@ -2392,6 +2430,85 @@ async function initMIDICCControls() {
         buildHeatmap();
         updateHeatmap(iml.getOutputs());
       }
+    });
+  }
+
+  // Quick preset selector (in quick controls bar)
+  const quickPresetSelect = document.getElementById('midi-cc-quick-preset');
+  if (quickPresetSelect) {
+    quickPresetSelect.innerHTML = '<option value="">Manual</option>';
+    for (const p of listMidiPresets()) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      quickPresetSelect.appendChild(opt);
+    }
+    quickPresetSelect.addEventListener('change', async () => {
+      const id = quickPresetSelect.value;
+      if (!id) return;
+      try {
+        const preset = await loadMidiPreset(id);
+        await applyMidiCCPreset(preset);
+        updateCountDisplay();
+        if (statusEl) statusEl.textContent = `Loaded: ${preset.name}`;
+        // Sync drawer preset selector
+        if (presetSelect) presetSelect.value = id;
+      } catch (err) {
+        console.error('[MIDI CC] Failed to load preset:', err);
+      }
+    });
+  }
+
+  // Preset selector (in drawer)
+  if (presetSelect) {
+    // Populate with built-in presets
+    presetSelect.innerHTML = '<option value="">Manual</option>';
+    for (const p of listMidiPresets()) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      presetSelect.appendChild(opt);
+    }
+    presetSelect.addEventListener('change', async () => {
+      const id = presetSelect.value;
+      if (!id) return; // "Manual" selected — keep current config
+      try {
+        const preset = await loadMidiPreset(id);
+        await applyMidiCCPreset(preset);
+        updateCountDisplay();
+        if (statusEl) statusEl.textContent = `Loaded: ${preset.name}`;
+        // Sync quick preset selector
+        if (quickPresetSelect) quickPresetSelect.value = id;
+      } catch (err) {
+        console.error('[MIDI CC] Failed to load preset:', err);
+        if (statusEl) statusEl.textContent = `Error: ${err.message}`;
+      }
+    });
+  }
+
+  // File import (JSON file from disk)
+  if (fileImportBtn) {
+    // Create hidden file input
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.json';
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    fileImportBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      const preset = await loadMidiPresetFromFile(file);
+      if (!preset) {
+        alert('Invalid MIDI CC preset file');
+        return;
+      }
+      await applyMidiCCPreset(preset);
+      updateCountDisplay();
+      if (statusEl) statusEl.textContent = `Loaded: ${preset.name || file.name}`;
+      // Reset file input so the same file can be re-selected
+      fileInput.value = '';
     });
   }
 

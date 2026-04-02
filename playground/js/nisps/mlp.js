@@ -67,8 +67,10 @@ export class MLP {
   }
 
   // Per-sample SGD training (Train method from C++)
+  // sampleWeights: optional Float32Array of per-sample weights (normalized, sum to 1)
   train(features, labels, learningRate, maxIterations = 1000, minError = 0.00001, options = {}) {
     const sampleSizeRecip = 1 / features.length;
+    const sampleWeights = options.sampleWeights || null;
     let loss = 0;
     const history = [];
     const onIteration = typeof options.onIteration === 'function' ? options.onIteration : null;
@@ -77,10 +79,11 @@ export class MLP {
       loss = 0;
 
       for (let s = 0; s < features.length; s++) {
+        const weight = sampleWeights ? sampleWeights[s] : sampleSizeRecip;
         const { output, activations } = this.getOutput(features[s], false);
         const derivError = new Array(output.length);
 
-        loss += mseLoss(labels[s], output, derivError, sampleSizeRecip);
+        loss += mseLoss(labels[s], output, derivError, weight);
 
         // Backprop with direct weight update
         let tempDerivError = derivError;
@@ -90,7 +93,8 @@ export class MLP {
         }
       }
 
-      loss *= sampleSizeRecip;
+      // Custom weights already normalized — loss is already correctly scaled
+      if (!sampleWeights) loss *= sampleSizeRecip;
       history.push(loss);
 
       if (onIteration) onIteration(iter, loss);

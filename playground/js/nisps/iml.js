@@ -52,6 +52,9 @@ export class IML {
     this.lossHistory = [];
     this.totalTrainingIterations = 0;
     this.logFn = null;
+    this.recencyBias = 0.6;       // 0 = uniform, 1 = strong recency
+    this.weightingMode = 'global'; // 'global' | 'local' | 'combined'
+    this.localRadius = 0.15;      // input-space radius for local weighting
   }
 
   setLogger(fn) {
@@ -182,6 +185,12 @@ export class IML {
       return null;
     }
 
+    const sampleWeights = this.dataset.computeWeights(this.weightingMode, {
+      recencyBias: this.recencyBias,
+      queryInput: this.inputState,
+      radius: this.localRadius,
+    });
+
     this.log('Training...');
     this.lastLoss = this.mlp.train(
       features,
@@ -189,7 +198,7 @@ export class IML {
       this.learningRate,
       this.maxIterations,
       this.convergenceThreshold,
-      options
+      { ...options, sampleWeights }
     );
 
     const latestHistory = this.mlp.lastTrainingHistory || [];

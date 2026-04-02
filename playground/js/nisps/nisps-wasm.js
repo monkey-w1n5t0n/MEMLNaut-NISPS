@@ -26,7 +26,7 @@ function wrapModule(mod) {
     getWeights: mod.cwrap('nisps_mlp_get_weights', null, ['number', 'number']),
     setWeights: mod.cwrap('nisps_mlp_set_weights', null, ['number', 'number']),
     inference: mod.cwrap('nisps_mlp_inference', null, ['number', 'number', 'number', 'number', 'number']),
-    train: mod.cwrap('nisps_mlp_train', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+    train: mod.cwrap('nisps_mlp_train', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     drawWeightsSpread: mod.cwrap('nisps_mlp_draw_weights_spread', null, ['number', 'number']),
     moveWeightsSpread: mod.cwrap('nisps_mlp_move_weights_spread', null, ['number', 'number', 'number']),
     alloc: mod.cwrap('nisps_alloc', 'number', ['number']),
@@ -86,6 +86,9 @@ export class WasmIML {
     this.maxIterations = maxIterations;
     this.learningRate = learningRate;
     this.convergenceThreshold = convergenceThreshold;
+    this.recencyBias = 0.6;       // 0 = uniform, 1 = strong recency
+    this.weightingMode = 'global'; // 'global' | 'local' | 'combined'
+    this.localRadius = 0.15;      // input-space radius for local weighting
 
     // Layer sizes: input+bias, hidden..., output
     const BIAS = 1;
@@ -221,14 +224,22 @@ export class WasmIML {
       this.weightsRandomised = false;
     }
 
-    const features = this.dataset.features;
-    const labels = this.dataset.labels;
-    if (features.length === 0) {
+    if (this.dataset.features.length === 0) {
       this.log('Empty dataset, skipping training.');
       return null;
     }
 
     this.log('Training...');
+
+    const features = this.dataset.features;
+    const labels = this.dataset.labels;
+
+    // Compute per-sample weights
+    const sampleWeights = this.dataset.computeWeights(this.weightingMode, {
+      recencyBias: this.recencyBias,
+      queryInput: this.inputState,
+      radius: this.localRadius,
+    });
 
     // Build flat arrays with bias appended to features
     const featureDim = this.nInputs + 1; // +bias
@@ -248,15 +259,18 @@ export class WasmIML {
 
     const featPtr = toHeapF32(this._w, featFlat);
     const labPtr = toHeapF32(this._w, labFlat);
+    const weightPtr = toHeapF32(this._w, sampleWeights);
 
     const loss = this._w.train(
       this._mlp, featPtr, nSamples, featureDim,
       labPtr, this.nOutputs,
+      weightPtr,
       this.learningRate, this.maxIterations, this.convergenceThreshold
     );
 
     this._w.free(featPtr);
     this._w.free(labPtr);
+    this._w.free(weightPtr);
 
     this.lastLoss = loss;
     // We don't have per-iteration history from WASM (single return value),
@@ -374,6 +388,11 @@ export class WasmIML {
     const flatWeights = this._getFlatWeights();
     const features = this.dataset.features;
     const labels = this.dataset.labels;
+    const sampleWeights = Array.from(this.dataset.computeWeights(this.weightingMode, {
+      recencyBias: this.recencyBias,
+      queryInput: this.inputState,
+      radius: this.localRadius,
+    }));
 
     // Lazy-init worker
     if (!this._worker) {
@@ -418,6 +437,7 @@ export class WasmIML {
           weights: flatWeights,
           features,
           labels,
+          sampleWeights,
           nInputs: this.nInputs,
           nOutputs: this.nOutputs,
           learningRate: this.learningRate,

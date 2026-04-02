@@ -18,7 +18,7 @@ async function ensureModule() {
     weightCount: mod.cwrap('nisps_mlp_weight_count', 'number', ['number']),
     getWeights: mod.cwrap('nisps_mlp_get_weights', null, ['number', 'number']),
     setWeights: mod.cwrap('nisps_mlp_set_weights', null, ['number', 'number']),
-    train: mod.cwrap('nisps_mlp_train', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+    train: mod.cwrap('nisps_mlp_train', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     alloc: mod.cwrap('nisps_alloc', 'number', ['number']),
     free: mod.cwrap('nisps_free', null, ['number']),
     allocInt: mod.cwrap('nisps_alloc_int', 'number', ['number']),
@@ -57,7 +57,7 @@ self.onmessage = async function(e) {
 
     const {
       layerSizes, activationIds, weights,
-      features, labels,
+      features, labels, sampleWeights,
       nInputs, nOutputs,
       learningRate, maxIterations, convergenceThreshold,
     } = payload;
@@ -97,16 +97,19 @@ self.onmessage = async function(e) {
 
     const featPtr = toHeapF32(featFlat);
     const labPtr = toHeapF32(labFlat);
+    const weightPtr = sampleWeights ? toHeapF32(new Float32Array(sampleWeights)) : 0;
 
     // Train
     const loss = w.train(
       mlp, featPtr, nSamples, featureDim,
       labPtr, nOutputs,
+      weightPtr,
       learningRate, maxIterations, convergenceThreshold
     );
 
     w.free(featPtr);
     w.free(labPtr);
+    if (weightPtr) w.free(weightPtr);
 
     // Extract trained weights
     const outPtr = w.alloc(weightCount);

@@ -1,11 +1,8 @@
 // Arpeggiator Worker — runs note scheduling on a dedicated thread
 // for reliable timing independent of main thread load.
-// Writes noteOn/noteOff directly to the C15 SharedArrayBuffer ring buffer.
-
-const MESSAGE_TYPE = { PARAMETER: 0, NOTE_ON: 1, NOTE_OFF: 2 };
-const HEADER_SIZE = 3;
-const MESSAGE_SIZE = 4;
-const RING_CAPACITY = 512;
+// Posts noteOn/noteOff messages back to the main thread, which forwards them
+// through the active SynthEngine. This decouples the worker from C15's
+// SharedArrayBuffer ring buffer so any engine can be used.
 
 // Cmin7 inversions: root [0,3,7,10], 1st [3,7,10,12], 2nd [7,10,12,15], 3rd [10,12,15,19]
 const CMIN7_INVERSIONS = [
@@ -22,31 +19,6 @@ const PROGRESSIONS = {
   'i-VI-III-VII': [[0,3,7],[8,12,15],[3,7,10],[10,14,17]],
   'I-V-vi-IV': [[0,4,7],[7,11,14],[9,12,16],[5,9,12]],
 };
-
-// Ring buffer writer (CAS-safe, matches c15-bridge.js)
-let ringBuffer = null;
-let ringF32 = null;
-let ringI32 = null;
-
-function ringWrite(type, id, value) {
-  if (!ringI32) return false;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const writeIdx = Atomics.load(ringI32, 0);
-    const readIdx = Atomics.load(ringI32, 1);
-    const next = (writeIdx + 1) % RING_CAPACITY;
-    if (next === readIdx) return false;
-    if (Atomics.compareExchange(ringI32, 0, writeIdx, next) === writeIdx) {
-      const off = HEADER_SIZE + writeIdx * MESSAGE_SIZE;
-      ringF32[off] = type;
-      ringF32[off + 1] = id;
-      ringF32[off + 2] = value;
-      ringF32[off + 3] = 0;
-      Atomics.add(ringI32, 2, 1);
-      return true;
-    }
-  }
-  return false;
-}
 
 // Arpeggiator state
 let playing = false;
@@ -135,7 +107,7 @@ function advanceIndex(notes) {
 function playNextNote() {
   // Release previous note
   if (lastNote >= 0) {
-    ringWrite(MESSAGE_TYPE.NOTE_OFF, lastNote, 0);
+    postMessage({ type: 'noteOff', data: { note: lastNote } });
   }
 
   const notes = getChordNotes();
@@ -143,7 +115,7 @@ function playNextNote() {
 
   const note = notes[Math.min(noteIndex, notes.length - 1)];
   const velocity = 0.6 + Math.random() * 0.2;
-  ringWrite(MESSAGE_TYPE.NOTE_ON, note, velocity);
+  postMessage({ type: 'noteOn', data: { note, velocity } });
   lastNote = note;
 
   advanceIndex(notes);
@@ -157,7 +129,7 @@ function start() {
   ascending = true;
   currentInversion = null;
   scheduleNext();
-  postMessage({ type: 'state', playing: true });
+  postMessage({ type: 'state', data: { playing: true } });
 }
 
 function stop() {
@@ -167,21 +139,16 @@ function stop() {
     timer = null;
   }
   if (lastNote >= 0) {
-    ringWrite(MESSAGE_TYPE.NOTE_OFF, lastNote, 0);
+    postMessage({ type: 'noteOff', data: { note: lastNote } });
     lastNote = -1;
   }
-  postMessage({ type: 'state', playing: false });
+  postMessage({ type: 'state', data: { playing: false } });
 }
 
 // Handle messages from main thread
 self.onmessage = (e) => {
   const { type, data } = e.data;
   switch (type) {
-    case 'init':
-      ringBuffer = data.sharedBuffer;
-      ringF32 = new Float32Array(ringBuffer);
-      ringI32 = new Int32Array(ringBuffer);
-      break;
     case 'start':
       start();
       break;
@@ -189,11 +156,11 @@ self.onmessage = (e) => {
       stop();
       break;
     case 'set':
-      if ('bpm' in data) bpm = data.bpm;
-      if ('octaves' in data) octaves = data.octaves;
-      if ('octaveOffset' in data) octaveOffset = data.octaveOffset;
-      if ('progression' in data) progression = data.progression;
-      if ('direction' in data) direction = data.direction;
+      if (data && 'bpm' in data) bpm = data.bpm;
+      if (data && 'octaves' in data) octaves = data.octaves;
+      if (data && 'octaveOffset' in data) octaveOffset = data.octaveOffset;
+      if (data && 'progression' in data) progression = data.progression;
+      if (data && 'direction' in data) direction = data.direction;
       break;
   }
 };

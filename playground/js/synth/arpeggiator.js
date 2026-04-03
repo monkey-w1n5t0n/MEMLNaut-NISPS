@@ -1,11 +1,15 @@
-// Arpeggiator — plays chord progressions through the C15 engine
+// Arpeggiator — plays chord progressions through any SynthEngine.
 // Delegates to a dedicated Web Worker for reliable timing.
-// The worker writes noteOn/noteOff directly to the SharedArrayBuffer
-// ring buffer, bypassing main thread entirely.
+// The worker posts noteOn/noteOff messages back to the main thread, which
+// forwards them through the active SynthEngine. This keeps the arpeggiator
+// decoupled from C15's SharedArrayBuffer ring buffer so any engine works.
 
 export class Arpeggiator {
-  constructor(bridge) {
-    this.bridge = bridge;
+  /**
+   * @param {import('./engine-interface.js').SynthEngine} engine
+   */
+  constructor(engine) {
+    this.engine = engine;
     this._worker = null;
     this._playing = false;
     this._bpm = 120;
@@ -64,18 +68,21 @@ export class Arpeggiator {
     );
 
     this._worker.onmessage = (e) => {
-      if (e.data.type === 'state') {
-        this._playing = e.data.playing;
+      const { type, data } = e.data;
+      switch (type) {
+        case 'state':
+          this._playing = data.playing;
+          break;
+        case 'noteOn':
+          this.engine.noteOn(data.note, data.velocity);
+          break;
+        case 'noteOff':
+          this.engine.noteOff(data.note);
+          break;
       }
     };
 
-    // Pass the SharedArrayBuffer so the worker can write notes directly
-    const sab = this.bridge.sharedBuffer;
-    if (sab) {
-      this._worker.postMessage({ type: 'init', data: { sharedBuffer: sab } });
-    }
-
-    // Sync current settings
+    // Sync current settings to worker
     this._send('set', {
       bpm: this._bpm,
       octaves: this._octaves,
@@ -93,11 +100,6 @@ export class Arpeggiator {
 
   start() {
     this._ensureWorker();
-    // If bridge wasn't ready when worker was created, send the buffer now
-    const sab = this.bridge.sharedBuffer;
-    if (sab) {
-      this._worker.postMessage({ type: 'init', data: { sharedBuffer: sab } });
-    }
     this._send('start');
     this._playing = true; // optimistic, worker confirms
   }
@@ -105,5 +107,14 @@ export class Arpeggiator {
   stop() {
     this._send('stop');
     this._playing = false;
+  }
+
+  /**
+   * Hot-swap the engine without restarting the worker.
+   * Called by setActiveEngine() in a-app.js.
+   * @param {import('./engine-interface.js').SynthEngine} engine
+   */
+  setEngine(engine) {
+    this.engine = engine;
   }
 }

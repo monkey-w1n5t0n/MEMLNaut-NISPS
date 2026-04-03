@@ -869,6 +869,54 @@ async function init() {
   // Auto-save every 10 seconds
   setInterval(saveState, 10000);
 
+  // Debug probe — exposed on window when ?debug=1 is in the URL.
+  // Used by Playwright e2e tests. Zero footprint in production.
+  if (new URLSearchParams(window.location.search).has('debug')) {
+    window.__nisps = {
+      get iml()    { return iml; },
+      get imlJoy() { return imlJoy; },
+      get imlHand(){ return imlHand; },
+      getOutputs:      () => [...iml.getOutputs()],
+      getLoss:         () => iml.lastLoss,
+      getWeights:      () => iml._getFlatWeights(),
+      getExampleCount: () => iml.exampleCount,
+      setInputs: (x, y) => {
+        iml.setInput(0, x);
+        iml.setInput(1, y);
+        iml.process();
+        const outputs = iml.getOutputs();
+        routeOutputs(outputs);
+        updateHeatmap(outputs);
+      },
+      thumbsUp:   () => onThumbsUp(),
+      thumbsDown: () => onThumbsDown(),
+      train: () => {
+        const loss = trainModel();
+        const outputs = iml.getOutputs();
+        routeOutputs(outputs);
+        updateHeatmap(outputs);
+        syncRawParamsFromOutputs(outputs);
+        updateStatus();
+        drawLossPlot();
+        return loss;
+      },
+      trainAsync: () => new Promise(resolve => trainModelAsync(resolve)),
+      randomise:  () => {
+        iml.randomiseWeights(spreadLevel);
+        const outputs = iml.getOutputs();
+        routeOutputs(outputs);
+        updateHeatmap(outputs);
+        syncRawParamsFromOutputs(outputs);
+        updateStatus();
+      },
+      clearExamples: () => {
+        iml.clearDataset();
+        updateStatus();
+      },
+      saveState: () => saveState(),
+    };
+  }
+
   // Start animation
   requestAnimationFrame(animate);
 }

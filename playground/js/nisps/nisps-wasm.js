@@ -2,6 +2,8 @@
 // Uses nisps-core compiled to WASM for inference, training, and weight ops.
 // Training runs in a Web Worker for non-blocking operation.
 
+import { Dataset } from './dataset.js';
+
 // Activation function IDs matching C++ nisps::ACTIVATION_FUNCTIONS enum
 const ACTIVATION = { SIGMOID: 0, TANH: 1, LINEAR: 2, RELU: 3 };
 
@@ -116,8 +118,8 @@ export class WasmIML {
     this.totalTrainingIterations = 0;
     this.logFn = null;
 
-    // Dataset (JS-side for persistence/visualization access)
-    this.dataset = { features: [], labels: [], maxExamples: 100 };
+    // Dataset (JS-side for persistence/visualization access and sample weighting)
+    this.dataset = new Dataset(100);
 
     // Persistent WASM buffers for inference (avoid alloc/free per frame)
     const inputDim = nInputs + BIAS;
@@ -200,18 +202,11 @@ export class WasmIML {
     while (inVec.length < this.nInputs) inVec.push(0);
     const outVec = outputs.slice(0, this.nOutputs);
     while (outVec.length < this.nOutputs) outVec.push(0);
-
-    if (this.dataset.features.length >= this.dataset.maxExamples) {
-      this.dataset.features.shift();
-      this.dataset.labels.shift();
-    }
-    this.dataset.features.push([...inVec]);
-    this.dataset.labels.push([...outVec]);
+    this.dataset.add(inVec, outVec);
   }
 
   clearDataset() {
-    this.dataset.features = [];
-    this.dataset.labels = [];
+    this.dataset.clear();
     this.log('Dataset cleared.');
   }
 

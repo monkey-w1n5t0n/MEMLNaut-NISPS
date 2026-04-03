@@ -41,3 +41,9 @@ playground/osc-bridge/node_modules/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+# Node / Playwright
+node_modules/
+bun.lock
+playwright-report/
+test-results/

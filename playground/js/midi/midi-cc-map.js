@@ -2,6 +2,8 @@
 // Each param maps one MLP output to a MIDI CC message.
 
 const STORAGE_KEY = 'nisps-midi-cc-map';
+// Scoped key used when an engine ID is provided (avoids collision between engines).
+// Falls back to STORAGE_KEY for legacy/unknown callers.
 
 // Default starter set — common CC numbers
 const DEFAULT_CC_MAP = [
@@ -46,11 +48,12 @@ export function createCCParam(cc = 74, channel = 1) {
 
 /**
  * Load CC map from localStorage, or return default.
+ * @param {string} [key] — optional storage key (default: STORAGE_KEY)
  * @returns {Array} CC param definitions
  */
-export function loadCCMap() {
+export function loadCCMap(key = STORAGE_KEY) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const saved = JSON.parse(raw);
       if (Array.isArray(saved) && saved.length > 0) return saved;
@@ -64,10 +67,11 @@ export function loadCCMap() {
 /**
  * Save CC map to localStorage.
  * @param {Array} ccMap
+ * @param {string} [key] — optional storage key (default: STORAGE_KEY)
  */
-export function saveCCMap(ccMap) {
+export function saveCCMap(ccMap, key = STORAGE_KEY) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ccMap));
+    localStorage.setItem(key, JSON.stringify(ccMap));
   } catch (e) {
     console.warn('[MIDI CC] Failed to save map:', e);
   }

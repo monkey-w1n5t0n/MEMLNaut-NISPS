@@ -95,7 +95,11 @@ let _eocInited = false; // guard: init once per AudioContext lifetime
 
 // ---- MIDI CC state ----
 let midiOutput = null;
-let midiCCMap = loadCCMap();
+// Storage key scoped per engine so CC assignments don't bleed between engines.
+function midiCCStorageKey() {
+  return `nisps-midi-cc-map:${activeEngine?.id ?? 'shaper-feedback'}`;
+}
+let midiCCMap = loadCCMap(midiCCStorageKey());
 // Per-param overrides for MIDI CC mode (same shape as visual overrides)
 let midiCCOverrides = midiCCMap.map(p => ({
   min: p.min, max: p.max, curve: p.curve, frozen: p.muted, fixedValue: p.fixedValue,
@@ -110,6 +114,18 @@ function _generateCCColors(n) {
   }
 }
 _generateCCColors(midiCCMap.length);
+
+/** Reload the MIDI CC map from localStorage for the current engine. */
+function reloadMidiCCMap() {
+  const saved = loadCCMap(midiCCStorageKey());
+  midiCCMap.length = 0;
+  midiCCMap.push(...saved);
+  midiCCOverrides.length = 0;
+  midiCCOverrides.push(...saved.map(p => ({
+    min: p.min, max: p.max, curve: p.curve, frozen: p.muted, fixedValue: p.fixedValue,
+  })));
+  _generateCCColors(midiCCMap.length);
+}
 
 // tame level is now baked into groupOverrides defaults at init time (see ?tame URL param)
 let spreadLevel = 0.6;
@@ -648,7 +664,7 @@ class SynthVisualizer {
     if (i < 0 || !this._layout) return;
     if (this._barXPositions[i] < 0) return; // muted
 
-    const name = SYNTH_PARAM_NAMES[i] || `p${i}`;
+    const name = (activeEngine?.paramMeta?.[i]?.name) || SYNTH_PARAM_NAMES[i] || `p${i}`;
     const val = this.displayParams[i];
     const mapping = paramToSection[i];
     let rangeStr = '0.00 – 1.00';
@@ -782,6 +798,12 @@ async function setActiveEngine(engine) {
   EngineSwitcher.setLoading(engine.id, false);
   await resizeMLP(engine.paramCount);
 
+  // Reload MIDI CC map for the new engine (scoped storage key)
+  reloadMidiCCMap();
+
+  // Rebuild heatmap cells from the new engine's paramMeta
+  rebuildHeatmap(engine.paramMeta);
+
   // Rewire EOC chain to the new engine's output node
   if (eocChain && _eocInited) {
     const outputNode = engine.getOutputNode();
@@ -892,8 +914,8 @@ async function init() {
 
   $followPill = document.getElementById('follow-pill');
 
-  // Build heatmap cells
-  buildHeatmap();
+  // Build heatmap cells (engine-aware: uses activeEngine.paramMeta for synth mode)
+  rebuildHeatmap(activeEngine.paramMeta);
 
   // Build raw param sliders
   buildEngineParams();
@@ -1052,15 +1074,56 @@ async function init() {
   requestAnimationFrame(animate);
 }
 
+// ---- Heatmap helpers ----
+
+/**
+ * Derive a stable HSL color string from a group name.
+ * Uses a simple djb2-style hash to map any group string to a consistent hue.
+ */
+function _colorFromGroup(group) {
+  let hash = 5381;
+  for (let i = 0; i < group.length; i++) {
+    hash = ((hash << 5) + hash) + group.charCodeAt(i);
+    hash |= 0; // force 32-bit int
+  }
+  const hue = ((hash >>> 0) % 360);
+  return `hsl(${hue}, 70%, 55%)`;
+}
+
+/**
+ * Rebuild heatmap cells (and reset per-param state arrays) from a paramMeta array.
+ * Call this when the active engine switches to update the heatmap for the new param layout.
+ * @param {Array<{id:string, name:string, group:string}>} paramMeta
+ */
+function rebuildHeatmap(paramMeta) {
+  // Resize state arrays to match the new engine's param count
+  rawParamValues = new Array(paramMeta.length).fill(0.5);
+  _lastSentParams = new Float32Array(paramMeta.length);
+  buildHeatmap();
+}
+
 // ---- Heatmap (bar chart style) ----
 function buildHeatmap() {
   $heatmapCells.innerHTML = '';
   const isSynth = outputMode === 'synth';
   const isMidiCC = outputMode === 'midi-cc';
   const isAudioCanvas = outputMode === 'audio-canvas';
-  const count = isMidiCC ? midiCCMap.length : isSynth ? N_SYNTH_OUTPUTS : isAudioCanvas ? N_AUDIO_OUTPUTS : N_VISUAL_OUTPUTS;
-  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
-  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : isAudioCanvas ? AUDIO_PARAM_COLORS : VISUAL_PARAM_COLORS;
+
+  // For synth mode, derive names and colors from the active engine's paramMeta.
+  // For all other modes, use the static arrays as before.
+  let count, names, colors;
+  if (isSynth && activeEngine?.paramMeta) {
+    const meta = activeEngine.paramMeta;
+    count = meta.length;
+    // C15 has curated per-param colors from SYNTH_PARAM_COLORS; other engines derive from group.
+    const useCuratedColors = activeEngine.id === 'shaper-feedback' && SYNTH_PARAM_COLORS.length === meta.length;
+    names = meta.map(p => p.name);
+    colors = useCuratedColors ? SYNTH_PARAM_COLORS : meta.map(p => _colorFromGroup(p.group));
+  } else {
+    count = isMidiCC ? midiCCMap.length : isAudioCanvas ? N_AUDIO_OUTPUTS : N_VISUAL_OUTPUTS;
+    names = isMidiCC ? midiCCMap.map(p => p.name) : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
+    colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isAudioCanvas ? AUDIO_PARAM_COLORS : VISUAL_PARAM_COLORS;
+  }
 
   for (let i = 0; i < count; i++) {
     const cell = document.createElement('div');
@@ -1146,8 +1209,17 @@ function setHeatmapValue(paramIndex, e, cell) {
   const isSynth = outputMode === 'synth';
   const isMidiCC = outputMode === 'midi-cc';
   const isAudioCanvas = outputMode === 'audio-canvas';
-  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
-  $heatmapTooltip.textContent = `${names[paramIndex]}: ${x.toFixed(3)}`;
+  let paramName;
+  if (isSynth && activeEngine?.paramMeta?.[paramIndex]) {
+    paramName = activeEngine.paramMeta[paramIndex].name;
+  } else if (isMidiCC) {
+    paramName = midiCCMap[paramIndex]?.name ?? `p${paramIndex}`;
+  } else if (isAudioCanvas) {
+    paramName = AUDIO_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
+  } else {
+    paramName = VISUAL_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
+  }
+  $heatmapTooltip.textContent = `${paramName}: ${x.toFixed(3)}`;
   $heatmapTooltip.classList.add('visible');
   $heatmapTooltip.style.left = `${rect.left}px`;
 }
@@ -1213,10 +1285,23 @@ function showParamPopup(paramIndex, cell) {
   const isSynth = outputMode === 'synth';
   const isMidiCC = outputMode === 'midi-cc';
   const isAudioCanvas = outputMode === 'audio-canvas';
-  const names = isMidiCC ? midiCCMap.map(p => p.name) : isSynth ? SYNTH_PARAM_NAMES : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
-  const colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isSynth ? SYNTH_PARAM_COLORS : isAudioCanvas ? AUDIO_PARAM_COLORS : VISUAL_PARAM_COLORS;
-  const name = names[paramIndex];
-  const color = colors[paramIndex];
+  let name, color;
+  if (isSynth && activeEngine?.paramMeta?.[paramIndex]) {
+    const pm = activeEngine.paramMeta[paramIndex];
+    name = pm.name;
+    // Use curated C15 colors when available, else derive from group.
+    const useCuratedColors = activeEngine.id === 'shaper-feedback' && SYNTH_PARAM_COLORS.length > paramIndex;
+    color = useCuratedColors ? SYNTH_PARAM_COLORS[paramIndex] : _colorFromGroup(pm.group);
+  } else if (isMidiCC) {
+    name = midiCCMap[paramIndex]?.name ?? `p${paramIndex}`;
+    color = MIDI_CC_PARAM_COLORS[paramIndex] ?? '#888';
+  } else if (isAudioCanvas) {
+    name = AUDIO_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
+    color = AUDIO_PARAM_COLORS[paramIndex] ?? '#888';
+  } else {
+    name = VISUAL_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
+    color = VISUAL_PARAM_COLORS[paramIndex] ?? '#888';
+  }
   const ov = getParamOverride(paramIndex);
   if (!ov) return;
 
@@ -1245,7 +1330,7 @@ function showParamPopup(paramIndex, cell) {
       header.textContent = nameInput.value;
       buildHeatmap();
       updateHeatmap(iml.getOutputs());
-      saveCCMap(midiCCMap);
+      saveCCMap(midiCCMap, midiCCStorageKey());
     });
     nameRow.appendChild(nameLabel);
     nameRow.appendChild(nameInput);
@@ -1273,7 +1358,7 @@ function showParamPopup(paramIndex, cell) {
         buildHeatmap();
         updateHeatmap(iml.getOutputs());
       }
-      saveCCMap(midiCCMap);
+      saveCCMap(midiCCMap, midiCCStorageKey());
     });
     ccRow.appendChild(ccLabel);
     ccRow.appendChild(ccInput);
@@ -1294,7 +1379,7 @@ function showParamPopup(paramIndex, cell) {
     chInput.addEventListener('change', () => {
       ccParam.channel = Math.max(1, Math.min(16, parseInt(chInput.value) || 1));
       chInput.value = ccParam.channel;
-      saveCCMap(midiCCMap);
+      saveCCMap(midiCCMap, midiCCStorageKey());
     });
     chRow.appendChild(chLabel);
     chRow.appendChild(chInput);
@@ -2507,7 +2592,7 @@ async function applyMidiCCPreset(preset) {
   })));
 
   _generateCCColors(midiCCMap.length);
-  saveCCMap(midiCCMap);
+  saveCCMap(midiCCMap, midiCCStorageKey());
 
   // Resize MLP if in midi-cc mode
   if (outputMode === 'midi-cc') {
@@ -2579,7 +2664,7 @@ async function initMIDICCControls() {
       midiCCMap.push(createCCParam(74, 1));
       midiCCOverrides.push({ min: 0, max: 1, curve: 0.5, frozen: false, fixedValue: 0.5 });
       _generateCCColors(midiCCMap.length);
-      saveCCMap(midiCCMap);
+      saveCCMap(midiCCMap, midiCCStorageKey());
       updateCountDisplay();
 
       // Resize MLP if we're in midi-cc mode
@@ -2598,7 +2683,7 @@ async function initMIDICCControls() {
       midiCCMap.pop();
       midiCCOverrides.pop();
       _generateCCColors(midiCCMap.length);
-      saveCCMap(midiCCMap);
+      saveCCMap(midiCCMap, midiCCStorageKey());
       updateCountDisplay();
 
       if (outputMode === 'midi-cc') {
@@ -2641,7 +2726,7 @@ async function initMIDICCControls() {
         frozen: p.muted ?? false, fixedValue: p.fixedValue ?? 0.5,
       })));
       _generateCCColors(midiCCMap.length);
-      saveCCMap(midiCCMap);
+      saveCCMap(midiCCMap, midiCCStorageKey());
       updateCountDisplay();
 
       if (outputMode === 'midi-cc') {

@@ -99,7 +99,7 @@ export class AudioCanvas {
           <line x1="12" y1="3" x2="12" y2="15"/>
         </svg>
         <div>Drop audio files here</div>
-        <div style="color:#bbb;font-size:0.68rem;margin-top:4px">MP3, WAV, FLAC, OGG, M4A</div>
+        <div style="color:#bbb;font-size:0.68rem;margin-top:4px">MP3, WAV, FLAC, OGG, M4A, OPUS, WebM, AIFF</div>
       </div>
     `;
     this._container.appendChild(this._dropOverlay);
@@ -169,9 +169,28 @@ export class AudioCanvas {
         <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6z"/></svg>
       </button>
       <span id="ac-clip-ct" style="color:#666;min-width:44px">0 clips</span>
+      <div style="width:1px;height:16px;background:rgba(255,255,255,0.15)"></div>
+      <button id="ac-add-files" title="Import audio files" style="
+        width:28px; height:28px; border-radius:50%; border:none; cursor:pointer;
+        background:rgba(255,255,255,0.1); color:#aaa; display:flex; align-items:center; justify-content:center;
+        font-size:1.1rem; font-family:inherit; transition:background 0.15s,color 0.15s;
+      ">+</button>
     `;
     this._container.appendChild(bar);
     this._controlBar = bar;
+
+    // Hidden file input for picker
+    this._fileInput = document.createElement('input');
+    this._fileInput.type = 'file';
+    this._fileInput.multiple = true;
+    this._fileInput.accept = 'audio/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.webm,.mp4,.wma,.aif,.aiff';
+    this._fileInput.style.display = 'none';
+    this._container.appendChild(this._fileInput);
+    this._fileInput.addEventListener('change', () => {
+      if (this._fileInput.files.length) this._handleDrop(this._fileInput.files);
+      this._fileInput.value = '';
+    });
+    bar.querySelector('#ac-add-files').addEventListener('click', () => this._fileInput.click());
 
     // Submode buttons
     bar.querySelectorAll('.ac-sbtn').forEach(btn => {
@@ -264,7 +283,7 @@ export class AudioCanvas {
   async _handleDrop(files) {
     if (!this._audioCtx) await this._initAudio();
     const valid = [...files].filter(f =>
-      f.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|m4a|aac)$/i.test(f.name));
+      f.type.startsWith('audio/') || /\.(mp3|wav|flac|ogg|m4a|aac|opus|webm|mp4|wma|aif|aiff)$/i.test(f.name));
     for (const file of valid) await this._loadFile(file);
   }
 

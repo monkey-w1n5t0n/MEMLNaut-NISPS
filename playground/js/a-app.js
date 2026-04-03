@@ -15,6 +15,8 @@ import { GamepadInput } from './ui/gamepad.js';
 import { HandTracker } from './ui/hand-tracker.js';
 import { createDevPanel } from './ui/dev-panel.js';
 import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
+import { EOCChain } from './eoc/index.js';
+import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -898,6 +900,13 @@ async function init() {
   // Auto-save every 10 seconds
   setInterval(saveState, 10000);
 
+  // EOC Effects Chain — initialise chain and wire drawer UI
+  const eocChain = new EOCChain();
+  const eocDrawerBody = document.getElementById('eoc-drawer-body');
+  if (eocDrawerBody) {
+    EOCChainUI.init(eocChain, eocDrawerBody);
+  }
+
   // Debug probe — exposed on window when ?debug=1 is in the URL.
   // Used by Playwright e2e tests. Zero footprint in production.
   if (new URLSearchParams(window.location.search).has('debug')) {
@@ -946,6 +955,7 @@ async function init() {
       evalLoss:     () => iml.evalLoss(),
       inferBatch:   (points) => iml.inferBatch(points),
       getLayerStats:() => iml.getLayerStats(),
+      eocChain,
     };
   }
 

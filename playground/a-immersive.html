@@ -150,6 +150,12 @@
       </svg>
       <span class="dock-label">Engine</span>
     </button>
+    <button class="dock-icon" data-drawer="eoc" title="Effects Chain" aria-label="Effects Chain">
+      <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
+        <path d="M4 8a4 4 0 0 1 4-4h1a1 1 0 0 0 0-2H8a6 6 0 0 0 0 12h1a1 1 0 0 0 0-2H8a4 4 0 0 1-4-4zm8 0a4 4 0 0 1-4 4H7a1 1 0 0 0 0 2h1a6 6 0 0 0 0-12H7a1 1 0 0 0 0 2h1a4 4 0 0 1 4 4z"/>
+      </svg>
+      <span class="dock-label">FX</span>
+    </button>
     <button class="dock-icon" data-drawer="help" title="Help">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="8" cy="8" r="6"/><path d="M6 6a2 2 0 0 1 4 0c0 1.5-2 1.5-2 3"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/>
@@ -305,6 +311,17 @@
       </div>
       <div class="drawer-body">
         <div class="engine-params" id="engine-params"></div>
+      </div>
+    </div>
+
+    <!-- EOC Effects Chain drawer -->
+    <div class="drawer hidden" id="drawer-eoc" data-drawer="eoc">
+      <div class="drawer-header">
+        <span>Effects Chain</span>
+        <button class="drawer-close" data-drawer="eoc">&times;</button>
+      </div>
+      <div class="drawer-body" id="eoc-drawer-body">
+        <!-- EOCChainUI renders here -->
       </div>
     </div>
   </div>

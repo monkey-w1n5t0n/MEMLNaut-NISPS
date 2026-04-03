@@ -2021,3 +2021,201 @@ html, body {
   min-width: 20px;
   text-align: center;
 }
+
+/* ---- EOC Chain UI ---- */
+
+.eoc-nisps-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.eoc-section-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 36px;
+}
+
+.eoc-nisps-toggle {
+  flex: 1;
+}
+
+.eoc-module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.eoc-empty-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 10px 0;
+  opacity: 0.6;
+}
+
+.eoc-module-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: default;
+  transition: background 0.15s;
+}
+
+.eoc-module-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.eoc-module-row.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.eoc-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.eoc-drag-handle:active {
+  cursor: grabbing;
+}
+
+.eoc-module-name {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eoc-param-badge {
+  font-size: 9px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Bypass pill toggle */
+.eoc-bypass-toggle {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 16px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.eoc-bypass-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.eoc-bypass-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.eoc-bypass-slider::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.eoc-bypass-toggle input:checked + .eoc-bypass-slider {
+  background: rgba(255, 106, 0, 0.25);
+  border-color: rgba(255, 106, 0, 0.4);
+}
+
+.eoc-bypass-toggle input:checked + .eoc-bypass-slider::after {
+  transform: translateY(-50%) translateX(14px);
+  background: var(--accent);
+}
+
+.eoc-remove-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.eoc-remove-btn:hover {
+  color: var(--danger);
+  border-color: rgba(255, 68, 102, 0.3);
+  background: rgba(255, 68, 102, 0.08);
+}
+
+/* Drop indicator line between rows during drag */
+.eoc-drop-indicator {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  margin: 2px 0;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* Add module bar */
+.eoc-add-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.eoc-add-hint {
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.5;
+  padding: 4px 0;
+}
+
+.eoc-add-btn {
+  font-size: 10px;
+  padding: 3px 8px;
+}

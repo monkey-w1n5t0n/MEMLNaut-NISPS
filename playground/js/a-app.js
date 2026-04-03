@@ -924,8 +924,8 @@ async function setActiveEngine(engine) {
   if (midiInput) midiInput.setEngine(engine);
   const btn = document.getElementById('synth-mode-btn');
   if (btn) btn.textContent = engine.displayName;
-  const engineDockBtn = document.querySelector('[data-drawer="params"]');
-  if (engineDockBtn) engineDockBtn.title = `Engine: ${engine.displayName}`;
+  const synthDockBtn = document.querySelector('[data-drawer="synth"]');
+  if (synthDockBtn) synthDockBtn.title = `Synth: ${engine.displayName}`;
   EngineSwitcher.setActive(engine.id);
   EngineSwitcher.setLoading(engine.id, false);
   await resizeMLP(totalOutputCount());
@@ -1097,7 +1097,7 @@ async function init() {
       description: '4-operator FM with continuous routing matrix. Algorithm emerges from exploration.',
     },
   ];
-  const engineSwitcherEl = document.getElementById('engine-params');
+  const engineSwitcherEl = document.getElementById('synth-engine-switcher');
   if (engineSwitcherEl) {
     EngineSwitcher.init(engineSwitcherEl, ENGINES, async (engineId) => {
       if (engineId === activeEngine?.id) return;

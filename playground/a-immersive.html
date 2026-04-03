@@ -158,11 +158,11 @@
       </svg>
       <span class="dock-label">Synth</span>
     </button>
-    <button class="dock-icon" data-drawer="params" title="Engine parameters">
+    <button class="dock-icon" data-drawer="params" title="NISPS ML parameters">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/>
       </svg>
-      <span class="dock-label">Engine</span>
+      <span class="dock-label">NISPS</span>
     </button>
     <button class="dock-icon" data-drawer="eoc" title="Effects Chain" aria-label="Effects Chain">
       <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
@@ -227,7 +227,7 @@
           <span class="mode-label">Output</span>
           <div class="pill-toggle pill-toggle-sm" id="output-toggle-float">
             <button class="pill-opt active" data-mode="visual">Visual</button>
-            <button class="pill-opt" data-mode="synth" id="synth-mode-btn">C15 Shaper-Feedback</button>
+            <button class="pill-opt" data-mode="synth" id="synth-mode-btn">Synth</button>
             <button class="pill-opt" data-mode="midi-cc">MIDI CC</button>
             <button class="pill-opt" data-mode="audio-canvas">Audio Canvas</button>
           </div>
@@ -245,6 +245,7 @@
         <button class="drawer-close" data-drawer="synth">&times;</button>
       </div>
       <div class="drawer-body" id="synth-panel">
+        <div id="synth-engine-switcher"></div>
         <div class="synth-row">
           <button class="action-btn accent" id="synth-start">Start Audio</button>
           <span class="synth-status" id="synth-status">Stopped</span>
@@ -317,10 +318,10 @@
       </div>
     </div>
 
-    <!-- Params drawer (NISPS engine tuning) -->
+    <!-- Params drawer (NISPS ML engine tuning) -->
     <div class="drawer hidden" id="drawer-params" data-drawer="params">
       <div class="drawer-header">
-        <span>Engine</span>
+        <span>NISPS</span>
         <button class="drawer-close" data-drawer="params">&times;</button>
       </div>
       <div class="drawer-body">

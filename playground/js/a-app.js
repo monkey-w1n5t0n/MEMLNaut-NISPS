@@ -4,7 +4,7 @@
 import { WasmIML } from './nisps/nisps-wasm.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
 import { AudioCanvas, N_AUDIO_OUTPUTS, AUDIO_PARAM_NAMES, AUDIO_PARAM_COLORS } from './audio/audio-canvas.js';
-import { C15Bridge } from './synth/c15-bridge.js';
+import { C15Adapter } from './synth/c15-adapter.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
 import { SYNTH_PARAM_MAP, SYNTH_PARAM_NAMES, SYNTH_PARAM_COLORS, applyCurve, applyGroupOverride } from './synth/param-map.js';
@@ -79,7 +79,8 @@ let inputMode = 'joystick'; // 'joystick' | 'hands'
 let handTracker = null;
 let visualizer;
 let synthVisualizer;
-let c15 = null;
+let activeEngine = null; // active SynthEngine (currently always a C15Adapter)
+let c15 = null;          // alias kept for MIDIInput and volume controls that still reference it
 let arpeggiator = null;
 let midiInput = null;
 
@@ -727,6 +728,21 @@ function outputCountForMode(mode) {
  * Joystick IML uses warm-start weight transfer to preserve learned mappings.
  * Training examples are always cleared (dataset is JS-side and output-count-specific).
  */
+// ---- Engine switching (stub for meml-phg UI) ----
+/**
+ * Hot-swap the active synth engine.
+ * Reinitialises the arpeggiator and resizes the MLP to match the new engine's
+ * param count. The new engine must already be initialised (init() called).
+ *
+ * @param {import('./synth/engine-interface.js').SynthEngine} engine
+ */
+async function setActiveEngine(engine) {
+  activeEngine = engine;
+  c15 = engine; // keep alias in sync
+  arpeggiator.setEngine(engine);
+  await resizeMLP(engine.paramCount);
+}
+
 async function resizeMLP(newOutputCount) {
   if (newOutputCount === N_OUTPUTS) return;
   N_OUTPUTS = newOutputCount;
@@ -756,6 +772,7 @@ async function resizeMLP(newOutputCount) {
 
   // Reset dependent state
   rawParamValues = new Array(N_OUTPUTS).fill(0.5);
+  _lastSentParams = new Float32Array(N_OUTPUTS);
 
   // Re-run inference
   iml.setInput(0, joyX);
@@ -789,15 +806,15 @@ async function init() {
   $synthVisCanvas = document.getElementById('synth-vis-canvas');
   synthVisualizer = new SynthVisualizer($synthVisCanvas);
 
-  // Synth
-  c15 = new C15Bridge();
-  c15.onStatusChange = msg => {
+  // Synth — use C15Adapter to satisfy the SynthEngine interface
+  activeEngine = new C15Adapter();
+  c15 = activeEngine; // alias: existing code that references c15 continues to work
+  activeEngine.onStatusChange = msg => {
     const el = document.getElementById('synth-status');
     if (el) el.textContent = msg;
   };
-  c15.loadParams();
-  arpeggiator = new Arpeggiator(c15);
-  midiInput = new MIDIInput(c15);
+  arpeggiator = new Arpeggiator(activeEngine);
+  midiInput = new MIDIInput(activeEngine.bridge); // MIDIInput still talks to the C15 bridge directly
   initMIDIControls();
 
   // MIDI Output
@@ -1541,7 +1558,7 @@ function onJoystickMove() {
 // ---- Output routing ----
 // Synth param throttling: only send values that changed beyond a dead zone.
 // Prevents ring buffer flooding (126 params × 30fps = 3780 msg/s > 512 capacity).
-const _lastSentParams = new Float32Array(N_OUTPUTS);
+let _lastSentParams = new Float32Array(N_OUTPUTS);
 const PARAM_DEAD_ZONE = 0.002; // ~0.2% change threshold
 let _lastParamSendTime = 0;
 const PARAM_SEND_INTERVAL = 50; // max ~20fps for synth param updates
@@ -1555,15 +1572,15 @@ function routeOutputs(outputs) {
     // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);
 
-    // C15 ring buffer: throttle + dead-zone filter
-    if (c15 && c15.running) {
+    // Engine param updates: throttle + dead-zone filter
+    if (activeEngine && activeEngine.running) {
       const now = performance.now();
       if (now - _lastParamSendTime >= PARAM_SEND_INTERVAL) {
         _lastParamSendTime = now;
         for (let i = 0; i < overridden.length && i < SYNTH_PARAM_MAP.length; i++) {
           const v = overridden[i];
           if (Math.abs(v - _lastSentParams[i]) > PARAM_DEAD_ZONE) {
-            c15.setParameter(SYNTH_PARAM_MAP[i].id, v);
+            activeEngine.setParam(i, v);
             _lastSentParams[i] = v;
           }
         }

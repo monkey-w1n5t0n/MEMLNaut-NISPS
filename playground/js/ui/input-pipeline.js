@@ -224,7 +224,7 @@ export class InputPipeline {
     const cx = x - 0.5;
     const cy = y - 0.5;
     const dist = Math.sqrt(cx * cx + cy * cy);
-    if (dist > 0.5) {
+    if (dist > 0.5 && dist > 1e-12) {
       const scale = 0.5 / dist;
       x = 0.5 + cx * scale;
       y = 0.5 + cy * scale;

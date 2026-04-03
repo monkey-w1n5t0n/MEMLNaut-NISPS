@@ -97,7 +97,7 @@ export class SnapshotStack {
     if (index < 0 || index >= this._stack.length) return null;
     const snapshot = this._stack[index];
     // Truncate: keep entries 0..index (inclusive), remove the rest
-    this._stack = this._stack.slice(0, index);
+    this._stack = this._stack.slice(0, index + 1);
     this._dispatch('snapshot:jump', { tag: snapshot.tag, depth: this.depth });
     return snapshot.state;
   }

@@ -224,6 +224,12 @@ export const EOCChainUI = {
     });
     row.appendChild(removeBtn);
 
+    // --- Manual param sliders (shown in bypass mode, or when module has params) ---
+    if (mod.paramCount > 0) {
+      const paramsSection = this._buildParamSliders(mod);
+      row.appendChild(paramsSection);
+    }
+
     // --- HTML5 Drag-and-drop ---
     row.addEventListener('dragstart', (e) => {
       this._dragId = mod.id;
@@ -281,6 +287,59 @@ export const EOCChainUI = {
     });
 
     return row;
+  },
+
+  // Per-module param sliders (collapsible, shown only when paramCount > 0)
+  _buildParamSliders(mod) {
+    const section = document.createElement('div');
+    section.className = 'eoc-params-section';
+
+    // Toggle button (chevron + label)
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'eoc-params-toggle';
+    const isManual = this._chain.nispsMode === 'bypass';
+    toggleBtn.textContent = isManual ? '▶ params (manual)' : '▶ params';
+    toggleBtn.title = 'Expand to show parameter sliders';
+
+    const sliderList = document.createElement('div');
+    sliderList.className = 'eoc-params-list eoc-params-collapsed';
+
+    toggleBtn.addEventListener('click', () => {
+      const collapsed = sliderList.classList.toggle('eoc-params-collapsed');
+      toggleBtn.textContent = collapsed
+        ? (isManual ? '▶ params (manual)' : '▶ params')
+        : (isManual ? '▼ params (manual)' : '▼ params');
+    });
+
+    // One slider per param
+    mod.paramMeta.forEach((meta, i) => {
+      const row = document.createElement('div');
+      row.className = 'eoc-param-row';
+
+      const label = document.createElement('label');
+      label.className = 'eoc-param-label';
+      label.textContent = meta.name ?? meta.id ?? `Param ${i}`;
+
+      const slider = document.createElement('input');
+      slider.type  = 'range';
+      slider.min   = '0';
+      slider.max   = '1';
+      slider.step  = '0.001';
+      slider.value = String(mod.getCurrentParamValue(i));
+      slider.className = 'eoc-param-slider';
+
+      slider.addEventListener('input', () => {
+        mod.setParam(i, parseFloat(slider.value));
+      });
+
+      row.appendChild(label);
+      row.appendChild(slider);
+      sliderList.appendChild(row);
+    });
+
+    section.appendChild(toggleBtn);
+    section.appendChild(sliderList);
+    return section;
   },
 
   // Add-module bar

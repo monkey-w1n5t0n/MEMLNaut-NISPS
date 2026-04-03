@@ -80,6 +80,14 @@ export class C15Bridge {
   /** SharedArrayBuffer for the ring buffer — available after start() */
   get sharedBuffer() { return this._sab; }
 
+  /**
+   * The limiter node — the last AudioNode before destination.
+   * Use this as the input to any post-processing chain (e.g. EOCChain).
+   * Only available after start().
+   * @returns {DynamicsCompressorNode|null}
+   */
+  get limiterNode() { return this.limiter ?? null; }
+
   _status(msg) {
     console.log('[C15]', msg);
     this._onStatusChange?.(msg);

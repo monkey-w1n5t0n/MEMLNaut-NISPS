@@ -144,13 +144,15 @@ export class C15Adapter extends SynthEngine {
   // --- Audio graph ---
 
   /**
-   * Return the master gain node. Connect this to a compressor or destination.
-   * Only available after init() completes.
+   * Return the limiter node — the last AudioNode before destination.
+   * This is the correct insertion point for post-processing (e.g. EOCChain).
+   * Falls back to masterGain before start() is called.
+   * Only useful after init() completes.
    *
-   * @returns {GainNode}
+   * @returns {AudioNode}
    */
   getOutputNode() {
-    return this._bridge.masterGain;
+    return this._bridge.limiterNode ?? this._bridge.masterGain;
   }
 
   // --- C15-specific passthrough (for MIDIInput and volume controls) ---

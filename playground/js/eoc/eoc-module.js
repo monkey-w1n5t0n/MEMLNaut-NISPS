@@ -33,6 +33,8 @@ export class EOCModule {
     this._bypassOut  = null;  // GainNode: output exit point
     this._bypassDry  = null;  // GainNode: direct input→output path when bypassed
     this._initialized = false;
+    // Stored normalized param values — set via setParam(), read by getCurrentParamValue()
+    this._paramValues = [];
   }
 
   // ---------------------------------------------------------------------------
@@ -184,7 +186,24 @@ export class EOCModule {
    * @param {number} normalizedValue — [0, 1]
    */
   setParam(index, normalizedValue) { // eslint-disable-line no-unused-vars
-    // default no-op — override in subclass
+    // Store the value so getCurrentParamValue() can read it back
+    this._paramValues[index] = normalizedValue;
+    // default no-op — override in subclass for actual audio effect
+  }
+
+  /**
+   * Get the last normalized value set for a parameter.
+   * Returns the param's init value (from paramMeta) if never explicitly set.
+   *
+   * @param {number} index — 0-based index into paramMeta
+   * @returns {number} normalized value [0, 1]
+   */
+  getCurrentParamValue(index) {
+    if (this._paramValues[index] !== undefined) {
+      return this._paramValues[index];
+    }
+    const meta = this.paramMeta[index];
+    return meta ? (meta.init ?? 0) : 0;
   }
 
   // ---------------------------------------------------------------------------

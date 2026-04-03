@@ -15,6 +15,8 @@ import { GamepadInput } from './ui/gamepad.js';
 import { HandTracker } from './ui/hand-tracker.js';
 import { createDevPanel } from './ui/dev-panel.js';
 import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
+import { ADDITIVE_PRESETS, ADDITIVE_PRESET_TIERS } from './synth/additive-presets.js';
+import { FM_PRESETS, FM_PRESET_TIERS } from './synth/fm-presets.js';
 import { EOCChain } from './eoc/index.js';
 import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 import { EngineSwitcher } from './ui/engine-switcher.js';
@@ -256,11 +258,69 @@ const paramToSection = [];
   }
 }
 
+// ---- Engine-aware preset helpers ----
+
+/**
+ * Return the preset array for the given engine id.
+ */
+function getPresetsForEngine(engineId) {
+  switch (engineId) {
+    case 'shaper-feedback': return SYNTH_PRESETS;
+    case 'additive':        return ADDITIVE_PRESETS;
+    case 'fm':              return FM_PRESETS;
+    default:                return [];
+  }
+}
+
+/**
+ * Return the tier labels for the given engine id.
+ */
+function getPresetTiersForEngine(engineId) {
+  switch (engineId) {
+    case 'shaper-feedback': return PRESET_TIERS;
+    case 'additive':        return ADDITIVE_PRESET_TIERS;
+    case 'fm':              return FM_PRESET_TIERS;
+    default:                return [];
+  }
+}
+
+// ---- Engine param overrides (for non-C15 engines) ----
+// Flat array of per-param overrides for the current Faust engine.
+// null when C15 is active (uses groupOverrides instead).
+// Each entry: { min, max, curve, muted, fixedValue }
+let engineParamOverrides = null;
+
+/**
+ * Build a fresh engineParamOverrides array from the current engine's paramMeta.
+ * All params default to unmuted with [0,1] range and linear curve.
+ */
+function buildEngineParamOverrides() {
+  const meta = activeEngine?.paramMeta;
+  if (!meta) { engineParamOverrides = null; return; }
+  engineParamOverrides = meta.map(p => ({
+    min: 0,
+    max: 1,
+    curve: 0.5,
+    muted: false,
+    fixedValue: 0.5,
+  }));
+}
+
 /**
  * Apply group overrides (per-param curve + min/max) to a single ML output value.
  * Returns the remapped value, or fixedValue if the param is muted.
+ *
+ * For non-C15 engines, uses engineParamOverrides (flat array).
+ * For C15, uses the nested groupOverrides/paramToSection system.
  */
 function applyGroupOverrides(rawValue, paramIndex) {
+  // Non-C15 engine: use flat engine param overrides
+  if (engineParamOverrides && paramIndex < engineParamOverrides.length) {
+    const p = engineParamOverrides[paramIndex];
+    if (p.muted) return p.fixedValue;
+    return applyGroupOverride(rawValue, p.curve, p.min, p.max);
+  }
+  // C15 path: nested section/group overrides
   const mapping = paramToSection[paramIndex];
   if (!mapping) return rawValue;
   const ov = groupOverrides[mapping.si];
@@ -273,6 +333,11 @@ function applyGroupOverrides(rawValue, paramIndex) {
 
 /** Check if param at given index is muted */
 function isParamMuted(paramIndex) {
+  // Non-C15 engine: use flat engine param overrides
+  if (engineParamOverrides && paramIndex < engineParamOverrides.length) {
+    return engineParamOverrides[paramIndex].muted;
+  }
+  // C15 path
   const mapping = paramToSection[paramIndex];
   if (!mapping) return false;
   return groupOverrides[mapping.si].params[mapping.li].muted;
@@ -282,67 +347,111 @@ function isParamMuted(paramIndex) {
 
 /**
  * Apply a synth preset by id.
- * Sets groupOverrides (muted/active, min/max/curve/fixedValue) for all 126 params,
+ * Engine-aware: uses groupOverrides for C15, engineParamOverrides for Faust engines.
+ * Sets muted/active, min/max/curve/fixedValue for all params,
  * re-routes outputs, saves state, and updates the UI dropdown.
  */
 function applyPreset(presetId) {
-  const preset = SYNTH_PRESETS.find(p => p.id === presetId);
+  const engineId = activeEngine?.id ?? 'shaper-feedback';
+  const presets = getPresetsForEngine(engineId);
+  const preset = presets.find(p => p.id === presetId);
   if (!preset) {
-    console.warn(`[NISPS] Unknown preset: ${presetId}`);
+    console.warn(`[NISPS] Unknown preset: ${presetId} (engine: ${engineId})`);
     return;
   }
 
-  const t = tameLevel;
-  const allActive = preset.active === null; // null = all params active (Tier 4)
+  const allActive = preset.active === null; // null = all params active
   const activeSet = allActive ? null : new Set(preset.active);
   const overrides = preset.overrides || {};
   const mutedOv = preset.mutedOverrides || {};
 
-  for (let i = 0; i < N_SYNTH_OUTPUTS; i++) {
-    const param = SYNTH_PARAM_MAP[i];
-    const mapping = paramToSection[i];
-    if (!mapping) continue;
-    const gp = groupOverrides[mapping.si].params[mapping.li];
-    const paramName = param.name;
+  if (engineId === 'shaper-feedback') {
+    // ---- C15 path: uses groupOverrides / paramToSection ----
+    const t = tameLevel;
+    for (let i = 0; i < N_SYNTH_OUTPUTS; i++) {
+      const param = SYNTH_PARAM_MAP[i];
+      const mapping = paramToSection[i];
+      if (!mapping) continue;
+      const gp = groupOverrides[mapping.si].params[mapping.li];
+      const paramName = param.name;
 
-    // Tame-derived defaults for this param
-    const safeMin = param.safeMin ?? 0;
-    const safeMax = param.safeMax ?? 1;
-    const tameMin = safeMin * t;
-    const tameMax = 1 - (1 - safeMax) * t;
+      const safeMin = param.safeMin ?? 0;
+      const safeMax = param.safeMax ?? 1;
+      const tameMin = safeMin * t;
+      const tameMax = 1 - (1 - safeMax) * t;
 
-    const isActive = allActive || activeSet.has(paramName);
+      const isActive = allActive || activeSet.has(paramName);
 
-    if (isActive) {
-      gp.muted = false;
-      const ov = overrides[paramName];
-      if (ov) {
-        gp.min = ov.min !== undefined ? ov.min : tameMin;
-        gp.max = ov.max !== undefined ? ov.max : tameMax;
-        gp.curve = ov.curve !== undefined ? ov.curve : 0.5;
-        gp.fixedValue = ov.fixedValue !== undefined ? ov.fixedValue : param.defaultValue;
+      if (isActive) {
+        gp.muted = false;
+        const ov = overrides[paramName];
+        if (ov) {
+          gp.min = ov.min !== undefined ? ov.min : tameMin;
+          gp.max = ov.max !== undefined ? ov.max : tameMax;
+          gp.curve = ov.curve !== undefined ? ov.curve : 0.5;
+          gp.fixedValue = ov.fixedValue !== undefined ? ov.fixedValue : param.defaultValue;
+        } else {
+          gp.min = tameMin;
+          gp.max = tameMax;
+          gp.curve = 0.5;
+          gp.fixedValue = param.defaultValue;
+        }
       } else {
+        gp.muted = true;
+        const mov = mutedOv[paramName];
+        gp.fixedValue = (mov && mov.fixedValue !== undefined) ? mov.fixedValue : param.defaultValue;
         gp.min = tameMin;
         gp.max = tameMax;
         gp.curve = 0.5;
-        gp.fixedValue = param.defaultValue;
       }
-    } else {
-      gp.muted = true;
-      const mov = mutedOv[paramName];
-      gp.fixedValue = (mov && mov.fixedValue !== undefined) ? mov.fixedValue : param.defaultValue;
-      // Keep tame-derived ranges for manual unmuting
-      gp.min = tameMin;
-      gp.max = tameMax;
-      gp.curve = 0.5;
     }
-  }
 
-  // Apply group curves
-  for (let si = 0; si < SYNTH_SECTIONS.length; si++) {
-    const gc = preset.groupCurves || {};
-    const secName = SYNTH_SECTIONS[si].name;
-    groupOverrides[si].curve = (gc[secName] !== undefined) ? gc[secName] : 0.5;
+    // Apply group curves
+    for (let si = 0; si < SYNTH_SECTIONS.length; si++) {
+      const gc = preset.groupCurves || {};
+      const secName = SYNTH_SECTIONS[si].name;
+      groupOverrides[si].curve = (gc[secName] !== undefined) ? gc[secName] : 0.5;
+    }
+  } else {
+    // ---- Faust engine path: uses engineParamOverrides (flat array) ----
+    const meta = activeEngine?.paramMeta ?? [];
+    // Build id -> index lookup
+    const idToIndex = new Map();
+    meta.forEach((p, i) => idToIndex.set(p.id, i));
+
+    // Ensure engineParamOverrides exists with correct length
+    if (!engineParamOverrides || engineParamOverrides.length !== meta.length) {
+      buildEngineParamOverrides();
+    }
+
+    for (let i = 0; i < meta.length; i++) {
+      const paramId = meta[i].id;
+      const ep = engineParamOverrides[i];
+      const isActive = allActive || activeSet.has(paramId);
+
+      if (isActive) {
+        ep.muted = false;
+        const ov = overrides[paramId];
+        if (ov) {
+          ep.min = ov.min !== undefined ? ov.min : 0;
+          ep.max = ov.max !== undefined ? ov.max : 1;
+          ep.curve = ov.curve !== undefined ? ov.curve : 0.5;
+          ep.fixedValue = ov.fixedValue !== undefined ? ov.fixedValue : 0.5;
+        } else {
+          ep.min = 0;
+          ep.max = 1;
+          ep.curve = 0.5;
+          ep.fixedValue = 0.5;
+        }
+      } else {
+        ep.muted = true;
+        const mov = mutedOv[paramId];
+        ep.fixedValue = (mov && mov.fixedValue !== undefined) ? mov.fixedValue : 0.5;
+        ep.min = 0;
+        ep.max = 1;
+        ep.curve = 0.5;
+      }
+    }
   }
 
   activeSynthPresetId = presetId;
@@ -362,7 +471,7 @@ function applyPreset(presetId) {
   // Save to storage
   saveState();
 
-  console.log(`[NISPS] Applied synth preset: ${preset.name}`);
+  console.log(`[NISPS] Applied synth preset: ${preset.name} (engine: ${engineId})`);
 }
 
 // ---- SynthVisualizer class ----
@@ -843,6 +952,19 @@ async function setActiveEngine(engine) {
       }
     }
   }
+
+  // Build engine-specific param overrides (null for C15, flat array for Faust)
+  if (engine.id === 'shaper-feedback') {
+    engineParamOverrides = null;
+  } else {
+    buildEngineParamOverrides();
+  }
+
+  // Rebuild the preset selector for the new engine
+  rebuildPresetSelector();
+
+  // Clear active preset — it belongs to the previous engine
+  activeSynthPresetId = null;
 }
 
 async function resizeMLP(newOutputCount) {
@@ -1044,9 +1166,10 @@ async function init() {
   // Wire synth preset selector
   wireSynthPresets();
 
-  // Check URL ?preset param (overrides localStorage)
+  // Check URL ?preset param (overrides localStorage) — search all engines
   const urlPreset = urlParams.get('preset');
-  if (urlPreset && SYNTH_PRESETS.some(p => p.id === urlPreset)) {
+  const allPresets = [...SYNTH_PRESETS, ...ADDITIVE_PRESETS, ...FM_PRESETS];
+  if (urlPreset && allPresets.some(p => p.id === urlPreset)) {
     applyPreset(urlPreset);
   } else if (activeSynthPresetId) {
     // Restored from localStorage — sync the dropdown
@@ -3065,9 +3188,58 @@ function wireKeyboard() {
 
 // ---- Quick play controls ----
 // ---- Synth Preset Selector ----
+
+/**
+ * Rebuild the <select> dropdown options for the current engine's presets.
+ * Called on engine switch and at init time.
+ */
+function rebuildPresetSelector() {
+  const $select = document.getElementById('synth-preset-select');
+  if (!$select) return;
+
+  const engineId = activeEngine?.id ?? 'shaper-feedback';
+  const presets = getPresetsForEngine(engineId);
+  const tiers = getPresetTiersForEngine(engineId);
+
+  // Clear existing options
+  $select.innerHTML = '';
+
+  // Manual option
+  const manualOpt = document.createElement('option');
+  manualOpt.value = '';
+  manualOpt.textContent = 'Manual';
+  $select.appendChild(manualOpt);
+
+  // Group by tier
+  for (const tier of tiers) {
+    const group = document.createElement('optgroup');
+    group.label = tier.label;
+    for (const preset of presets.filter(p => p.tier === tier.tier)) {
+      const opt = document.createElement('option');
+      opt.value = preset.id;
+      opt.textContent = preset.name;
+      group.appendChild(opt);
+    }
+    if (group.children.length > 0) {
+      $select.appendChild(group);
+    }
+  }
+
+  // Sync current selection
+  if (activeSynthPresetId && presets.some(p => p.id === activeSynthPresetId)) {
+    $select.value = activeSynthPresetId;
+  } else {
+    $select.value = '';
+  }
+}
+
 function wireSynthPresets() {
   const $select = document.getElementById('synth-preset-select');
   if (!$select) return;
+
+  // Build initial options for the active engine
+  rebuildPresetSelector();
+
   $select.addEventListener('change', () => {
     const val = $select.value;
     if (val === '') {

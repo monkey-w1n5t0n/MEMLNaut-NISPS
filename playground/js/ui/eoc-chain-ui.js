@@ -11,7 +11,10 @@
 //
 // Reacts to 'eoc:change' events on window to stay in sync with external mutations.
 
-import { EOCModule } from '../eoc/eoc-module.js';
+import { EOCModule }        from '../eoc/eoc-module.js';
+import { EQModule }         from '../eoc/modules/eq-module.js';
+import { CompressorModule } from '../eoc/modules/compressor-module.js';
+import { ReverbModule }     from '../eoc/modules/reverb-module.js';
 
 // ---------------------------------------------------------------------------
 // Stub module factory
@@ -37,6 +40,12 @@ const MODULE_ORDER = ['saturation', 'eq', 'compressor', 'reverb', 'delay', 'mast
  * @returns {EOCModule}
  */
 export function moduleFactory(id) {
+  // Real Faust WASM implementations
+  if (id === 'eq')         return new EQModule();
+  if (id === 'compressor') return new CompressorModule();
+  if (id === 'reverb')     return new ReverbModule();
+
+  // Stub for modules not yet implemented (saturation, delay, master)
   const def = STUB_DEFS[id];
   if (!def) throw new Error(`moduleFactory: unknown module id '${id}'`);
 

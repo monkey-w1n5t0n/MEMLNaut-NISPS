@@ -1,0 +1,147 @@
+// playground/js/eoc/modules/reverb-module.js — Zita reverb EOCModule
+//
+// Faust DSP: playground/faust/eoc-reverb.dsp
+// WASM:      playground/faust/eoc-reverb.wasm
+// JSON:      playground/faust/eoc-reverb.json
+//
+// 8 params (Faust JSON alphabetical order; mod_rate is declared in DSP but not
+// exposed by re.zita_rev1_stereo, so it does not appear in the JSON):
+//   0: decay     [0.1–20 s, init 3]
+//   1: diffusion [0–1, init 0.7]
+//   2: hi_damp   [0–1, init 0.5]
+//   3: lo_damp   [0–1, init 0]
+//   4: mix       [0–1, init 0.2]
+//   5: predelay  [0–100 ms, init 0]
+//   6: size      [0–1, init 0.5]
+//   7: width     [0–1, init 0.8]
+//
+// Note: mod_rate param is listed in paramMeta as a placeholder (fixed at 0.5 Hz)
+// to preserve the 9-param count described in the spec. It has no effect on audio
+// until zita modulation is plumbed through.
+
+import { EOCModule } from '../eoc-module.js';
+import { loadFaustParamMeta } from '../../synth/faust-param-meta.js';
+
+const REVERB_PARAM_META = [
+  { id: 'decay',     name: 'Decay',     min: 0.1,  max: 20,    init: (3-0.1)/(20-0.1),   curve: 0.3, group: 'Reverb' },
+  { id: 'diffusion', name: 'Diffusion', min: 0,    max: 1,     init: 0.7,                 curve: 0.5, group: 'Reverb' },
+  { id: 'hi_damp',   name: 'Hi Damp',   min: 0,    max: 1,     init: 0.5,                 curve: 0.5, group: 'Reverb' },
+  { id: 'lo_damp',   name: 'Lo Damp',   min: 0,    max: 1,     init: 0,                   curve: 0.5, group: 'Reverb' },
+  { id: 'mix',       name: 'Mix',       min: 0,    max: 1,     init: 0.2,                 curve: 0.5, group: 'Reverb' },
+  { id: 'predelay',  name: 'Predelay',  min: 0,    max: 100,   init: 0,                   curve: 0.4, group: 'Reverb' },
+  { id: 'size',      name: 'Size',      min: 0,    max: 1,     init: 0.5,                 curve: 0.5, group: 'Reverb' },
+  { id: 'width',     name: 'Width',     min: 0,    max: 1,     init: 0.8,                 curve: 0.5, group: 'Reverb' },
+  // Placeholder: mod_rate is not yet connected to zita internals
+  { id: 'mod_rate',  name: 'Mod Rate',  min: 0,    max: 5,     init: 0.5/5,               curve: 0.5, group: 'Reverb' },
+];
+
+export class ReverbModule extends EOCModule {
+  constructor() {
+    super();
+    this._workletNode = null;
+    this._effectGain  = null;
+    this._paramMeta   = REVERB_PARAM_META;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EOCModule identity
+  // ---------------------------------------------------------------------------
+
+  get id()          { return 'reverb'; }
+  get displayName() { return 'Reverb'; }
+  get paramMeta()   { return this._paramMeta; }
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
+  async init(audioCtx) {
+    await super.init(audioCtx);
+
+    // After loading JSON, merge — but keep mod_rate placeholder (index 8)
+    try {
+      const fetched = await loadFaustParamMeta('faust/eoc-reverb.json');
+      if (fetched && fetched.length > 0) {
+        // Append mod_rate placeholder so total stays 9
+        this._paramMeta = [
+          ...fetched,
+          { id: 'mod_rate', name: 'Mod Rate', min: 0, max: 5, init: 0.5/5, curve: 0.5, group: 'Reverb' },
+        ];
+      }
+    } catch (err) {
+      console.warn('[ReverbModule] Could not load eoc-reverb.json, using static paramMeta:', err.message);
+    }
+
+    try {
+      await audioCtx.audioWorklet.addModule('faust/faust-worklet-processor.js');
+    } catch (_) { /* already registered */ }
+    await audioCtx.audioWorklet.addModule('faust/eoc-reverb-processor.js');
+
+    this._workletNode = new AudioWorkletNode(audioCtx, 'eoc-reverb-processor', {
+      numberOfInputs:    1,
+      numberOfOutputs:   1,
+      outputChannelCount: [2],
+    });
+
+    const wasmResp  = await fetch('faust/eoc-reverb.wasm');
+    const wasmBytes = await wasmResp.arrayBuffer();
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('ReverbModule worklet init timeout')), 10000);
+      this._workletNode.port.onmessage = (e) => {
+        if (e.data.type === 'ready')  { clearTimeout(timeout); resolve(); }
+        if (e.data.type === 'error')  { clearTimeout(timeout); reject(new Error(e.data.message)); }
+      };
+      this._workletNode.port.postMessage(
+        { type: 'init', wasmBytes, sampleRate: audioCtx.sampleRate },
+        [wasmBytes],
+      );
+    });
+
+    this._effectGain = audioCtx.createGain();
+    this._effectGain.gain.value = 1;
+
+    this._bypassIn.connect(this._workletNode);
+    this._workletNode.connect(this._effectGain);
+    this._effectGain.connect(this._bypassOut);
+
+    this._finishInit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Real-time control
+  // ---------------------------------------------------------------------------
+
+  setParam(index, normalizedValue) {
+    super.setParam(index, normalizedValue);
+    if (!this._workletNode) return;
+    const meta = this._paramMeta[index];
+    if (!meta) return;
+    // mod_rate (index 8) is a placeholder — skip sending to worklet
+    if (meta.id === 'mod_rate') return;
+    const raw = meta.min + normalizedValue * (meta.max - meta.min);
+    this._workletNode.port.postMessage({ type: 'setParam', index, value: raw });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bypass
+  // ---------------------------------------------------------------------------
+
+  _onBypassChange(enabled) {
+    if (!this._effectGain) return;
+    const t = this._audioCtx.currentTime;
+    this._effectGain.gain.setTargetAtTime(enabled ? 1 : 0, t, 0.005);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dispose
+  // ---------------------------------------------------------------------------
+
+  dispose() {
+    this._workletNode?.disconnect();
+    this._effectGain?.disconnect();
+    this._workletNode = null;
+    this._effectGain  = null;
+    super.dispose();
+  }
+}

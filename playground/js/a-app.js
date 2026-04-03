@@ -260,6 +260,44 @@ const paramToSection = [];
   }
 }
 
+/**
+ * Rebuild paramToSection from an engine's paramMeta groups.
+ * For C15, restores the static SYNTH_SECTIONS-based mapping.
+ * For non-C15 engines, derives sections from paramMeta group fields.
+ */
+function rebuildParamToSection(paramMeta) {
+  paramToSection.length = 0;
+  let si = 0, li = 0;
+  let currentGroup = null;
+  for (const pm of paramMeta) {
+    const group = pm.group ?? 'Other';
+    if (group !== currentGroup) {
+      if (currentGroup !== null) si++;
+      currentGroup = group;
+      li = 0;
+    }
+    paramToSection.push({ si, li });
+    li++;
+  }
+}
+
+/**
+ * Restore paramToSection to the static C15 layout (from SYNTH_SECTIONS).
+ */
+function restoreC15ParamToSection() {
+  paramToSection.length = 0;
+  let idx = 0;
+  for (let si = 0; si < SYNTH_SECTIONS.length; si++) {
+    for (let li = 0; li < SYNTH_SECTIONS[si].count; li++) {
+      paramToSection.push({ si, li });
+      idx++;
+    }
+  }
+  while (paramToSection.length < N_SYNTH_OUTPUTS) {
+    paramToSection.push(null);
+  }
+}
+
 // ---- Engine-aware preset helpers ----
 
 /**
@@ -527,6 +565,46 @@ class SynthVisualizer {
     this.resize();
   }
 
+  /**
+   * Rebuild the visualizer for a new engine's param layout.
+   * Derives sections from paramMeta's group field so it works with any engine.
+   * @param {Array<{group?: string}>} paramMeta
+   */
+  rebuild(paramMeta) {
+    if (!paramMeta || paramMeta.length === 0) return;
+
+    // Derive sections from paramMeta groups
+    const sections = [];
+    let currentGroup = null;
+    let currentCount = 0;
+    for (const pm of paramMeta) {
+      const group = pm.group ?? 'Other';
+      if (group !== currentGroup) {
+        if (currentGroup !== null) {
+          sections.push({ name: currentGroup, count: currentCount, color: _colorFromGroup(currentGroup) });
+        }
+        currentGroup = group;
+        currentCount = 0;
+      }
+      currentCount++;
+    }
+    if (currentGroup !== null) {
+      sections.push({ name: currentGroup, count: currentCount, color: _colorFromGroup(currentGroup) });
+    }
+
+    // Rebuild sectionMap
+    this.sectionMap = [];
+    for (const sec of sections) {
+      for (let i = 0; i < sec.count; i++) {
+        this.sectionMap.push(sec);
+      }
+    }
+
+    // Resize param arrays
+    this.params = new Array(paramMeta.length).fill(0.5);
+    this.displayParams = new Array(paramMeta.length).fill(0.5);
+  }
+
   resize() {
     this.canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
     this.canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
@@ -783,15 +861,23 @@ class SynthVisualizer {
 
     const name = (activeEngine?.paramMeta?.[i]?.name) || SYNTH_PARAM_NAMES[i] || `p${i}`;
     const val = this.displayParams[i];
-    const mapping = paramToSection[i];
     let rangeStr = '0.00 – 1.00';
     let curveStr = '0.50';
-    if (mapping) {
-      const ov = groupOverrides[mapping.si];
-      const p = ov.params[mapping.li];
+    if (engineParamOverrides && i < engineParamOverrides.length) {
+      // Non-C15 engine: use flat engine param overrides
+      const p = engineParamOverrides[i];
       rangeStr = `${p.min.toFixed(2)} – ${p.max.toFixed(2)}`;
-      const curve = p.curve !== 0.5 ? p.curve : ov.curve;
-      curveStr = curve.toFixed(2);
+      curveStr = p.curve.toFixed(2);
+    } else {
+      // C15 path: nested section/group overrides
+      const mapping = paramToSection[i];
+      if (mapping) {
+        const ov = groupOverrides[mapping.si];
+        const p = ov.params[mapping.li];
+        rangeStr = `${p.min.toFixed(2)} – ${p.max.toFixed(2)}`;
+        const curve = p.curve !== 0.5 ? p.curve : ov.curve;
+        curveStr = curve.toFixed(2);
+      }
     }
 
     const lines = [name, `Val: ${val.toFixed(2)}`, `Range: ${rangeStr}`, `Curve: ${curveStr}`];
@@ -953,6 +1039,31 @@ async function setActiveEngine(engine) {
       if (rewireCtx) {
         eocChain.connect(outputNode, rewireCtx.destination);
       }
+    }
+  }
+
+  // Rebuild paramToSection and SynthVisualizer for the new engine
+  if (engine.id === 'shaper-feedback') {
+    restoreC15ParamToSection();
+    // Restore C15 section map in SynthVisualizer
+    if (synthVisualizer) {
+      synthVisualizer.sectionMap = [];
+      let idx = 0;
+      for (const sec of SYNTH_SECTIONS) {
+        for (let i = 0; i < sec.count; i++, idx++) {
+          synthVisualizer.sectionMap.push(sec);
+        }
+      }
+      while (synthVisualizer.sectionMap.length < N_SYNTH_OUTPUTS) {
+        synthVisualizer.sectionMap.push({ name: 'Other', count: 1, color: '#666666' });
+      }
+      synthVisualizer.params = new Array(N_SYNTH_OUTPUTS).fill(0.5);
+      synthVisualizer.displayParams = new Array(N_SYNTH_OUTPUTS).fill(0.5);
+    }
+  } else if (engine.paramMeta?.length > 0) {
+    rebuildParamToSection(engine.paramMeta);
+    if (synthVisualizer) {
+      synthVisualizer.rebuild(engine.paramMeta);
     }
   }
 
@@ -1120,6 +1231,12 @@ async function init() {
         if (newEngine !== activeEngine) {
           // Stop arpeggiator before switching
           if (arpeggiator) arpeggiator.stop();
+
+          // Ensure paramMeta is available even if audio isn't started yet.
+          // This prevents MLP resizing to 0 outputs for Faust engines.
+          if (newEngine.loadParamMeta) {
+            await newEngine.loadParamMeta();
+          }
 
           // If audio is already running, init the new engine now
           const audioCtxForInit = activeEngine?._audioCtx

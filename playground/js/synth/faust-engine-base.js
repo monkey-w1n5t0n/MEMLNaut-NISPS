@@ -70,6 +70,16 @@ export class FaustEngineBase extends SynthEngine {
   // ---------------------------------------------------------------------------
 
   /**
+   * Eagerly load ONLY the JSON descriptor (no WASM, no AudioContext needed).
+   * Safe to call multiple times — no-ops if paramMeta is already populated.
+   * This ensures paramCount is available before init() for MLP sizing.
+   */
+  async loadParamMeta() {
+    if (this._paramMeta.length > 0) return;
+    this._paramMeta = await loadFaustParamMeta(this._jsonUrl);
+  }
+
+  /**
    * Initialise the engine: fetch JSON → build paramMeta → load WASM worklet.
    *
    * @param {AudioContext} audioCtx  A running (or suspended) AudioContext.
@@ -80,7 +90,10 @@ export class FaustEngineBase extends SynthEngine {
     this._audioCtx = audioCtx;
 
     // Step 1: fetch and parse the Faust JSON descriptor → paramMeta
-    this._paramMeta = await loadFaustParamMeta(this._jsonUrl);
+    // (skip if already loaded eagerly via loadParamMeta())
+    if (this._paramMeta.length === 0) {
+      this._paramMeta = await loadFaustParamMeta(this._jsonUrl);
+    }
 
     // Step 2: fetch the WASM binary
     const wasmResp = await fetch(this._wasmUrl);

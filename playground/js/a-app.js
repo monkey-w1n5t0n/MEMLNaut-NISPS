@@ -810,6 +810,7 @@ async function setActiveEngine(engine) {
   activeEngine = engine;
   c15 = engine; // keep alias in sync
   arpeggiator.setEngine(engine);
+  if (midiInput) midiInput.setEngine(engine);
   const btn = document.getElementById('synth-mode-btn');
   if (btn) btn.textContent = engine.displayName;
   const engineDockBtn = document.querySelector('[data-drawer="params"]');
@@ -916,7 +917,7 @@ async function init() {
     if (el) el.textContent = msg;
   };
   arpeggiator = new Arpeggiator(activeEngine);
-  midiInput = new MIDIInput(activeEngine.bridge); // MIDIInput still talks to the C15 bridge directly
+  midiInput = new MIDIInput(activeEngine);
   initMIDIControls();
 
   // MIDI Output

@@ -87,6 +87,9 @@ export class FaustEngineBase extends SynthEngine {
    */
   async init(audioCtx) {
     if (this._running) return;
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
     this._audioCtx = audioCtx;
 
     // Step 1: fetch and parse the Faust JSON descriptor → paramMeta
@@ -135,6 +138,22 @@ export class FaustEngineBase extends SynthEngine {
   /** Return the output AudioNode (for downstream routing). */
   getOutputNode() {
     return this._outputNode;
+  }
+
+  /** Stop audio output (mute, but keep worklet alive for quick restart). */
+  async stop() {
+    if (this._masterGain) {
+      this._masterGain.gain.setTargetAtTime(0, this._audioCtx.currentTime, 0.01);
+    }
+    this._running = false;
+  }
+
+  /** Restart audio output after stop(). */
+  async start() {
+    if (this._masterGain && this._audioCtx) {
+      this._masterGain.gain.setTargetAtTime(0.7, this._audioCtx.currentTime, 0.01);
+    }
+    this._running = true;
   }
 
   /** Release all resources. */

@@ -10,8 +10,9 @@
  *   - variance:   output variance -> saturation (shows "interesting" vs "flat")
  *   - divergence: difference from center point output (how each region diverges)
  *
- * Performance: 16x16 = 256 inferences at ~20us each = ~5ms.
- * Throttled to max 5 updates/sec by default.
+ * Performance: 16x16 = 256 inferences. When inferBatchFn is provided,
+ * all points are evaluated in a single WASM call. Falls back to per-point
+ * inferFn (~20us each = ~5ms). Throttled to max 5 updates/sec by default.
  *
  * @module input-heatmap
  */
@@ -107,6 +108,9 @@ export class InputHeatmap {
    * @param {object} [options]
    * @param {object} [options.zoomWindow] - { x1, y1, x2, y2 } in [0,1] space
    * @param {number} [options.resolution] - override resolution for this update
+   * @param {function} [options.inferBatchFn] - (inputPoints: number[][]) => number[][]
+   *   Batch inference: takes array of [x,y] pairs, returns array of output arrays.
+   *   When provided, used instead of per-point inferFn for better performance.
    */
   update(inferFn, options = {}) {
     if (!this._enabled) return;
@@ -117,26 +121,60 @@ export class InputHeatmap {
 
     const res = clamp(options.resolution ?? this._resolution, MIN_RESOLUTION, MAX_RESOLUTION);
     const zw = options.zoomWindow || { x1: 0, y1: 0, x2: 1, y2: 1 };
+    const inferBatchFn = options.inferBatchFn || null;
 
     // Sample grid
     const grid = new Float32Array(res * res);
-    const outputs = [];
+    let outputs;
 
-    // Pre-compute center output for divergence mode
-    if (this._colorMode === 'divergence') {
-      const cx = (zw.x1 + zw.x2) / 2;
-      const cy = (zw.y1 + zw.y2) / 2;
-      this._centerOutput = inferFn([cx, cy]);
-    }
+    if (inferBatchFn) {
+      // ---- Batch path: build all input points, call once ----
+      const needsCenter = this._colorMode === 'divergence';
+      const points = [];
 
-    // Collect all outputs for normalization
-    for (let gy = 0; gy < res; gy++) {
-      for (let gx = 0; gx < res; gx++) {
-        // Map grid cell to input space
-        const inputX = zw.x1 + (gx + 0.5) / res * (zw.x2 - zw.x1);
-        const inputY = zw.y1 + (gy + 0.5) / res * (zw.y2 - zw.y1);
-        const out = inferFn([inputX, inputY]);
-        outputs.push(out);
+      // If divergence mode, first point is the center
+      if (needsCenter) {
+        const cx = (zw.x1 + zw.x2) / 2;
+        const cy = (zw.y1 + zw.y2) / 2;
+        points.push([cx, cy]);
+      }
+
+      // Grid points
+      for (let gy = 0; gy < res; gy++) {
+        for (let gx = 0; gx < res; gx++) {
+          const inputX = zw.x1 + (gx + 0.5) / res * (zw.x2 - zw.x1);
+          const inputY = zw.y1 + (gy + 0.5) / res * (zw.y2 - zw.y1);
+          points.push([inputX, inputY]);
+        }
+      }
+
+      const allOutputs = inferBatchFn(points);
+
+      if (needsCenter) {
+        this._centerOutput = allOutputs[0];
+        outputs = allOutputs.slice(1);
+      } else {
+        outputs = allOutputs;
+      }
+    } else {
+      // ---- Per-point fallback path ----
+      outputs = [];
+
+      // Pre-compute center output for divergence mode
+      if (this._colorMode === 'divergence') {
+        const cx = (zw.x1 + zw.x2) / 2;
+        const cy = (zw.y1 + zw.y2) / 2;
+        this._centerOutput = inferFn([cx, cy]);
+      }
+
+      // Collect all outputs for normalization
+      for (let gy = 0; gy < res; gy++) {
+        for (let gx = 0; gx < res; gx++) {
+          const inputX = zw.x1 + (gx + 0.5) / res * (zw.x2 - zw.x1);
+          const inputY = zw.y1 + (gy + 0.5) / res * (zw.y2 - zw.y1);
+          const out = inferFn([inputX, inputY]);
+          outputs.push(out);
+        }
       }
     }
 

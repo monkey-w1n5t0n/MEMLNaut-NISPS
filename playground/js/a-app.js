@@ -18,6 +18,8 @@ import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
 import { EOCChain } from './eoc/index.js';
 import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 import { EngineSwitcher } from './ui/engine-switcher.js';
+import { AdditiveEngine } from './synth/additive-engine.js';
+import { FMEngine } from './synth/fm-engine.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -745,7 +747,8 @@ function outputCountForMode(mode) {
  */
 async function _startEocChain() {
   if (_eocInited || !eocChain) return;
-  const audioCtx = activeEngine._bridge?.audioContext;
+  // C15Adapter exposes _bridge.audioContext; Faust engines expose _audioCtx
+  const audioCtx = activeEngine?._bridge?.audioContext ?? activeEngine?._audioCtx;
   if (!audioCtx) {
     console.warn('[EOC] _startEocChain: no AudioContext yet — skipping');
     return;
@@ -787,7 +790,11 @@ async function setActiveEngine(engine) {
     const outputNode = engine.getOutputNode();
     if (outputNode) {
       try { outputNode.disconnect(); } catch (_) { /* not yet connected */ }
-      eocChain.connect(outputNode, engine._bridge.audioContext.destination);
+      // C15Adapter exposes _bridge.audioContext; Faust engines expose _audioCtx
+      const rewireCtx = engine._bridge?.audioContext ?? engine._audioCtx;
+      if (rewireCtx) {
+        eocChain.connect(outputNode, rewireCtx.destination);
+      }
     }
   }
 }
@@ -911,23 +918,53 @@ async function init() {
       displayName: 'Additive',
       paramCount: 48,
       description: 'Spectral envelope additive synthesis. 64 harmonics shaped by ML.',
-      comingSoon: true,
     },
     {
       id: 'fm',
       displayName: 'FM Matrix',
       paramCount: 55,
       description: '4-operator FM with continuous routing matrix. Algorithm emerges from exploration.',
-      comingSoon: true,
     },
   ];
   const engineSwitcherEl = document.getElementById('engine-params');
   if (engineSwitcherEl) {
     EngineSwitcher.init(engineSwitcherEl, ENGINES, async (engineId) => {
-      if (engineId === activeEngine.id) return;
-      if (engineId !== 'shaper-feedback') {
-        showToast(`${engineId} engine coming soon`);
-        return;
+      if (engineId === activeEngine?.id) return;
+
+      EngineSwitcher.setLoading(engineId, true);
+      try {
+        let newEngine;
+        if (engineId === 'shaper-feedback') {
+          // Switch back to C15 — reuse the existing instance
+          newEngine = c15 instanceof C15Adapter ? c15 : new C15Adapter();
+        } else if (engineId === 'additive') {
+          newEngine = new AdditiveEngine();
+        } else if (engineId === 'fm') {
+          newEngine = new FMEngine();
+        } else {
+          showToast(`Unknown engine: ${engineId}`);
+          return;
+        }
+
+        if (newEngine !== activeEngine) {
+          // Stop arpeggiator before switching
+          if (arpeggiator) arpeggiator.stop();
+
+          // If audio is already running, init the new engine now
+          const audioCtxForInit = activeEngine?._audioCtx
+            ?? activeEngine?._bridge?.audioContext
+            ?? null;
+          if (audioCtxForInit && !newEngine._running) {
+            await newEngine.init(audioCtxForInit);
+          }
+
+          await setActiveEngine(newEngine);
+        }
+      } catch (err) {
+        console.error('[EngineSwitcher] Failed to switch engine:', err);
+        showToast(`Failed to load ${engineId}: ${err.message}`);
+      } finally {
+        EngineSwitcher.setLoading(engineId, false);
       }
     }, {
       hasTrainingData: () => (imlJoy?.exampleCount ?? 0) > 0 || (imlHand?.exampleCount ?? 0) > 0,
@@ -1678,7 +1715,7 @@ function routeOutputs(outputs) {
       const now = performance.now();
       if (now - _lastParamSendTime >= PARAM_SEND_INTERVAL) {
         _lastParamSendTime = now;
-        for (let i = 0; i < overridden.length && i < SYNTH_PARAM_MAP.length; i++) {
+        for (let i = 0; i < overridden.length && i < N_OUTPUTS; i++) {
           const v = overridden[i];
           if (Math.abs(v - _lastSentParams[i]) > PARAM_DEAD_ZONE) {
             activeEngine.setParam(i, v);
@@ -3396,10 +3433,9 @@ async function loadState() {
 
     // Note: don't auto-restore inputMode='hands' — requires camera permission
 
-    // Restore engine selection (currently always 'shaper-feedback'; pattern ready for future engines)
-    if (typeof state.engineId === 'string' && state.engineId !== (activeEngine ? activeEngine.id : null)) {
-      // Future: if (ENGINES.find(e => e.id === state.engineId && !e.comingSoon)) setActiveEngine(...)
-      // For now, sync the switcher highlight to whatever is active
+    // Restore engine selection — sync switcher highlight; deferred engine init
+    // happens on first audio-start click (Faust engines require a running AudioContext).
+    if (typeof state.engineId === 'string') {
       EngineSwitcher.setActive(activeEngine ? activeEngine.id : 'shaper-feedback');
     }
 

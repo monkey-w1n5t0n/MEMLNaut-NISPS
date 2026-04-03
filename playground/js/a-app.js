@@ -95,6 +95,10 @@ let outputMode = 'visual';
 let eocChain = null;
 let _eocInited = false; // guard: init once per AudioContext lifetime
 
+// EOC Linked mode — second IML driven by the same joystick, independent training
+let imlEoc = null;       // second IML for EOC params (Linked mode)
+let eocTrainingTarget = 'synth'; // 'synth' | 'eoc' — which MLP RL feedback targets
+
 // ---- MIDI CC state ----
 let midiOutput = null;
 // Storage key scoped per engine so CC assignments don't bleed between engines.
@@ -1050,9 +1054,22 @@ async function init() {
     EOCChainUI.init(eocChain, eocDrawerBody);
   }
 
-  // Log EOC structural changes; future NISPS modes will act on this event
-  window.addEventListener('eoc:change', () => {
-    console.log('[EOC] chain changed, paramCount:', eocChain.paramCount);
+  // Log EOC structural changes; Linked mode acts on this event
+  window.addEventListener('eoc:change', async (e) => {
+    const reason = e.detail?.reason;
+    console.log('[EOC] chain changed, paramCount:', eocChain.paramCount, reason ? `(${reason})` : '');
+
+    if (reason === 'nispsMode-changed') {
+      if (eocChain.nispsMode === 'linked') {
+        await initEocIML();
+      } else {
+        destroyEocIML();
+        eocTrainingTarget = 'synth';
+      }
+    } else if (eocChain.nispsMode === 'linked' && imlEoc) {
+      // Module added/removed: recreate EOC IML with updated param count
+      await initEocIML();
+    }
   });
 
   // Debug probe — exposed on window when ?debug=1 is in the URL.
@@ -1106,6 +1123,14 @@ async function init() {
       eocChain,
     };
   }
+
+  // EOC Linked-mode probe — exposed unconditionally so the training-target UI
+  // (meml-0r0) can wire buttons without requiring ?debug=1.
+  window.__nispsEoc = {
+    get trainingTarget() { return eocTrainingTarget; },
+    setTrainingTarget(t) { eocTrainingTarget = t; },
+    get imlEoc() { return imlEoc; },
+  };
 
   // Start animation
   requestAnimationFrame(animate);
@@ -1773,6 +1798,17 @@ function onJoystickMove() {
 
   syncRawParamsFromOutputs(outputs);
 
+  // EOC Linked mode: run EOC IML with same joystick inputs
+  if (imlEoc && eocChain?.nispsMode === 'linked') {
+    imlEoc.setInput(0, joyX);
+    imlEoc.setInput(1, joyY);
+    imlEoc.process();
+    const eocOutputs = imlEoc.getOutputs();
+    for (let i = 0; i < eocOutputs.length; i++) {
+      eocChain.setParam(i, eocOutputs[i]);
+    }
+  }
+
   // Trail
   joyTrail.push({ x: joyX, y: joyY, t: Date.now() });
   if (joyTrail.length > 30) joyTrail.shift();
@@ -2256,33 +2292,65 @@ function updateUndoButton() {
 }
 
 // ---- RL mode ----
+
+/**
+ * Return the IML instance that RL feedback should target.
+ * In Linked mode the user may direct feedback to the EOC IML instead.
+ */
+function _rlTarget() {
+  if (eocChain?.nispsMode === 'linked' && eocTrainingTarget === 'eoc' && imlEoc) {
+    return imlEoc;
+  }
+  return iml;
+}
+
 function onThumbsUp() {
-  if (iml.isTraining) return;
+  const target = _rlTarget();
+  if (!target || target.isTraining) return;
 
   pushUndoSnapshot();
   const inputs = getCurrentInputs();
   const outputs = [...rawParamValues];
-  iml.addExample(inputs, outputs);
+  target.addExample(inputs, outputs);
 
   noiseLevel *= rlExplorationDecay;
   noiseLevel = Math.max(noiseLevel, 0.005);
 
   flash('btn-thumbsup');
   updateNoiseRing();
-  trainModelAsync();
+  // Only run async training on the target; synth IML uses trainModelAsync, EOC IML trains directly
+  if (target === iml) {
+    trainModelAsync();
+  } else {
+    target.trainAsync(({ loss }) => {
+      updateStatus();
+    });
+  }
 }
 
 function onThumbsDown() {
+  const target = _rlTarget();
+  if (!target) return;
+
   pushUndoSnapshot();
   const noiseCap = 0.3 * (1 - spreadLevel) + 0.05 * spreadLevel;
   noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
 
-  iml.moveWeights(noiseLevel, spreadLevel);
+  target.moveWeights(noiseLevel, spreadLevel);
 
-  const outputs = iml.getOutputs();
-  routeOutputs(outputs);
-  updateHeatmap(outputs);
-  syncRawParamsFromOutputs(outputs);
+  // Re-route outputs from whichever IML was affected
+  if (target === iml) {
+    const outputs = iml.getOutputs();
+    routeOutputs(outputs);
+    updateHeatmap(outputs);
+    syncRawParamsFromOutputs(outputs);
+  } else if (imlEoc && eocChain?.nispsMode === 'linked') {
+    imlEoc.process();
+    const eocOutputs = imlEoc.getOutputs();
+    for (let i = 0; i < eocOutputs.length; i++) {
+      eocChain.setParam(i, eocOutputs[i]);
+    }
+  }
   updateStatus();
   updateNoiseRing();
   flash('btn-thumbsdown');
@@ -3391,6 +3459,34 @@ function flash(id) {
   setTimeout(() => el.classList.remove('flash'), 250);
 }
 
+// ---- EOC Linked-mode IML helpers ----
+
+/**
+ * Create (or recreate) the EOC IML instance for Linked mode.
+ * Uses a smaller network than the synth IML since EOC params are more independent.
+ */
+async function initEocIML() {
+  if (imlEoc) { imlEoc.destroy(); imlEoc = null; }
+  if (!eocChain || eocChain.paramCount === 0) return;
+  imlEoc = await WasmIML.create(
+    N_JOY_INPUTS,
+    eocChain.paramCount,
+    [16, 32],   // smaller network — EOC params are more independent
+    1000, 1.0, 0.00001,
+  );
+  imlEoc.randomiseWeights(spreadLevel);
+  console.log(`[EOC] Linked IML created — ${eocChain.paramCount} outputs`);
+}
+
+/** Destroy the EOC IML instance (e.g. when leaving Linked mode). */
+function destroyEocIML() {
+  if (imlEoc) {
+    imlEoc.destroy();
+    imlEoc = null;
+    console.log('[EOC] Linked IML destroyed');
+  }
+}
+
 // ---- Persistence ----
 function saveState() {
   try {
@@ -3417,6 +3513,7 @@ function saveState() {
         params: m.paramMeta.map((_, i) => m.getCurrentParamValue(i)),
       })) : [],
       eocNispsMode: eocChain ? eocChain.nispsMode : 'bypass',
+      eocTrainingTarget,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -3547,6 +3644,11 @@ async function loadState() {
     }
     if (eocChain && typeof state.eocNispsMode === 'string') {
       try { eocChain.nispsMode = state.eocNispsMode; } catch (_) { /* invalid mode in old save */ }
+    }
+
+    // Restore EOC training target
+    if (state.eocTrainingTarget === 'synth' || state.eocTrainingTarget === 'eoc') {
+      eocTrainingTarget = state.eocTrainingTarget;
     }
 
     console.log(`[NISPS] Restored ${state.features?.length || 0} joy examples, ${state.handFeatures?.length || 0} hand examples from storage`);

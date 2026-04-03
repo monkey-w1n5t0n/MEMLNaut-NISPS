@@ -17,6 +17,7 @@ import { createDevPanel } from './ui/dev-panel.js';
 import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
 import { EOCChain } from './eoc/index.js';
 import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
+import { EngineSwitcher } from './ui/engine-switcher.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -87,6 +88,10 @@ let arpeggiator = null;
 let midiInput = null;
 
 let outputMode = 'visual';
+
+// EOC Effects Chain — module-scoped so audio-start and setActiveEngine can reference it
+let eocChain = null;
+let _eocInited = false; // guard: init once per AudioContext lifetime
 
 // ---- MIDI CC state ----
 let midiOutput = null;
@@ -730,6 +735,33 @@ function outputCountForMode(mode) {
  * Joystick IML uses warm-start weight transfer to preserve learned mappings.
  * Training examples are always cleared (dataset is JS-side and output-count-specific).
  */
+// ---- EOC audio graph wiring ----
+/**
+ * Wire the EOC chain into the audio graph after the C15 AudioContext is created.
+ * Safe to call multiple times — guarded by _eocInited flag.
+ *
+ * Call this immediately after any c15.start() / activeEngine.init() that brings
+ * the AudioContext into existence.
+ */
+async function _startEocChain() {
+  if (_eocInited || !eocChain) return;
+  const audioCtx = activeEngine._bridge?.audioContext;
+  if (!audioCtx) {
+    console.warn('[EOC] _startEocChain: no AudioContext yet — skipping');
+    return;
+  }
+
+  await eocChain.init(audioCtx);
+  _eocInited = true;
+
+  // Disconnect the limiter from destination (it auto-connects there in C15Bridge.start())
+  const outputNode = activeEngine.getOutputNode();
+  try { outputNode.disconnect(); } catch (_) { /* already disconnected */ }
+
+  eocChain.connect(outputNode, audioCtx.destination);
+  console.log('[EOC] chain wired into audio graph');
+}
+
 // ---- Engine switching (stub for meml-phg UI) ----
 /**
  * Hot-swap the active synth engine.
@@ -744,7 +776,20 @@ async function setActiveEngine(engine) {
   arpeggiator.setEngine(engine);
   const btn = document.getElementById('synth-mode-btn');
   if (btn) btn.textContent = engine.displayName;
+  const engineDockBtn = document.querySelector('[data-drawer="params"]');
+  if (engineDockBtn) engineDockBtn.title = `Engine: ${engine.displayName}`;
+  EngineSwitcher.setActive(engine.id);
+  EngineSwitcher.setLoading(engine.id, false);
   await resizeMLP(engine.paramCount);
+
+  // Rewire EOC chain to the new engine's output node
+  if (eocChain && _eocInited) {
+    const outputNode = engine.getOutputNode();
+    if (outputNode) {
+      try { outputNode.disconnect(); } catch (_) { /* not yet connected */ }
+      eocChain.connect(outputNode, engine._bridge.audioContext.destination);
+    }
+  }
 }
 
 async function resizeMLP(newOutputCount) {
@@ -853,6 +898,45 @@ async function init() {
   // Build raw param sliders
   buildEngineParams();
 
+  // Engine switcher — prepended above the tuning sliders in the Engine drawer
+  const ENGINES = [
+    {
+      id: 'shaper-feedback',
+      displayName: 'C15 Shaper-Feedback',
+      paramCount: 126,
+      description: 'Phase-aligned waveshapers with feedback mixer. Complex harmonic textures.',
+    },
+    {
+      id: 'additive',
+      displayName: 'Additive',
+      paramCount: 48,
+      description: 'Spectral envelope additive synthesis. 64 harmonics shaped by ML.',
+      comingSoon: true,
+    },
+    {
+      id: 'fm',
+      displayName: 'FM Matrix',
+      paramCount: 55,
+      description: '4-operator FM with continuous routing matrix. Algorithm emerges from exploration.',
+      comingSoon: true,
+    },
+  ];
+  const engineSwitcherEl = document.getElementById('engine-params');
+  if (engineSwitcherEl) {
+    EngineSwitcher.init(engineSwitcherEl, ENGINES, async (engineId) => {
+      if (engineId === activeEngine.id) return;
+      if (engineId !== 'shaper-feedback') {
+        showToast(`${engineId} engine coming soon`);
+        return;
+      }
+    }, {
+      hasTrainingData: () => (imlJoy?.exampleCount ?? 0) > 0 || (imlHand?.exampleCount ?? 0) > 0,
+    });
+    EngineSwitcher.setActive(activeEngine.id);
+    const engineDockBtn = document.querySelector('[data-drawer="params"]');
+    if (engineDockBtn) engineDockBtn.title = `Engine: ${activeEngine.displayName}`;
+  }
+
   // Wire events
   wireJoystick();
   wireDock();
@@ -901,11 +985,16 @@ async function init() {
   setInterval(saveState, 10000);
 
   // EOC Effects Chain — initialise chain and wire drawer UI
-  const eocChain = new EOCChain();
+  eocChain = new EOCChain();
   const eocDrawerBody = document.getElementById('eoc-drawer-body');
   if (eocDrawerBody) {
     EOCChainUI.init(eocChain, eocDrawerBody);
   }
+
+  // Log EOC structural changes; future NISPS modes will act on this event
+  window.addEventListener('eoc:change', () => {
+    console.log('[EOC] chain changed, paramCount:', eocChain.paramCount);
+  });
 
   // Debug probe — exposed on window when ?debug=1 is in the URL.
   // Used by Playwright e2e tests. Zero footprint in production.
@@ -2175,8 +2264,14 @@ function drawLossPlot() {
 // ---- Raw param sliders ----
 // ---- Engine Parameters (NISPS tuning) ----
 function buildEngineParams() {
-  const container = $engineParams;
-  if (!container) return;
+  if (!$engineParams) return;
+  // Use a sub-container so the EngineSwitcher section (prepended) is not clobbered.
+  let container = $engineParams.querySelector('.engine-tuning');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'engine-tuning';
+    $engineParams.appendChild(container);
+  }
   container.innerHTML = '';
 
   const params = [
@@ -2300,6 +2395,7 @@ function wireSynthControls() {
       if (quickPlay) quickPlay.classList.add('audio-needs-init');
     } else {
       await c15.start();
+      await _startEocChain();
       startBtn.textContent = 'Stop Audio';
       if (quickPlay) quickPlay.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
@@ -2766,6 +2862,7 @@ function wireQuickPlayControls() {
       if (arpToggle) arpToggle.textContent = 'Play';
     } else {
       await c15.start();
+      await _startEocChain();
       arpeggiator.start();
       routeOutputs(iml.getOutputs());
       // Also update the bottom sheet controls
@@ -3190,6 +3287,14 @@ function saveState() {
       midiCCOverrides,
       audioCanvasState: audioCanvas ? audioCanvas.getState() : null,
       synthPresetId: activeSynthPresetId,
+      engineId: activeEngine ? activeEngine.id : 'shaper-feedback',
+      // EOC state
+      eocModules: eocChain ? eocChain.modules.map(m => ({
+        id: m.id,
+        enabled: m.enabled,
+        params: m.paramMeta.map((_, i) => m.getCurrentParamValue(i)),
+      })) : [],
+      eocNispsMode: eocChain ? eocChain.nispsMode : 'bypass',
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -3290,10 +3395,57 @@ async function loadState() {
     }
 
     // Note: don't auto-restore inputMode='hands' — requires camera permission
+
+    // Restore engine selection (currently always 'shaper-feedback'; pattern ready for future engines)
+    if (typeof state.engineId === 'string' && state.engineId !== (activeEngine ? activeEngine.id : null)) {
+      // Future: if (ENGINES.find(e => e.id === state.engineId && !e.comingSoon)) setActiveEngine(...)
+      // For now, sync the switcher highlight to whatever is active
+      EngineSwitcher.setActive(activeEngine ? activeEngine.id : 'shaper-feedback');
+    }
+
+    // Restore EOC chain state (modules, enabled flags, param values, nispsMode)
+    if (eocChain && Array.isArray(state.eocModules) && state.eocModules.length > 0) {
+      for (const saved of state.eocModules) {
+        // Only add if not already in the chain
+        if (!eocChain.getModule(saved.id)) {
+          try {
+            eocChain.addModule(moduleFactory(saved.id));
+          } catch (e) {
+            console.warn(`[EOC] Could not restore module '${saved.id}':`, e.message);
+            continue;
+          }
+        }
+        const mod = eocChain.getModule(saved.id);
+        if (mod) {
+          mod.enabled = saved.enabled ?? true;
+          if (Array.isArray(saved.params)) {
+            saved.params.forEach((v, i) => mod.setParam(i, v));
+          }
+        }
+      }
+    }
+    if (eocChain && typeof state.eocNispsMode === 'string') {
+      try { eocChain.nispsMode = state.eocNispsMode; } catch (_) { /* invalid mode in old save */ }
+    }
+
     console.log(`[NISPS] Restored ${state.features?.length || 0} joy examples, ${state.handFeatures?.length || 0} hand examples from storage`);
   } catch (e) {
     console.warn('[NISPS] Failed to load state:', e);
   }
+}
+
+function showToast(message, durationMs = 2500) {
+  let toast = document.getElementById('nisps-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'nisps-toast';
+    toast.className = 'nisps-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('visible');
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => toast.classList.remove('visible'), durationMs);
 }
 
 function clearState() {

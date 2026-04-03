@@ -2062,6 +2062,7 @@ html, body {
 .eoc-module-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 5px 6px;
   border-radius: 6px;
@@ -2218,4 +2219,203 @@ html, body {
 .eoc-add-btn {
   font-size: 10px;
   padding: 3px 8px;
+}
+
+/* Per-module param sliders */
+.eoc-params-section {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.eoc-params-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim, rgba(255, 255, 255, 0.4));
+  font-size: 9px;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+  width: 100%;
+}
+
+.eoc-params-toggle:hover {
+  color: var(--text-muted, rgba(255, 255, 255, 0.65));
+}
+
+.eoc-params-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 2px 0;
+}
+
+.eoc-params-list.eoc-params-collapsed {
+  display: none;
+}
+
+.eoc-param-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.eoc-param-label {
+  font-size: 9px;
+  color: var(--text-dim, rgba(255, 255, 255, 0.4));
+  min-width: 60px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.eoc-param-slider {
+  flex: 1;
+  height: 3px;
+  accent-color: var(--accent, #ff6a00);
+  cursor: pointer;
+}
+
+/* ---- Engine Switcher ---- */
+.engine-switcher-section {
+  margin-bottom: 4px;
+}
+
+.engine-switcher-heading {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+
+.engine-card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+
+.engine-card {
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+
+.engine-card:hover:not(.coming-soon):not(.loading) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.engine-card:active:not(.coming-soon) {
+  transform: scale(0.98);
+}
+
+.engine-card.active {
+  border-color: rgba(255, 106, 0, 0.45);
+  background: rgba(255, 106, 0, 0.07);
+}
+
+.engine-card.loading {
+  opacity: 0.5;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.engine-card.loading::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: engine-loading-bar 1.2s linear infinite;
+}
+
+@keyframes engine-loading-bar {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(300%); }
+}
+
+.engine-card.coming-soon {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.engine-card-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.engine-card-name {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.engine-card.active .engine-card-name {
+  color: var(--accent);
+}
+
+.engine-card-params {
+  font-size: 8px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.engine-card.active .engine-card-params {
+  background: rgba(255, 106, 0, 0.15);
+  color: var(--accent);
+}
+
+.engine-card-desc {
+  font-size: 9px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  display: block;
+}
+
+.engine-switcher-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 8px 0 6px;
+}
+
+/* ---- Toast notification ---- */
+.nisps-toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  padding: 5px 14px;
+  border-radius: 10px;
+  background: rgba(20, 20, 20, 0.92);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+}
+
+.nisps-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }

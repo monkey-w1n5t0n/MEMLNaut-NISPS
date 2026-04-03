@@ -11,7 +11,10 @@
 //
 // Reacts to 'eoc:change' events on window to stay in sync with external mutations.
 
-import { EOCModule } from '../eoc/eoc-module.js';
+import { EOCModule }         from '../eoc/eoc-module.js';
+import { DelayModule }       from '../eoc/modules/delay-module.js';
+import { SaturationModule }  from '../eoc/modules/saturation-module.js';
+import { MasterModule }      from '../eoc/modules/master-module.js';
 
 // ---------------------------------------------------------------------------
 // Stub module factory
@@ -37,6 +40,15 @@ const MODULE_ORDER = ['saturation', 'eq', 'compressor', 'reverb', 'delay', 'mast
  * @returns {EOCModule}
  */
 export function moduleFactory(id) {
+  // Use real implementations where available; fall back to stubs for modules
+  // whose implementations are being built in parallel tasks (eq, compressor, reverb).
+  switch (id) {
+    case 'delay':      return new DelayModule();
+    case 'saturation': return new SaturationModule();
+    case 'master':     return new MasterModule();
+    default: break;
+  }
+
   const def = STUB_DEFS[id];
   if (!def) throw new Error(`moduleFactory: unknown module id '${id}'`);
 

@@ -79,6 +79,19 @@ const PRESETS = {
   ],
 };
 
+// ---- ShapeSeq feature flag ----
+const shapeSeqEnabled = new URLSearchParams(location.search).get('shapeseq') === '1';
+
+// Lazy-loaded ShapeSeq modules (only when shapeSeqEnabled)
+let ShapeSeqEngine, StepVisualizer, ChainBuilderUI, EventBus, getDefaultBus;
+
+// ShapeSeq state
+let shapeSeqEngine = null;
+let shapeSeqViz = null;
+let shapeSeqChainUI = null;
+let shapeSeqBus = null;
+let _shapeSeqInited = false;
+
 // ---- App state ----
 let iml;       // active IML (points to imlJoy or imlHand)
 let imlJoy;    // IML for joystick mode (2 inputs)
@@ -677,7 +690,7 @@ class SynthVisualizer {
 
     for (let vi = 0; vi < visibleIndices.length; vi++) {
       const i = visibleIndices[vi];
-      const sec = this.sectionMap[i];
+      const sec = this.sectionMap[i] ?? { name: 'Other', count: 1, color: '#666666' };
       const mapping = paramToSection[i];
       const curSi = mapping ? mapping.si : -1;
 
@@ -995,6 +1008,68 @@ async function _startEocChain() {
   console.log('[EOC] chain wired into audio graph');
 }
 
+/**
+ * Lazily initialise ShapeSeq subsystem.
+ * Guarded by _shapeSeqInited — safe to call multiple times.
+ * Requires audio to be running (AudioContext must exist).
+ */
+async function _ensureShapeSeqInit() {
+  if (_shapeSeqInited || !shapeSeqEnabled) return;
+
+  // Import modules lazily
+  if (!ShapeSeqEngine) {
+    ({ ShapeSeqEngine } = await import('./shapeseq/sequencer.js'));
+    ({ StepVisualizer } = await import('./shapeseq/step-viz.js'));
+    ({ ChainBuilderUI } = await import('./shapeseq/chain-ui.js'));
+    ({ EventBus, getDefaultBus } = await import('./shapeseq/event-bus.js'));
+  }
+
+  const audioCtx = activeEngine?._bridge?.audioContext ?? activeEngine?._audioCtx;
+  if (!audioCtx) {
+    console.warn('[ShapeSeq] _ensureShapeSeqInit: no AudioContext yet — skipping');
+    return;
+  }
+
+  shapeSeqBus = getDefaultBus(audioCtx);
+
+  // activeEngine (C15Adapter) exposes noteOn/noteOff directly — use it as the c15Bridge
+  shapeSeqEngine = new ShapeSeqEngine({
+    audioContext: audioCtx,
+    eventBus: shapeSeqBus,
+    c15Bridge: activeEngine,
+  });
+
+  await shapeSeqEngine.init();
+  _shapeSeqInited = true;
+
+  // Show the ShapeSeq container
+  const container = document.getElementById('shapeseq-container');
+  if (container && outputMode === 'synth') {
+    container.style.display = 'block';
+  }
+
+  console.log('[ShapeSeq] engine initialised');
+}
+
+/**
+ * Destroy the ShapeSeq engine (e.g. on engine switch).
+ */
+function _destroyShapeSeq() {
+  if (shapeSeqEngine) {
+    shapeSeqEngine.destroy();
+    shapeSeqEngine = null;
+  }
+  shapeSeqViz = null;
+  shapeSeqChainUI = null;
+  shapeSeqBus = null;
+  _shapeSeqInited = false;
+
+  const container = document.getElementById('shapeseq-container');
+  if (container) container.style.display = 'none';
+
+  console.log('[ShapeSeq] engine destroyed');
+}
+
 // ---- Engine switching (stub for meml-phg UI) ----
 /**
  * Hot-swap the active synth engine.
@@ -1004,6 +1079,11 @@ async function _startEocChain() {
  * @param {import('./synth/engine-interface.js').SynthEngine} engine
  */
 async function setActiveEngine(engine) {
+  // Destroy ShapeSeq on engine switch — it holds a reference to the old engine
+  if (shapeSeqEnabled && _shapeSeqInited) {
+    _destroyShapeSeq();
+  }
+
   activeEngine = engine;
   c15 = engine; // keep alias in sync
   arpeggiator.setEngine(engine);
@@ -1229,7 +1309,8 @@ async function init() {
         }
 
         if (newEngine !== activeEngine) {
-          // Stop arpeggiator before switching
+          // Stop arpeggiator/ShapeSeq before switching
+          if (shapeSeqEnabled && shapeSeqEngine) shapeSeqEngine.stop();
           if (arpeggiator) arpeggiator.stop();
 
           // Ensure paramMeta is available even if audio isn't started yet.
@@ -1618,9 +1699,24 @@ function updateHeatmap(outputs) {
 /** Get the override object for a heatmap param (works in both visual & synth mode) */
 function getParamOverride(paramIndex) {
   if (outputMode === 'synth') {
+    // Non-C15 engines use the flat engineParamOverrides array
+    if (engineParamOverrides && paramIndex < engineParamOverrides.length) {
+      const p = engineParamOverrides[paramIndex];
+      return {
+        get min() { return p.min; }, set min(v) { p.min = v; },
+        get max() { return p.max; }, set max(v) { p.max = v; },
+        get curve() { return p.curve; }, set curve(v) { p.curve = v; },
+        get frozen() { return p.muted; }, set frozen(v) { p.muted = v; },
+        get fixedValue() { return p.fixedValue; }, set fixedValue(v) { p.fixedValue = v; },
+      };
+    }
+    // C15 path: use groupOverrides + paramToSection
     const mapping = paramToSection[paramIndex];
     if (!mapping) return null;
-    const p = groupOverrides[mapping.si].params[mapping.li];
+    const group = groupOverrides[mapping.si];
+    if (!group) return null;
+    const p = group.params[mapping.li];
+    if (!p) return null;
     // Expose as { min, max, curve, frozen, fixedValue } — map 'muted' to 'frozen'
     return {
       get min() { return p.min; }, set min(v) { p.min = v; },
@@ -2122,6 +2218,17 @@ function onJoystickMove() {
     }
   }
 
+  // ShapeSeq: route joystick inputs to the sequence engine
+  if (shapeSeqEnabled && shapeSeqEngine && shapeSeqEngine.isPlaying) {
+    if (shapeSeqEngine.mlpMode.mode === 'unified') {
+      // Unified mode: timbre MLP already ran — pass its outputs to the sequencer
+      shapeSeqEngine.setSequenceOutputsFromTimbre(outputs);
+    } else {
+      // Dual mode: sequence engine runs its own MLP
+      shapeSeqEngine.setSequenceInputs([joyX, joyY]);
+    }
+  }
+
   // Trail
   joyTrail.push({ x: joyX, y: joyY, t: Date.now() });
   if (joyTrail.length > 30) joyTrail.shift();
@@ -2509,6 +2616,12 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
 
   // Hide/show audio-canvas wrap
   if (audioCanvasWrap) audioCanvasWrap.style.display = mode === 'audio-canvas' ? 'block' : 'none';
+
+  // Show/hide ShapeSeq container (only visible in synth mode when shapeseq=1)
+  const shapeSeqContainer = document.getElementById('shapeseq-container');
+  if (shapeSeqContainer) {
+    shapeSeqContainer.style.display = (shapeSeqEnabled && mode === 'synth') ? 'block' : 'none';
+  }
 
   if (mode === 'synth') {
     $canvas.classList.add('hidden-canvas');
@@ -2930,14 +3043,16 @@ function wireSynthControls() {
   startBtn.addEventListener('click', async () => {
     const quickPlay = document.getElementById('quick-play');
     if (c15.running) {
+      if (shapeSeqEnabled && shapeSeqEngine) shapeSeqEngine.stop();
       arpeggiator.stop();
       arpToggle.textContent = 'Play';
       await c15.stop();
       startBtn.textContent = 'Start Audio';
       if (quickPlay) quickPlay.classList.add('audio-needs-init');
     } else {
-      await c15.start();
+      await activeEngine.init();
       await _startEocChain();
+      if (shapeSeqEnabled) await _ensureShapeSeqInit();
       startBtn.textContent = 'Stop Audio';
       if (quickPlay) quickPlay.classList.remove('audio-needs-init');
       routeOutputs(iml.getOutputs());
@@ -2952,11 +3067,16 @@ function wireSynthControls() {
 
   arpToggle.addEventListener('click', () => {
     if (!c15.running) return;
-    if (arpeggiator.playing) {
-      arpeggiator.stop();
+    const isPlaying = shapeSeqEnabled
+      ? (shapeSeqEngine && shapeSeqEngine.isPlaying)
+      : arpeggiator.playing;
+    if (isPlaying) {
+      if (shapeSeqEnabled && shapeSeqEngine) shapeSeqEngine.stop();
+      else arpeggiator.stop();
       arpToggle.textContent = 'Play';
     } else {
-      arpeggiator.start();
+      if (shapeSeqEnabled && shapeSeqEngine) shapeSeqEngine.start();
+      else arpeggiator.start();
       arpToggle.textContent = 'Stop';
     }
   });
@@ -3462,7 +3582,8 @@ function wireQuickPlayControls() {
 
   quickPlay.addEventListener('click', async () => {
     if (c15.running) {
-      arpeggiator.stop();
+      if (shapeSeqEnabled && shapeSeqEngine) shapeSeqEngine.stop();
+      else arpeggiator.stop();
       await c15.stop();
       // Also update the bottom sheet controls
       const startBtn = document.getElementById('synth-start');
@@ -3470,9 +3591,14 @@ function wireQuickPlayControls() {
       if (startBtn) startBtn.textContent = 'Start Audio';
       if (arpToggle) arpToggle.textContent = 'Play';
     } else {
-      await c15.start();
+      await activeEngine.init();
       await _startEocChain();
-      arpeggiator.start();
+      if (shapeSeqEnabled) {
+        await _ensureShapeSeqInit();
+        if (shapeSeqEngine) shapeSeqEngine.start();
+      } else {
+        arpeggiator.start();
+      }
       routeOutputs(iml.getOutputs());
       // Also update the bottom sheet controls
       const startBtn = document.getElementById('synth-start');

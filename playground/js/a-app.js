@@ -914,6 +914,9 @@ async function init() {
         updateStatus();
       },
       saveState: () => saveState(),
+      evalLoss:     () => iml.evalLoss(),
+      inferBatch:   (points) => iml.inferBatch(points),
+      getLayerStats:() => iml.getLayerStats(),
     };
   }
 

@@ -2512,3 +2512,27 @@ html, body {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ---- EOC Independent mode joystick ---- */
+.eoc-joy-container {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  z-index: 100;
+}
+.eoc-joy-container.hidden { display: none; }
+.eoc-joy-map {
+  border: 1px solid rgba(78, 205, 196, 0.3);
+  border-radius: 8px;
+  touch-action: none;
+  cursor: crosshair;
+}
+.eoc-joy-label {
+  text-align: center;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #4ecdc4;
+  opacity: 0.6;
+  margin-top: 4px;
+  letter-spacing: 1px;
+}

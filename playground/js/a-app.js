@@ -1113,6 +1113,13 @@ async function init() {
         await initEocIML();
       }
     }
+
+    // Show/hide EOC RL buttons and Synth label based on linked mode
+    const isLinked = eocChain.nispsMode === 'linked';
+    const eocRlContainer = document.getElementById('eoc-rl-buttons');
+    if (eocRlContainer) eocRlContainer.classList.toggle('hidden', !isLinked);
+    const rlLabel = document.getElementById('rl-label');
+    if (rlLabel) rlLabel.classList.toggle('hidden', !isLinked);
   });
 
   // Debug probe — exposed on window when ?debug=1 is in the URL.
@@ -2003,6 +2010,28 @@ function wireControls() {
   // RL buttons
   $btnThumbsUp.addEventListener('click', onThumbsUp);
   $btnThumbsDown.addEventListener('click', onThumbsDown);
+
+  // EOC RL buttons (Linked mode — target EOC IML directly)
+  const eocRlPlus = document.getElementById('eoc-rl-plus');
+  const eocRlMinus = document.getElementById('eoc-rl-minus');
+  if (eocRlPlus && eocRlMinus) {
+    eocRlPlus.addEventListener('click', () => {
+      if (!imlEoc) return;
+      const prevTarget = eocTrainingTarget;
+      eocTrainingTarget = 'eoc';
+      onThumbsUp();
+      eocTrainingTarget = prevTarget;
+      flash('eoc-rl-plus');
+    });
+    eocRlMinus.addEventListener('click', () => {
+      if (!imlEoc) return;
+      const prevTarget = eocTrainingTarget;
+      eocTrainingTarget = 'eoc';
+      onThumbsDown();
+      eocTrainingTarget = prevTarget;
+      flash('eoc-rl-minus');
+    });
+  }
 
   // Undo button
   document.getElementById('btn-undo').addEventListener('click', onUndo);
@@ -3057,6 +3086,24 @@ function wireKeyboard() {
     } else if (e.key === '2' || e.code === 'Numpad2') {
       e.preventDefault();
       onThumbsUp();
+    } else if (e.key === '3' || e.code === 'Numpad3') {
+      e.preventDefault();
+      if (imlEoc && eocChain?.nispsMode === 'linked') {
+        const prevTarget = eocTrainingTarget;
+        eocTrainingTarget = 'eoc';
+        onThumbsDown();
+        eocTrainingTarget = prevTarget;
+        flash('eoc-rl-minus');
+      }
+    } else if (e.key === '4' || e.code === 'Numpad4') {
+      e.preventDefault();
+      if (imlEoc && eocChain?.nispsMode === 'linked') {
+        const prevTarget = eocTrainingTarget;
+        eocTrainingTarget = 'eoc';
+        onThumbsUp();
+        eocTrainingTarget = prevTarget;
+        flash('eoc-rl-plus');
+      }
     } else if (e.key === 'z' || e.key === 'Z') {
       e.preventDefault();
       onUndo();

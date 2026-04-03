@@ -1,9 +1,9 @@
 // MIDI Input — receives notes and CCs from external MIDI controllers
-// Uses Web MIDI API, routes note on/off to C15 bridge
+// Uses Web MIDI API, routes note on/off through a SynthEngine interface
 
 export class MIDIInput {
-  constructor(bridge) {
-    this.bridge = bridge;
+  constructor(engine) {
+    this.engine = engine;
     this.enabled = false;
     this.midiAccess = null;
     this.selectedInputId = null;
@@ -18,6 +18,9 @@ export class MIDIInput {
   set onStatusChange(fn) { this._onStatusChange = fn; }
   set onInputsChange(fn) { this._onInputsChange = fn; }
   set onCC(fn) { this._onCC = fn; }
+
+  /** Hot-swap the engine (e.g. when the user switches synth engines). */
+  setEngine(engine) { this.engine = engine; }
 
   _status(msg) {
     console.log('[MIDI]', msg);
@@ -130,15 +133,15 @@ export class MIDIInput {
     switch (type) {
       case 0x90: // Note On
         if (data2 > 0) {
-          this.bridge.noteOn(data1, data2 / 127);
+          this.engine.noteOn(data1, data2 / 127);
         } else {
           // Velocity 0 = note off
-          this.bridge.noteOff(data1);
+          this.engine.noteOff(data1);
         }
         break;
 
       case 0x80: // Note Off
-        this.bridge.noteOff(data1);
+        this.engine.noteOff(data1);
         break;
 
       case 0xb0: // Control Change

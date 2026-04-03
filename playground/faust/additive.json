@@ -1,0 +1,758 @@
+{
+	"name": "additive",
+	"filename": "additive.dsp",
+	"version": "2.83.1",
+	"compile_options": "-lang cpp -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 0",
+	"library_list": ["/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/stdfaust.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/envelopes.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/maths.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/platform.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/oscillators.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/basics.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/noises.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/filters.lib","/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust/signals.lib"],
+	"include_pathnames": ["/nix/store/fnjbalzgc6pjm8la292cczxqbr00qmav-faust-2.83.1/share/faust","/usr/local/share/faust","/usr/share/faust",".","/home/w1n5t0n/src/MEMLNaut-NISPS/.claude/worktrees/agent-ae51af34/.claude/worktrees/agent-a667e616/playground/faust"],
+	"size": 1908,
+	"inputs": 0,
+	"outputs": 2,
+	"meta": [ 
+		{ "basics.lib/name": "Faust Basic Element Library" },
+		{ "basics.lib/version": "1.22.0" },
+		{ "compile_options": "-lang cpp -fpga-mem-th 4 -ct 1 -es 1 -mcd 16 -mdd 1024 -mdy 33 -single -ftz 0" },
+		{ "envelopes.lib/adsr:author": "Yann Orlarey and Andrey Bundin" },
+		{ "envelopes.lib/author": "GRAME" },
+		{ "envelopes.lib/copyright": "GRAME" },
+		{ "envelopes.lib/license": "LGPL with exception" },
+		{ "envelopes.lib/name": "Faust Envelope Library" },
+		{ "envelopes.lib/version": "1.3.0" },
+		{ "filename": "additive.dsp" },
+		{ "filters.lib/lowpass0_highpass1": "MIT-style STK-4.3 license" },
+		{ "filters.lib/lowpass0_highpass1:author": "Julius O. Smith III" },
+		{ "filters.lib/lowpass:author": "Julius O. Smith III" },
+		{ "filters.lib/lowpass:copyright": "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>" },
+		{ "filters.lib/lowpass:license": "MIT-style STK-4.3 license" },
+		{ "filters.lib/name": "Faust Filters Library" },
+		{ "filters.lib/tf1:author": "Julius O. Smith III" },
+		{ "filters.lib/tf1:copyright": "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>" },
+		{ "filters.lib/tf1:license": "MIT-style STK-4.3 license" },
+		{ "filters.lib/tf1s:author": "Julius O. Smith III" },
+		{ "filters.lib/tf1s:copyright": "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>" },
+		{ "filters.lib/tf1s:license": "MIT-style STK-4.3 license" },
+		{ "filters.lib/version": "1.7.1" },
+		{ "maths.lib/author": "GRAME" },
+		{ "maths.lib/copyright": "GRAME" },
+		{ "maths.lib/license": "LGPL with exception" },
+		{ "maths.lib/name": "Faust Math Library" },
+		{ "maths.lib/version": "2.9.0" },
+		{ "name": "additive" },
+		{ "noises.lib/name": "Faust Noise Generator Library" },
+		{ "noises.lib/version": "1.5.0" },
+		{ "oscillators.lib/name": "Faust Oscillator Library" },
+		{ "oscillators.lib/version": "1.6.0" },
+		{ "platform.lib/name": "Generic Platform Library" },
+		{ "platform.lib/version": "1.3.0" },
+		{ "signals.lib/name": "Faust Signal Routing Library" },
+		{ "signals.lib/version": "1.6.0" }
+	],
+	"ui": [ 
+		{
+			"type": "vgroup",
+			"label": "additive",
+			"items": [ 
+				{
+					"type": "hslider",
+					"label": "0_Hidden/freq",
+					"varname": "fHslider19",
+					"shortname": "0_Hidden_freq",
+					"address": "/additive/0_Hidden_freq",
+					"meta": [
+						{ "hidden": "1" },
+						{ "unit": "Hz" }
+					],
+					"init": 220,
+					"min": 20,
+					"max": 4000,
+					"step": 0.01
+				},
+				{
+					"type": "button",
+					"label": "0_Hidden/gate",
+					"varname": "fButton0",
+					"shortname": "0_Hidden_gate",
+					"address": "/additive/0_Hidden_gate",
+					"meta": [
+						{ "hidden": "1" }
+					]
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/00_h1_amp",
+					"varname": "fHslider41",
+					"shortname": "1_Spectral_Shape_00_h1_amp",
+					"address": "/additive/1_Spectral_Shape_00_h1_amp",
+					"meta": [
+						{ "tooltip": "H1 amplitude" }
+					],
+					"init": 0.8,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/01_h2_amp",
+					"varname": "fHslider40",
+					"shortname": "1_Spectral_Shape_01_h2_amp",
+					"address": "/additive/1_Spectral_Shape_01_h2_amp",
+					"meta": [
+						{ "tooltip": "H2 amplitude" }
+					],
+					"init": 0.5,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/02_h3_amp",
+					"varname": "fHslider39",
+					"shortname": "1_Spectral_Shape_02_h3_amp",
+					"address": "/additive/1_Spectral_Shape_02_h3_amp",
+					"meta": [
+						{ "tooltip": "H3 amplitude" }
+					],
+					"init": 0.35,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/03_h4_amp",
+					"varname": "fHslider38",
+					"shortname": "1_Spectral_Shape_03_h4_amp",
+					"address": "/additive/1_Spectral_Shape_03_h4_amp",
+					"meta": [
+						{ "tooltip": "H4 amplitude" }
+					],
+					"init": 0.25,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/04_h5_amp",
+					"varname": "fHslider37",
+					"shortname": "1_Spectral_Shape_04_h5_amp",
+					"address": "/additive/1_Spectral_Shape_04_h5_amp",
+					"meta": [
+						{ "tooltip": "H5 amplitude" }
+					],
+					"init": 0.18,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/05_h6_amp",
+					"varname": "fHslider36",
+					"shortname": "1_Spectral_Shape_05_h6_amp",
+					"address": "/additive/1_Spectral_Shape_05_h6_amp",
+					"meta": [
+						{ "tooltip": "H6 amplitude" }
+					],
+					"init": 0.12,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/06_h7_amp",
+					"varname": "fHslider35",
+					"shortname": "1_Spectral_Shape_06_h7_amp",
+					"address": "/additive/1_Spectral_Shape_06_h7_amp",
+					"meta": [
+						{ "tooltip": "H7 amplitude" }
+					],
+					"init": 0.08,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/07_h8_amp",
+					"varname": "fHslider34",
+					"shortname": "1_Spectral_Shape_07_h8_amp",
+					"address": "/additive/1_Spectral_Shape_07_h8_amp",
+					"meta": [
+						{ "tooltip": "H8 amplitude" }
+					],
+					"init": 0.06,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/08_h9_16_amp",
+					"varname": "fHslider33",
+					"shortname": "1_Spectral_Shape_08_h9_16_amp",
+					"address": "/additive/1_Spectral_Shape_08_h9_16_amp",
+					"meta": [
+						{ "tooltip": "H9-16 group amp" }
+					],
+					"init": 0.05,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/09_h17_32_amp",
+					"varname": "fHslider32",
+					"shortname": "1_Spectral_Shape_09_h17_32_amp",
+					"address": "/additive/1_Spectral_Shape_09_h17_32_amp",
+					"meta": [
+						{ "tooltip": "H17-32 group amp" }
+					],
+					"init": 0.025,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/10_h33_64_amp",
+					"varname": "fHslider30",
+					"shortname": "1_Spectral_Shape_10_h33_64_amp",
+					"address": "/additive/1_Spectral_Shape_10_h33_64_amp",
+					"meta": [
+						{ "tooltip": "H33-64 group amp" }
+					],
+					"init": 0.01,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/11_spectral_tilt",
+					"varname": "fHslider29",
+					"shortname": "1_Spectral_Shape_11_spectral_tilt",
+					"address": "/additive/1_Spectral_Shape_11_spectral_tilt",
+					"meta": [
+						{ "tooltip": "Global tilt" }
+					],
+					"init": 0,
+					"min": -1,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/12_inharmonicity",
+					"varname": "fHslider20",
+					"shortname": "1_Spectral_Shape_12_inharmonicity",
+					"address": "/additive/1_Spectral_Shape_12_inharmonicity",
+					"meta": [
+						{ "tooltip": "Inharmonicity" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 0.15,
+					"step": 0.0001
+				},
+				{
+					"type": "hslider",
+					"label": "1_Spectral Shape/13_odd_even",
+					"varname": "fHslider31",
+					"shortname": "1_Spectral_Shape_13_odd_even",
+					"address": "/additive/1_Spectral_Shape_13_odd_even",
+					"meta": [
+						{ "tooltip": "Odd/even balance" }
+					],
+					"init": 0.5,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/00_attack",
+					"varname": "fHslider8",
+					"shortname": "2_Temporal_00_attack",
+					"address": "/additive/2_Temporal_00_attack",
+					"meta": [
+						{ "scale": "log" },
+						{ "tooltip": "Attack" }
+					],
+					"init": 0.01,
+					"min": 0.001,
+					"max": 5,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/01_decay",
+					"varname": "fHslider9",
+					"shortname": "2_Temporal_01_decay",
+					"address": "/additive/2_Temporal_01_decay",
+					"meta": [
+						{ "tooltip": "Decay" }
+					],
+					"init": 0.3,
+					"min": 0.001,
+					"max": 10,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/02_sustain",
+					"varname": "fHslider10",
+					"shortname": "2_Temporal_02_sustain",
+					"address": "/additive/2_Temporal_02_sustain",
+					"meta": [
+						{ "tooltip": "Sustain" }
+					],
+					"init": 0.7,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/03_release",
+					"varname": "fHslider7",
+					"shortname": "2_Temporal_03_release",
+					"address": "/additive/2_Temporal_03_release",
+					"meta": [
+						{ "tooltip": "Release" }
+					],
+					"init": 0.5,
+					"min": 0.01,
+					"max": 10,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/04_brightness_attack",
+					"varname": "fHslider1",
+					"shortname": "2_Temporal_04_brightness_attack",
+					"address": "/additive/2_Temporal_04_brightness_attack",
+					"meta": [
+						{ "scale": "log" },
+						{ "tooltip": "Bright A" }
+					],
+					"init": 0.005,
+					"min": 0.001,
+					"max": 5,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/05_brightness_decay",
+					"varname": "fHslider2",
+					"shortname": "2_Temporal_05_brightness_decay",
+					"address": "/additive/2_Temporal_05_brightness_decay",
+					"meta": [
+						{ "tooltip": "Bright D" }
+					],
+					"init": 0.15,
+					"min": 0.001,
+					"max": 5,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/06_brightness_sustain",
+					"varname": "fHslider3",
+					"shortname": "2_Temporal_06_brightness_sustain",
+					"address": "/additive/2_Temporal_06_brightness_sustain",
+					"meta": [
+						{ "tooltip": "Bright S" }
+					],
+					"init": 0.4,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/07_brightness_release",
+					"varname": "fHslider0",
+					"shortname": "2_Temporal_07_brightness_release",
+					"address": "/additive/2_Temporal_07_brightness_release",
+					"meta": [
+						{ "tooltip": "Bright R" }
+					],
+					"init": 0.3,
+					"min": 0.01,
+					"max": 5,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/08_spectral_flux_rate",
+					"varname": "fHslider22",
+					"shortname": "2_Temporal_08_spectral_flux_rate",
+					"address": "/additive/2_Temporal_08_spectral_flux_rate",
+					"meta": [
+						{ "tooltip": "Flux rate" }
+					],
+					"init": 0.5,
+					"min": 0,
+					"max": 10,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "2_Temporal/09_spectral_flux_depth",
+					"varname": "fHslider23",
+					"shortname": "2_Temporal_09_spectral_flux_depth",
+					"address": "/additive/2_Temporal_09_spectral_flux_depth",
+					"meta": [
+						{ "tooltip": "Flux depth" }
+					],
+					"init": 0.1,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/00_phase_random",
+					"varname": "fHslider11",
+					"shortname": "3_Phase_00_phase_random",
+					"address": "/additive/3_Phase_00_phase_random",
+					"meta": [
+						{ "tooltip": "Phase randomisation" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/01_phase_walk_rate",
+					"varname": "fHslider21",
+					"shortname": "3_Phase_01_phase_walk_rate",
+					"address": "/additive/3_Phase_01_phase_walk_rate",
+					"meta": [
+						{ "tooltip": "Phase walk rate" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 5,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/02_beating_depth",
+					"varname": "fHslider13",
+					"shortname": "3_Phase_02_beating_depth",
+					"address": "/additive/3_Phase_02_beating_depth",
+					"meta": [
+						{ "tooltip": "Beating depth" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 0.02,
+					"step": 0.0001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/03_beating_rate",
+					"varname": "fHslider12",
+					"shortname": "3_Phase_03_beating_rate",
+					"address": "/additive/3_Phase_03_beating_rate",
+					"meta": [
+						{ "tooltip": "Beating rate" }
+					],
+					"init": 1,
+					"min": 0,
+					"max": 10,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/04_stereo_phase_spread",
+					"varname": "fHslider48",
+					"shortname": "3_Phase_04_stereo_phase_spread",
+					"address": "/additive/3_Phase_04_stereo_phase_spread",
+					"meta": [
+						{ "tooltip": "Stereo spread" }
+					],
+					"init": 0.1,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/05_noise_floor",
+					"varname": "fHslider43",
+					"shortname": "3_Phase_05_noise_floor",
+					"address": "/additive/3_Phase_05_noise_floor",
+					"meta": [
+						{ "tooltip": "Noise floor" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 0.2,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/06_noise_color",
+					"varname": "fHslider42",
+					"shortname": "3_Phase_06_noise_color",
+					"address": "/additive/3_Phase_06_noise_color",
+					"meta": [
+						{ "tooltip": "Noise colour" }
+					],
+					"init": 0.5,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "3_Phase/07_sub_harmonic",
+					"varname": "fHslider44",
+					"shortname": "3_Phase_07_sub_harmonic",
+					"address": "/additive/3_Phase_07_sub_harmonic",
+					"meta": [
+						{ "tooltip": "Sub-harmonic" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/00_vibrato_rate",
+					"varname": "fHslider15",
+					"shortname": "4_Modulation_00_vibrato_rate",
+					"address": "/additive/4_Modulation_00_vibrato_rate",
+					"meta": [
+						{ "tooltip": "Vibrato rate" }
+					],
+					"init": 5,
+					"min": 0,
+					"max": 10,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/01_vibrato_depth",
+					"varname": "fHslider16",
+					"shortname": "4_Modulation_01_vibrato_depth",
+					"address": "/additive/4_Modulation_01_vibrato_depth",
+					"meta": [
+						{ "tooltip": "Vibrato depth" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 0.05,
+					"step": 0.0001
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/02_vibrato_delay",
+					"varname": "fHslider14",
+					"shortname": "4_Modulation_02_vibrato_delay",
+					"address": "/additive/4_Modulation_02_vibrato_delay",
+					"meta": [
+						{ "tooltip": "Vibrato delay" }
+					],
+					"init": 0.3,
+					"min": 0,
+					"max": 2,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/03_tremolo_rate",
+					"varname": "fHslider5",
+					"shortname": "4_Modulation_03_tremolo_rate",
+					"address": "/additive/4_Modulation_03_tremolo_rate",
+					"meta": [
+						{ "tooltip": "Tremolo rate" }
+					],
+					"init": 4,
+					"min": 0,
+					"max": 20,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/04_tremolo_depth",
+					"varname": "fHslider6",
+					"shortname": "4_Modulation_04_tremolo_depth",
+					"address": "/additive/4_Modulation_04_tremolo_depth",
+					"meta": [
+						{ "tooltip": "Tremolo depth" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/05_drift_rate",
+					"varname": "fHslider24",
+					"shortname": "4_Modulation_05_drift_rate",
+					"address": "/additive/4_Modulation_05_drift_rate",
+					"meta": [
+						{ "tooltip": "Drift rate" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 2,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/06_drift_depth",
+					"varname": "fHslider25",
+					"shortname": "4_Modulation_06_drift_depth",
+					"address": "/additive/4_Modulation_06_drift_depth",
+					"meta": [
+						{ "tooltip": "Drift depth" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 0.3,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/07_formant1_freq",
+					"varname": "fHslider27",
+					"shortname": "4_Modulation_07_formant1_freq",
+					"address": "/additive/4_Modulation_07_formant1_freq",
+					"meta": [
+						{ "tooltip": "Formant 1 freq" }
+					],
+					"init": 3,
+					"min": 1,
+					"max": 16,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/08_formant2_freq",
+					"varname": "fHslider26",
+					"shortname": "4_Modulation_08_formant2_freq",
+					"address": "/additive/4_Modulation_08_formant2_freq",
+					"meta": [
+						{ "tooltip": "Formant 2 freq" }
+					],
+					"init": 6,
+					"min": 1,
+					"max": 16,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "4_Modulation/09_formant_depth",
+					"varname": "fHslider28",
+					"shortname": "4_Modulation_09_formant_depth",
+					"address": "/additive/4_Modulation_09_formant_depth",
+					"meta": [
+						{ "tooltip": "Formant depth" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "5_Master/00_level",
+					"varname": "fHslider47",
+					"shortname": "5_Master_00_level",
+					"address": "/additive/5_Master_00_level",
+					"meta": [
+						{ "tooltip": "Output level" }
+					],
+					"init": 0.7,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "5_Master/01_vel_sens",
+					"varname": "fHslider46",
+					"shortname": "5_Master_01_vel_sens",
+					"address": "/additive/5_Master_01_vel_sens",
+					"meta": [
+						{ "tooltip": "Velocity sens" }
+					],
+					"init": 0.5,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "5_Master/02_vel_brightness",
+					"varname": "fHslider4",
+					"shortname": "5_Master_02_vel_brightness",
+					"address": "/additive/5_Master_02_vel_brightness",
+					"meta": [
+						{ "tooltip": "Vel bright" }
+					],
+					"init": 0.3,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "5_Master/03_pitch_glide",
+					"varname": "fHslider17",
+					"shortname": "5_Master_03_pitch_glide",
+					"address": "/additive/5_Master_03_pitch_glide",
+					"meta": [
+						{ "tooltip": "Portamento" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 10,
+					"step": 0.01
+				},
+				{
+					"type": "hslider",
+					"label": "5_Master/04_saturation",
+					"varname": "fHslider45",
+					"shortname": "5_Master_04_saturation",
+					"address": "/additive/5_Master_04_saturation",
+					"meta": [
+						{ "tooltip": "Saturation" }
+					],
+					"init": 0,
+					"min": 0,
+					"max": 1,
+					"step": 0.001
+				},
+				{
+					"type": "hslider",
+					"label": "5_Master/05_fine_tune",
+					"varname": "fHslider18",
+					"shortname": "5_Master_05_fine_tune",
+					"address": "/additive/5_Master_05_fine_tune",
+					"meta": [
+						{ "tooltip": "Cents" },
+						{ "unit": "ct" }
+					],
+					"init": 0,
+					"min": -50,
+					"max": 50,
+					"step": 0.1
+				}
+			]
+		}
+	]
+}

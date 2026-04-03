@@ -634,6 +634,67 @@ html, body {
   animation: rl-flash 0.25s ease-out;
 }
 
+/* ---- RL label (shown in Linked mode to distinguish Synth vs FX) ---- */
+.rl-label {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  text-align: center;
+  color: var(--text);
+}
+.rl-label.hidden { display: none; }
+
+/* ---- EOC RL buttons (FX feedback, Linked mode) ---- */
+.eoc-rl-buttons {
+  position: fixed;
+  bottom: 36px;
+  left: calc(50% + 100px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  z-index: 45;
+  transition: opacity 0.3s;
+}
+.eoc-rl-buttons.hidden { display: none; }
+
+.eoc-rl-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  color: var(--text);
+}
+
+.eoc-rl-btn {
+  width: 48px;
+  height: 48px;
+}
+
+.eoc-rl-btn.rl-up {
+  border-color: rgba(78, 205, 196, 0.4);
+  color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.08);
+}
+
+.eoc-rl-btn.rl-up:active {
+  background: rgba(78, 205, 196, 0.2);
+  box-shadow: 0 0 20px rgba(78, 205, 196, 0.3);
+}
+
+.eoc-rl-btn.rl-down {
+  border-color: rgba(78, 205, 196, 0.3);
+  color: #e07040;
+  background: rgba(224, 112, 64, 0.08);
+}
+
+.eoc-rl-btn.rl-down:active {
+  background: rgba(224, 112, 64, 0.2);
+  box-shadow: 0 0 20px rgba(224, 112, 64, 0.3);
+}
+
 /* ---- Status line (floating, minimal) ---- */
 .status-line {
   position: fixed;
@@ -1956,6 +2017,11 @@ html, body {
     font-size: 32px;
   }
 
+  .eoc-rl-btn {
+    width: 54px;
+    height: 54px;
+  }
+
   .drawer-stack {
     width: 280px;
   }
@@ -1984,6 +2050,15 @@ html, body {
 
   .rl-icon {
     font-size: 24px;
+  }
+
+  .eoc-rl-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  .eoc-rl-buttons {
+    left: calc(50% + 80px);
   }
 }
 

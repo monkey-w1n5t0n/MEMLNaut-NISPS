@@ -110,6 +110,7 @@
 
   <!-- RL floating buttons (with undo between/below) -->
   <div class="rl-buttons" id="rl-buttons">
+    <span class="rl-label hidden" id="rl-label">Synth</span>
     <button class="rl-btn rl-down" id="btn-thumbsdown" title="Explore more"><span class="rl-icon">&minus;</span><span class="key-num">1</span></button>
     <button class="rl-btn rl-up" id="btn-thumbsup" title="Keep this"><span class="rl-icon">+</span><span class="key-num">2</span></button>
     <button class="rl-undo-btn" id="btn-undo" title="Undo last action">
@@ -117,6 +118,13 @@
         <path d="M3 7h6a4 4 0 0 1 0 8H7"/><path d="M3 7l3-3M3 7l3 3"/>
       </svg>
     </button>
+  </div>
+
+  <!-- EOC RL buttons (shown only in Linked mode) -->
+  <div id="eoc-rl-buttons" class="eoc-rl-buttons hidden">
+    <span class="eoc-rl-label">FX</span>
+    <button id="eoc-rl-minus" class="rl-btn eoc-rl-btn rl-down" title="Explore FX (change effects)"><span class="rl-icon">&minus;</span><span class="key-num">3</span></button>
+    <button id="eoc-rl-plus" class="rl-btn eoc-rl-btn rl-up" title="Keep FX (reinforce effects)"><span class="rl-icon">+</span><span class="key-num">4</span></button>
   </div>
 
   <!-- Status line (floating, minimal) -->
@@ -371,6 +379,8 @@
           <tr><th colspan="2">Keyboard</th></tr>
           <tr><td><kbd>1</kbd></td><td>Negative feedback (&minus;)</td></tr>
           <tr><td><kbd>2</kbd></td><td>Positive feedback (+)</td></tr>
+          <tr><td><kbd>3</kbd></td><td>FX negative feedback (Linked mode)</td></tr>
+          <tr><td><kbd>4</kbd></td><td>FX positive feedback (Linked mode)</td></tr>
           <tr><td><kbd>Z</kbd></td><td>Undo</td></tr>
           <tr><th colspan="2">Gamepad (Steam Deck, Xbox, etc.)</th></tr>
           <tr><td>Left stick</td><td>Joystick control</td></tr>

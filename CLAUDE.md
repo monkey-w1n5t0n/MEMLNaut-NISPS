@@ -26,17 +26,88 @@ See `nisps-core/README.md` for complete documentation and examples.
 
 ## Web Playground
 
-The `playground/` directory contains a browser-based interactive demo of the NISPS ML engine. It's a faithful JavaScript port of nisps-core's MLP + IML, with no build step or dependencies.
+The `playground/` directory contains a browser-based interactive demo of the NISPS ML engine. No build step or dependencies — serve statically.
 
 - **2 inputs** (virtual joystick X/Y) mapped through a `[3, 32, 48, 64, 126]` MLP to **126 outputs**
-- **Two output modes**:
+- **Four output modes**:
   - **Visual**: first 20 outputs control a Canvas2D flow-field particle system
-  - **Synth (C15)**: all 126 outputs control the C15 WASM synthesizer — every sonically meaningful continuous parameter across envelopes, oscillators, shapers, filters, feedback/output mixers, cabinet, and effects
+  - **Synth (C15)**: all 126 outputs control the C15 WASM synthesizer
+  - **MIDI CC**: outputs mapped to configurable MIDI CC messages via WebMIDI
+  - **Audio Canvas**: 36 outputs drive a generative audio sampler
 - **Two learning modes**: Examples (set slider targets, add examples, train) and RL Feedback (thumbs up/down with exploration noise)
 - **Serve statically**: `cd playground && python3 -m http.server`
 - **Mobile-first**: designed for touch/foldable phone use
 
-Key files: `js/nisps/` (ML core port), `js/ui/` (visualizer, joystick, controls, input pipeline, control surface), `js/synth/` (C15 bridge, param map, arpeggiator), `js/a-app.js` (immersive app wiring).
+Key files: `js/nisps/` (WASM engine + dataset), `js/ui/` (visualizer, joystick, controls, input pipeline, control surface), `js/synth/` (C15 bridge, param map, arpeggiator), `js/a-app.js` (immersive app wiring).
+
+### WASM ML Engine
+
+The immersive app (`a-immersive.html` / `a-app.js`) uses a WASM-compiled MLP for all inference and training. The legacy JS engine (`iml.js`, `mlp.js`, `layer.js`, `node.js`) is still used by the three older playground variants (`app.js`, `b-app.js`, `c-app.js`) but is slated for migration to WASM (see meml-dj9).
+
+**Architecture:**
+
+```
+Main thread                              Worker thread
+  WasmIML (nisps-wasm.js)                  nisps-wasm-worker.js
+  ├─ WASM instance A (persistent)          └─ WASM instance B (lazy)
+  │   inference() — every rAF tick              trainEx() — off-thread
+  │   inferBatch() — heatmap sampling           returns: weights + loss curve
+  │   moveWeightsEx() — RL exploration
+  │   evalLoss() — non-destructive query
+  │   getLayerStats() — per-layer health
+  │   getWeights/setWeights — sync w/ worker
+  │
+  └─ Dataset (JS-side, dataset.js)
+      ├─ FIFO ring buffer (max 100 examples)
+      └─ computeWeights() — recency/spatial/combined sample weighting
+```
+
+**WASM bindings** (`playground/wasm/nisps_bindings.cpp`) expose a flat C API compiled via Emscripten:
+
+| Function | Purpose |
+|----------|---------|
+| `nisps_mlp_create/destroy` | Lifecycle |
+| `nisps_mlp_inference` | Single forward pass |
+| `nisps_mlp_infer_batch` | N forward passes in one call (heatmap) |
+| `nisps_mlp_train` | SGD training, returns final loss only |
+| `nisps_mlp_train_ex` | SGD training with full per-iteration loss curve |
+| `nisps_mlp_draw_weights_spread` | Xavier-aware weight randomization |
+| `nisps_mlp_move_weights_spread` | RL noise with weight decay |
+| `nisps_mlp_move_weights_ex` | Same + native output pin mask |
+| `nisps_mlp_eval_loss` | Forward pass + MSE, no weight update |
+| `nisps_mlp_get_layer_stats` | Per-layer: mean|w|, max|w|, dead%, saturating% |
+| `nisps_mlp_get/set_weights` | Flat weight serialization |
+| `nisps_mlp_weight_count` | Total weight count |
+
+**Building the WASM:**
+```bash
+cd playground/wasm && ./build.sh   # requires emcc (Emscripten)
+```
+
+**Key difference from JS engine:** WASM uses float32 (not float64). The `spread`-aware `drawWeights`/`moveWeights` functions are implemented in the bindings file, not in nisps-core proper — they're playground-specific.
+
+**Known issue:** Both the C++ `Train()` and WASM `train_ex` double-scale the loss when no sample weights are provided (each sample loss is weighted by 1/n, then the sum is multiplied by 1/n again). This is a backward-compat pattern from the C++ core (meml-ues).
+
+### Debug Probe
+
+The immersive app exposes `window.__nisps` when loaded with `?debug=1`. Used by Playwright e2e tests. Zero footprint in production.
+
+| Method | Returns |
+|--------|---------|
+| `getOutputs()` | Current 126-element output vector |
+| `getLoss()` | Last training loss (or null) |
+| `getWeights()` | Flat weight array (~13K floats) |
+| `getExampleCount()` | Number of training examples |
+| `setInputs(x, y)` | Set joystick position + run inference |
+| `thumbsUp()` / `thumbsDown()` | Trigger RL feedback |
+| `train()` | Sync training with full UI update |
+| `trainAsync()` | Async training (returns Promise) |
+| `randomise()` | Randomize weights |
+| `clearExamples()` | Clear dataset |
+| `saveState()` | Force localStorage save |
+| `evalLoss()` | Non-destructive loss query |
+| `inferBatch(points)` | Batch inference |
+| `getLayerStats()` | Per-layer weight health |
 
 ### URL Parameters
 
@@ -111,7 +182,7 @@ The immersive app (`a-immersive.html`) has a control surface system for tuning h
 | `js/ui/phase2-ui.js` | 2 | DOM: undo button with history popup, A/B toggle, region pin via long-press, param pin via double-tap. |
 | `js/ui/pressure-feedback.js` | 3 | Touch force + hold duration → intensity multiplier for noise growth/decay. |
 | `js/ui/auto-explore.js` | 3 | Automated thumbs-down at configurable interval. Zoom-scaled intensity. |
-| `js/ui/input-heatmap.js` | 3 | 2D color field sampling MLP across input space. 3 color modes, zoom-aware resampling. |
+| `js/ui/input-heatmap.js` | 3 | 2D color field sampling MLP across input space. 3 color modes, zoom-aware resampling. Supports `inferBatchFn` for single-call WASM batch inference. |
 | `js/ui/phase3-ui.js` | 3 | DOM: auto-explore toggle with progress ring, heatmap eye icon, pressure indicators. |
 | `js/ui/output-pipeline.js` | 4 | Global curve → smoothing → slew rate → freeze gate on MLP outputs before synth/visual routing. |
 | `js/ui/weight-health.js` | 4 | Weight magnitude histogram, dead/saturating/healthy status detection, ambient visualization. |
@@ -134,6 +205,33 @@ When a user manually overrides an individual param, the offset from the axis-der
 **Integration** — the control surface dispatches `controlsurface:change` CustomEvents. `a-app.js` listens and updates the input pipeline config, spread level, and RL parameters (noise cap, growth, decay, floor, zoom-aware feedback scaling). Pipeline-processed coordinates are cached (`_lastPipeX/Y`) so `getCurrentInputs()` and `setCurrentInputs()` use the same values the MLP sees. State is persisted to localStorage alongside existing app state.
 
 **Remaining**: Engine configuration panel (Part 8 of spec) — network architecture, loss function, optimizer selection.
+
+## Testing
+
+Playwright e2e tests cover the immersive app's ML engine, UI state machines, input pipeline, and persistence. Tests run headless Chromium against a Python HTTP server.
+
+```bash
+# Run all tests (starts server automatically on port 7331)
+npx playwright test
+
+# Run with browser visible
+npx playwright test --headed
+
+# Run a specific test file
+npx playwright test tests/e2e/ml-engine.spec.js
+```
+
+**Test files** (`tests/e2e/`):
+
+| File | Coverage |
+|------|----------|
+| `ml-engine.spec.js` | WASM inference bounds, training loss, thumbs up/down, async training, example capture |
+| `ui-interactions.spec.js` | Drawer open/close, mode switching, heatmap bars, presets, keyboard shortcuts (1/2/Z) |
+| `input-pipeline.spec.js` | Input→output variation, clamping, joystick drag, post-training bounds |
+| `persistence.spec.js` | URL params (?preset, ?spread), localStorage round-trip |
+| `wasm-api.spec.js` | Batch inference, evalLoss, getLayerStats, loss history curve, pin mask |
+
+Tests use the `?debug=1` probe (`window.__nisps`) for programmatic access to the ML engine. The `helpers.js` module provides `loadApp(page)` which clears localStorage, sets `nisps-help-seen`, and waits for WASM initialization.
 
 ## Build System
 

@@ -724,35 +724,45 @@ function outputCountForMode(mode) {
 
 /**
  * Recreate IML instances with a new output count.
- * Resets all weights and training data.
+ * Joystick IML uses warm-start weight transfer to preserve learned mappings.
+ * Training examples are always cleared (dataset is JS-side and output-count-specific).
  */
 async function resizeMLP(newOutputCount) {
   if (newOutputCount === N_OUTPUTS) return;
   N_OUTPUTS = newOutputCount;
 
+  // Extract joystick weights before destroying (for warm-start transfer)
+  const joySnapshot = imlJoy ? imlJoy.extractWeights() : null;
+
   // Destroy old IML instances (free WASM memory)
   if (imlJoy) imlJoy.destroy();
   if (imlHand) imlHand.destroy();
 
-  imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+  // Joystick IML: warm-start from previous weights when possible
+  if (joySnapshot) {
+    imlJoy = await WasmIML.createWithWarmStart(joySnapshot, N_OUTPUTS, 1000, 1.0, 0.00001);
+  } else {
+    imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+    imlJoy.randomiseWeights(spreadLevel);
+  }
   imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
+
+  // Hand IML: fresh init (warm-start for 14-input networks is a future concern)
   imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, [48, 48, 64], 1000, 1.0, 0.00001);
   imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
+  imlHand.randomiseWeights(spreadLevel);
+
   iml = (inputMode === 'joystick') ? imlJoy : imlHand;
 
   // Reset dependent state
   rawParamValues = new Array(N_OUTPUTS).fill(0.5);
-
-  // Randomize with current spread
-  imlJoy.randomiseWeights(spreadLevel);
-  imlHand.randomiseWeights(spreadLevel);
 
   // Re-run inference
   iml.setInput(0, joyX);
   iml.setInput(1, joyY);
   iml.process();
 
-  console.log(`[NISPS] MLP resized to ${N_OUTPUTS} outputs`);
+  console.log(`[NISPS] MLP resized to ${N_OUTPUTS} outputs (joystick IML warm-started)`);
 }
 
 // ---- Init ----
@@ -1842,7 +1852,7 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
 
   // Warn about weight reset if resizing (skip during state restore)
   if (needsResize && !skipConfirm && iml.dataset.features.length > 0) {
-    if (!confirm(`Switching to ${mode} mode requires ${targetOutputs} outputs (currently ${N_OUTPUTS}). This will reset the neural network weights and training data. Continue?`)) {
+    if (!confirm(`Switching to ${mode} mode requires ${targetOutputs} outputs (currently ${N_OUTPUTS}). This will reset training examples. Network weights will be partially preserved. Continue?`)) {
       syncOutputToggles(outputMode); // revert pill UI
       return;
     }

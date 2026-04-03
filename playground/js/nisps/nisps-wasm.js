@@ -405,6 +405,68 @@ export class WasmIML {
     this.process();
   }
 
+  // ---- Public weight snapshot for warm-start transfer ----
+  /**
+   * Returns a plain object describing the full network weights for later
+   * reinjection via WasmIML.createWithWarmStart().
+   */
+  extractWeights() {
+    return {
+      layerSizes: [...this.layerSizes],  // e.g. [3, 32, 48, 64, 126]
+      weights: this._getFlatWeights(),   // plain Array from fromHeapF32
+    };
+  }
+
+  /**
+   * Async static factory: create a new WasmIML with newOutputCount outputs,
+   * transferring as much of snapshot.weights as possible.
+   * Hidden-layer weights are copied unchanged; output nodes beyond the old
+   * count retain their random-initialised values.
+   */
+  static async createWithWarmStart(snapshot, newOutputCount, maxIter, learningRate, convergenceThreshold) {
+    const oldLayerSizes = snapshot.layerSizes;
+    const nInputs = oldLayerSizes[0] - 1;          // stored with bias (+1), strip it
+    const hiddenLayers = oldLayerSizes.slice(1, -1); // e.g. [32, 48, 64]
+    const oldOutputCount = oldLayerSizes[oldLayerSizes.length - 1];
+
+    // Create fresh instance with new output count
+    const newIml = await WasmIML.create(nInputs, newOutputCount, hiddenLayers, maxIter, learningRate, convergenceThreshold);
+
+    // Calculate prefix weight count (all layers except the final output layer).
+    // Each layer l: n_nodes[l] * (n_nodes[l-1] + 1) weights (inputs + bias).
+    // fullOldSizes: [nInputs+1, ...hiddenLayers, oldOutputCount]
+    let prefixCount = 0;
+    for (let l = 1; l < oldLayerSizes.length - 1; l++) {
+      prefixCount += oldLayerSizes[l] * (oldLayerSizes[l - 1] + 1);
+    }
+
+    const lastHidden = hiddenLayers[hiddenLayers.length - 1]; // e.g. 64
+    const weightsPerOutputNode = lastHidden + 1; // inputs from last hidden + bias
+
+    // Build new weight array, starting from random init
+    const newWeights = newIml._getFlatWeights();
+    const oldWeights = snapshot.weights;
+
+    // Copy hidden layer weights unchanged
+    for (let i = 0; i < prefixCount; i++) {
+      newWeights[i] = oldWeights[i];
+    }
+
+    // Copy output layer weights for nodes that existed in the old network
+    const sharedOutputNodes = Math.min(oldOutputCount, newOutputCount);
+    for (let n = 0; n < sharedOutputNodes; n++) {
+      const oldOff = prefixCount + n * weightsPerOutputNode;
+      const newOff = prefixCount + n * weightsPerOutputNode;
+      for (let w = 0; w < weightsPerOutputNode; w++) {
+        newWeights[newOff + w] = oldWeights[oldOff + w];
+      }
+    }
+    // Nodes beyond old count retain their random init — good for exploration
+
+    newIml._setFlatWeights(newWeights);
+    return newIml;
+  }
+
   // ---- Flat weight get/set (for storedWeights save/restore) ----
   _getFlatWeights() {
     const ptr = this._w.alloc(this._weightCount);

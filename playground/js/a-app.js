@@ -18,6 +18,7 @@ import { SYNTH_PRESETS, PRESET_TIERS } from './synth/presets.js';
 import { EOCChain } from './eoc/index.js';
 import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 import { EngineSwitcher } from './ui/engine-switcher.js';
+import { EOCJoystick } from './ui/eoc-joystick.js';
 import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
 
@@ -95,9 +96,10 @@ let outputMode = 'visual';
 let eocChain = null;
 let _eocInited = false; // guard: init once per AudioContext lifetime
 
-// EOC Linked mode — second IML driven by the same joystick, independent training
-let imlEoc = null;       // second IML for EOC params (Linked mode)
+// EOC Linked/Independent mode — second IML driven by joystick(s), independent training
+let imlEoc = null;       // second IML for EOC params (Linked/Independent mode)
 let eocTrainingTarget = 'synth'; // 'synth' | 'eoc' — which MLP RL feedback targets
+let eocJoystick = null;  // EOCJoystick instance for Independent mode
 
 // ---- MIDI CC state ----
 let midiOutput = null;
@@ -1074,18 +1076,39 @@ async function init() {
     EOCChainUI.init(eocChain, eocDrawerBody);
   }
 
+  // EOC Independent mode joystick
+  const eocJoyCanvas = document.getElementById('eoc-joy-map');
+  if (eocJoyCanvas) {
+    eocJoystick = new EOCJoystick(eocJoyCanvas);
+    eocJoystick.onChange = (x, y) => {
+      if (!imlEoc || eocChain?.nispsMode !== 'independent') return;
+      imlEoc.setInput(0, x);
+      imlEoc.setInput(1, y);
+      imlEoc.process();
+      const eocOutputs = imlEoc.getOutputs();
+      for (let i = 0; i < eocOutputs.length; i++) {
+        eocChain.setParam(i, eocOutputs[i]);
+      }
+    };
+  }
+
   // Handle EOC structural changes — Shared mode resizes MLP; Linked mode manages second IML
   window.addEventListener('eoc:change', async (e) => {
     const reason = e.detail?.reason;
     console.log('[EOC] chain changed, reason:', reason, 'paramCount:', eocChain.paramCount, 'nispsMode:', eocChain.nispsMode);
 
     if (reason === 'nispsMode-changed') {
-      // Linked mode lifecycle
-      if (eocChain.nispsMode === 'linked') {
+      // Linked/Independent mode lifecycle — both need a second IML
+      if (eocChain.nispsMode === 'linked' || eocChain.nispsMode === 'independent') {
         await initEocIML();
       } else {
         destroyEocIML();
         eocTrainingTarget = 'synth';
+      }
+      // Show/hide EOC joystick (only visible in independent mode)
+      const eocJoyContainer = document.getElementById('eoc-joy-container');
+      if (eocJoyContainer) {
+        eocJoyContainer.classList.toggle('hidden', eocChain.nispsMode !== 'independent');
       }
     }
 
@@ -1107,8 +1130,8 @@ async function init() {
       document.getElementById('heatmap-cells')?.parentElement
         ?.classList.toggle('shared-mode', eocChain.nispsMode === 'shared');
 
-      // Linked mode: recreate EOC IML when modules change
-      if (eocChain.nispsMode === 'linked' && imlEoc) {
+      // Linked/Independent mode: recreate EOC IML when modules change
+      if ((eocChain.nispsMode === 'linked' || eocChain.nispsMode === 'independent') && imlEoc) {
         await initEocIML();
       }
     }
@@ -2353,10 +2376,11 @@ function updateUndoButton() {
 
 /**
  * Return the IML instance that RL feedback should target.
- * In Linked mode the user may direct feedback to the EOC IML instead.
+ * In Linked/Independent mode the user may direct feedback to the EOC IML instead.
  */
 function _rlTarget() {
-  if (eocChain?.nispsMode === 'linked' && eocTrainingTarget === 'eoc' && imlEoc) {
+  const mode = eocChain?.nispsMode;
+  if ((mode === 'linked' || mode === 'independent') && eocTrainingTarget === 'eoc' && imlEoc) {
     return imlEoc;
   }
   return iml;
@@ -2402,7 +2426,7 @@ function onThumbsDown() {
     routeOutputs(outputs);
     updateHeatmap(outputs);
     syncRawParamsFromOutputs(outputs);
-  } else if (imlEoc && eocChain?.nispsMode === 'linked') {
+  } else if (imlEoc && (eocChain?.nispsMode === 'linked' || eocChain?.nispsMode === 'independent')) {
     imlEoc.process();
     const eocOutputs = imlEoc.getOutputs();
     for (let i = 0; i < eocOutputs.length; i++) {
@@ -3517,10 +3541,10 @@ function flash(id) {
   setTimeout(() => el.classList.remove('flash'), 250);
 }
 
-// ---- EOC Linked-mode IML helpers ----
+// ---- EOC Linked/Independent-mode IML helpers ----
 
 /**
- * Create (or recreate) the EOC IML instance for Linked mode.
+ * Create (or recreate) the EOC IML instance for Linked/Independent mode.
  * Uses a smaller network than the synth IML since EOC params are more independent.
  */
 async function initEocIML() {
@@ -3533,10 +3557,10 @@ async function initEocIML() {
     1000, 1.0, 0.00001,
   );
   imlEoc.randomiseWeights(spreadLevel);
-  console.log(`[EOC] Linked IML created — ${eocChain.paramCount} outputs`);
+  console.log(`[EOC] IML created (${eocChain.nispsMode}) — ${eocChain.paramCount} outputs`);
 }
 
-/** Destroy the EOC IML instance (e.g. when leaving Linked mode). */
+/** Destroy the EOC IML instance (e.g. when leaving Linked/Independent mode). */
 function destroyEocIML() {
   if (imlEoc) {
     imlEoc.destroy();

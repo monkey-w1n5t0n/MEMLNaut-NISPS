@@ -94,6 +94,12 @@
     <div id="gamepad-status" style="color: #ff6a00; font-size: 0.6rem; text-align: center; position: absolute; bottom: -16px; left: 0; right: 0; pointer-events: none;"></div>
   </div>
 
+  <!-- EOC Independent mode joystick (shown only in independent nispsMode) -->
+  <div id="eoc-joy-container" class="eoc-joy-container hidden">
+    <canvas id="eoc-joy-map" class="eoc-joy-map" width="120" height="120"></canvas>
+    <div class="eoc-joy-label">FX</div>
+  </div>
+
   <!-- Hand tracking PIP (replaces joystick position when active) -->
   <div class="hand-pip hidden" id="hand-pip">
     <video id="hand-video" playsinline autoplay muted></video>

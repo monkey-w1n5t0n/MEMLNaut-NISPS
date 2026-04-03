@@ -3,7 +3,7 @@
 
 import { WasmIML } from './nisps/nisps-wasm.js';
 import { FlowFieldVisualizer } from './ui/visualizer.js';
-import { AudioCanvas, N_AUDIO_OUTPUTS, AUDIO_PARAM_NAMES, AUDIO_PARAM_COLORS } from './audio/audio-canvas.js';
+import { AudioCanvas } from './audio/audio-canvas.js';
 import { C15Adapter } from './synth/c15-adapter.js';
 import { Arpeggiator } from './synth/arpeggiator.js';
 import { MIDIInput } from './synth/midi-input.js';
@@ -30,7 +30,7 @@ const N_HAND_INPUTS = 14;
 const N_INPUTS = N_JOY_INPUTS; // default (joystick)
 const N_VISUAL_OUTPUTS = 20;
 const N_SYNTH_OUTPUTS = SYNTH_PARAM_MAP.length; // 126
-// N_AUDIO_OUTPUTS = 36 — imported from audio-canvas.js
+// Audio canvas output count is dynamic — queried from audioCanvas.getOutputCount()
 let N_OUTPUTS = N_SYNTH_OUTPUTS; // Dynamic — changes with output mode
 
 let audioCanvas = null; // lazily created on first switch to audio-canvas mode
@@ -193,9 +193,14 @@ const visualOverrides = VISUAL_PARAM_NAMES.map(() => ({
 }));
 
 // ---- Audio Canvas Overrides ----
-const audioCanvasOverrides = Array.from({ length: N_AUDIO_OUTPUTS }, () => ({
-  min: 0, max: 1, curve: 0.5, frozen: false, fixedValue: 0.5,
-}));
+// Dynamic array — resized when AudioCanvas output count changes
+let audioCanvasOverrides = [];
+function _ensureAudioCanvasOverrides(count) {
+  while (audioCanvasOverrides.length < count) {
+    audioCanvasOverrides.push({ min: 0, max: 1, curve: 0.5, frozen: false, fixedValue: 0.5 });
+  }
+  if (audioCanvasOverrides.length > count) audioCanvasOverrides.length = count;
+}
 
 // ---- Synth Sections (for SynthVisualizer) ----
 const SYNTH_SECTIONS = [
@@ -958,7 +963,7 @@ function outputCountForMode(mode) {
   if (mode === 'visual') return N_VISUAL_OUTPUTS;
   if (mode === 'synth') return N_SYNTH_OUTPUTS;
   if (mode === 'midi-cc') return midiCCMap.length;
-  if (mode === 'audio-canvas') return N_AUDIO_OUTPUTS;
+  if (mode === 'audio-canvas') return audioCanvas ? audioCanvas.getOutputCount() : 12;
   return N_SYNTH_OUTPUTS;
 }
 
@@ -1576,9 +1581,20 @@ function buildHeatmap() {
     names = meta.map(p => p.name);
     colors = useCuratedColors ? SYNTH_PARAM_COLORS : meta.map(p => _colorFromGroup(p.group));
   } else {
-    count = isMidiCC ? midiCCMap.length : isAudioCanvas ? N_AUDIO_OUTPUTS : N_VISUAL_OUTPUTS;
-    names = isMidiCC ? midiCCMap.map(p => p.name) : isAudioCanvas ? AUDIO_PARAM_NAMES : VISUAL_PARAM_NAMES;
-    colors = isMidiCC ? MIDI_CC_PARAM_COLORS : isAudioCanvas ? AUDIO_PARAM_COLORS : VISUAL_PARAM_COLORS;
+    if (isAudioCanvas && audioCanvas) {
+      count = audioCanvas.getOutputCount();
+      names = audioCanvas.getAudioParamNames();
+      colors = audioCanvas.getAudioParamColors();
+      _ensureAudioCanvasOverrides(count);
+    } else if (isMidiCC) {
+      count = midiCCMap.length;
+      names = midiCCMap.map(p => p.name);
+      colors = MIDI_CC_PARAM_COLORS;
+    } else {
+      count = N_VISUAL_OUTPUTS;
+      names = VISUAL_PARAM_NAMES;
+      colors = VISUAL_PARAM_COLORS;
+    }
   }
 
   for (let i = 0; i < count; i++) {
@@ -1670,8 +1686,9 @@ function setHeatmapValue(paramIndex, e, cell) {
     paramName = activeEngine.paramMeta[paramIndex].name;
   } else if (isMidiCC) {
     paramName = midiCCMap[paramIndex]?.name ?? `p${paramIndex}`;
-  } else if (isAudioCanvas) {
-    paramName = AUDIO_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
+  } else if (isAudioCanvas && audioCanvas) {
+    const acNames = audioCanvas.getAudioParamNames();
+    paramName = acNames[paramIndex] ?? `p${paramIndex}`;
   } else {
     paramName = VISUAL_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
   }
@@ -1766,9 +1783,11 @@ function showParamPopup(paramIndex, cell) {
   } else if (isMidiCC) {
     name = midiCCMap[paramIndex]?.name ?? `p${paramIndex}`;
     color = MIDI_CC_PARAM_COLORS[paramIndex] ?? '#888';
-  } else if (isAudioCanvas) {
-    name = AUDIO_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
-    color = AUDIO_PARAM_COLORS[paramIndex] ?? '#888';
+  } else if (isAudioCanvas && audioCanvas) {
+    const acNames = audioCanvas.getAudioParamNames();
+    const acColors = audioCanvas.getAudioParamColors();
+    name = acNames[paramIndex] ?? `p${paramIndex}`;
+    color = acColors[paramIndex] ?? '#888';
   } else {
     name = VISUAL_PARAM_NAMES[paramIndex] ?? `p${paramIndex}`;
     color = VISUAL_PARAM_COLORS[paramIndex] ?? '#888';
@@ -2612,6 +2631,18 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
   // Lazily create AudioCanvas on first switch
   if (mode === 'audio-canvas' && !audioCanvas) {
     audioCanvas = new AudioCanvas(audioCanvasWrap);
+    _ensureAudioCanvasOverrides(audioCanvas.getOutputCount());
+    // Listen for dynamic output count changes (loop count changes)
+    audioCanvasWrap.addEventListener('ac:outputcount-changed', async (e) => {
+      if (outputMode !== 'audio-canvas') return;
+      const newCount = e.detail.count;
+      _ensureAudioCanvasOverrides(newCount);
+      if (newCount !== N_OUTPUTS) {
+        await resizeMLP(newCount);
+      }
+      buildHeatmap();
+      updateHeatmap(iml.getOutputs());
+    });
   }
 
   // Hide/show audio-canvas wrap

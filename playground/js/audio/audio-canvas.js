@@ -1,14 +1,18 @@
 // audio-canvas.js — Audio Canvas mode for NISPS Immersive
-// Infinite white canvas, drag-and-drop audio files, NISPS maps joystick→36 audio params
+// Infinite white canvas, drag-and-drop audio files, NISPS maps joystick->audio params
+// Per-clip configurable loop count (0-4), dynamic output sizing
+// Beat-synced loop length with per-clip overrides
+// Param range groups with dual-thumb sliders
 // 4 submodes: remix, granular, drone, slicer
 
-export const N_AUDIO_OUTPUTS = 36;
+// Output layout (dynamic):
+//  [0..7]     global param ranges: vol min/max, pitch min/max, pos min/max, filt min/max
+//  [8..]      per-loop params, packed contiguously: [vol, pitch, pos, filt] x totalLoops
+//             Loop order follows clip order (clip 0's loops first, then clip 1's, etc.)
 
-// Output layout (indices 0–35):
-//  [0..8]   clip volumes / grain density / slicer clip selector
-//  [9..17]  clip pitch/speed / grain pitch / slicer position
-//  [18..26] clip loop start / grain position / slicer speed
-//  [27..35] clip filter cutoff / grain size / unused
+const N_RANGE_OUTPUTS = 8;  // reserved range endpoint slots
+const N_PARAMS_PER_LOOP = 4; // volume, pitch, position, filter
+const MAX_LOOPS_PER_CLIP = 4;
 
 const SUBMODES = ['remix', 'granular', 'drone', 'slicer'];
 const CELL_W = 220;
@@ -16,19 +20,21 @@ const CELL_H = 110;
 const CELL_GAP = 14;
 const CELLS_PER_ROW = 3;
 
-// Generate param names for heatmap
-export const AUDIO_PARAM_NAMES = [
-  ...Array.from({ length: 9 }, (_, i) => `Vol ${i + 1}`),
-  ...Array.from({ length: 9 }, (_, i) => `Pitch ${i + 1}`),
-  ...Array.from({ length: 9 }, (_, i) => `Loop ${i + 1}`),
-  ...Array.from({ length: 9 }, (_, i) => `Filt ${i + 1}`),
-];
+// Param group colors
+const GROUP_COLORS = {
+  volume:   '#4a90d9',
+  pitch:    '#50c878',
+  position: '#e88c32',
+  filter:   '#9b59b6',
+};
 
-export const AUDIO_PARAM_COLORS = [
-  ...Array.from({ length: 9 }, (_, i) => `hsl(${210 + i * 8}, 70%, 55%)`),   // blues - volumes
-  ...Array.from({ length: 9 }, (_, i) => `hsl(${120 + i * 8}, 60%, 50%)`),   // greens - pitch
-  ...Array.from({ length: 9 }, (_, i) => `hsl(${30 + i * 8}, 75%, 55%)`),    // oranges - loop
-  ...Array.from({ length: 9 }, (_, i) => `hsl(${280 + i * 8}, 60%, 60%)`),   // purples - filter
+// Range endpoint placeholder names/colors (first 8 outputs)
+const RANGE_NAMES = ['Vol Min', 'Vol Max', 'Pitch Min', 'Pitch Max', 'Pos Min', 'Pos Max', 'Filt Min', 'Filt Max'];
+const RANGE_COLORS = [
+  GROUP_COLORS.volume, GROUP_COLORS.volume,
+  GROUP_COLORS.pitch, GROUP_COLORS.pitch,
+  GROUP_COLORS.position, GROUP_COLORS.position,
+  GROUP_COLORS.filter, GROUP_COLORS.filter,
 ];
 
 function cellPosition(index) {
@@ -43,25 +49,44 @@ export class AudioCanvas {
     this._audioCtx = null;
     this._masterGain = null;
     this._clips = [];     // { id, name, buffer, duration, waveformData, _cell, _overviewCanvas, _detailCanvas, _statusBar }
-    this._players = [];   // per-clip player state
+    this._loopCounts = []; // per-clip loop count (0-4), default 1
+    this._loopPlayers = []; // per-clip array of player objects (one per active loop)
     this._cellView = [];  // 'overview' | 'detail' per clip
-    this._granularTimers = [];
+    this._granularTimers = []; // per-loop flat granular timers
     this._slicerTimer = null;
     this._slicerStep = 0;
     this._loopUpdateTimer = null;
     this._submode = 'remix';
     this._beatSync = false;
     this._bpm = 120;
+    this._loopLengthUnit = 'bars';   // 'bars' | 'beats'
+    this._loopLengthValue = 4;       // one of: 2, 4, 8, 16, 32, 64
+    this._perLoopLengthOverrides = new Map(); // clipIndex -> { unit, value } or null
+    this._lockPitch = false; // when true, playback rate stays fixed (no ML-driven pitch)
     this._running = false;
-    this._outputs = new Float32Array(N_AUDIO_OUTPUTS).fill(0.5);
+    this._outputs = new Float32Array(this.getOutputCount()).fill(0.5);
+    this._loopOutputs = [];  // per-loop position values (after range outputs)
     this._panX = 40;
     this._panY = 40;
     this._zoom = 1;
+    this._lastLoopCountChange = null; // for revert support
+
+    // Global param ranges (from ML outputs 0-7)
+    this._paramRanges = {
+      volume:   { min: 0, max: 1 },
+      pitch:    { min: 0, max: 1 },
+      position: { min: 0, max: 1 },
+      filter:   { min: 0, max: 1 },
+    };
+    // Manual override flags -- when true, ML outputs for that range are ignored
+    this._rangeOverrides = {
+      volume: false, pitch: false, position: false, filter: false,
+    };
 
     this._setupDOM();
   }
 
-  // ── DOM setup ──────────────────────────────────────────────────────────────
+  // -- DOM setup ---------------------------------------------------------------
 
   _setupDOM() {
     this._container.innerHTML = '';
@@ -104,6 +129,9 @@ export class AudioCanvas {
     `;
     this._container.appendChild(this._dropOverlay);
 
+    // Param range panel
+    this._buildRangePanel();
+
     // Control bar
     this._buildControlBar();
 
@@ -123,6 +151,180 @@ export class AudioCanvas {
 
     this._setupPanZoom();
   }
+
+  // -- Range panel (dual-thumb sliders) ----------------------------------------
+
+  _buildRangePanel() {
+    const panel = document.createElement('div');
+    panel.className = 'ac-range-panel';
+    panel.style.cssText = `
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(20,20,20,0.88); backdrop-filter: blur(10px);
+      border-radius: 14px; padding: 10px 16px 8px;
+      font-family: 'JetBrains Mono', monospace; font-size: 0.62rem;
+      color: #ccc; z-index: 9;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+      display: none; min-width: 260px; max-width: 340px;
+      touch-action: none; user-select: none;
+    `;
+    this._container.appendChild(panel);
+    this._rangePanel = panel;
+    this._rangeSliders = {};
+
+    const groups = [
+      { key: 'volume',   label: 'Volume',   color: GROUP_COLORS.volume },
+      { key: 'pitch',    label: 'Pitch',    color: GROUP_COLORS.pitch },
+      { key: 'position', label: 'Position', color: GROUP_COLORS.position },
+      { key: 'filter',   label: 'Filter',   color: GROUP_COLORS.filter },
+    ];
+
+    for (const g of groups) {
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex;align-items:center;gap:8px;margin-bottom:4px;height:20px;`;
+
+      // Label
+      const label = document.createElement('span');
+      label.style.cssText = `width:56px;text-align:right;color:${g.color};font-size:0.58rem;flex-shrink:0;`;
+      label.textContent = g.label;
+
+      // Track container
+      const track = document.createElement('div');
+      track.style.cssText = `
+        position:relative; flex:1; height:8px; background:rgba(255,255,255,0.08);
+        border-radius:4px; cursor:pointer;
+      `;
+
+      // Filled range
+      const fill = document.createElement('div');
+      fill.style.cssText = `
+        position:absolute; top:0; height:100%; border-radius:4px;
+        background:${g.color}; opacity:0.35; pointer-events:none;
+      `;
+      track.appendChild(fill);
+
+      // Min thumb
+      const minThumb = this._createThumb(g.color);
+      track.appendChild(minThumb);
+
+      // Max thumb
+      const maxThumb = this._createThumb(g.color);
+      track.appendChild(maxThumb);
+
+      // Override indicator dot
+      const overrideDot = document.createElement('div');
+      overrideDot.style.cssText = `
+        width:5px;height:5px;border-radius:50%;background:${g.color};
+        opacity:0;transition:opacity 0.15s;flex-shrink:0;
+      `;
+
+      // Value text
+      const valueText = document.createElement('span');
+      valueText.style.cssText = `width:72px;text-align:left;color:#888;font-size:0.56rem;flex-shrink:0;`;
+      valueText.textContent = '0.00 - 1.00';
+
+      row.appendChild(label);
+      row.appendChild(overrideDot);
+      row.appendChild(track);
+      row.appendChild(valueText);
+      panel.appendChild(row);
+
+      this._rangeSliders[g.key] = { track, fill, minThumb, maxThumb, valueText, overrideDot };
+
+      // Drag handling for thumbs
+      this._setupThumbDrag(g.key, minThumb, 'min', track);
+      this._setupThumbDrag(g.key, maxThumb, 'max', track);
+
+      // Double-click track to clear override
+      track.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        this._rangeOverrides[g.key] = false;
+        this._updateRangePanel();
+      });
+    }
+
+    this._updateRangePanel();
+  }
+
+  _createThumb(color) {
+    const thumb = document.createElement('div');
+    thumb.style.cssText = `
+      position:absolute; top:50%; width:14px; height:14px;
+      border-radius:50%; background:${color}; border:2px solid rgba(255,255,255,0.9);
+      transform:translate(-50%,-50%); cursor:grab; z-index:2;
+      box-shadow:0 1px 4px rgba(0,0,0,0.4); transition:box-shadow 0.1s;
+    `;
+    return thumb;
+  }
+
+  _setupThumbDrag(groupKey, thumb, which, track) {
+    let dragging = false;
+
+    const onMove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const rect = track.getBoundingClientRect();
+      const x = (e.touches ? e.touches[0].clientX : e.clientX);
+      const norm = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+      this._paramRanges[groupKey][which] = norm;
+      this._rangeOverrides[groupKey] = true;
+      this._updateRangePanel();
+    };
+
+    const onUp = () => {
+      dragging = false;
+      thumb.style.cursor = 'grab';
+      thumb.style.boxShadow = '0 1px 4px rgba(0,0,0,0.4)';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+    };
+
+    const onDown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragging = true;
+      thumb.style.cursor = 'grabbing';
+      thumb.style.boxShadow = '0 2px 8px rgba(0,0,0,0.6)';
+      document.addEventListener('mousemove', onMove, { passive: false });
+      document.addEventListener('mouseup', onUp);
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onUp);
+    };
+
+    thumb.addEventListener('mousedown', onDown);
+    thumb.addEventListener('touchstart', onDown, { passive: false });
+  }
+
+  _updateRangePanel() {
+    if (!this._rangePanel) return;
+    // Show panel only when there are clips
+    this._rangePanel.style.display = this._clips.length > 0 ? 'block' : 'none';
+
+    for (const group of ['volume', 'pitch', 'position', 'filter']) {
+      const s = this._rangeSliders[group];
+      if (!s) continue;
+      const r = this._paramRanges[group];
+      const lo = Math.min(r.min, r.max);
+      const hi = Math.max(r.min, r.max);
+
+      // Position thumbs
+      s.minThumb.style.left = `${r.min * 100}%`;
+      s.maxThumb.style.left = `${r.max * 100}%`;
+
+      // Fill bar between thumbs
+      s.fill.style.left = `${lo * 100}%`;
+      s.fill.style.width = `${(hi - lo) * 100}%`;
+
+      // Value text
+      s.valueText.textContent = `${lo.toFixed(2)} \u2013 ${hi.toFixed(2)}`;
+
+      // Override indicator
+      s.overrideDot.style.opacity = this._rangeOverrides[group] ? '1' : '0';
+    }
+  }
+
+  // -- Control bar -------------------------------------------------------------
 
   _buildControlBar() {
     const bar = document.createElement('div');
@@ -160,6 +362,42 @@ export class AudioCanvas {
           text-align:center;
         ">
       </div>
+      <div id="ac-loop-len-group" style="display:flex;align-items:center;gap:3px;opacity:0.3;pointer-events:none">
+        <div style="width:1px;height:16px;background:rgba(255,255,255,0.15)"></div>
+        <select id="ac-loop-len" style="
+          padding:2px 4px; border-radius:8px; border:1px solid rgba(255,255,255,0.2);
+          background:rgba(255,255,255,0.08); color:#fff; font-family:inherit; font-size:0.62rem;
+          cursor:pointer; appearance:none; text-align:center; width:36px;
+        ">
+          <option value="2">2</option>
+          <option value="4" selected>4</option>
+          <option value="8">8</option>
+          <option value="16">16</option>
+          <option value="32">32</option>
+          <option value="64">64</option>
+        </select>
+        <div style="display:flex;gap:2px">
+          <button class="ac-ubtn active" data-unit="bars" style="
+            padding:3px 5px; border-radius:8px; border:none; cursor:pointer;
+            background:rgba(255,255,255,0.1); color:#fff; font-family:inherit; font-size:0.58rem;
+          ">bars</button>
+          <button class="ac-ubtn" data-unit="beats" style="
+            padding:3px 5px; border-radius:8px; border:none; cursor:pointer;
+            background:transparent; color:#aaa; font-family:inherit; font-size:0.58rem;
+          ">beats</button>
+        </div>
+        <button id="ac-reset-overrides" title="Reset per-loop overrides" style="
+          padding:3px 5px; border-radius:8px; border:none; cursor:pointer;
+          background:transparent; color:#aaa; font-family:inherit; font-size:0.62rem;
+          display:none;
+        ">&#x21ba;</button>
+      </div>
+      <div style="width:1px;height:16px;background:rgba(255,255,255,0.15)"></div>
+      <button id="ac-lock-pitch" title="Lock pitch (ignore ML pitch output)" style="
+        padding:3px 6px; border-radius:8px; border:none; cursor:pointer;
+        background:transparent; color:#aaa; font-family:inherit; font-size:0.58rem;
+        transition:background 0.15s,color 0.15s;
+      ">1&#215;</button>
       <div style="width:1px;height:16px;background:rgba(255,255,255,0.15)"></div>
       <button id="ac-play" style="
         width:28px; height:28px; border-radius:50%; border:none; cursor:pointer;
@@ -206,6 +444,7 @@ export class AudioCanvas {
           b.style.background = b === btn ? 'rgba(255,255,255,0.1)' : 'transparent';
           b.style.color = b === btn ? '#fff' : '#aaa';
         });
+        this._syncLoopLenUI();
       });
     });
 
@@ -213,9 +452,42 @@ export class AudioCanvas {
       this._bpm = Math.max(40, Math.min(240, parseFloat(e.target.value) || 120));
     });
 
+    // Loop length controls
+    bar.querySelector('#ac-loop-len').addEventListener('change', e => {
+      this._loopLengthValue = parseInt(e.target.value);
+    });
+
+    bar.querySelectorAll('.ac-ubtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._loopLengthUnit = btn.dataset.unit;
+        bar.querySelectorAll('.ac-ubtn').forEach(b => {
+          b.style.background = b === btn ? 'rgba(255,255,255,0.1)' : 'transparent';
+          b.style.color = b === btn ? '#fff' : '#aaa';
+        });
+      });
+    });
+
+    bar.querySelector('#ac-reset-overrides').addEventListener('click', () => {
+      this._perLoopLengthOverrides.clear();
+      this._syncResetBtn();
+      this._syncAllOverrideBadges();
+    });
+
+    bar.querySelector('#ac-lock-pitch').addEventListener('click', () => {
+      this._lockPitch = !this._lockPitch;
+      this._syncLockPitchUI();
+    });
+
     bar.querySelector('#ac-play').addEventListener('click', () => {
       if (this._running) this.stop(); else this.start();
     });
+  }
+
+  _syncLockPitchUI() {
+    const btn = this._controlBar.querySelector('#ac-lock-pitch');
+    if (!btn) return;
+    btn.style.background = this._lockPitch ? 'rgba(255,255,255,0.15)' : 'transparent';
+    btn.style.color = this._lockPitch ? '#fff' : '#aaa';
   }
 
   _syncSubmodeUI() {
@@ -226,6 +498,8 @@ export class AudioCanvas {
     });
   }
 
+  // -- Pan/Zoom ----------------------------------------------------------------
+
   _setupPanZoom() {
     const pointers = new Map();
     let lastDist = null;
@@ -233,7 +507,9 @@ export class AudioCanvas {
     this._container.addEventListener('pointerdown', e => {
       if (e.target.closest('.ac-cell') || e.target.closest('[data-submode]') ||
           e.target.closest('[data-sync]') || e.target.closest('#ac-play') ||
-          e.target.closest('#ac-bpm')) return;
+          e.target.closest('#ac-bpm') || e.target.closest('#ac-loop-len-group') ||
+          e.target.closest('#ac-add-files') || e.target.closest('.ac-loop-dropdown') ||
+          e.target.closest('.ac-range-panel')) return;
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this._container.setPointerCapture(e.pointerId);
       if (pointers.size === 1) this._container.style.cursor = 'grabbing';
@@ -278,7 +554,7 @@ export class AudioCanvas {
     this._canvas.style.transform = `translate(${this._panX}px, ${this._panY}px) scale(${this._zoom})`;
   }
 
-  // ── Audio file handling ────────────────────────────────────────────────────
+  // -- Audio file handling -----------------------------------------------------
 
   async _handleDrop(files) {
     if (!this._audioCtx) await this._initAudio();
@@ -305,11 +581,13 @@ export class AudioCanvas {
       waveformData: this._extractWaveform(buffer),
     };
     this._clips.push(clip);
-    this._players.push(this._makePlayer(clip));
+    this._loopCounts.push(1); // default 1 loop per clip
+    this._loopPlayers.push([this._makePlayer(clip)]); // one player for the default loop
     this._cellView.push('overview');
-    this._granularTimers.push(null);
     this._createCell(clip, this._clips.length - 1);
     this._updateUI();
+    this._resizeOutputs();
+    this._emitOutputCountChanged();
     return id;
   }
 
@@ -332,7 +610,7 @@ export class AudioCanvas {
     };
   }
 
-  // ── Cell DOM ───────────────────────────────────────────────────────────────
+  // -- Cell DOM ----------------------------------------------------------------
 
   _createCell(clip, index) {
     const { x, y } = cellPosition(index);
@@ -360,7 +638,7 @@ export class AudioCanvas {
       border-bottom: 1px solid #eee;
     `;
     hdr.innerHTML = `
-      <span>${clip.name.length > 20 ? clip.name.slice(0, 20) + '…' : clip.name}</span>
+      <span>${clip.name.length > 20 ? clip.name.slice(0, 20) + '\u2026' : clip.name}</span>
       <span>${this._fmtDur(clip.duration)}</span>
     `;
 
@@ -384,8 +662,23 @@ export class AudioCanvas {
     `;
     status.innerHTML = `
       <span class="ac-st-label">idle</span>
-      <div style="width:60px;height:3px;background:#eee;border-radius:2px;overflow:hidden">
-        <div class="ac-st-level" style="width:0%;height:100%;background:#4a90d9;border-radius:2px;transition:width 0.08s"></div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <div class="ac-loop-stepper" style="display:flex;align-items:center;gap:2px;user-select:none">
+          <button class="ac-loop-dec" style="
+            width:16px;height:16px;border:none;border-radius:4px;cursor:pointer;
+            background:rgba(0,0,0,0.06);color:#888;font-family:inherit;font-size:0.6rem;
+            display:flex;align-items:center;justify-content:center;padding:0;line-height:1;
+          ">&minus;</button>
+          <span class="ac-loop-count" style="min-width:10px;text-align:center;font-size:0.58rem;color:#666">${this._loopCounts[index]}</span>
+          <button class="ac-loop-inc" style="
+            width:16px;height:16px;border:none;border-radius:4px;cursor:pointer;
+            background:rgba(0,0,0,0.06);color:#888;font-family:inherit;font-size:0.6rem;
+            display:flex;align-items:center;justify-content:center;padding:0;line-height:1;
+          ">+</button>
+        </div>
+        <div style="width:40px;height:3px;background:#eee;border-radius:2px;overflow:hidden">
+          <div class="ac-st-level" style="width:0%;height:100%;background:#4a90d9;border-radius:2px;transition:width 0.08s"></div>
+        </div>
       </div>
     `;
 
@@ -394,16 +687,45 @@ export class AudioCanvas {
     cell.appendChild(detailC);
     cell.appendChild(status);
 
-    // Toggle overview/detail on tap (not when dragging canvas)
+    // Loop count stepper
+    status.querySelector('.ac-loop-dec').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._setClipLoopCount(index, this._loopCounts[index] - 1);
+    });
+    status.querySelector('.ac-loop-inc').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._setClipLoopCount(index, this._loopCounts[index] + 1);
+    });
+
+    // Toggle overview/detail on tap; long-press or right-click for loop length dropdown
     let tapStart = 0;
-    cell.addEventListener('pointerdown', () => { tapStart = Date.now(); });
+    let longPressTimer = null;
+    let longPressFired = false;
+    cell.addEventListener('pointerdown', (e) => {
+      tapStart = Date.now();
+      longPressFired = false;
+      longPressTimer = setTimeout(() => {
+        longPressFired = true;
+        const idx = parseInt(cell.dataset.idx);
+        this._showLoopLenDropdown(idx, cell);
+      }, 500);
+    });
+    cell.addEventListener('pointermove', () => {
+      clearTimeout(longPressTimer);
+    });
     cell.addEventListener('pointerup', e => {
-      if (Date.now() - tapStart < 200) {
+      clearTimeout(longPressTimer);
+      if (!longPressFired && Date.now() - tapStart < 200) {
         const idx = parseInt(cell.dataset.idx);
         this._cellView[idx] = this._cellView[idx] === 'overview' ? 'detail' : 'overview';
         this._syncCellView(idx);
       }
       e.stopPropagation();
+    });
+    cell.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const idx = parseInt(cell.dataset.idx);
+      this._showLoopLenDropdown(idx, cell);
     });
 
     this._canvas.appendChild(cell);
@@ -423,6 +745,8 @@ export class AudioCanvas {
     clip._overviewC.style.display = v === 'overview' ? 'block' : 'none';
     clip._detailC.style.display = v === 'detail' ? 'block' : 'none';
   }
+
+  // -- Waveform drawing --------------------------------------------------------
 
   _drawOverview(clip) {
     const c = clip._overviewC;
@@ -519,7 +843,7 @@ export class AudioCanvas {
     this._setCellActive(clip, 'idle', 0);
   }
 
-  // ── Audio init ─────────────────────────────────────────────────────────────
+  // -- Audio init --------------------------------------------------------------
 
   async _initAudio() {
     this._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -528,7 +852,7 @@ export class AudioCanvas {
     this._masterGain.connect(this._audioCtx.destination);
   }
 
-  // ── Playback ───────────────────────────────────────────────────────────────
+  // -- Playback ----------------------------------------------------------------
 
   async start() {
     if (this._running) return;
@@ -556,16 +880,19 @@ export class AudioCanvas {
       if (t) clearInterval(t);
       this._granularTimers[i] = null;
     });
-    for (const p of this._players) {
-      if (p.source) { try { p.source.stop(); } catch (_) {} p.source = null; }
-      if (p.gainNode) { p.gainNode.disconnect(); p.gainNode = null; }
-      if (p.filterNode) { p.filterNode.disconnect(); p.filterNode = null; }
-      p.playing = false;
+    this._granularTimers = [];
+    for (const loopArr of this._loopPlayers) {
+      for (const p of loopArr) {
+        if (p.source) { try { p.source.stop(); } catch (_) {} p.source = null; }
+        if (p.gainNode) { p.gainNode.disconnect(); p.gainNode = null; }
+        if (p.filterNode) { p.filterNode.disconnect(); p.filterNode = null; }
+        p.playing = false;
+      }
     }
   }
 
   _startPlayback() {
-    if (this._clips.length === 0) return;
+    if (this._clips.length === 0 || this.getTotalLoops() === 0) return;
     if (this._submode === 'remix' || this._submode === 'drone') {
       this._startLooping();
     } else if (this._submode === 'granular') {
@@ -583,16 +910,22 @@ export class AudioCanvas {
       : `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6z"/></svg>`;
   }
 
-  // ── Remix / Drone ──────────────────────────────────────────────────────────
+  // -- Remix / Drone -----------------------------------------------------------
 
   _startLooping() {
-    for (let i = 0; i < this._clips.length; i++) this._startClipLoop(i);
+    // Start a loop source for each active loop across all clips
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        this._startOneLoop(ci, li);
+      }
+    }
     this._loopUpdateTimer = setInterval(() => this._tickLooping(), 60);
   }
 
-  _startClipLoop(i) {
-    const clip = this._clips[i];
-    const player = this._players[i];
+  _startOneLoop(clipIdx, loopIdx) {
+    const clip = this._clips[clipIdx];
+    const player = this._loopPlayers[clipIdx]?.[loopIdx];
+    if (!clip || !player) return;
 
     const filterNode = this._audioCtx.createBiquadFilter();
     filterNode.type = 'lowpass';
@@ -625,72 +958,131 @@ export class AudioCanvas {
     const now = this._audioCtx.currentTime;
     const isDrone = this._submode === 'drone';
 
-    for (let i = 0; i < this._clips.length; i++) {
-      const clip = this._clips[i];
-      const player = this._players[i];
-      if (!player.playing) continue;
+    let flatIdx = 0;
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      const clip = this._clips[ci];
+      let clipMaxVol = 0;
+      let clipLoopStart = 0, clipLoopEnd = 1;
 
-      const vol = this._outputs[i] ?? 0.5;
-      const pitchNorm = this._outputs[9 + i] ?? 0.5;
-      const loopNorm = this._outputs[18 + i] ?? 0;
-      const filtNorm = this._outputs[27 + i] ?? 0.7;
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        const player = this._loopPlayers[ci]?.[li];
+        if (!player || !player.playing) { flatIdx++; continue; }
 
-      const speed = isDrone
-        ? 0.005 + pitchNorm * 0.095   // 0.005×–0.1× for drone
-        : 0.5 + pitchNorm * 1.5;      // 0.5×–2.0× for remix
+        // Resolve per-loop params through global ranges
+        const volPos   = this._getLoopParam(flatIdx, 0);
+        const pitchPos = this._getLoopParam(flatIdx, 1);
+        const posPos   = this._getLoopParam(flatIdx, 2);
+        const filtPos  = this._getLoopParam(flatIdx, 3);
 
-      // Loop window: treat loopNorm as start of a sliding window
-      const winSecs = isDrone ? 120 : 15;
-      const loopStart = loopNorm * Math.max(0, clip.duration - winSecs);
-      const loopEnd = Math.min(loopStart + winSecs, clip.duration);
-      const filterHz = 200 * Math.pow(40, filtNorm); // 200 Hz – 8000 Hz log
+        const vol      = this._resolveLoopParam('volume', volPos);
+        const pitchNorm = this._resolveLoopParam('pitch', pitchPos);
+        const loopNorm = this._resolveLoopParam('position', posPos);
+        const filtNorm = this._resolveLoopParam('filter', filtPos);
 
-      player.source.playbackRate.setTargetAtTime(speed, now, 0.08);
-      player.source.loopStart = loopStart;
-      player.source.loopEnd = loopEnd;
-      player.gainNode.gain.setTargetAtTime(isDrone ? vol * 0.7 : vol, now, 0.06);
-      player.filterNode.frequency.setTargetAtTime(filterHz, now, 0.06);
+        const speed = this._lockPitch
+          ? (isDrone ? 0.05 : 1.0)
+          : isDrone
+            ? 0.005 + pitchNorm * 0.095   // 0.005x-0.1x for drone
+            : 0.5 + pitchNorm * 1.5;      // 0.5x-2.0x for remix
 
-      // Visuals
-      const ls = loopStart / clip.duration, le = loopEnd / clip.duration;
-      this._drawOverviewWithLoop(clip, ls, le);
-      if (this._cellView[i] === 'detail') this._drawDetail(clip, ls, le, null);
+        // Loop window: treat loopNorm as start of a sliding window
+        const winSecs = this._beatSync
+          ? this._getLoopDuration(ci)
+          : (isDrone ? 120 : 15);
+        const loopStart = loopNorm * Math.max(0, clip.duration - winSecs);
+        const loopEnd = Math.min(loopStart + winSecs, clip.duration);
+        const filterHz = 200 * Math.pow(40, filtNorm); // 200 Hz - 8000 Hz log
 
-      const color = isDrone ? '#8040c0' : '#4a90d9';
-      this._setCellActive(clip, isDrone ? 'drone' : 'remix', vol, color);
+        player.source.playbackRate.setTargetAtTime(speed, now, 0.08);
+        player.source.loopStart = loopStart;
+        player.source.loopEnd = loopEnd;
+        player.gainNode.gain.setTargetAtTime(isDrone ? vol * 0.7 : vol, now, 0.06);
+        player.filterNode.frequency.setTargetAtTime(filterHz, now, 0.06);
+
+        // Track highest vol and last loop window for cell visuals
+        if (vol > clipMaxVol) clipMaxVol = vol;
+        clipLoopStart = loopStart / clip.duration;
+        clipLoopEnd = loopEnd / clip.duration;
+
+        flatIdx++;
+      }
+
+      // Visuals: use the last loop's window (good enough for overview)
+      if (this._loopCounts[ci] > 0) {
+        this._drawOverviewWithLoop(clip, clipLoopStart, clipLoopEnd);
+        if (this._cellView[ci] === 'detail') this._drawDetail(clip, clipLoopStart, clipLoopEnd, null);
+        const color = isDrone ? '#8040c0' : '#4a90d9';
+        this._setCellActive(clip, isDrone ? 'drone' : 'remix', clipMaxVol, color);
+      }
     }
   }
 
-  // ── Granular ───────────────────────────────────────────────────────────────
+  // -- Granular ----------------------------------------------------------------
 
   _startGranular() {
-    for (let i = 0; i < this._clips.length; i++) this._startClipGranular(i);
+    this._granularTimers = [];
+    let flatIdx = 0;
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        const fi = flatIdx;
+        const ciCapture = ci;
+        const timer = setInterval(() => {
+          if (!this._running) { clearInterval(timer); return; }
+          this._spawnGrain(ciCapture, fi);
+        }, 35);
+        this._granularTimers.push(timer);
+        flatIdx++;
+      }
+    }
+    // Consolidated visual update per clip (avoids multi-loop redraw flicker)
+    this._loopUpdateTimer = setInterval(() => this._tickGranularVisuals(), 60);
   }
 
-  _startClipGranular(i) {
-    if (this._granularTimers[i]) clearInterval(this._granularTimers[i]);
-    this._granularTimers[i] = setInterval(() => {
-      if (!this._running) { clearInterval(this._granularTimers[i]); return; }
-      this._spawnGrain(i);
-    }, 35);
+  _tickGranularVisuals() {
+    if (!this._running) return;
+    let flatIdx = 0;
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      const clip = this._clips[ci];
+      if (this._loopCounts[ci] === 0) continue;
+      // Show the average grain position across loops for this clip
+      let posSum = 0, densityMax = 0;
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        const posNorm = this._resolveLoopParam('position', this._getLoopParam(flatIdx, 2));
+        const density = this._resolveLoopParam('volume', this._getLoopParam(flatIdx, 0));
+        posSum += posNorm;
+        if (density > densityMax) densityMax = density;
+        flatIdx++;
+      }
+      const avgPos = posSum / this._loopCounts[ci];
+      this._drawOverviewWithLoop(clip, Math.max(0, avgPos - 0.03), Math.min(1, avgPos + 0.03));
+      this._setCellActive(clip, 'granular', densityMax, '#7040c0');
+    }
   }
 
-  _spawnGrain(i) {
-    const clip = this._clips[i];
+  _spawnGrain(clipIdx, flatLoopIdx) {
+    const clip = this._clips[clipIdx];
     if (!clip) return;
 
-    const density = this._outputs[i] ?? 0.5;          // 0→rare, 1→dense
-    const pitchNorm = this._outputs[9 + i] ?? 0.5;    // 0→0.5×, 1→2×
-    const posNorm = this._outputs[18 + i] ?? 0.5;     // position center
-    const sizeNorm = this._outputs[27 + i] ?? 0.3;    // 0→20ms, 1→400ms
+    // Resolve per-loop params through global ranges
+    const density   = this._resolveLoopParam('volume', this._getLoopParam(flatLoopIdx, 0));
+    const pitchNorm = this._resolveLoopParam('pitch', this._getLoopParam(flatLoopIdx, 1));
+    const posNorm   = this._resolveLoopParam('position', this._getLoopParam(flatLoopIdx, 2));
+    const sizeNorm  = this._resolveLoopParam('filter', this._getLoopParam(flatLoopIdx, 3));
 
     if (Math.random() > density) return;
 
     const grainDur = 0.02 + sizeNorm * 0.38;
-    const pitch = 0.5 + pitchNorm * 1.5;
+    const pitch = this._lockPitch ? 1.0 : 0.5 + pitchNorm * 1.5;
     const scatter = 0.04;
     const pos = Math.max(0, Math.min(1, posNorm + (Math.random() - 0.5) * scatter * 2));
-    const startOff = pos * Math.max(0, clip.duration - grainDur);
+    let startOff;
+    if (this._beatSync) {
+      const loopDur = this._getLoopDuration(clipIdx);
+      const loopWindow = Math.min(loopDur, clip.duration);
+      startOff = pos * Math.max(0, loopWindow - grainDur);
+    } else {
+      startOff = pos * Math.max(0, clip.duration - grainDur);
+    }
 
     const gain = this._audioCtx.createGain();
     const t = this._audioCtx.currentTime;
@@ -706,17 +1098,15 @@ export class AudioCanvas {
     src.connect(gain);
     src.start(t, startOff, grainDur);
     src.onended = () => gain.disconnect();
-
-    // Visuals: draw grain position
-    this._drawOverviewWithLoop(clip, Math.max(0, posNorm - 0.03), Math.min(1, posNorm + 0.03));
-    this._setCellActive(clip, 'granular', density, '#7040c0');
   }
 
-  // ── Slicer ─────────────────────────────────────────────────────────────────
+  // -- Slicer ------------------------------------------------------------------
 
   _scheduleSlicer() {
     if (!this._running) return;
-    const stepMs = this._beatSync ? (60000 / this._bpm / 2) : (60000 / this._bpm);
+    const stepMs = this._beatSync
+      ? (this._getLoopDuration(0) * 1000 / 8)  // divide the loop into 8 slices
+      : (60000 / this._bpm);
     this._slicerTimer = setTimeout(() => {
       this._fireSlice();
       this._scheduleSlicer();
@@ -724,19 +1114,31 @@ export class AudioCanvas {
   }
 
   _fireSlice() {
-    const step = this._slicerStep % 8;
+    const totalLoops = this.getTotalLoops();
+    if (totalLoops === 0) return;
+
+    const step = this._slicerStep % Math.max(1, totalLoops);
     this._slicerStep++;
 
-    if (this._clips.length === 0) return;
+    // Find which clip and loop this step maps to
+    let flatIdx = 0;
+    let targetClipIdx = 0, targetLoopIdx = 0;
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        if (flatIdx === step) { targetClipIdx = ci; targetLoopIdx = li; }
+        flatIdx++;
+      }
+    }
 
-    const clipNorm = this._outputs[step] ?? 0.5;
-    const clipIdx = Math.min(this._clips.length - 1, Math.floor(clipNorm * this._clips.length));
-    const clip = this._clips[clipIdx];
+    const clip = this._clips[targetClipIdx];
+    if (!clip) return;
 
-    const posNorm = this._outputs[9 + step] ?? 0.5;
-    const speedNorm = this._outputs[18 + step] ?? 0.5;
+    // Resolve through param ranges
+    const clipNorm = this._resolveLoopParam('volume', this._getLoopParam(step, 0));
+    const posNorm = this._resolveLoopParam('pitch', this._getLoopParam(step, 1));
+    const speedNorm = this._resolveLoopParam('position', this._getLoopParam(step, 2));
     const sliceDur = Math.min(1.2, (this._beatSync ? 60 / this._bpm / 2 : 60 / this._bpm));
-    const speed = 0.5 + speedNorm * 1.5;
+    const speed = this._lockPitch ? 1.0 : 0.5 + speedNorm * 1.5;
     const startOff = posNorm * Math.max(0, clip.duration - sliceDur);
 
     const gain = this._audioCtx.createGain();
@@ -756,7 +1158,7 @@ export class AudioCanvas {
 
     // Visuals: flash active cell, idle others
     this._clips.forEach((c, i) => {
-      if (i === clipIdx) {
+      if (i === targetClipIdx) {
         this._drawOverviewWithLoop(c, posNorm - 0.02, posNorm + 0.02);
         this._setCellActive(c, `slice ${step}`, speedNorm, '#ff3b30');
       } else {
@@ -766,12 +1168,298 @@ export class AudioCanvas {
     });
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // -- Loop management ---------------------------------------------------------
+
+  /** Set loop count for a clip (0-4). Returns true if changed. */
+  _setClipLoopCount(clipIdx, count) {
+    count = Math.max(0, Math.min(MAX_LOOPS_PER_CLIP, count));
+    const old = this._loopCounts[clipIdx];
+    if (count === old) return false;
+
+    // Save for revert
+    this._lastLoopCountChange = { clipIdx, oldCount: old };
+
+    const wasRunning = this._running;
+    if (wasRunning) this.stop();
+
+    const clip = this._clips[clipIdx];
+    const players = this._loopPlayers[clipIdx];
+
+    if (count > old) {
+      // Add new loops
+      for (let i = old; i < count; i++) {
+        players.push(this._makePlayer(clip));
+      }
+    } else {
+      // Remove from the end
+      const removed = players.splice(count);
+      for (const p of removed) {
+        if (p.source) { try { p.source.stop(); } catch (_) {} }
+        if (p.gainNode) p.gainNode.disconnect();
+        if (p.filterNode) p.filterNode.disconnect();
+      }
+    }
+
+    this._loopCounts[clipIdx] = count;
+    this._resizeOutputs();
+    this._syncCellLoopCount(clipIdx);
+    this._emitOutputCountChanged();
+
+    if (wasRunning) this.start();
+    return true;
+  }
+
+  /** Revert the last loop count change (called when user cancels confirm dialog) */
+  revertLastLoopChange() {
+    if (!this._lastLoopCountChange) return;
+    const { clipIdx, oldCount } = this._lastLoopCountChange;
+    this._lastLoopCountChange = null;
+    this._setClipLoopCount(clipIdx, oldCount);
+  }
+
+  _syncCellLoopCount(clipIdx) {
+    const clip = this._clips[clipIdx];
+    if (!clip || !clip._cell) return;
+    const countEl = clip._cell.querySelector('.ac-loop-count');
+    if (countEl) countEl.textContent = this._loopCounts[clipIdx];
+    // Dim cell when loop count is 0
+    clip._cell.style.opacity = this._loopCounts[clipIdx] === 0 ? '0.5' : '1';
+  }
+
+  _resizeOutputs() {
+    const count = this.getOutputCount();
+    if (this._outputs.length !== count) {
+      const old = this._outputs;
+      this._outputs = new Float32Array(count).fill(0.5);
+      // Preserve what we can from the old outputs
+      for (let i = 0; i < Math.min(old.length, count); i++) this._outputs[i] = old[i];
+    }
+    // Keep _loopOutputs in sync (slice after the 8 range outputs)
+    this._loopOutputs = Array.from(this._outputs).slice(N_RANGE_OUTPUTS);
+  }
+
+  _emitOutputCountChanged() {
+    this._container.dispatchEvent(new CustomEvent('ac:outputcount-changed', {
+      detail: { count: this.getOutputCount() },
+      bubbles: true,
+    }));
+  }
+
+  // -- Beat-synced loop length -------------------------------------------------
+
+  _getLoopDuration(clipIndex) {
+    const override = this._perLoopLengthOverrides.get(clipIndex);
+    const unit = override?.unit ?? this._loopLengthUnit;
+    const value = override?.value ?? this._loopLengthValue;
+    const beatDuration = 60 / this._bpm; // seconds per beat
+    if (unit === 'bars') return beatDuration * 4 * value; // 4 beats per bar
+    return beatDuration * value;
+  }
+
+  _syncLoopLenUI() {
+    const grp = this._controlBar.querySelector('#ac-loop-len-group');
+    if (!grp) return;
+    grp.style.opacity = this._beatSync ? '1' : '0.3';
+    grp.style.pointerEvents = this._beatSync ? 'auto' : 'none';
+  }
+
+  _syncResetBtn() {
+    const btn = this._controlBar.querySelector('#ac-reset-overrides');
+    if (btn) btn.style.display = this._perLoopLengthOverrides.size > 0 ? 'block' : 'none';
+  }
+
+  _syncAllOverrideBadges() {
+    for (let i = 0; i < this._clips.length; i++) {
+      this._syncOverrideBadge(i);
+    }
+  }
+
+  _syncOverrideBadge(idx) {
+    const clip = this._clips[idx];
+    if (!clip || !clip._cell) return;
+    let badge = clip._cell.querySelector('.ac-loop-badge');
+    const override = this._perLoopLengthOverrides.get(idx);
+    if (override) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'ac-loop-badge';
+        badge.style.cssText = `
+          position:absolute; top:2px; right:4px;
+          padding:1px 5px; border-radius:8px;
+          background:rgba(0,122,255,0.15); color:rgba(0,122,255,0.8);
+          font-family:'JetBrains Mono',monospace; font-size:0.48rem;
+          pointer-events:none; z-index:2;
+        `;
+        clip._cell.appendChild(badge);
+      }
+      badge.textContent = `${override.value} ${override.unit}`;
+      badge.style.display = '';
+    } else {
+      if (badge) badge.style.display = 'none';
+    }
+  }
+
+  _showLoopLenDropdown(idx, anchorEl) {
+    this._dismissLoopLenDropdown();
+    const override = this._perLoopLengthOverrides.get(idx);
+    const curUnit = override?.unit ?? this._loopLengthUnit;
+
+    const menu = document.createElement('div');
+    menu.className = 'ac-loop-dropdown';
+    menu.style.cssText = `
+      position:fixed; z-index:100;
+      background:rgba(20,20,20,0.95); color:#fff;
+      border-radius:10px; padding:4px 0;
+      font-family:'JetBrains Mono',monospace; font-size:0.6rem;
+      box-shadow:0 6px 24px rgba(0,0,0,0.5); backdrop-filter:blur(10px);
+      min-width:110px; overflow:hidden;
+    `;
+
+    const globalLabel = `Global (${this._loopLengthValue} ${this._loopLengthUnit})`;
+    const isGlobal = !override;
+
+    const items = [
+      { label: globalLabel, action: () => { this._perLoopLengthOverrides.delete(idx); } },
+      '---',
+      ...[2, 4, 8, 16, 32, 64].map(v => ({
+        label: `${v} ${curUnit}`,
+        selected: !isGlobal && override?.value === v && override?.unit === curUnit,
+        action: () => { this._perLoopLengthOverrides.set(idx, { unit: curUnit, value: v }); },
+      })),
+      '---',
+    ];
+
+    // Unit toggle row
+    const unitRow = document.createElement('div');
+    unitRow.style.cssText = 'display:flex;gap:2px;padding:4px 8px;justify-content:center';
+    ['bars', 'beats'].forEach(u => {
+      const btn = document.createElement('button');
+      btn.textContent = u;
+      btn.style.cssText = `
+        padding:2px 6px; border-radius:6px; border:none; cursor:pointer;
+        font-family:inherit; font-size:0.56rem;
+        background:${u === curUnit ? 'rgba(255,255,255,0.15)' : 'transparent'};
+        color:${u === curUnit ? '#fff' : '#888'};
+      `;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const ov = this._perLoopLengthOverrides.get(idx);
+        const val = ov?.value ?? this._loopLengthValue;
+        this._perLoopLengthOverrides.set(idx, { unit: u, value: val });
+        this._syncOverrideBadge(idx);
+        this._syncResetBtn();
+        this._dismissLoopLenDropdown();
+        this._showLoopLenDropdown(idx, anchorEl);
+      });
+      unitRow.appendChild(btn);
+    });
+
+    for (const item of items) {
+      if (item === '---') {
+        const div = document.createElement('div');
+        div.style.cssText = 'height:1px;background:rgba(255,255,255,0.1);margin:2px 0';
+        menu.appendChild(div);
+        continue;
+      }
+      const row = document.createElement('div');
+      row.style.cssText = `
+        padding:5px 12px; cursor:pointer;
+        color:${item.selected || (item.label === globalLabel && isGlobal) ? '#fff' : '#aaa'};
+        background:${item.selected || (item.label === globalLabel && isGlobal) ? 'rgba(0,122,255,0.2)' : 'transparent'};
+      `;
+      row.textContent = item.label;
+      row.addEventListener('pointerenter', () => { row.style.background = 'rgba(255,255,255,0.08)'; });
+      row.addEventListener('pointerleave', () => {
+        row.style.background = (item.selected || (item.label === globalLabel && isGlobal)) ? 'rgba(0,122,255,0.2)' : 'transparent';
+      });
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        item.action();
+        this._syncOverrideBadge(idx);
+        this._syncResetBtn();
+        this._dismissLoopLenDropdown();
+      });
+      menu.appendChild(row);
+    }
+    menu.appendChild(unitRow);
+
+    document.body.appendChild(menu);
+    this._activeDropdown = menu;
+
+    // Position near the anchor cell
+    const rect = anchorEl.getBoundingClientRect();
+    menu.style.left = `${Math.min(rect.right + 4, window.innerWidth - 130)}px`;
+    menu.style.top = `${Math.max(4, rect.top)}px`;
+
+    // Dismiss on outside click
+    const dismiss = (e) => {
+      if (!menu.contains(e.target)) this._dismissLoopLenDropdown();
+    };
+    setTimeout(() => document.addEventListener('pointerdown', dismiss, { once: true }), 10);
+    menu._dismissHandler = dismiss;
+  }
+
+  _dismissLoopLenDropdown() {
+    if (this._activeDropdown) {
+      this._activeDropdown.remove();
+      this._activeDropdown = null;
+    }
+  }
+
+  // -- Public API --------------------------------------------------------------
 
   setOutputs(outputs) {
-    for (let i = 0; i < Math.min(outputs.length, N_AUDIO_OUTPUTS); i++) {
+    const count = this.getOutputCount();
+    if (this._outputs.length !== count) this._resizeOutputs();
+    for (let i = 0; i < Math.min(outputs.length, count); i++) {
       this._outputs[i] = outputs[i];
     }
+
+    // Range outputs (0-7) -- only update if not manually overridden
+    if (!this._rangeOverrides.volume) {
+      this._paramRanges.volume.min = outputs[0] ?? 0;
+      this._paramRanges.volume.max = outputs[1] ?? 1;
+    }
+    if (!this._rangeOverrides.pitch) {
+      this._paramRanges.pitch.min = outputs[2] ?? 0;
+      this._paramRanges.pitch.max = outputs[3] ?? 1;
+    }
+    if (!this._rangeOverrides.position) {
+      this._paramRanges.position.min = outputs[4] ?? 0;
+      this._paramRanges.position.max = outputs[5] ?? 1;
+    }
+    if (!this._rangeOverrides.filter) {
+      this._paramRanges.filter.min = outputs[6] ?? 0;
+      this._paramRanges.filter.max = outputs[7] ?? 1;
+    }
+
+    // Per-loop position outputs (8+)
+    this._loopOutputs = Array.from(outputs).slice(N_RANGE_OUTPUTS);
+
+    this._updateRangePanel();
+  }
+
+  /** Resolve a per-loop position value through the global param range */
+  _resolveLoopParam(group, positionValue) {
+    const r = this._paramRanges[group];
+    const lo = Math.min(r.min, r.max);
+    const hi = Math.max(r.min, r.max);
+    return Math.max(0, Math.min(1, lo + positionValue * (hi - lo)));
+  }
+
+  /** Get a per-loop param from the loopOutputs array */
+  _getLoopParam(flatLoopIdx, paramOffset) {
+    const baseOutput = flatLoopIdx * N_PARAMS_PER_LOOP;
+    return this._loopOutputs[baseOutput + paramOffset] ?? 0.5;
+  }
+
+  getParamGroupInfo() {
+    return [
+      { name: 'Volume',   color: GROUP_COLORS.volume,   range: this._paramRanges.volume },
+      { name: 'Pitch',    color: GROUP_COLORS.pitch,    range: this._paramRanges.pitch },
+      { name: 'Position', color: GROUP_COLORS.position, range: this._paramRanges.position },
+      { name: 'Filter',   color: GROUP_COLORS.filter,   range: this._paramRanges.filter },
+    ];
   }
 
   setSubmode(mode) {
@@ -783,17 +1471,52 @@ export class AudioCanvas {
     if (wasRunning) this.start();
   }
 
-  getOutputCount() { return N_AUDIO_OUTPUTS; }
+  getOutputCount() { return N_RANGE_OUTPUTS + this.getTotalLoops() * N_PARAMS_PER_LOOP; }
+  getTotalLoops() { return this._loopCounts.reduce((s, c) => s + c, 0); }
   isRunning() { return this._running; }
+
+  /** Dynamic param names for heatmap */
+  getAudioParamNames() {
+    const names = [...RANGE_NAMES];
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        const tag = `L${ci + 1}.${li + 1}`;
+        names.push(`${tag} Vol`, `${tag} Pitch`, `${tag} Pos`, `${tag} Filt`);
+      }
+    }
+    return names;
+  }
+
+  /** Dynamic param colors for heatmap */
+  getAudioParamColors() {
+    const colors = [...RANGE_COLORS];
+    for (let ci = 0; ci < this._clips.length; ci++) {
+      for (let li = 0; li < this._loopCounts[ci]; li++) {
+        colors.push(GROUP_COLORS.volume, GROUP_COLORS.pitch, GROUP_COLORS.position, GROUP_COLORS.filter);
+      }
+    }
+    return colors;
+  }
 
   destroy() {
     this.stop();
+    this._dismissLoopLenDropdown();
     if (this._audioCtx) { this._audioCtx.close(); this._audioCtx = null; }
     this._container.innerHTML = '';
   }
 
   getState() {
-    return { submode: this._submode, beatSync: this._beatSync, bpm: this._bpm, panX: this._panX, panY: this._panY, zoom: this._zoom };
+    return {
+      submode: this._submode, beatSync: this._beatSync, bpm: this._bpm,
+      panX: this._panX, panY: this._panY, zoom: this._zoom,
+      loopCounts: [...this._loopCounts],
+      loopLengthUnit: this._loopLengthUnit,
+      loopLengthValue: this._loopLengthValue,
+      perLoopLengthOverrides: Object.fromEntries(this._perLoopLengthOverrides),
+      paramRanges: JSON.parse(JSON.stringify(this._paramRanges)),
+      rangeOverrides: { ...this._rangeOverrides },
+      lockPitch: this._lockPitch,
+    };
   }
 
   setState(s) {
@@ -803,10 +1526,56 @@ export class AudioCanvas {
     if (s.panX !== undefined) this._panX = s.panX;
     if (s.panY !== undefined) this._panY = s.panY;
     if (s.zoom) this._zoom = s.zoom;
+    // Restore loop counts
+    if (Array.isArray(s.loopCounts)) {
+      for (let i = 0; i < s.loopCounts.length && i < this._loopCounts.length; i++) {
+        if (s.loopCounts[i] !== this._loopCounts[i]) {
+          this._setClipLoopCount(i, s.loopCounts[i]);
+        }
+      }
+    }
+    // Restore beat-sync loop length
+    if (s.loopLengthUnit) this._loopLengthUnit = s.loopLengthUnit;
+    if (s.loopLengthValue) this._loopLengthValue = s.loopLengthValue;
+    if (s.perLoopLengthOverrides) {
+      this._perLoopLengthOverrides = new Map(Object.entries(s.perLoopLengthOverrides).map(([k, v]) => [parseInt(k), v]));
+    }
+    // Restore param ranges
+    if (s.paramRanges) {
+      for (const group of ['volume', 'pitch', 'position', 'filter']) {
+        if (s.paramRanges[group]) {
+          this._paramRanges[group].min = s.paramRanges[group].min ?? 0;
+          this._paramRanges[group].max = s.paramRanges[group].max ?? 1;
+        }
+      }
+    }
+    if (s.rangeOverrides) {
+      for (const group of ['volume', 'pitch', 'position', 'filter']) {
+        if (s.rangeOverrides[group] !== undefined) this._rangeOverrides[group] = s.rangeOverrides[group];
+      }
+    }
+    if (s.lockPitch !== undefined) { this._lockPitch = s.lockPitch; this._syncLockPitchUI(); }
     this._applyTransform();
+    this._syncLoopLenUI();
+    this._syncResetBtn();
+    this._syncAllOverrideBadges();
+    this._updateRangePanel();
+    // Sync control bar values
+    const lenSelect = this._controlBar?.querySelector('#ac-loop-len');
+    if (lenSelect) lenSelect.value = this._loopLengthValue;
+    this._controlBar?.querySelectorAll('.ac-ubtn').forEach(b => {
+      b.style.background = b.dataset.unit === this._loopLengthUnit ? 'rgba(255,255,255,0.1)' : 'transparent';
+      b.style.color = b.dataset.unit === this._loopLengthUnit ? '#fff' : '#aaa';
+    });
+    // Sync beat sync buttons
+    this._controlBar?.querySelectorAll('.ac-tbtn').forEach(b => {
+      const isActive = (this._beatSync && b.dataset.sync === 'sync') || (!this._beatSync && b.dataset.sync === 'free');
+      b.style.background = isActive ? 'rgba(255,255,255,0.1)' : 'transparent';
+      b.style.color = isActive ? '#fff' : '#aaa';
+    });
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // -- Helpers -----------------------------------------------------------------
 
   _fmtDur(s) {
     return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
@@ -816,5 +1585,6 @@ export class AudioCanvas {
     const ct = this._container.querySelector('#ac-clip-ct');
     if (ct) ct.textContent = `${this._clips.length} clip${this._clips.length !== 1 ? 's' : ''}`;
     this._dropOverlay.style.opacity = this._clips.length > 0 ? '0' : '1';
+    this._updateRangePanel();
   }
 }

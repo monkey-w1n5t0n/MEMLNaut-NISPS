@@ -749,6 +749,19 @@ function outputCountForMode(mode) {
 }
 
 /**
+ * Total MLP output count: engine params + EOC params when in Shared mode.
+ * In all other NISPS modes (bypass/linked/independent) or when no EOC chain
+ * exists, only the engine's own param count is included.
+ *
+ * @returns {number}
+ */
+function totalOutputCount() {
+  const engineParams = activeEngine?.paramCount ?? N_SYNTH_OUTPUTS;
+  const eocParams = (eocChain?.nispsMode === 'shared') ? (eocChain?.paramCount ?? 0) : 0;
+  return engineParams + eocParams;
+}
+
+/**
  * Recreate IML instances with a new output count.
  * Joystick IML uses warm-start weight transfer to preserve learned mappings.
  * Training examples are always cleared (dataset is JS-side and output-count-specific).
@@ -799,13 +812,20 @@ async function setActiveEngine(engine) {
   if (engineDockBtn) engineDockBtn.title = `Engine: ${engine.displayName}`;
   EngineSwitcher.setActive(engine.id);
   EngineSwitcher.setLoading(engine.id, false);
-  await resizeMLP(engine.paramCount);
+  await resizeMLP(totalOutputCount());
 
   // Reload MIDI CC map for the new engine (scoped storage key)
   reloadMidiCCMap();
 
-  // Rebuild heatmap cells from the new engine's paramMeta
-  rebuildHeatmap(engine.paramMeta);
+  // Rebuild heatmap cells — include EOC params when in shared mode
+  if (eocChain?.nispsMode === 'shared') {
+    const combinedMeta = [...(engine.paramMeta ?? []), ...eocChain.paramMeta];
+    rebuildHeatmap(combinedMeta);
+  } else {
+    rebuildHeatmap(engine.paramMeta);
+  }
+  document.getElementById('heatmap-cells')?.parentElement
+    ?.classList.toggle('shared-mode', eocChain?.nispsMode === 'shared');
 
   // Rewire EOC chain to the new engine's output node
   if (eocChain && _eocInited) {
@@ -1050,9 +1070,30 @@ async function init() {
     EOCChainUI.init(eocChain, eocDrawerBody);
   }
 
-  // Log EOC structural changes; future NISPS modes will act on this event
-  window.addEventListener('eoc:change', () => {
-    console.log('[EOC] chain changed, paramCount:', eocChain.paramCount);
+  // Handle EOC structural changes — resize MLP and rebuild heatmap when in Shared mode
+  window.addEventListener('eoc:change', async (e) => {
+    const reason = e.detail?.reason;
+    console.log('[EOC] chain changed, reason:', reason, 'paramCount:', eocChain.paramCount, 'nispsMode:', eocChain.nispsMode);
+
+    // Only act on nispsMode switches or module add/remove/move — ignore other events
+    if (reason === 'nispsMode-changed' || reason?.startsWith('module')) {
+      const newTotal = totalOutputCount();
+      if (newTotal !== N_OUTPUTS) {
+        await resizeMLP(newTotal);
+      }
+      // Rebuild heatmap to include EOC params when in shared mode, or revert when leaving
+      if (eocChain.nispsMode === 'shared') {
+        const combinedMeta = [
+          ...(activeEngine?.paramMeta ?? []),
+          ...eocChain.paramMeta,
+        ];
+        rebuildHeatmap(combinedMeta);
+      } else {
+        rebuildHeatmap(activeEngine?.paramMeta ?? []);
+      }
+      document.getElementById('heatmap-cells')?.parentElement
+        ?.classList.toggle('shared-mode', eocChain.nispsMode === 'shared');
+    }
   });
 
   // Debug probe — exposed on window when ?debug=1 is in the URL.
@@ -1800,12 +1841,28 @@ function routeOutputs(outputs) {
       const now = performance.now();
       if (now - _lastParamSendTime >= PARAM_SEND_INTERVAL) {
         _lastParamSendTime = now;
+        const engineParamCount = activeEngine.paramCount;
         for (let i = 0; i < overridden.length && i < N_OUTPUTS; i++) {
           const v = overridden[i];
           if (Math.abs(v - _lastSentParams[i]) > PARAM_DEAD_ZONE) {
-            activeEngine.setParam(i, v);
+            // Only send engine params (indices before engineParamCount) to the engine
+            if (i < engineParamCount) {
+              activeEngine.setParam(i, v);
+            }
             _lastSentParams[i] = v;
           }
+        }
+      }
+    }
+
+    // In Shared mode, route outputs beyond engine params to the EOC chain
+    if (eocChain?.nispsMode === 'shared') {
+      const engineParamCount = activeEngine?.paramCount ?? 0;
+      const eocParamCount = eocChain.paramCount;
+      for (let i = 0; i < eocParamCount; i++) {
+        const outputIndex = engineParamCount + i;
+        if (outputIndex < outputs.length) {
+          eocChain.setParam(i, outputs[outputIndex]);
         }
       }
     }

@@ -1731,6 +1731,24 @@ html, body {
   pointer-events: none;
 }
 
+/* ---- Heatmap shared-mode indicator (EOC NISPS Shared mode active) ---- */
+/* .heatmap-strip gets this class; ::after appends a small '+ FX' label */
+.heatmap-strip.shared-mode {
+  border-bottom: 1px solid rgba(120, 220, 180, 0.35);
+}
+
+.heatmap-strip.shared-mode::after {
+  content: '+ FX';
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(120, 220, 180, 0.8);
+  padding: 0 4px;
+  white-space: nowrap;
+  align-self: center;
+  pointer-events: none;
+}
+
 /* ---- Help modal ---- */
 .help-overlay {
   position: fixed;

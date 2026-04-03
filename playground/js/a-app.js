@@ -740,6 +740,8 @@ async function setActiveEngine(engine) {
   activeEngine = engine;
   c15 = engine; // keep alias in sync
   arpeggiator.setEngine(engine);
+  const btn = document.getElementById('synth-mode-btn');
+  if (btn) btn.textContent = engine.displayName;
   await resizeMLP(engine.paramCount);
 }
 

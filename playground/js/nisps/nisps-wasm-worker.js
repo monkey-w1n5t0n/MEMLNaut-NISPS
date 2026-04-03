@@ -19,6 +19,7 @@ async function ensureModule() {
     getWeights: mod.cwrap('nisps_mlp_get_weights', null, ['number', 'number']),
     setWeights: mod.cwrap('nisps_mlp_set_weights', null, ['number', 'number']),
     train: mod.cwrap('nisps_mlp_train', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+    trainEx: mod.cwrap('nisps_mlp_train_ex', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     alloc: mod.cwrap('nisps_alloc', 'number', ['number']),
     free: mod.cwrap('nisps_free', null, ['number']),
     allocInt: mod.cwrap('nisps_alloc_int', 'number', ['number']),
@@ -98,18 +99,26 @@ self.onmessage = async function(e) {
     const featPtr = toHeapF32(featFlat);
     const labPtr = toHeapF32(labFlat);
     const weightPtr = sampleWeights ? toHeapF32(new Float32Array(sampleWeights)) : 0;
+    const lossHistPtr = w.alloc(maxIterations);
 
-    // Train
-    const loss = w.train(
+    // Train (extended — captures per-iteration loss history)
+    const itersRun = w.trainEx(
       mlp, featPtr, nSamples, featureDim,
       labPtr, nOutputs,
       weightPtr,
-      learningRate, maxIterations, convergenceThreshold
+      learningRate, maxIterations, convergenceThreshold,
+      lossHistPtr
     );
+
+    // Read per-iteration loss history
+    const lossHistory = fromHeapF32(lossHistPtr, itersRun);
 
     w.free(featPtr);
     w.free(labPtr);
     if (weightPtr) w.free(weightPtr);
+    w.free(lossHistPtr);
+
+    const loss = itersRun > 0 ? lossHistory[itersRun - 1] : 0;
 
     // Extract trained weights
     const outPtr = w.alloc(weightCount);
@@ -119,7 +128,7 @@ self.onmessage = async function(e) {
 
     self.postMessage({
       type: 'trained',
-      payload: { weights: trainedWeights, loss },
+      payload: { weights: trainedWeights, loss, lossHistory },
     });
   }
 };

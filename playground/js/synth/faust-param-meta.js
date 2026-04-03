@@ -79,6 +79,11 @@ export function parseFaustUiTree(items, groupLabel = '', out = []) {
     if (!item || typeof item !== 'object') continue;
 
     if (CONTINUOUS_TYPES.has(item.type)) {
+      // Skip params marked [hidden:1] in Faust metadata — these are
+      // control inputs (freq, vel) set by noteOn, not by NISPS.
+      const isHidden = Array.isArray(item.meta) &&
+        item.meta.some(m => m.hidden === '1' || m.hidden === 1);
+      if (isHidden) continue;
       // Leaf param — collect it, tagged with the nearest enclosing group
       out.push({ item, group: groupLabel });
     } else if (item.items) {

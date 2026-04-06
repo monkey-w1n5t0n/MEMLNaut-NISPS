@@ -100,10 +100,94 @@ export function clonePattern(pattern) {
   };
 }
 
+// --- Polyrhythm utilities ---
+
+/**
+ * Greatest Common Divisor (Euclidean algorithm).
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
+function gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a; }
+
+/**
+ * Least Common Multiple.
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
+export function lcm(a, b) { return (a / gcd(a, b)) * b; }
+
+/**
+ * Tile (repeat/wrap) a pattern to fill a longer step count.
+ * Returns a new pattern — does not mutate the input.
+ *
+ * @param {{ steps: Array, stepCount: number, metadata: Object }} pattern
+ * @param {number} targetStepCount - Must be >= pattern.stepCount
+ * @returns {{ steps: Array, stepCount: number, metadata: Object }}
+ */
+export function tilePattern(pattern, targetStepCount) {
+  const target = targetStepCount | 0;
+  if (target < pattern.stepCount) {
+    throw new RangeError(
+      'targetStepCount (' + target + ') must be >= pattern.stepCount (' + pattern.stepCount + ')'
+    );
+  }
+  if (target === pattern.stepCount) {
+    return clonePattern(pattern);
+  }
+
+  const srcSteps = pattern.steps;
+  const srcCount = pattern.stepCount;
+  const steps = new Array(target);
+
+  for (let i = 0; i < target; i++) {
+    const s = srcSteps[i % srcCount];
+    steps[i] = {
+      trigger: s.trigger,
+      pitch: s.pitch,
+      velocity: s.velocity,
+      accent: s.accent,
+      timeOffset: s.timeOffset,
+      subdivisions: s.subdivisions,
+      midiNote: s.midiNote,
+    };
+  }
+
+  // Shallow clone metadata
+  const srcMeta = pattern.metadata;
+  const metadata = {};
+  const keys = Object.keys(srcMeta);
+  for (let i = 0; i < keys.length; i++) {
+    metadata[keys[i]] = srcMeta[keys[i]];
+  }
+
+  return {
+    steps: steps,
+    stepCount: target,
+    metadata: metadata,
+  };
+}
+
+/**
+ * Compute the LCM of all step counts in an array of patterns.
+ *
+ * @param {Array<{ stepCount: number }>} patterns
+ * @returns {number}
+ */
+export function lcmOfPatterns(patterns) {
+  if (patterns.length === 0) return 1;
+  let result = patterns[0].stepCount;
+  for (let i = 1; i < patterns.length; i++) {
+    result = lcm(result, patterns[i].stepCount);
+  }
+  return result;
+}
+
 /**
  * Merge two patterns together.
  *
- * Both patterns must have the same stepCount.
+ * If step counts differ, both patterns are tiled to their LCM before merging.
  * Returns a new pattern (does not mutate inputs).
  *
  * @param {{ steps: Array, stepCount: number, metadata: Object }} patternA
@@ -114,11 +198,11 @@ export function clonePattern(pattern) {
  * @returns {{ steps: Array, stepCount: number, metadata: Object }}
  */
 export function mergePatterns(patternA, patternB, mode) {
+  // Tile to LCM if step counts differ
   if (patternA.stepCount !== patternB.stepCount) {
-    throw new RangeError(
-      'Cannot merge patterns with different step counts: ' +
-        patternA.stepCount + ' vs ' + patternB.stepCount
-    );
+    const target = lcm(patternA.stepCount, patternB.stepCount);
+    patternA = tilePattern(patternA, target);
+    patternB = tilePattern(patternB, target);
   }
   if (mode !== 'additive' && mode !== 'multiplicative') {
     throw new TypeError("mode must be 'additive' or 'multiplicative', got '" + mode + "'");

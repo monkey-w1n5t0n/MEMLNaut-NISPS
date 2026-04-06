@@ -32,6 +32,14 @@ export class Chain {
     /** @type {'additive'|'multiplicative'} */
     this.generatorCombineMode = 'additive';
 
+    /**
+     * Per-generator step counts for polyrhythm support.
+     * Maps chain index → step count. Generators not in this map
+     * use the global stepCount passed to evaluate().
+     * @private @type {Map<number, number>}
+     */
+    this._generatorStepCounts = new Map();
+
     /** @private @type {number} */
     this._masterSeed = 0;
 
@@ -111,6 +119,45 @@ export class Chain {
     return this._primitives.slice();
   }
 
+  // ── Per-generator step counts (polyrhythm) ─────────────────────
+
+  /**
+   * Set a per-generator step count for polyrhythm.
+   * The chain index must refer to a primitive in the chain.
+   *
+   * @param {number} chainIndex - Index in the chain's primitive list
+   * @param {number} stepCount - Step count for this generator (positive integer)
+   */
+  setGeneratorStepCount(chainIndex, stepCount) {
+    const idx = chainIndex | 0;
+    const sc = stepCount | 0;
+    if (idx < 0 || idx >= this._primitives.length) {
+      throw new RangeError('setGeneratorStepCount: chainIndex ' + chainIndex + ' out of range [0, ' + (this._primitives.length - 1) + ']');
+    }
+    if (sc < 1) {
+      throw new RangeError('setGeneratorStepCount: stepCount must be >= 1, got ' + stepCount);
+    }
+    this._generatorStepCounts.set(idx, sc);
+  }
+
+  /**
+   * Get the per-generator step count, or null if using global.
+   *
+   * @param {number} chainIndex
+   * @returns {number|null}
+   */
+  getGeneratorStepCount(chainIndex) {
+    const idx = chainIndex | 0;
+    return this._generatorStepCounts.has(idx) ? this._generatorStepCounts.get(idx) : null;
+  }
+
+  /**
+   * Clear all per-generator step counts, reverting to global stepCount.
+   */
+  clearGeneratorStepCounts() {
+    this._generatorStepCounts.clear();
+  }
+
   // ── Configuration ───────────────────────────────────────────────
 
   /**
@@ -161,9 +208,10 @@ export class Chain {
    * @param {Float32Array|Array<number>} params - flat param array distributed across primitives
    * @param {number} stepCount - number of steps in the output pattern
    * @param {number} masterSeed - seed for the master PRNG
+   * @param {Map<number,number>|null} [generatorStepCounts=null] - optional per-generator step counts (chain index → step count). If null, uses this._generatorStepCounts.
    * @returns {{ steps: Array, stepCount: number, metadata: Object }}
    */
-  evaluate(params, stepCount, masterSeed) {
+  evaluate(params, stepCount, masterSeed, generatorStepCounts = null) {
     const primitives = this._primitives;
     const primCount = primitives.length;
 
@@ -230,6 +278,18 @@ export class Chain {
 
     // ── Phase 1: Generators ──
 
+    // Resolve per-generator step counts: explicit arg > instance map > global
+    const genStepMap = generatorStepCounts || this._generatorStepCounts;
+
+    /** Look up the step count for a generator by its chain index. */
+    function genStepsFor(chainIndex) {
+      if (genStepMap && genStepMap.size > 0) {
+        const override = genStepMap.get(chainIndex);
+        if (override != null) return override;
+      }
+      return stepCount;
+    }
+
     let pattern;
 
     if (generators.length === 0) {
@@ -240,12 +300,14 @@ export class Chain {
       }
     } else if (generators.length === 1) {
       // Single generator — no merge needed
-      pattern = runPrimitive(generators[0], createPattern(stepCount));
+      const gs = genStepsFor(generators[0].index);
+      pattern = runPrimitive(generators[0], createPattern(gs));
     } else {
-      // Multiple generators — run each, then merge
-      let merged = runPrimitive(generators[0], createPattern(stepCount));
+      // Multiple generators — run each with its own step count, then merge
+      let merged = runPrimitive(generators[0], createPattern(genStepsFor(generators[0].index)));
       for (let g = 1; g < generators.length; g++) {
-        const next = runPrimitive(generators[g], createPattern(stepCount));
+        const gs = genStepsFor(generators[g].index);
+        const next = runPrimitive(generators[g], createPattern(gs));
         merged = mergePatterns(merged, next, this.generatorCombineMode);
       }
       pattern = merged;

@@ -24,7 +24,7 @@ import { createSequenceIML, SEQ_N_OUTPUTS } from './seq-iml.js';
 import { Chain } from './chain.js';
 import { ClockEngine } from './clock.js';
 import { map } from './param-map.js';
-import { createProjectionChain, applyProjection, PRESETS } from './projection.js';
+import { createProjection, applyProjection } from './projection.js';
 import { SEQ } from './event-bus.js';
 import {
   EuclideanRhythm,
@@ -108,12 +108,8 @@ export class ShapeSeqEngine {
     this._clock = new ClockEngine(this._audioCtx, this._bus);
     this._clock.bpm = DEFAULT_BPM;
 
-    // 4. Create default projection chain (expressive preset)
-    const result = createProjectionChain(PRESETS.expressive);
-    if (!result.valid) {
-      throw new Error('Default projection chain invalid: ' + result.error);
-    }
-    this._projectionChain = result;
+    // 4. Create default projection
+    this._projectionChain = createProjection();
 
     // 5. Subscribe to event bus for C15 bridge integration
     this._bus.on(SEQ.NOTE_ON, this._onNoteOn);
@@ -194,19 +190,27 @@ export class ShapeSeqEngine {
   }
 
   /**
-   * Set the projection preset by name.
-   * @param {'expressive'|'percussive'|'fullRange'} presetName
+   * Update the projection config. Accepts partial options merged with current.
+   * @param {Object} opts - Partial projection config
    */
-  setProjectionPreset(presetName) {
-    const preset = PRESETS[presetName];
-    if (!preset) {
-      throw new Error('Unknown projection preset: ' + presetName);
-    }
-    const result = createProjectionChain(preset);
-    if (!result.valid) {
-      throw new Error('Projection chain invalid: ' + result.error);
-    }
-    this._projectionChain = result;
+  setProjection(opts) {
+    const cur = this._projectionChain;
+    this._projectionChain = createProjection({
+      velocityCurve: opts.velocityCurve ?? cur.velocityCurve,
+      gateThreshold: opts.gateThreshold ?? cur.gateThreshold,
+      pitchRange: {
+        low: opts.pitchRange?.low ?? cur.pitchRange.low,
+        high: opts.pitchRange?.high ?? cur.pitchRange.high,
+      },
+    });
+  }
+
+  /**
+   * Get the current projection config.
+   * @returns {{ velocityCurve: string, gateThreshold: number, pitchRange: { low: number, high: number } }}
+   */
+  getProjection() {
+    return this._projectionChain;
   }
 
   // ── Chain access (for UI binding) ──────────────────────────────────

@@ -33,6 +33,8 @@ import {
   IntervalLock,
   VelocityShaper,
 } from './primitives.js';
+import { FreezeManager } from './freeze.js';
+import { DeltaController } from './delta.js';
 
 // ── Defaults ─────────────────────────────────────────────────────────
 
@@ -63,6 +65,15 @@ export class ShapeSeqEngine {
 
     /** @private */ this._outputCount = SEQ_DEFAULT_OUTPUT_COUNT;
     /** @private */ this._stepCount = DEFAULT_STEP_COUNT;
+
+    // Freeze-as-algorithm manager
+    /** @private */ this._freezeManager = new FreezeManager();
+
+    // Last evaluated params — needed for freeze snapshot
+    /** @private @type {Float32Array|null} */ this._lastEvaluatedParams = null;
+
+    // Last projected pattern — needed for freeze-as-pattern snapshot
+    /** @private @type {Object|null} */ this._lastPattern = null;
     /** @private */ this._masterSeed = DEFAULT_MASTER_SEED;
     /** @private */ this._playing = false;
     /** @private */ this._initialized = false;
@@ -267,6 +278,51 @@ export class ShapeSeqEngine {
   /** @returns {WasmIML} */
   getSequenceIML() { return this._sequenceIML; }
 
+  /** @returns {FreezeManager} */
+  get freezeManager() { return this._freezeManager; }
+
+  // ── Freeze-as-algorithm ────────────────────────────────────────────
+
+  /**
+   * Freeze the current state.
+   *
+   * In **algorithm** mode (default): capture param values, seeds, and states.
+   * All params start frozen; use toggleParamFreeze() to re-expose
+   * individual params for ML-driven exploration.
+   *
+   * In **pattern** mode: capture the last projected pattern. The sequencer
+   * bypasses the primitive chain entirely and loops the frozen pattern.
+   *
+   * @param {'algorithm'|'pattern'} [mode='algorithm']
+   */
+  freeze(mode = 'algorithm') {
+    if (mode === 'pattern') {
+      // Need the last evaluated pattern
+      this._freezeManager.freeze(null, null, null, 'pattern', this._lastPattern);
+    } else {
+      if (!this._chain) return;
+      const currentParams = this._lastEvaluatedParams || new Float32Array(this._chain.totalParamCount);
+      this._freezeManager.freeze(this._chain, currentParams, this._masterSeed, 'algorithm');
+    }
+  }
+
+  /**
+   * Unfreeze: clear captured state and return to normal ML control.
+   */
+  unfreeze() {
+    this._freezeManager.unfreeze();
+    this._bumpGeneration();
+  }
+
+  /**
+   * Toggle a single param between frozen and live.
+   * @param {number} flatIndex
+   */
+  toggleParamFreeze(flatIndex) {
+    this._freezeManager.toggleParam(flatIndex);
+    this._bumpGeneration();
+  }
+
   // ── Input routing ──────────────────────────────────────────────────
 
   /**
@@ -279,6 +335,11 @@ export class ShapeSeqEngine {
    */
   setSequenceInputs(values) {
     if (!this._initialized || !this._sequenceIML) return;
+
+    // Freeze-as-pattern: skip entire pipeline, just keep looping frozen pattern
+    if (this._freezeManager.isFrozen && this._freezeManager.freezeMode === 'pattern') {
+      return;
+    }
 
     // Dirty-check: skip re-evaluation if inputs AND config haven't changed
     const EPS = 1e-5;
@@ -298,20 +359,49 @@ export class ShapeSeqEngine {
     // 2. Run MLP inference
     this._sequenceIML.process();
 
-    // 3. Get the 16 MLP outputs
+    // 3. Get the MLP outputs
     const mlpOutputs = this._sequenceIML.getOutputs();
 
-    // 4. Map 16 outputs to N primitive params
-    const paramCount = this._chain.totalParamCount;
-    const mappedParams = map(mlpOutputs, paramCount);
+    // 4–7. Run downstream pipeline
+    this._runPipeline(mlpOutputs);
+  }
 
-    // 5. Evaluate the chain to produce a pattern description
+  /**
+   * Shared downstream pipeline: param mapping -> chain -> projection -> clock.
+   *
+   * @private
+   * @param {Float32Array} mlpOutputs - raw MLP outputs (sequence slice)
+   */
+  _runPipeline(mlpOutputs) {
+    // Map N outputs to M primitive params
+    const paramCount = this._chain.totalParamCount;
+    let mappedParams = map(mlpOutputs, paramCount);
+
+    // Apply freeze: frozen params use captured values, live params get delta control
+    if (this._freezeManager.isFrozen) {
+      const schemas = this._chain.getParamSchemas();
+      mappedParams = DeltaController.computeEffective(
+        this._freezeManager.getFrozenParams(),
+        this._freezeManager.getLiveFlags(),
+        mappedParams,
+        schemas,
+        0.3 // deltaScale — could be configurable later
+      );
+    }
+
+    // Track last evaluated params for freeze snapshot
+    this._lastEvaluatedParams = mappedParams;
+
+    // Evaluate the chain to produce a pattern description
     const patternDesc = this._chain.evaluate(mappedParams, this._stepCount, this._masterSeed);
 
-    // 6. Apply projection transforms
+    // Apply projection transforms
     const projectedPattern = applyProjection(this._projectionChain, patternDesc);
 
-    // 7. Schedule the pattern on the clock
+    // Track last pattern for freeze-as-pattern snapshot
+    this._lastPattern = projectedPattern;
+
+    // Schedule the pattern on the clock
     this._clock.schedulePattern(projectedPattern);
   }
 
@@ -345,6 +435,7 @@ export class ShapeSeqEngine {
    */
   _handleLoopStart() {
     if (!this._initialized || !this._chain || !this._sequenceIML) return;
+    if (this._freezeManager.shouldSuppressReEval()) return;
     if (!this._chain.hasReEvalPrimitives()) return;
 
     // Bump the generation counter so the next setSequenceInputs() call

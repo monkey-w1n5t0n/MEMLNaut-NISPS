@@ -128,6 +128,38 @@ function decodeFromURL(urlParams) {
 export class SessionPresetManager {
   constructor() {
     this._presets = this._loadFromStorage();
+
+    /**
+     * Optional reference to an active ShapeSeq engine.
+     * When set, save/load will include ShapeSeq state.
+     * @private @type {import('../shapeseq/sequencer.js').ShapeSeqEngine|null}
+     */
+    this._shapeSeqEngine = null;
+
+    /**
+     * Lazy-loaded ShapeSeq session helpers.
+     * @private @type {{ serializeShapeSeqState: Function, restoreShapeSeqState: Function }|null}
+     */
+    this._shapeSeqSession = null;
+  }
+
+  /**
+   * Register a ShapeSeq engine so that save/load includes its state.
+   * Call with null to unregister.
+   *
+   * @param {import('../shapeseq/sequencer.js').ShapeSeqEngine|null} engine
+   */
+  setShapeSeqEngine(engine) {
+    this._shapeSeqEngine = engine;
+    if (engine && !this._shapeSeqSession) {
+      // Lazy-load the session helpers to avoid hard dependency
+      import('../shapeseq/session.js').then(mod => {
+        this._shapeSeqSession = mod;
+      }).catch(() => {
+        // ShapeSeq module not available — ignore silently
+        this._shapeSeqSession = null;
+      });
+    }
   }
 
   /**
@@ -143,7 +175,7 @@ export class SessionPresetManager {
    * @returns {object} the captured preset
    */
   capture(name, state) {
-    return {
+    const preset = {
       name,
       controlSurface: state.controlSurface || null,
       synthPresetId: state.synthPresetId || null,
@@ -152,6 +184,13 @@ export class SessionPresetManager {
       outputPipeline: state.outputPipeline || null,
       timestamp: Date.now(),
     };
+
+    // Include ShapeSeq state when engine is registered
+    if (this._shapeSeqEngine && this._shapeSeqSession) {
+      preset.shapeseq = this._shapeSeqSession.serializeShapeSeqState(this._shapeSeqEngine);
+    }
+
+    return preset;
   }
 
   /**
@@ -169,11 +208,20 @@ export class SessionPresetManager {
 
   /**
    * Load a named session preset.
+   *
+   * If the preset contains a `shapeseq` key and a ShapeSeq engine is
+   * registered, the ShapeSeq state is automatically restored. Presets
+   * without a `shapeseq` key load fine (backward compatible).
+   *
    * @param {string} name
    * @returns {object|null}
    */
   load(name) {
-    return this._presets[name] || null;
+    const preset = this._presets[name] || null;
+    if (preset && preset.shapeseq && this._shapeSeqEngine && this._shapeSeqSession) {
+      this._shapeSeqSession.restoreShapeSeqState(this._shapeSeqEngine, preset.shapeseq);
+    }
+    return preset;
   }
 
   /**

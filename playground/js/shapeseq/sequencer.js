@@ -21,6 +21,7 @@
  */
 
 import { createSequenceIML, SEQ_DEFAULT_OUTPUT_COUNT } from './seq-iml.js';
+import { MLPModeManager, MLP_MODES } from './mlp-mode.js';
 import { Chain } from './chain.js';
 import { ClockEngine } from './clock.js';
 import { map } from './param-map.js';
@@ -65,6 +66,9 @@ export class ShapeSeqEngine {
 
     /** @private */ this._outputCount = SEQ_DEFAULT_OUTPUT_COUNT;
     /** @private */ this._stepCount = DEFAULT_STEP_COUNT;
+
+    // MLP mode manager (unified vs dual)
+    /** @private */ this._mlpMode = new MLPModeManager();
 
     // Freeze-as-algorithm manager
     /** @private */ this._freezeManager = new FreezeManager();
@@ -281,6 +285,57 @@ export class ShapeSeqEngine {
   /** @returns {FreezeManager} */
   get freezeManager() { return this._freezeManager; }
 
+  /** @returns {MLPModeManager} */
+  get mlpMode() { return this._mlpMode; }
+
+  // ── MLP mode switching ────────────────────────────────────────────
+
+  /**
+   * Switch between unified and dual MLP mode.
+   *
+   * - unified: destroy the internal sequence MLP; inference is driven
+   *   externally via setSequenceOutputsFromTimbre().
+   * - dual: (re)create the internal sequence MLP via createSequenceIML.
+   *
+   * @param {'unified'|'dual'} mode
+   * @returns {Promise<void>}
+   */
+  async setMLPMode(mode) {
+    this._mlpMode.setMode(mode); // validates
+
+    if (mode === MLP_MODES.UNIFIED) {
+      // Destroy internal sequence MLP — unified mode uses external outputs
+      if (this._sequenceIML) {
+        this._sequenceIML.destroy();
+        this._sequenceIML = null;
+      }
+    } else {
+      // Dual mode: ensure we have a sequence MLP
+      if (!this._sequenceIML) {
+        this._sequenceIML = await createSequenceIML({ outputCount: this._outputCount });
+        this._sequenceIML.randomiseWeights(DEFAULT_SPREAD);
+      }
+    }
+
+    this._bumpGeneration();
+  }
+
+  /**
+   * Feed sequence outputs extracted from the timbre MLP (unified mode).
+   *
+   * Runs the downstream pipeline (param mapping -> chain -> projection -> clock)
+   * without running the internal sequence MLP inference.
+   *
+   * @param {Float32Array} timbreOutputs - full output array from the timbre MLP
+   */
+  setSequenceOutputsFromTimbre(timbreOutputs) {
+    if (!this._initialized) return;
+    if (this._mlpMode.mode !== MLP_MODES.UNIFIED) return;
+
+    const mlpOutputs = this._mlpMode.extractSequenceOutputs(timbreOutputs);
+    this._runPipeline(mlpOutputs);
+  }
+
   // ── Freeze-as-algorithm ────────────────────────────────────────────
 
   /**
@@ -334,7 +389,14 @@ export class ShapeSeqEngine {
    * @param {number[]} values - input array (typically [x, y])
    */
   setSequenceInputs(values) {
-    if (!this._initialized || !this._sequenceIML) return;
+    if (!this._initialized) return;
+
+    // In unified mode, skip — inference is driven externally via
+    // setSequenceOutputsFromTimbre().
+    if (this._mlpMode.mode === MLP_MODES.UNIFIED) return;
+
+    // Dual mode requires the internal sequence MLP
+    if (!this._sequenceIML) return;
 
     // Freeze-as-pattern: skip entire pipeline, just keep looping frozen pattern
     if (this._freezeManager.isFrozen && this._freezeManager.freezeMode === 'pattern') {

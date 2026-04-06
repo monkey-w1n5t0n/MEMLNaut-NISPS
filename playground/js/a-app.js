@@ -2600,6 +2600,29 @@ function syncOutputToggles(mode) {
 }
 
 async function setOutputMode(mode, { skipConfirm = false } = {}) {
+  const heatmapStrip = document.getElementById('heatmap-strip');
+  const synthQuickControls = document.getElementById('synth-quick-controls');
+  const midiCCQuickControls = document.getElementById('midi-cc-quick-controls');
+  const audioCanvasWrap = document.getElementById('audio-canvas-wrap');
+
+  // Lazily create AudioCanvas BEFORE computing targetOutputs so that
+  // outputCountForMode returns the real count (not the 12-output fallback).
+  if (mode === 'audio-canvas' && !audioCanvas) {
+    audioCanvas = new AudioCanvas(audioCanvasWrap);
+    _ensureAudioCanvasOverrides(audioCanvas.getOutputCount());
+    // Listen for dynamic output count changes (loop count changes)
+    audioCanvasWrap.addEventListener('ac:outputcount-changed', async (e) => {
+      if (outputMode !== 'audio-canvas') return;
+      const newCount = e.detail.count;
+      _ensureAudioCanvasOverrides(newCount);
+      if (newCount !== N_OUTPUTS) {
+        await resizeMLP(newCount);
+      }
+      buildHeatmap();
+      updateHeatmap(iml.getOutputs());
+    });
+  }
+
   const targetOutputs = outputCountForMode(mode);
   const needsResize = targetOutputs !== N_OUTPUTS;
 
@@ -2622,28 +2645,6 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
 
   buildHeatmap();
   updateHeatmap(iml.getOutputs());
-
-  const heatmapStrip = document.getElementById('heatmap-strip');
-  const synthQuickControls = document.getElementById('synth-quick-controls');
-  const midiCCQuickControls = document.getElementById('midi-cc-quick-controls');
-  const audioCanvasWrap = document.getElementById('audio-canvas-wrap');
-
-  // Lazily create AudioCanvas on first switch
-  if (mode === 'audio-canvas' && !audioCanvas) {
-    audioCanvas = new AudioCanvas(audioCanvasWrap);
-    _ensureAudioCanvasOverrides(audioCanvas.getOutputCount());
-    // Listen for dynamic output count changes (loop count changes)
-    audioCanvasWrap.addEventListener('ac:outputcount-changed', async (e) => {
-      if (outputMode !== 'audio-canvas') return;
-      const newCount = e.detail.count;
-      _ensureAudioCanvasOverrides(newCount);
-      if (newCount !== N_OUTPUTS) {
-        await resizeMLP(newCount);
-      }
-      buildHeatmap();
-      updateHeatmap(iml.getOutputs());
-    });
-  }
 
   // Hide/show audio-canvas wrap
   if (audioCanvasWrap) audioCanvasWrap.style.display = mode === 'audio-canvas' ? 'block' : 'none';

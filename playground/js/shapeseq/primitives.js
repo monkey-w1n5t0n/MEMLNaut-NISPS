@@ -437,10 +437,9 @@ export class IntervalLock extends Primitive {
       // Quantize pitch [0,1] to nearest note in our scale
       const targetIdx = Math.round(step.pitch * (notes.length - 1));
       const clampedIdx = targetIdx < 0 ? 0 : targetIdx >= notes.length ? notes.length - 1 : targetIdx;
-      // Store MIDI note directly — downstream (sequencer._handleNoteOn)
-      // reads this as a MIDI note number, not a [0,1] value.
-      // We store as note/127 to stay within the [0,1] pattern field range.
-      step.pitch = notes[clampedIdx] / 127;
+      // Store the integer MIDI note in midiNote; leave pitch as-is
+      // (pre-quantization [0,1] value) for other consumers.
+      step.midiNote = notes[clampedIdx];
     }
 
     return { patternDesc: pattern, nextState: {} };

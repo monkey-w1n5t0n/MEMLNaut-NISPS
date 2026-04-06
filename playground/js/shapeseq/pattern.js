@@ -32,6 +32,7 @@ export function createStep() {
     accent: DEFAULT_ACCENT,
     timeOffset: DEFAULT_TIME_OFFSET,
     subdivisions: DEFAULT_SUBDIVISIONS,
+    midiNote: null,
   };
 }
 
@@ -80,6 +81,7 @@ export function clonePattern(pattern) {
       accent: s.accent,
       timeOffset: s.timeOffset,
       subdivisions: s.subdivisions,
+      midiNote: s.midiNote,
     };
   }
 
@@ -133,14 +135,61 @@ export function mergePatterns(patternA, patternB, mode) {
     const b = stepsB[i];
 
     const trigger = isAdditive ? (a.trigger || b.trigger) : (a.trigger && b.trigger);
+    const bothTriggered = a.trigger && b.trigger;
+
+    let pitch, velocity, accent, timeOffset, subdivisions, midiNote;
+
+    if (bothTriggered) {
+      // Both generators triggered: average continuous values, combine accent by mode
+      pitch = (a.pitch + b.pitch) * 0.5;
+      velocity = (a.velocity + b.velocity) * 0.5;
+      accent = isAdditive ? (a.accent || b.accent) : (a.accent && b.accent);
+      timeOffset = (a.timeOffset + b.timeOffset) * 0.5;
+      subdivisions = Math.max(a.subdivisions, b.subdivisions);
+      // midiNote: both set → average (rounded), one set → use it, neither → null
+      if (a.midiNote != null && b.midiNote != null) {
+        midiNote = Math.round((a.midiNote + b.midiNote) * 0.5);
+      } else if (a.midiNote != null) {
+        midiNote = a.midiNote;
+      } else if (b.midiNote != null) {
+        midiNote = b.midiNote;
+      } else {
+        midiNote = null;
+      }
+    } else if (a.trigger) {
+      // Only A triggered: use A's values directly
+      pitch = a.pitch;
+      velocity = a.velocity;
+      accent = a.accent;
+      timeOffset = a.timeOffset;
+      subdivisions = a.subdivisions;
+      midiNote = a.midiNote;
+    } else if (b.trigger) {
+      // Only B triggered: use B's values directly
+      pitch = b.pitch;
+      velocity = b.velocity;
+      accent = b.accent;
+      timeOffset = b.timeOffset;
+      subdivisions = b.subdivisions;
+      midiNote = b.midiNote;
+    } else {
+      // Neither triggered: defaults
+      pitch = DEFAULT_PITCH;
+      velocity = DEFAULT_VELOCITY;
+      accent = DEFAULT_ACCENT;
+      timeOffset = DEFAULT_TIME_OFFSET;
+      subdivisions = DEFAULT_SUBDIVISIONS;
+      midiNote = null;
+    }
 
     steps[i] = {
       trigger: trigger,
-      pitch: (a.pitch + b.pitch) * 0.5,
-      velocity: (a.velocity + b.velocity) * 0.5,
-      accent: isAdditive ? (a.accent || b.accent) : (a.accent && b.accent),
-      timeOffset: (a.timeOffset + b.timeOffset) * 0.5,
-      subdivisions: Math.max(a.subdivisions, b.subdivisions),
+      pitch: pitch,
+      velocity: velocity,
+      accent: accent,
+      timeOffset: timeOffset,
+      subdivisions: subdivisions,
+      midiNote: midiNote,
     };
   }
 
@@ -174,6 +223,7 @@ export function setStep(pattern, index, stepData) {
   if (stepData.accent !== undefined) step.accent = !!stepData.accent;
   if (stepData.timeOffset !== undefined) step.timeOffset = +stepData.timeOffset;
   if (stepData.subdivisions !== undefined) step.subdivisions = stepData.subdivisions | 0;
+  if (stepData.midiNote !== undefined) step.midiNote = stepData.midiNote === null ? null : stepData.midiNote | 0;
 }
 
 /**
@@ -208,6 +258,12 @@ export function validatePattern(pattern) {
     if (typeof s.timeOffset !== 'number' || s.timeOffset < -0.5 || s.timeOffset > 0.5) return false;
     if (typeof s.subdivisions !== 'number' || (s.subdivisions | 0) < 1 || (s.subdivisions | 0) > 4) return false;
     if (s.subdivisions !== (s.subdivisions | 0)) return false;
+    // midiNote: null (pre-quantization) or integer 0-127
+    if (s.midiNote !== null) {
+      if (typeof s.midiNote !== 'number') return false;
+      if (s.midiNote !== (s.midiNote | 0)) return false;
+      if (s.midiNote < 0 || s.midiNote > 127) return false;
+    }
   }
 
   return true;

@@ -276,9 +276,9 @@ export class ShapeSeqEngine {
    * @param {Object} data - { pitch, velocity, stepIndex, time, accent, isSubdivision }
    */
   _handleNoteOn(data) {
-    // pitch is stored as midiNote/127 in the pattern (set by IntervalLock).
-    // Convert back to MIDI note number.
-    const midiNote = Math.round(data.pitch * 127) | 0;
+    // Use integer midiNote if set (post-IntervalLock), otherwise fall back
+    // to the old pitch*127 encoding for backward compatibility.
+    const midiNote = data.midiNote != null ? data.midiNote : (Math.round(data.pitch * 127) | 0);
     const velocity = data.velocity;
 
     // Clamp to valid MIDI range
@@ -296,7 +296,7 @@ export class ShapeSeqEngine {
    * @param {Object} data - { pitch, velocity, stepIndex, time }
    */
   _handleNoteOff(data) {
-    const midiNote = Math.round(data.pitch * 127) | 0;
+    const midiNote = data.midiNote != null ? data.midiNote : (Math.round(data.pitch * 127) | 0);
     const note = midiNote < 0 ? 0 : midiNote > 127 ? 127 : midiNote;
 
     this._c15.noteOff(note);

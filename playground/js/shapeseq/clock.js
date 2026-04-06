@@ -96,6 +96,7 @@ export class ClockEngine {
         stepIndex: this._lastNote.stepIndex,
         time:      this._ctx.currentTime,
         pitch:     this._lastNote.pitch,
+        midiNote:  this._lastNote.midiNote,
         velocity:  0,
       });
       this._lastNote = null;
@@ -192,16 +193,18 @@ export class ClockEngine {
 
     const subs = step.subdivisions;
 
+    const midiNote = step.midiNote != null ? step.midiNote : null;
+
     if (subs <= 1) {
       // Single hit
-      this._scheduleNote(stepIndex, offsetTime, step.pitch, step.velocity, step.accent, false);
+      this._scheduleNote(stepIndex, offsetTime, step.pitch, step.velocity, step.accent, false, midiNote);
     } else {
       // Ratchet: evenly divide this step's duration
       const subDur = stepDuration / subs;
       for (let s = 0; s < subs; s++) {
         const t   = offsetTime + s * subDur;
         const vel = s === 0 ? step.velocity : step.velocity * SUBDIVISION_VEL_SCALE;
-        this._scheduleNote(stepIndex, t, step.pitch, vel, step.accent, s > 0);
+        this._scheduleNote(stepIndex, t, step.pitch, vel, step.accent, s > 0, midiNote);
       }
     }
   }
@@ -209,20 +212,21 @@ export class ClockEngine {
   /**
    * Schedule a single noteOn (with preceding noteOff for the previous note).
    */
-  _scheduleNote(stepIndex, time, pitch, velocity, accent, isSubdivision) {
+  _scheduleNote(stepIndex, time, pitch, velocity, accent, isSubdivision, midiNote) {
     // NoteOff for previous note
     if (this._lastNote) {
       this._emit(SEQ.NOTE_OFF, {
         stepIndex: this._lastNote.stepIndex,
         time,
         pitch:     this._lastNote.pitch,
+        midiNote:  this._lastNote.midiNote,
         velocity:  0,
       });
     }
 
-    const noteData = { stepIndex, time, pitch, velocity, accent, isSubdivision };
+    const noteData = { stepIndex, time, pitch, midiNote: midiNote ?? null, velocity, accent, isSubdivision };
     this._emit(SEQ.NOTE_ON, noteData);
-    this._lastNote = { stepIndex, time, pitch, velocity };
+    this._lastNote = { stepIndex, time, pitch, midiNote: midiNote ?? null, velocity };
   }
 
   /**

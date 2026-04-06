@@ -6,8 +6,8 @@
  *
  * Main loop (triggered by setSequenceInputs):
  *   1. Forward inputs to sequenceIML
- *   2. Run MLP inference to get 16 outputs
- *   3. Map 16 outputs to N primitive params via param-map
+ *   2. Run MLP inference to get N outputs (configurable, default 16)
+ *   3. Map N outputs to M primitive params via param-map
  *   4. Evaluate the chain to produce a pattern description
  *   5. Apply projection transforms
  *   6. Schedule the pattern on the clock
@@ -66,6 +66,9 @@ export class ShapeSeqEngine {
 
     /** @private */ this._outputCount = SEQ_DEFAULT_OUTPUT_COUNT;
     /** @private */ this._stepCount = DEFAULT_STEP_COUNT;
+    /** @private */ this._masterSeed = DEFAULT_MASTER_SEED;
+    /** @private */ this._playing = false;
+    /** @private */ this._initialized = false;
 
     // MLP mode manager (unified vs dual)
     /** @private */ this._mlpMode = new MLPModeManager();
@@ -78,12 +81,13 @@ export class ShapeSeqEngine {
 
     // Last projected pattern — needed for freeze-as-pattern snapshot
     /** @private @type {Object|null} */ this._lastPattern = null;
-    /** @private */ this._masterSeed = DEFAULT_MASTER_SEED;
-    /** @private */ this._playing = false;
-    /** @private */ this._initialized = false;
 
     // Dirty-check: skip re-evaluation when inputs haven't changed
     /** @private */ this._lastInputs = [NaN, NaN];
+
+    // Generation counter: bumped on config changes to force re-evaluation
+    /** @private */ this._generation = 0;
+    /** @private */ this._lastGeneration = -1;
 
     // Voice mode: 'mono' (default) or 'poly'
     /** @private @type {'mono'|'poly'} */
@@ -92,10 +96,6 @@ export class ShapeSeqEngine {
     // Last note tracker for mono mode
     /** @private @type {{note: number, velocity: number}|null} */
     this._lastNote = null;
-
-    // Generation counter: bumped on config changes to force re-evaluation
-    /** @private */ this._generation = 0;
-    /** @private */ this._lastGeneration = -1;
 
     // Track active notes for orphan prevention
     /** @private @type {Set<number>} */
@@ -107,9 +107,9 @@ export class ShapeSeqEngine {
     /** @private */
     this._onNoteOff = (data) => this._handleNoteOff(data);
     /** @private */
-    this._onLoopStart = () => this._handleLoopStart();
-    /** @private */
     this._onChainEdit = () => this._bumpGeneration();
+    /** @private */
+    this._onLoopStart = () => this._handleLoopStart();
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -276,6 +276,7 @@ export class ShapeSeqEngine {
     this._sequenceIML = await createSequenceIML({ outputCount: count });
     this._sequenceIML.randomiseWeights(DEFAULT_SPREAD);
 
+    // TODO: bump generation counter (meml-06h)
     this._bumpGeneration();
   }
 
@@ -289,12 +290,6 @@ export class ShapeSeqEngine {
 
   /** @returns {WasmIML} */
   getSequenceIML() { return this._sequenceIML; }
-
-  /** @returns {FreezeManager} */
-  get freezeManager() { return this._freezeManager; }
-
-  /** @returns {MLPModeManager} */
-  get mlpMode() { return this._mlpMode; }
 
   /** @returns {'mono'|'poly'} */
   get voiceMode() { return this._voiceMode; }
@@ -314,6 +309,12 @@ export class ShapeSeqEngine {
     this._lastNote = null;
     this._voiceMode = mode;
   }
+
+  /** @returns {FreezeManager} */
+  get freezeManager() { return this._freezeManager; }
+
+  /** @returns {MLPModeManager} */
+  get mlpMode() { return this._mlpMode; }
 
   // ── MLP mode switching ────────────────────────────────────────────
 
@@ -457,6 +458,7 @@ export class ShapeSeqEngine {
 
   /**
    * Shared downstream pipeline: param mapping -> chain -> projection -> clock.
+   * Used by both setSequenceInputs (dual mode) and setSequenceOutputsFromTimbre (unified mode).
    *
    * @private
    * @param {Float32Array} mlpOutputs - raw MLP outputs (sequence slice)
@@ -519,6 +521,9 @@ export class ShapeSeqEngine {
    * with reEvalOnLoop === true, force a pipeline re-evaluation using the
    * last known inputs. This lets stateful generators (e.g. PitchWalker)
    * produce evolving patterns across loops even when inputs stay still.
+   *
+   * When freeze-as-algorithm is active, re-evaluation is suppressed
+   * to preserve the frozen state.
    *
    * @private
    */

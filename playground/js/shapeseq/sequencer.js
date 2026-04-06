@@ -25,7 +25,7 @@ import { Chain } from './chain.js';
 import { ClockEngine } from './clock.js';
 import { map } from './param-map.js';
 import { createProjection, applyProjection } from './projection.js';
-import { SEQ } from './event-bus.js';
+import { SEQ, UI } from './event-bus.js';
 import {
   EuclideanRhythm,
   ProbabilityGate,
@@ -70,6 +70,10 @@ export class ShapeSeqEngine {
     // Dirty-check: skip re-evaluation when inputs haven't changed
     /** @private */ this._lastInputs = [NaN, NaN];
 
+    // Generation counter: bumped on config changes to force re-evaluation
+    /** @private */ this._generation = 0;
+    /** @private */ this._lastGeneration = -1;
+
     // Track active notes for orphan prevention
     /** @private @type {Set<number>} */
     this._activeNotes = new Set();
@@ -81,6 +85,8 @@ export class ShapeSeqEngine {
     this._onNoteOff = (data) => this._handleNoteOff(data);
     /** @private */
     this._onLoopStart = () => this._handleLoopStart();
+    /** @private */
+    this._onChainEdit = () => this._bumpGeneration();
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -116,7 +122,10 @@ export class ShapeSeqEngine {
     this._bus.on(SEQ.NOTE_ON, this._onNoteOn);
     this._bus.on(SEQ.NOTE_OFF, this._onNoteOff);
 
-    // 6. Subscribe to loop start for stateful primitive re-evaluation
+    // 6. Subscribe to chain edits so config changes force re-evaluation
+    this._bus.on(UI.CHAIN_EDIT, this._onChainEdit);
+
+    // 7. Subscribe to loop start for stateful primitive re-evaluation
     this._bus.on(SEQ.LOOP_START, this._onLoopStart);
 
     this._initialized = true;
@@ -155,6 +164,7 @@ export class ShapeSeqEngine {
     // Unsubscribe from event bus
     this._bus.off(SEQ.NOTE_ON, this._onNoteOn);
     this._bus.off(SEQ.NOTE_OFF, this._onNoteOff);
+    this._bus.off(UI.CHAIN_EDIT, this._onChainEdit);
     this._bus.off(SEQ.LOOP_START, this._onLoopStart);
 
     // Destroy the sequence IML instance
@@ -179,6 +189,7 @@ export class ShapeSeqEngine {
     if (this._clock) {
       this._clock.setTempo(bpm);
     }
+    this._bumpGeneration();
   }
 
   /**
@@ -188,6 +199,7 @@ export class ShapeSeqEngine {
   setStepCount(count) {
     const c = Math.max(1, count | 0);
     this._stepCount = c;
+    this._bumpGeneration();
   }
 
   /**
@@ -204,6 +216,7 @@ export class ShapeSeqEngine {
         high: opts.pitchRange?.high ?? cur.pitchRange.high,
       },
     });
+    this._bumpGeneration();
   }
 
   /**
@@ -239,6 +252,8 @@ export class ShapeSeqEngine {
     // Create new instance with updated architecture
     this._sequenceIML = await createSequenceIML({ outputCount: count });
     this._sequenceIML.randomiseWeights(DEFAULT_SPREAD);
+
+    this._bumpGeneration();
   }
 
   // ── Chain access (for UI binding) ──────────────────────────────────
@@ -265,14 +280,17 @@ export class ShapeSeqEngine {
   setSequenceInputs(values) {
     if (!this._initialized || !this._sequenceIML) return;
 
-    // Dirty-check: skip re-evaluation if inputs haven't changed
+    // Dirty-check: skip re-evaluation if inputs AND config haven't changed
     const EPS = 1e-5;
-    if (Math.abs(values[0] - this._lastInputs[0]) < EPS &&
-        Math.abs(values[1] - this._lastInputs[1]) < EPS) {
+    const inputsSame = Math.abs(values[0] - this._lastInputs[0]) < EPS &&
+                       Math.abs(values[1] - this._lastInputs[1]) < EPS;
+    const generationSame = this._generation === this._lastGeneration;
+    if (inputsSame && generationSame) {
       return;
     }
     this._lastInputs[0] = values[0];
     this._lastInputs[1] = values[1];
+    this._lastGeneration = this._generation;
 
     // 1. Forward inputs to the sequence IML
     this._sequenceIML.setInputs(values);
@@ -304,6 +322,17 @@ export class ShapeSeqEngine {
     return this._playing;
   }
 
+  // ── Generation counter (private) ───────────────────────────────────
+
+  /**
+   * Increment the generation counter to force re-evaluation on next
+   * setSequenceInputs() call, even if inputs haven't changed.
+   * @private
+   */
+  _bumpGeneration() {
+    this._generation++;
+  }
+
   // ── Loop re-evaluation (private) ──────────────────────────────────
 
   /**
@@ -318,13 +347,14 @@ export class ShapeSeqEngine {
     if (!this._initialized || !this._chain || !this._sequenceIML) return;
     if (!this._chain.hasReEvalPrimitives()) return;
 
+    // Bump the generation counter so the next setSequenceInputs() call
+    // bypasses the dirty-check and re-runs the full pipeline.
+    this._bumpGeneration();
+
     // If we have cached inputs, force an immediate re-evaluation now
+    // (rather than waiting for the next setSequenceInputs() frame).
     if (!isNaN(this._lastInputs[0]) && !isNaN(this._lastInputs[1])) {
-      const savedInputs = [this._lastInputs[0], this._lastInputs[1]];
-      // Reset dirty-check so setSequenceInputs re-runs the pipeline
-      this._lastInputs[0] = NaN;
-      this._lastInputs[1] = NaN;
-      this.setSequenceInputs(savedInputs);
+      this.setSequenceInputs(this._lastInputs);
     }
   }
 

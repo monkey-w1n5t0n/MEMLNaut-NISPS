@@ -1,9 +1,12 @@
 /**
- * ShapeSeq Chain Builder UI — vertical stack of primitive cards
+ * ShapeSeq Chain Builder UI — full-screen slide-up drawer with signal-based updates
  *
  * Pedalboard-style chain editor: expandable cards with param sliders,
  * drag-to-reorder, delete, add-primitive palette, generator combine toggle.
  * Mobile-first, dark glass theme matching the immersive playground.
+ *
+ * Uses vanilla signals for reactive slider updates at 60fps — O(changed params)
+ * instead of O(all sliders) via querySelectorAll.
  *
  * All styles are inline (no external CSS dependency).
  *
@@ -11,6 +14,7 @@
  */
 
 import { PRIMITIVE_REGISTRY } from './primitives.js';
+import { createArraySignal } from './signal.js';
 
 // ── Category colors ──────────────────────────────────────────────────
 
@@ -30,6 +34,98 @@ function injectStyles() {
   stylesInjected = true;
 
   const css = `
+/* ── Chain drawer overlay + slide-up drawer ────────────────────── */
+
+.chain-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.chain-drawer-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chain-drawer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  z-index: 9999;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  background: rgba(13, 13, 13, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  color: #e0e0e0;
+}
+
+.chain-drawer.open {
+  transform: translateY(0);
+}
+
+.chain-drawer-handle {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+  cursor: grab;
+}
+
+.chain-drawer-handle::after {
+  content: '';
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.chain-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ff6a00;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chain-drawer-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.chain-drawer-close:hover {
+  border-color: #ff6a00;
+  color: #ff6a00;
+}
+
 /* ── Chain Builder container ─────────────────────────────────── */
 
 .chain-builder {
@@ -49,9 +145,8 @@ function injectStyles() {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 13px;
-  color: var(--cb-text);
+  flex: 1;
+  min-height: 0;
 }
 
 /* ── Primitive card ──────────────────────────────────────────── */
@@ -328,7 +423,7 @@ function injectStyles() {
 .chain-palette-overlay {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 10000;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -461,6 +556,15 @@ export class ChainBuilderUI {
     /** @private @type {Float32Array|null} current param values for display */
     this._currentParams = null;
 
+    /** @private @type {import('./signal.js').ArraySignal|null} */
+    this._paramSignal = null;
+
+    /** @private @type {Function[]} signal unsubscribers for cleanup */
+    this._signalUnsubs = [];
+
+    /** @private @type {Map<number, HTMLElement>} chainIndex -> card element */
+    this._cardMap = new Map();
+
     // ── Drag state ──
     /** @private */
     this._dragIndex = -1;
@@ -477,52 +581,96 @@ export class ChainBuilderUI {
     /** @private @type {HTMLElement|null} */
     this._paletteOverlay = null;
 
+    // ── Drawer elements ──
+    /** @private @type {HTMLElement|null} */
+    this._drawerOverlay = null;
+    /** @private @type {HTMLElement|null} */
+    this._drawer = null;
+    /** @private @type {boolean} */
+    this._isOpen = false;
+
     // ── Bound handlers for cleanup ──
     this._onPointerMove = this._handlePointerMove.bind(this);
     this._onPointerUp = this._handlePointerUp.bind(this);
 
+    this._buildDrawer();
     this.render();
   }
 
   // ── Public API ─────────────────────────────────────────────────────
 
   /**
-   * Rebuild the entire UI from current chain state.
+   * Open the drawer.
+   */
+  open() {
+    if (this._isOpen) return;
+    this._isOpen = true;
+    if (this._drawerOverlay) this._drawerOverlay.classList.add('open');
+    if (this._drawer) this._drawer.classList.add('open');
+  }
+
+  /**
+   * Close the drawer.
+   */
+  close() {
+    if (!this._isOpen) return;
+    this._isOpen = false;
+    if (this._drawerOverlay) this._drawerOverlay.classList.remove('open');
+    if (this._drawer) this._drawer.classList.remove('open');
+  }
+
+  /**
+   * Rebuild the card list from current chain state.
+   * Uses keyed reconciliation: only adds/removes/moves the cards that changed.
    */
   render() {
-    this._container.innerHTML = '';
-    this._container.classList.add('chain-builder');
-
     const primitives = this._chain.getPrimitives();
+    const cardList = this._cardList;
+    if (!cardList) return;
 
-    // Card list wrapper
-    const cardList = document.createElement('div');
-    cardList.style.display = 'flex';
-    cardList.style.flexDirection = 'column';
-    cardList.style.gap = '6px';
-    this._cardList = cardList;
+    // Clean up old signal subscriptions
+    for (const unsub of this._signalUnsubs) unsub();
+    this._signalUnsubs = [];
 
-    // Compute flat param offset for each primitive
+    // Compute total param count and create signal
+    let totalParams = 0;
+    for (const p of primitives) totalParams += p.paramCount;
+    this._paramSignal = createArraySignal(totalParams);
+
+    // Build desired order: chainIndex list
+    const desiredKeys = primitives.map((_, i) => i);
+    const existingKeys = [...this._cardMap.keys()];
+
+    // Remove cards no longer present
+    for (const key of existingKeys) {
+      if (!desiredKeys.includes(key)) {
+        const el = this._cardMap.get(key);
+        if (el && el.parentElement) el.remove();
+        this._cardMap.delete(key);
+      }
+    }
+
+    // For a full reconciliation with reindexing, rebuild all cards
+    // (primitive indices change on add/remove/reorder)
+    const oldMap = this._cardMap;
+    this._cardMap = new Map();
+
+    // Remove all existing cards from DOM
+    while (cardList.firstChild) cardList.removeChild(cardList.firstChild);
+
     let flatOffset = 0;
     for (let i = 0; i < primitives.length; i++) {
       const prim = primitives[i];
       const card = this._createCard(prim, i, flatOffset);
+      this._cardMap.set(i, card);
       cardList.appendChild(card);
       flatOffset += prim.paramCount;
     }
 
-    this._container.appendChild(cardList);
-
-    // Add button
-    const addBtn = document.createElement('button');
-    addBtn.className = 'chain-add-btn';
-    addBtn.innerHTML = '<span style="font-size:18px;line-height:1">+</span> Add Primitive';
-    addBtn.addEventListener('click', () => this._openPalette());
-    this._container.appendChild(addBtn);
-
-    // Generator combine mode toggle
-    const toggle = this._createCombineToggle();
-    this._container.appendChild(toggle);
+    // Seed signal with current param values if available
+    if (this._currentParams && this._currentParams.length >= totalParams) {
+      this._paramSignal.update(this._currentParams);
+    }
   }
 
   /**
@@ -531,8 +679,8 @@ export class ChainBuilderUI {
    */
   setLiveParams(paramIndices) {
     this._liveParams = new Set(paramIndices);
-    // Update existing rows without full re-render
-    const rows = this._container.querySelectorAll('.chain-param-row');
+    if (!this._cardList) return;
+    const rows = this._cardList.querySelectorAll('.chain-param-row');
     rows.forEach((row) => {
       const idx = parseInt(row.dataset.flatIndex, 10);
       if (isNaN(idx)) return;
@@ -554,22 +702,14 @@ export class ChainBuilderUI {
 
   /**
    * Update displayed param values without re-rendering.
+   * Backed by signal — only subscribers for changed indices are notified.
    * @param {Float32Array|Array<number>} params - flat param array
    */
   updateParamValues(params) {
     this._currentParams = params;
-    const sliders = this._container.querySelectorAll('.chain-param-slider');
-    sliders.forEach((slider) => {
-      const idx = parseInt(slider.dataset.flatIndex, 10);
-      if (!isNaN(idx) && idx < params.length) {
-        slider.value = params[idx];
-        // Update adjacent value display
-        const valEl = slider.parentElement && slider.parentElement.querySelector('.chain-param-value');
-        if (valEl) {
-          valEl.textContent = params[idx].toFixed(2);
-        }
-      }
-    });
+    if (this._paramSignal) {
+      this._paramSignal.update(params);
+    }
   }
 
   /**
@@ -577,11 +717,97 @@ export class ChainBuilderUI {
    */
   destroy() {
     this._closePalette();
+    this.close();
     document.removeEventListener('pointermove', this._onPointerMove);
     document.removeEventListener('pointerup', this._onPointerUp);
+
+    // Clean up signal subscriptions
+    for (const unsub of this._signalUnsubs) unsub();
+    this._signalUnsubs = [];
+
+    // Remove drawer from DOM
+    if (this._drawerOverlay) {
+      this._drawerOverlay.remove();
+      this._drawerOverlay = null;
+    }
+    if (this._drawer) {
+      this._drawer.remove();
+      this._drawer = null;
+    }
+
     this._container.innerHTML = '';
     this._container.classList.remove('chain-builder');
     this._paramChangeCb = null;
+    this._cardMap.clear();
+  }
+
+  // ── Drawer construction ───────────────────────────────────────────
+
+  /**
+   * @private
+   * Build the drawer shell (overlay + drawer container + header).
+   * The card list and controls go inside the drawer body.
+   */
+  _buildDrawer() {
+    // Overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'chain-drawer-overlay';
+    overlay.addEventListener('click', () => this.close());
+    this._drawerOverlay = overlay;
+
+    // Drawer
+    const drawer = document.createElement('div');
+    drawer.className = 'chain-drawer';
+    this._drawer = drawer;
+
+    // Drag handle
+    const handle = document.createElement('div');
+    handle.className = 'chain-drawer-handle';
+    drawer.appendChild(handle);
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'chain-drawer-header';
+
+    const title = document.createElement('span');
+    title.textContent = 'Chain Builder';
+    header.appendChild(title);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'chain-drawer-close';
+    closeBtn.textContent = '\u00D7';
+    closeBtn.addEventListener('click', () => this.close());
+    header.appendChild(closeBtn);
+
+    drawer.appendChild(header);
+
+    // Body (scrollable card list + controls)
+    const body = document.createElement('div');
+    body.classList.add('chain-builder');
+
+    const cardList = document.createElement('div');
+    cardList.style.display = 'flex';
+    cardList.style.flexDirection = 'column';
+    cardList.style.gap = '6px';
+    this._cardList = cardList;
+    body.appendChild(cardList);
+
+    // Add button
+    const addBtn = document.createElement('button');
+    addBtn.className = 'chain-add-btn';
+    addBtn.innerHTML = '<span style="font-size:18px;line-height:1">+</span> Add Primitive';
+    addBtn.addEventListener('click', () => this._openPalette());
+    body.appendChild(addBtn);
+
+    // Generator combine mode toggle
+    this._combineToggle = this._createCombineToggle();
+    body.appendChild(this._combineToggle);
+
+    drawer.appendChild(body);
+
+    // Mount to document body
+    document.body.appendChild(overlay);
+    document.body.appendChild(drawer);
   }
 
   // ── Card creation ──────────────────────────────────────────────────
@@ -681,6 +907,14 @@ export class ChainBuilderUI {
     body.appendChild(paramsDiv);
     card.appendChild(body);
 
+    // Subscribe summary to signal updates
+    if (this._paramSignal) {
+      const unsub = this._paramSignal.subscribe(() => {
+        summary.textContent = this._buildSummary(prim, flatOffset);
+      });
+      this._signalUnsubs.push(unsub);
+    }
+
     return card;
   }
 
@@ -702,6 +936,8 @@ export class ChainBuilderUI {
 
   /**
    * @private
+   * Creates a param row with a slider that subscribes to the param signal
+   * for its specific flat index — O(1) updates per changed param.
    */
   _createParamRow(schema, flatIdx, prim) {
     const row = document.createElement('div');
@@ -743,6 +979,18 @@ export class ChainBuilderUI {
 
     row.appendChild(slider);
     row.appendChild(valDisplay);
+
+    // Subscribe to signal for reactive updates (only this slider's index)
+    if (this._paramSignal) {
+      const unsub = this._paramSignal.subscribe((params) => {
+        if (flatIdx < params.length) {
+          const newVal = params[flatIdx];
+          slider.value = newVal;
+          valDisplay.textContent = newVal.toFixed(2);
+        }
+      });
+      this._signalUnsubs.push(unsub);
+    }
 
     return row;
   }

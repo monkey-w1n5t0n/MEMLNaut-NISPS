@@ -20,7 +20,7 @@
  * @module shapeseq/sequencer
  */
 
-import { createSequenceIML, SEQ_N_OUTPUTS } from './seq-iml.js';
+import { createSequenceIML, SEQ_DEFAULT_OUTPUT_COUNT } from './seq-iml.js';
 import { Chain } from './chain.js';
 import { ClockEngine } from './clock.js';
 import { map } from './param-map.js';
@@ -61,6 +61,7 @@ export class ShapeSeqEngine {
     /** @private */ this._clock = null;
     /** @private */ this._projectionChain = null;
 
+    /** @private */ this._outputCount = SEQ_DEFAULT_OUTPUT_COUNT;
     /** @private */ this._stepCount = DEFAULT_STEP_COUNT;
     /** @private */ this._masterSeed = DEFAULT_MASTER_SEED;
     /** @private */ this._playing = false;
@@ -90,7 +91,7 @@ export class ShapeSeqEngine {
    */
   async init() {
     // 1. Create the sequence MLP
-    this._sequenceIML = await createSequenceIML();
+    this._sequenceIML = await createSequenceIML({ outputCount: this._outputCount });
 
     // Randomize weights with default spread
     this._sequenceIML.randomiseWeights(DEFAULT_SPREAD);
@@ -211,6 +212,33 @@ export class ShapeSeqEngine {
    */
   getProjection() {
     return this._projectionChain;
+  }
+
+  /**
+   * Change the MLP output count. Destroys and recreates the sequence IML
+   * with a new architecture scaled to the requested count, then randomizes
+   * weights. Training examples are lost — callers should snapshot first if
+   * needed.
+   *
+   * @param {number} count - desired output count (e.g. 8, 16, 32)
+   * @returns {Promise<void>}
+   */
+  async setOutputCount(count) {
+    if (!this._initialized) {
+      throw new Error('setOutputCount() called before init()');
+    }
+
+    this._outputCount = count;
+
+    // Tear down old instance
+    if (this._sequenceIML) {
+      this._sequenceIML.destroy();
+      this._sequenceIML = null;
+    }
+
+    // Create new instance with updated architecture
+    this._sequenceIML = await createSequenceIML({ outputCount: count });
+    this._sequenceIML.randomiseWeights(DEFAULT_SPREAD);
   }
 
   // ── Chain access (for UI binding) ──────────────────────────────────

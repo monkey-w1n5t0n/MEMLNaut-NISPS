@@ -147,12 +147,16 @@ export class ProbabilityGate extends Primitive {
 
 export class PitchWalker extends Primitive {
   constructor() {
-    super('PitchWalker', 'generator', [
+    super('PitchWalker', 'processor', [
       { name: 'stepSize', default: 0.3, boundary: 'clamp' },
       { name: 'directionBias', default: 0.5, boundary: 'clamp' },
       { name: 'gravity', default: 0.3, boundary: 'clamp' },
       { name: 'range', default: 0.8, boundary: 'clamp' },
     ]);
+
+    // PitchWalker is stateful — its random walk evolves across evaluations,
+    // so re-evaluate on each loop start to produce evolving patterns.
+    this.reEvalOnLoop = true;
 
     /** @private */
     this._position = 0.5;
@@ -179,16 +183,11 @@ export class PitchWalker extends Primitive {
       ? state.position
       : this._position;
 
-    const pattern = createPattern(patternDesc.stepCount);
+    const pattern = clonePattern(patternDesc);
     let currentRng = rng;
 
-    // Use incoming pattern's triggers if available, otherwise all triggered
-    const srcSteps = patternDesc.steps;
-
-    for (let i = 0; i < patternDesc.stepCount; i++) {
-      const triggered = srcSteps[i].trigger;
-
-      if (triggered) {
+    for (let i = 0; i < pattern.stepCount; i++) {
+      if (pattern.steps[i].trigger) {
         // Random walk step
         const r1 = next(currentRng);
         currentRng = r1.nextState;
@@ -207,9 +206,9 @@ export class PitchWalker extends Primitive {
         if (position < 0) position = 0;
         if (position > 1) position = 1;
 
-        setStep(pattern, i, { trigger: true, pitch: position });
+        pattern.steps[i].pitch = position;
       }
-      // Untriggered steps keep default pitch, trigger=false
+      // Untriggered steps: preserve existing data unchanged
     }
 
     this._position = position;

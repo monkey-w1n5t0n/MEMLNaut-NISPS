@@ -154,6 +154,14 @@ export class Primitive {
       return Object.freeze(frozen);
     }));
 
+    /**
+     * When true, the sequencer re-evaluates the chain at each loop start
+     * even if inputs haven't changed. Useful for stateful primitives
+     * (e.g. PitchWalker) whose output evolves across evaluations.
+     * @type {boolean}
+     */
+    this.reEvalOnLoop = false;
+
     /** @private */
     this._seed = 0;
   }

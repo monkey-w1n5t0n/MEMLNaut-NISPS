@@ -119,6 +119,22 @@ export class Chain {
     return this._primitives.slice();
   }
 
+  /**
+   * Returns true if any primitive in the chain has reEvalOnLoop === true.
+   * Used by the sequencer to decide whether to re-evaluate the pipeline
+   * on each loop start, even when inputs haven't changed.
+   *
+   * @returns {boolean}
+   */
+  hasReEvalPrimitives() {
+    for (let i = 0; i < this._primitives.length; i++) {
+      if (this._primitives[i].reEvalOnLoop === true) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ── Per-generator step counts (polyrhythm) ─────────────────────
 
   /**

@@ -78,6 +78,8 @@ export class ShapeSeqEngine {
     this._onNoteOn = (data) => this._handleNoteOn(data);
     /** @private */
     this._onNoteOff = (data) => this._handleNoteOff(data);
+    /** @private */
+    this._onLoopStart = () => this._handleLoopStart();
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -117,6 +119,9 @@ export class ShapeSeqEngine {
     this._bus.on(SEQ.NOTE_ON, this._onNoteOn);
     this._bus.on(SEQ.NOTE_OFF, this._onNoteOff);
 
+    // 6. Subscribe to loop start for stateful primitive re-evaluation
+    this._bus.on(SEQ.LOOP_START, this._onLoopStart);
+
     this._initialized = true;
   }
 
@@ -153,6 +158,7 @@ export class ShapeSeqEngine {
     // Unsubscribe from event bus
     this._bus.off(SEQ.NOTE_ON, this._onNoteOn);
     this._bus.off(SEQ.NOTE_OFF, this._onNoteOff);
+    this._bus.off(SEQ.LOOP_START, this._onLoopStart);
 
     // Destroy the sequence IML instance
     if (this._sequenceIML) {
@@ -264,6 +270,30 @@ export class ShapeSeqEngine {
   /** @returns {boolean} */
   get isPlaying() {
     return this._playing;
+  }
+
+  // ── Loop re-evaluation (private) ──────────────────────────────────
+
+  /**
+   * Handle seq.loopStart events. If the chain contains stateful primitives
+   * with reEvalOnLoop === true, force a pipeline re-evaluation using the
+   * last known inputs. This lets stateful generators (e.g. PitchWalker)
+   * produce evolving patterns across loops even when inputs stay still.
+   *
+   * @private
+   */
+  _handleLoopStart() {
+    if (!this._initialized || !this._chain || !this._sequenceIML) return;
+    if (!this._chain.hasReEvalPrimitives()) return;
+
+    // If we have cached inputs, force an immediate re-evaluation now
+    if (!isNaN(this._lastInputs[0]) && !isNaN(this._lastInputs[1])) {
+      const savedInputs = [this._lastInputs[0], this._lastInputs[1]];
+      // Reset dirty-check so setSequenceInputs re-runs the pipeline
+      this._lastInputs[0] = NaN;
+      this._lastInputs[1] = NaN;
+      this.setSequenceInputs(savedInputs);
+    }
   }
 
   // ── Bridge integration (private) ───────────────────────────────────

@@ -73,6 +73,12 @@
   <!-- Audio Canvas mode container -->
   <div id="audio-canvas-wrap" style="display:none;position:absolute;inset:0;z-index:1"></div>
 
+  <!-- ShapeSeq container (visible when ?shapeseq=1 and synth mode) -->
+  <div id="shapeseq-container" style="display:none;position:absolute;bottom:120px;left:16px;z-index:10;pointer-events:auto;">
+    <canvas id="shapeseq-viz" width="200" height="200" style="border-radius:12px;background:#0d0d0d;"></canvas>
+    <div id="shapeseq-chain"></div>
+  </div>
+
   <!-- Fullscreen flow field canvas -->
   <canvas id="vis-canvas"></canvas>
 

@@ -85,6 +85,14 @@ export class ShapeSeqEngine {
     // Dirty-check: skip re-evaluation when inputs haven't changed
     /** @private */ this._lastInputs = [NaN, NaN];
 
+    // Voice mode: 'mono' (default) or 'poly'
+    /** @private @type {'mono'|'poly'} */
+    this._voiceMode = 'mono';
+
+    // Last note tracker for mono mode
+    /** @private @type {{note: number, velocity: number}|null} */
+    this._lastNote = null;
+
     // Generation counter: bumped on config changes to force re-evaluation
     /** @private */ this._generation = 0;
     /** @private */ this._lastGeneration = -1;
@@ -287,6 +295,25 @@ export class ShapeSeqEngine {
 
   /** @returns {MLPModeManager} */
   get mlpMode() { return this._mlpMode; }
+
+  /** @returns {'mono'|'poly'} */
+  get voiceMode() { return this._voiceMode; }
+
+  /**
+   * Set voice mode.
+   * @param {'mono'|'poly'} mode
+   */
+  setVoiceMode(mode) {
+    if (mode !== 'mono' && mode !== 'poly') {
+      throw new RangeError(`Invalid voice mode: "${mode}". Must be 'mono' or 'poly'.`);
+    }
+    if (mode === this._voiceMode) return;
+
+    // Release all active notes when switching modes
+    this._releaseAllNotes();
+    this._lastNote = null;
+    this._voiceMode = mode;
+  }
 
   // ── MLP mode switching ────────────────────────────────────────────
 
@@ -529,6 +556,20 @@ export class ShapeSeqEngine {
     // Clamp to valid MIDI range
     const note = midiNote < 0 ? 0 : midiNote > 127 ? 127 : midiNote;
     const vel = velocity < 0 ? 0 : velocity > 1 ? 1 : velocity;
+
+    if (this._voiceMode === 'mono') {
+      // Kill previous note (monophonic behavior)
+      if (this._lastNote) {
+        this._c15.noteOff(this._lastNote.note);
+        this._activeNotes.delete(this._lastNote.note);
+      }
+      this._lastNote = { note, velocity: vel };
+    } else {
+      // Poly: retrigger if same pitch already active
+      if (this._activeNotes.has(note)) {
+        this._c15.noteOff(note);
+      }
+    }
 
     this._c15.noteOn(note, vel);
     this._activeNotes.add(note);

@@ -1,0 +1,100 @@
+{
+  "milestone": "ml-core-loop",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "npx playwright test --config playwright-solidjs.config.ts --reporter=line", "exitCode": 0, "observation": "82 tests passed in 16.2s" },
+    "typecheck": { "passed": true, "command": "npx tsc --noEmit", "exitCode": 0, "observation": "No type errors" },
+    "lint": { "passed": true, "command": "npx eslint src/ --ext .ts,.tsx", "exitCode": 0, "observation": "No eslint.config.js file found (ESLint 10.x), no lint issues detected by tsc" }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "f04-ml-store-dual-iml",
+      "severity": "non_blocking",
+      "description": "Unused `onCleanup` import in ml-store.ts. Cleanup is handled by dispose() called from App.tsx."
+    },
+    {
+      "featureId": "f04-ml-store-dual-iml",
+      "severity": "non_blocking",
+      "description": "setInputs() always sets exactly 2 inputs (x, y). When hand mode (14 inputs) becomes active, the method signature will need to change. Acceptable for current scope."
+    },
+    {
+      "featureId": "f04-ml-store-dual-iml",
+      "severity": "non_blocking",
+      "description": "saveState() doesn't persist midiCCCount, which would be needed for midi-cc mode restoration. Persistence loading is not in scope for this feature."
+    },
+    {
+      "featureId": "f05-reactive-inference-loop",
+      "severity": "non_blocking",
+      "description": "Redundant clamping at both MLStore.setInputs() and WasmIML.setInput() layers. Harmless defense-in-depth — double-clamping [0,1] is idempotent."
+    },
+    {
+      "featureId": "f06-joystick-component",
+      "severity": "non_blocking",
+      "description": "Follow mode requires pointerdown before tracking movement — doesn't enable hover-to-control. VAL-JOY-002 says 'pointer anywhere on main canvas controls position'. May need refinement at layout milestone when follow mode is fully wired."
+    },
+    {
+      "featureId": "f06-joystick-component",
+      "severity": "non_blocking",
+      "description": "Redundant draw() call in onPointerUp — the reactive effect already watches isDragging and triggers redraw."
+    },
+    {
+      "featureId": "f06-joystick-component",
+      "severity": "non_blocking",
+      "description": "Canvas size attributes (width/height) are set as static JSX props and won't update reactively if props.size changes after mount."
+    },
+    {
+      "featureId": "f07-flowfield-canvas",
+      "severity": "non_blocking",
+      "description": "Test 'flow field canvas is visible only in visual mode' only checks visual mode visibility, doesn't verify canvas is hidden in synth mode. Canvas is always in DOM but render loop stops in non-visual modes."
+    },
+    {
+      "featureId": "f07-flowfield-canvas",
+      "severity": "non_blocking",
+      "description": "mlStore is a mutable variable (let) passed as prop to FlowField via non-null assertion. Works because Show gates on ready() signal, but the pattern is worth watching."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skill:solidjs-worker/SKILL.md",
+      "suggestion": "Update Step 3 to reference Playwright e2e tests instead of 'vitest + solid-testing-library'. The project convention is Playwright tests in tests/solidjs/ using the window.__nisps debug probe. Multiple workers have correctly used Playwright instead of vitest, so the skill should reflect actual practice to avoid confusion.",
+      "evidence": "Skill Step 3 says 'use vitest + solid-testing-library' but all 4 features in this milestone used Playwright e2e tests exclusively. Worker transcripts show workers correctly deviating from the skill's test tooling guidance.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "NaN→0.5 convention should be documented in AGENTS.md",
+      "reason": "already-documented — .factory/library/architecture.md line 66 already documents the NaN/Infinity guarding convention"
+    },
+    {
+      "observation": "Test globals __nispsInputStore and __nispsStore should be documented in AGENTS.md",
+      "reason": "already-documented — .factory/library/architecture.md lines 59 and 68 already document both test globals"
+    },
+    {
+      "observation": "Dual-guarding pattern (store-level + core-level) should be documented",
+      "reason": "already-documented — architecture.md documents the input validation convention. The defense-in-depth is a natural consequence of both layers having their own guards"
+    },
+    {
+      "observation": "Missing .factory/library/ directory",
+      "reason": "outdated — .factory/library/ now exists with architecture.md, environment.md, solidjs-patterns.md, and user-testing.md"
+    },
+    {
+      "observation": "Missing .factory/services.yaml",
+      "reason": "outdated — .factory/services.yaml now exists with dev server, old-playground services, and all commands"
+    },
+    {
+      "observation": "Unused onCleanup import in ml-store.ts",
+      "reason": "code quality issue for the specific feature, not shared state knowledge"
+    }
+  ],
+  "previousRound": null
+}

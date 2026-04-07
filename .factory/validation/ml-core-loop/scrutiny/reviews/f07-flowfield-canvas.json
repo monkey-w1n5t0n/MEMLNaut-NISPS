@@ -1,0 +1,56 @@
+{
+  "featureId": "f07-flowfield-canvas",
+  "reviewedAt": "2026-04-07T16:45:00.000Z",
+  "commitId": "b9e330b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, faithful transplant of FlowFieldVisualizer from playground/js/ui/visualizer.js to TypeScript with full type annotations. The SolidJS component correctly owns its rAF loop, responds to output mode changes via createEffect, and resizes via ResizeObserver. The canvas is fullscreen via CSS position:fixed and correctly hidden outside visual mode by stopping the render loop. Tests cover all three validation assertions plus an integration test for mode visibility. One minor non-blocking observation about the integration test's assertion weakness (it only checks visibility in visual mode, not hidden in synth mode).",
+    "issues": [
+      {
+        "file": "tests/solidjs/flowfield.spec.ts",
+        "line": 220,
+        "severity": "non_blocking",
+        "description": "The last test 'flow field canvas is visible only in visual mode' only asserts visibility AFTER switching to visual mode — it doesn't verify the canvas is hidden/not-visible in synth mode (the initial state). The test name implies a bidirectional check but the implementation only checks the visual mode side. The canvas is always rendered in the DOM (via Show when ready), so it's technically always visible — only the render loop stops in non-visual modes. This is actually correct behavior per the implementation (canvas exists but doesn't animate), but the test name is misleading."
+      },
+      {
+        "file": "src/core/ui/flow-field.ts",
+        "line": 241,
+        "severity": "non_blocking",
+        "description": "The draw() method checks `if (width === 0 || height === 0) return;` but then proceeds to `this.time += 0.003` after the early return. This is fine — time is incremented after the guard, so it only advances when actually drawing. However, the original playground visualizer.js does NOT have this zero-size guard. This is actually an improvement over the original. Noting for completeness."
+      },
+      {
+        "file": "src/components/visual/FlowField.tsx",
+        "line": 38,
+        "severity": "non_blocking",
+        "description": "The createEffect for mode-dependent start/stop creates a new FlowFieldVisualizer lazily on first entering visual mode. This is good. However, the FlowField component is always mounted (Show only gates on `ready() && mlStore !== null`), meaning the canvas element exists in DOM in all modes. The createEffect correctly stops the rAF loop when not in visual mode, but the canvas still receives pointer events via the DOM. The CSS has `pointer-events: none` which mitigates this. This is acceptable."
+      },
+      {
+        "file": "src/App.tsx",
+        "line": 102,
+        "severity": "non_blocking",
+        "description": "mlStore is a mutable variable (let, not a signal) passed as a prop to FlowField via `mlStore={mlStore!}`. The Show gates on `ready() && mlStore !== null`, which is correct — mlStore is set before setReady(true). This works because SolidJS Show unmounts/mounts the component when the signal changes, so mlStore is always valid when FlowField mounts. The fix from the original code (moving mlStore assignment before setReady) was the right call."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The .factory/library/ directory does not exist yet. The worker's skill references .factory/library/architecture.md, .factory/library/environment.md, and .factory/library/solidjs-patterns.md, but none of these files exist. The worker still completed the task successfully by reading the existing codebase and playground reference directly. These library files should be created as workers discover and document shared knowledge.",
+      "evidence": "Glob for /home/w1n5t0n/.factory/library/* returned 'Search directory does not exist'. Handoff mentions updating architecture.md but it was in a docs commit (ebeafbf), not the feature commit."
+    },
+    {
+      "area": "skills",
+      "observation": "The solidjs-worker skill's Step 3 says 'Write failing tests BEFORE implementation. Tests go in tests/ at the repo root.' and specifies 'use vitest + solid-testing-library' for SolidJS components. However, the actual test infrastructure uses Playwright e2e tests (not vitest) and tests go in tests/solidjs/ (not tests/ at repo root). The worker correctly used Playwright e2e tests, matching the existing project convention. The skill file should be updated to reflect the actual test approach.",
+      "evidence": "The skill says vitest + solid-testing-library but the project uses Playwright exclusively. Worker transcript shows all tests written as Playwright specs in tests/solidjs/flowfield.spec.ts. The skillFeedback says followedProcedure=true but the worker actually deviated from the skill's test tooling guidance (correctly, matching project convention)."
+    },
+    {
+      "area": "services",
+      "observation": "The .factory/services.yaml file does not exist. The skill references it for test commands and dev server startup. Workers have been discovering commands ad-hoc (npx tsc --noEmit, npx playwright test --config playwright-solidjs.config.ts, npx vite --port 5174, npx vite build).",
+      "evidence": "Read of .factory/services.yaml returned ENOENT. Worker verification commands in handoff used manual command discovery."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The flow-field canvas implementation is a faithful, clean TypeScript transplant of the playground visualizer.js with proper SolidJS integration. The component correctly owns its rAF loop (per architecture guidelines), reactively starts/stops based on output mode, and handles canvas resizing via ResizeObserver. All 8 e2e tests pass, covering all 3 validation assertions. The code is well-documented with clear parameter mapping comments. Minor non-blocking issues: one test name is slightly misleading (claims 'only in visual mode' but doesn't verify non-visual state), and the mutable mlStore variable passed as prop works but is a pattern worth watching. The shared state gaps (missing library/ directory, skill file referencing vitest instead of Playwright, missing services.yaml) are infrastructure concerns for the mission, not issues with this feature's implementation."
+}

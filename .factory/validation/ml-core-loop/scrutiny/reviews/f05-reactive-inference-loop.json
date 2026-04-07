@@ -1,0 +1,45 @@
+{
+  "featureId": "f05-reactive-inference-loop",
+  "reviewedAt": "2026-04-07T18:25:00.000Z",
+  "commitId": "9887bf5",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature adds NaN/Infinity input protection to MLStore.setInputs() and creates 14 comprehensive e2e tests covering VAL-ML-004 (different inputs produce different outputs) and VAL-ML-005 (synchronous inference). The implementation is minimal, focused, and correct. The NaN guard maps non-finite values to 0.5 (center position) which is a sensible default. The test suite is thorough, covering position differentiation, sequential consistency, clamping, boundary values, NaN handling, determinism, and bus emission verification.",
+    "issues": [
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 227,
+        "severity": "non_blocking",
+        "description": "Redundant clamping: WasmIML.setInput() already clamps with Math.max(0, Math.min(1, value)), so the outer clamp in MLStore.setInputs() is applied twice for finite values. This is harmless (double-clamping to [0,1] is idempotent) and serves as a defense-in-depth measure, but is worth noting for clarity. The NaN guard is the actual new behavior — the clamping was already happening downstream."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 228,
+        "severity": "non_blocking",
+        "description": "The `clamp` helper function is recreated on every setInputs() call as a closure inside the method. Could be extracted to a module-level utility for micro-efficiency, but this is negligible for an infrequent operation and the inline approach keeps the guard logic visually close to its usage."
+      },
+      {
+        "file": "tests/solidjs/reactive-inference.spec.ts",
+        "line": 310,
+        "severity": "non_blocking",
+        "description": "The NaN test accepts both throw and non-throw outcomes (`if (!result.threw)`) which is reasonable defensive testing, but the current implementation never throws (NaN maps to 0.5). The test's try/catch path is dead code with the current implementation. Not harmful — just a style note."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The MLStore.setInputs() method now performs NaN/Infinity guarding before passing to WasmIML.setInput(), but WasmIML.setInput() independently clamps to [0,1] as well. This dual-guarding pattern (store-level + core-level) isn't documented as a convention. If all callers are expected to guard, the WasmIML guard becomes redundant; if WasmIML should be self-protecting, the store guard is defense-in-depth. The architecture.md doesn't clarify which layer owns input validation responsibility.",
+      "evidence": "src/stores/ml-store.ts:225-230 (store-level clamp with NaN guard) and src/core/iml.ts:200-202 (core-level Math.max/Math.min clamp)"
+    },
+    {
+      "area": "conventions",
+      "observation": "The NaN→0.5 mapping is a design decision that should be documented. Non-finite inputs silently mapping to center position is a reasonable default but could surprise users who expect errors or edge clamping (0 or 1). The input-store.ts also has a similar guard. The convention for non-finite value handling should be documented in AGENTS.md or architecture.md.",
+      "evidence": "src/stores/ml-store.ts:227 — `if (!Number.isFinite(v)) return 0.5;` and AGENTS.md has no mention of NaN handling strategy"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS — Feature f05-reactive-inference-loop is well-implemented and thoroughly tested. The commit modifies two files: adds a NaN/Infinity guard to MLStore.setInputs() (non-finite values map to 0.5) and creates 14 e2e tests covering both VAL-ML-004 and VAL-ML-005. The core inference loop (setInputs → setInput → runInference → setOutputs → bus emit) was already functioning correctly from prior features; this feature adds the NaN safety layer and comprehensive validation. All 62 tests pass (48 pre-existing + 14 new). The only non-blocking notes are: (1) redundant clamping at both store and WasmIML layers (harmless defense-in-depth), and (2) the NaN→0.5 mapping design decision is undocumented in shared state. No blocking issues found."
+}

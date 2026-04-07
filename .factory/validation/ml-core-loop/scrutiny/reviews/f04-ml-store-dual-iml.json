@@ -1,0 +1,67 @@
+{
+  "featureId": "f04-ml-store-dual-iml",
+  "reviewedAt": "2026-04-07T15:45:00.000Z",
+  "commitId": "3679f5c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The ML store implementation is well-structured and thoroughly covers the feature requirements. Dual WasmIML instances (imlJoy with 2 inputs, imlHand with 14 inputs) are created and managed correctly. Output count is dynamic per mode (visual=20, synth=126, midi-cc=8, audio-canvas=36). Mode switching uses warm-start weight transfer via WasmIML.createWithWarmStart. Initial state correctly reports 0 examples and null loss. The debug probe was cleanly refactored to wrap MLStore instead of raw WasmIML. A singleton bus module (bus/index.ts) was extracted for shared use. 13 e2e tests cover all three validation assertions comprehensively.",
+    "issues": [
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 13,
+        "severity": "non_blocking",
+        "description": "Unused import: `onCleanup` is imported from solid-js but never used within the module. The cleanup is handled by the `dispose()` method called from App.tsx's onCleanup, not by an effect-based cleanup. This is a minor dead import."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 136,
+        "severity": "non_blocking",
+        "description": "Feature description mentions 'worker for training' but the ML store delegates training to WasmIML's own trainAsync() which internally manages its Web Worker. This is architecturally correct (the store wraps, not duplicates, the worker pattern), but the feature description is slightly misleading — the dual instances are both main-thread IML wrappers, with training worker managed internally by WasmIML."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 221,
+        "severity": "non_blocking",
+        "description": "The `setInputs()` method always sets exactly 2 inputs (index 0 and 1) via `activeIml.setInput()`. When imlHand (14 inputs) becomes the active IML, only the first 2 inputs will be set. This is acceptable for now since hand-tracking input is not yet implemented, but the method signature `(x: number, y: number)` will need to change when hand mode is activated."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 168,
+        "severity": "non_blocking",
+        "description": "In `resizeMLP()`, the imlHand is always fresh-initialized with `randomiseWeights(state.spreadLevel)` after creation, but imlJoy is warm-started. The warm-start for imlJoy does NOT call `randomiseWeights` — it relies on the transferred weights being valid. This is correct behavior, but if the warm-started IML is used immediately for inference without explicit randomisation, outputs from the output layer will be from the new random weights. This matches the intended warm-start behavior (preserve hidden layers, reset output layer)."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 255,
+        "severity": "non_blocking",
+        "description": "The `saveState()` method always saves the spread level as `state.spreadLevel`, but when loading (not yet implemented), this value would need to be restored. The save format includes `outputMode` and `spreadLevel` but not `midiCCCount`, which would also need restoring for midi-cc mode. This is a minor omission since persistence loading is not in scope for this feature."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The ML store uses `createStore` from solid-js/store for MLState and `createSignal` from solid-js for outputs/outputCount. The pattern of keeping Float32Array in signals (not stores) to avoid proxy overhead is documented in AGENTS.md and correctly followed. The singleton bus module pattern (bus/index.ts) is a new convention not explicitly documented — creating a module-level singleton and re-exporting it.",
+      "evidence": "src/bus/index.ts creates bus at module level and exports as default. AGENTS.md mentions 'Float32Array outputs — use createSignal, not createStore property' which the store correctly follows."
+    },
+    {
+      "area": "skills",
+      "observation": "The worker followed the solidjs-worker skill procedure correctly (skillFeedback.followedProcedure: true). The TDD approach was used — tests were written first (failed red), then implementation made them pass (green). The worker also properly pushed to remote and updated library documentation.",
+      "evidence": "Transcript skeleton shows test file created first, tests run to confirm failure, then implementation created, then tests re-run to confirm pass. Handoff confirms skillFeedback.followedProcedure: true."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The `WasmIML.createWithWarmStart` method expects a `WeightSnapshot` (with layerSizes and weights), not just a flat weight array. This is correctly used in ml-store.ts but the detail about warm-starting behavior (preserving hidden layers, randomizing output layer) is important knowledge that's documented in architecture.md but not in a dedicated library entry about the warm-start mechanism.",
+      "evidence": "ml-store.ts line 158: `const joySnapshot = imlJoy ? imlJoy.extractWeights() : null` — extractWeights returns WeightSnapshot. architecture.md mentions 'Warm-start: copy hidden layer weights, reset output layer' under 'MLP Resize Cascade'."
+    },
+    {
+      "area": "services",
+      "observation": "No new services were needed. The worker used existing Vite dev server (port 5174) and Playwright test infrastructure, both already documented in services.yaml.",
+      "evidence": "Handoff.verification.commandsRun shows tsc, eslint, playwright test, and git push — all standard tools already in services.yaml."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS — The ML store implementation is solid and comprehensive. All three validation assertions (VAL-ML-001, VAL-ML-002, VAL-ML-022) are well-covered by 13 e2e tests. The code follows established SolidJS patterns (signals for typed arrays, stores for structured state, singleton bus module). Dual WasmIML instances are correctly initialized and managed with warm-start weight transfer on mode switch. The debug probe was cleanly refactored. Minor issues noted: unused `onCleanup` import, `setInputs` only handles 2 inputs (fine for current joystick-only use), and saveState doesn't include midiCCCount. None are blocking."
+}

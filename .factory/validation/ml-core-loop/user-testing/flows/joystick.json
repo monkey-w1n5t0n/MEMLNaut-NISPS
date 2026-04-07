@@ -1,0 +1,107 @@
+{
+  "groupId": "joystick",
+  "testedAt": "2026-04-07T12:00:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174/?debug=1",
+    "sessionName": "joystick-test",
+    "debugProbe": "window.__nisps"
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-JOY-001",
+      "title": "Drag moves joystick position",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Clear localStorage and load http://localhost:5174/?debug=1",
+          "expected": "App loads with debug probe available, WASM initialized",
+          "observed": "App loaded successfully, window.__nisps available with 126 outputs, 0 examples"
+        },
+        {
+          "action": "Set inputs to (0.5, 0.5) and record pre-drag outputs",
+          "expected": "Outputs at known baseline state",
+          "observed": "Pre-drag sample outputs: [0.300, 0.578, 1.000]"
+        },
+        {
+          "action": "Simulate pointer drag on joystick canvas (.joystick-container canvas) from center (110,610) to bottom-right (170,690)",
+          "expected": "Joystick position updates, inference runs, outputs change",
+          "observed": "Post-drag sample outputs: [0.448, 0.903, 1.000], 51 out of 126 outputs changed (>0.001 difference)"
+        },
+        {
+          "action": "Verify all outputs bounded [0,1] after drag",
+          "expected": "All outputs in [0,1]",
+          "observed": "All 126 outputs in [0,1] range"
+        },
+        {
+          "action": "Dispatch synthetic PointerEvents (pointerdown, pointermove, pointerup) on joystick canvas",
+          "expected": "Outputs change to reflect new joystick position",
+          "observed": "75 out of 126 outputs changed when dragging from center to top-left"
+        },
+        {
+          "action": "Check for console errors",
+          "expected": "No console errors",
+          "observed": "No console errors"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "ml-core-loop/joystick/initial-load.png",
+          "ml-core-loop/joystick/VAL-JOY-001-after-drag.png",
+          "ml-core-loop/joystick/VAL-JOY-001-annotated.png"
+        ],
+        "consoleErrors": "none",
+        "network": "n/a (local app, no external requests)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOY-005",
+      "title": "Input clamping",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Clear localStorage and reload page with ?debug=1",
+          "expected": "Fresh app state",
+          "observed": "Page reloaded, debug probe available"
+        },
+        {
+          "action": "Call window.__nisps.setInputs(-5, 99)",
+          "expected": "Inputs clamped to [0,1], outputs remain bounded [0,1], no NaN or Infinity",
+          "observed": "All 126 outputs bounded [0,1], min=6.23e-15, max=1.0, no NaN, no Infinity"
+        },
+        {
+          "action": "Call setInputs(-0.5, -0.5)",
+          "expected": "Outputs bounded [0,1]",
+          "observed": "All bounded, min=1.11e-10, max=1.0"
+        },
+        {
+          "action": "Call setInputs(9999, 9999)",
+          "expected": "Outputs bounded [0,1]",
+          "observed": "All bounded, min=1.30e-22, max=1.0"
+        },
+        {
+          "action": "Call setInputs(Infinity, -Infinity)",
+          "expected": "Outputs bounded [0,1], no NaN",
+          "observed": "All bounded, min=2.07e-13, max=1.0, no NaN, no Infinity in outputs"
+        },
+        {
+          "action": "Check for console errors",
+          "expected": "No console errors",
+          "observed": "No console errors"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "ml-core-loop/joystick/VAL-JOY-005-after-clamping.png"
+        ],
+        "consoleErrors": "none",
+        "network": "n/a (local app, no external requests)"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. VAL-JOY-001 (joystick drag) confirmed working — both real mouse drag and synthetic PointerEvents produce output changes with all values bounded [0,1]. VAL-JOY-005 (input clamping) confirmed working — extreme values (-5, 99, 9999, Infinity, -Infinity) all produce bounded outputs with no NaN or Infinity."
+}

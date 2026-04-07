@@ -1,0 +1,117 @@
+{
+  "groupId": "flowfield",
+  "testedAt": "2026-04-07T12:00:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174/?debug=1",
+    "sessionType": "single agent-browser session",
+    "localStorageCleared": true,
+    "helpDismissed": true
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-VIS-001",
+      "title": "Particles render in visual mode",
+      "status": "fail",
+      "steps": [
+        {
+          "action": "Clear localStorage and load http://localhost:5174/?debug=1",
+          "expected": "Page loads, WASM initializes, flow-field particles visible on canvas",
+          "observed": "Page loads, WASM initializes, debug probe available (window.__nisps returns 126 outputs). Canvas element exists with id 'flowfield-canvas' but is completely black (0 non-black pixels out of 921600 total). Default outputMode is 'synth' (126 outputs), not 'visual' (20 outputs), so the FlowField component's rAF render loop never starts."
+        },
+        {
+          "action": "Check canvas pixel data",
+          "expected": "Non-zero pixel data indicating particles are rendering",
+          "observed": "Canvas is 1280x720 (CSS stretched from 300x150 attribute default). All pixels are (0,0,0,0) — completely empty. No particles rendered."
+        },
+        {
+          "action": "Check debug probe output count",
+          "expected": "getOutputs().length === 20 (visual mode)",
+          "observed": "getOutputs().length === 126 (synth mode). The app defaults to synth mode, not visual mode."
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "ml-core-loop/flowfield/VAL-VIS-001-initial-page.png",
+          "ml-core-loop/flowfield/VAL-VIS-001-default-mode-no-particles.png",
+          "ml-core-loop/flowfield/VAL-VIS-001-annotated.png"
+        ],
+        "consoleErrors": "none after reload",
+        "network": "Page loaded successfully, WASM loaded, probe initialized"
+      },
+      "issues": "Root cause: ml-store.ts line 82 sets outputMode: 'synth' as default, but the validation contract (and mission plan Milestone 2) expects the app to start in visual mode. FlowField.tsx createEffect (line 65) only starts the rAF loop when mode === 'visual', so particles never render on default load."
+    },
+    {
+      "id": "VAL-VIS-002",
+      "title": "Particles respond to ML outputs",
+      "status": "blocked",
+      "steps": [
+        {
+          "action": "Take screenshot at default position",
+          "expected": "Particles visible at default joystick position",
+          "observed": "Canvas is completely black — no particles to observe. Cannot test joystick response without particles."
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "ml-core-loop/flowfield/VAL-VIS-001-default-mode-no-particles.png"
+        ],
+        "consoleErrors": "none",
+        "network": "n/a"
+      },
+      "issues": "Blocked by VAL-VIS-001 failure. Since no particles render in the default mode, there is nothing to observe changing when joystick position changes. If the app were in visual mode, setInputs(0.9, 0.9) via probe would update outputs and the rAF loop would pass them to visualizer.setParams()."
+    },
+    {
+      "id": "VAL-VIS-003",
+      "title": "Canvas resizes with window",
+      "status": "blocked",
+      "steps": [
+        {
+          "action": "Take screenshot at default viewport size (1280x720)",
+          "expected": "Canvas fills viewport with visible particles",
+          "observed": "Canvas fills viewport via CSS (position:fixed, inset:0, width:100%, height:100%) but renders nothing. Canvas attribute dimensions are 300x150 (default HTML) — the FlowFieldVisualizer.resize() method was called but the canvas was reset to 300x150 afterward (likely by a second resize from ResizeObserver or component re-render)."
+        },
+        {
+          "action": "Check canvas dimensions vs viewport",
+          "expected": "canvas.width matches viewport width * devicePixelRatio",
+          "observed": "getBoundingClientRect() returns 1280x720 (correct CSS layout), but canvas.width/canvas.height are 300x150 (default, not resized). The ResizeObserver callback in FlowField.tsx should trigger resize(), but the canvas dimensions never update to match the bounding rect."
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "ml-core-loop/flowfield/VAL-VIS-001-default-mode-no-particles.png"
+        ],
+        "consoleErrors": "none",
+        "network": "n/a"
+      },
+      "issues": "Blocked by VAL-VIS-001 failure. Additionally, there is a secondary bug: the canvas attribute dimensions (300x150) never match the CSS layout dimensions (1280x720), even though the FlowFieldVisualizer.resize() method should set them. This may be because the rAF loop never starts (mode is synth), so resize() is only called in the constructor when the canvas hasn't been laid out yet."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The agent-browser console command has very large output due to repeated WebSocket connection errors from a stale Vite HMR connection. This causes timeouts when using `agent-browser console`.",
+      "resolved": true,
+      "resolution": "Used `agent-browser errors --clear` instead and kept console checking to a minimum. Reloaded the page to get a clean console.",
+      "affectedAssertions": ["VAL-VIS-001"]
+    },
+    {
+      "description": "The help modal appears on first load and may interfere with page interactions. Had to set localStorage 'nisps-help-seen' to dismiss it.",
+      "resolved": true,
+      "resolution": "Set localStorage.setItem('nisps-help-seen', '1') before reloading the page.",
+      "affectedAssertions": ["VAL-VIS-001"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Default outputMode is 'synth' (126 outputs) instead of 'visual' (20 outputs). The FlowField component's render loop only activates in visual mode. Root cause: ml-store.ts line 82 sets `outputMode: 'synth'` as default.",
+      "affectedAssertions": ["VAL-VIS-001", "VAL-VIS-002", "VAL-VIS-003"],
+      "quickFixAttempted": "Verified by checking probe.getOutputs().length === 126 (synth) vs expected 20 (visual). Checked source code at src/stores/ml-store.ts line 82 confirming outputMode: 'synth' default."
+    },
+    {
+      "description": "Canvas attribute dimensions (300x150) are not updated to match CSS layout dimensions (1280x720). The FlowFieldVisualizer constructor calls resize() but the canvas may not have its layout dimensions yet at mount time, and since the rAF loop never starts (wrong mode), the ResizeObserver's subsequent resize+initParticles calls don't help.",
+      "affectedAssertions": ["VAL-VIS-001", "VAL-VIS-003"],
+      "quickFixAttempted": "Manually set canvas.width=1280, canvas.height=720 via eval. Canvas dimensions updated but no particles rendered because rAF loop is not running (synth mode)."
+    }
+  ],
+  "summary": "Tested 3 assertions: 0 passed, 1 failed (VAL-VIS-001), 2 blocked (VAL-VIS-002, VAL-VIS-003). Root cause: the app defaults to 'synth' output mode instead of 'visual' mode, so the flow-field particle system never starts its render loop. Secondary issue: canvas attribute dimensions (300x150) don't match CSS layout (1280x720), likely because resize() runs before layout is computed and the rAF loop (which would keep rendering) never starts."
+}

@@ -16,6 +16,7 @@ export interface DebugProbe {
   setInputs: (x: number, y: number) => void;
   thumbsUp: () => Promise<number | null>;
   thumbsDown: () => void;
+  undo: () => void;
   train: () => number | null;
   trainAsync: () => Promise<number | null>;
   randomise: () => void;
@@ -61,6 +62,8 @@ export function createDebugProbe(store: MLStore): DebugProbe {
     thumbsUp: () => store.thumbsUp(),
 
     thumbsDown: () => store.thumbsDown(),
+
+    undo: () => store.undo(),
 
     train: () => store.train(),
 

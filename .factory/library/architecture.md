@@ -59,6 +59,7 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - `addExample()` — adds current I/O as training example, updates reactive count
 - `clearAll()` — clears examples, loss history, resets noise to default
 - `getLossHistory()` — returns copy of loss history array
+- Undo stack: ring buffer (max 20 entries) of weight snapshots with noise level. `pushUndoSnapshot()` called before `thumbsDown()` and `randomise()`. `undo()` pops snapshot, restores weights and noise. `undoDepthSignal` — reactive depth for UI button state.
 - `dispose()` destroys both IML instances (called in App.tsx onCleanup)
 - Bus topics created: `ml.outputs`, `ml.outputCount`, `mode.output`
 - Debug probe (`probe/debug-probe.ts`) now wraps MLStore instead of raw WasmIML
@@ -116,6 +117,16 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Floating pill at bottom center showing example count, loss/noise state
 - Format: "N examples · loss X.XXXXX · noise X.XXX" or "N examples · untrained · noise X.XXX"
 - Reactively watches exampleCountSignal, lastLossSignal, noiseLevel signals
+
+### RLButtons Component (`components/rl/RLButtons.tsx`) — IMPLEMENTED
+- Three floating circular buttons: thumbs-down (−, key 1), undo (↶, key Z), thumbs-up (+, key 2)
+- Positioned bottom-center above status line
+- Thumbs-down: push undo snapshot, add noise to weights
+- Thumbs-up: add example + async training + decay noise
+- Undo: pop undo stack, restore weights + noise level
+- Undo button shows muted state when stack empty, cyan accent (`has-undo` class) when entries exist
+- Glass morphism styling with per-button accent colors
+- Exposed as `#btn-thumbsdown`, `#btn-undo`, `#btn-thumbsup` for e2e tests
 
 ### Dual IML System
 - `imlJoy`: 2 inputs (joystick), dynamic outputs — warm-started on resize

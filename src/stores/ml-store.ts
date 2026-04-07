@@ -25,6 +25,7 @@ export const N_MIDI_CC_DEFAULT = 8;
 export const N_AUDIO_CANVAS_OUTPUTS = 36;
 export const HIDDEN_LAYERS_JOY = [32, 48, 64];
 export const HIDDEN_LAYERS_HAND = [48, 48, 64];
+export const MAX_UNDO = 20;
 
 export type OutputMode = 'visual' | 'synth' | 'midi-cc' | 'audio-canvas';
 
@@ -59,6 +60,8 @@ export interface MLStore {
   readonly outputCount: () => number;
   /** Current noise level for RL exploration */
   readonly noiseLevel: () => number;
+  /** Reactive undo stack depth — updates on push/pop */
+  readonly undoDepthSignal: () => number;
   /** Reactive example count — updates when examples are added/cleared */
   readonly exampleCountSignal: () => number;
   /** Reactive last loss — updates after training */
@@ -86,6 +89,10 @@ export interface MLStore {
   trainAsync(): Promise<number | null>;
   thumbsUp(): Promise<number | null>;
   thumbsDown(speed?: number): void;
+  /** Undo: pop from undo stack and restore weights + noise level */
+  undo(): void;
+  /** Current undo stack depth */
+  undoDepth(): number;
   evalLoss(): number | null;
   inferBatch(points: number[][]): number[][];
   getLayerStats(): Array<{ meanAbs: number; maxAbs: number; deadFrac: number; satFrac: number }>;
@@ -120,6 +127,11 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
   // Reactive example count and last loss (for status line to watch)
   const [exampleCountSignal, setExampleCountSignal] = createSignal<number>(0);
   const [lastLossSignal, setLastLossSignal] = createSignal<number | null>(null);
+
+  // Undo stack — weight snapshots with noise level, max 20 entries (ring buffer)
+  const undoStack: Array<{ weights: number[]; noiseLevel: number }> = [];
+  // Reactive undo depth signal for UI button state
+  const [undoDepthSignal, setUndoDepthSignal] = createSignal<number>(0);
 
   // IML instances — module-scope opaque handles (not reactive)
   let imlJoy: WasmIML | null = null;
@@ -165,6 +177,22 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     // Update reactive state signals
     setExampleCountSignal(activeIml.exampleCount);
     setLastLossSignal(activeIml.lastLoss);
+  }
+
+  // ─── Helper: push undo snapshot ───
+
+  function pushUndoSnapshot(): void {
+    if (!activeIml) return;
+    const weights = activeIml._getFlatWeights();
+    undoStack.push({
+      weights,
+      noiseLevel: noiseLevel(),
+    });
+    // Ring buffer eviction: drop oldest if over capacity
+    if (undoStack.length > MAX_UNDO) {
+      undoStack.shift();
+    }
+    setUndoDepthSignal(undoStack.length);
   }
 
   // ─── Helper: resize MLP (mode switch) ───
@@ -218,6 +246,7 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     outputs,
     outputCount,
     noiseLevel,
+    undoDepthSignal,
     exampleCountSignal,
     lastLossSignal,
 
@@ -258,6 +287,7 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
 
     randomise: () => {
       if (!activeIml) return;
+      pushUndoSnapshot();
       activeIml.randomiseWeights(state.spreadLevel);
       setNoiseLevel(0.05);
       runInference();
@@ -320,6 +350,7 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
 
     thumbsDown: (speed?: number) => {
       if (!activeIml) return;
+      pushUndoSnapshot();
       const spread = state.spreadLevel;
       const noiseCap = 0.3 * (1 - spread) + 0.05 * spread;
       const newNoise = Math.min(noiseLevel() * 1.5, noiseCap);
@@ -328,6 +359,17 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
       activeIml.moveWeights(s, spread);
       runInference();
     },
+
+    undo: () => {
+      if (undoStack.length === 0 || !activeIml) return;
+      const snapshot = undoStack.pop()!;
+      activeIml._setFlatWeights(snapshot.weights);
+      setNoiseLevel(snapshot.noiseLevel);
+      setUndoDepthSignal(undoStack.length);
+      runInference();
+    },
+
+    undoDepth: () => undoStack.length,
 
     evalLoss: () => activeIml?.evalLoss() ?? null,
 

@@ -4,6 +4,7 @@
  * Matches the old app's rl-buttons div:
  *   - Thumbs-down (−): explore more (adds noise to weights)
  *   - Thumbs-up (+): keep this (adds example + async training + decays noise)
+ *   - Undo (↶): restore previous weight state from undo stack
  *
  * Positioned at bottom-center of viewport, above the status line.
  * Glass morphism circular buttons with keyboard shortcut hints.
@@ -20,6 +21,15 @@ export interface RLButtonsProps {
 export default function RLButtons(props: RLButtonsProps) {
   let thumbsUpBtn: HTMLButtonElement | undefined;
   let thumbsDownBtn: HTMLButtonElement | undefined;
+  let undoBtn: HTMLButtonElement | undefined;
+
+  // Track undo depth for has-undo class (reactive signal)
+  createEffect(() => {
+    const depth = props.mlStore.undoDepthSignal();
+    if (undoBtn) {
+      undoBtn.classList.toggle('has-undo', depth > 0);
+    }
+  });
 
   function onThumbsUp(): void {
     flashButton(thumbsUpBtn);
@@ -31,6 +41,11 @@ export default function RLButtons(props: RLButtonsProps) {
   function onThumbsDown(): void {
     flashButton(thumbsDownBtn);
     props.mlStore.thumbsDown();
+  }
+
+  function onUndo(): void {
+    flashButton(undoBtn);
+    props.mlStore.undo();
   }
 
   function flashButton(btn: HTMLButtonElement | undefined): void {
@@ -50,6 +65,16 @@ export default function RLButtons(props: RLButtonsProps) {
       >
         <span class="rl-icon">&minus;</span>
         <span class="key-num">1</span>
+      </button>
+      <button
+        ref={undoBtn}
+        class="rl-btn rl-undo"
+        id="btn-undo"
+        title="Undo (Z)"
+        onClick={onUndo}
+      >
+        <span class="rl-icon">&#8634;</span>
+        <span class="key-num">Z</span>
       </button>
       <button
         ref={thumbsUpBtn}

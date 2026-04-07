@@ -81,3 +81,23 @@
   0% { filter: brightness(1.8); }
   100% { filter: brightness(1); }
 }
+
+/* Undo — muted accent, becomes active when stack has entries */
+.rl-undo {
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.03);
+  opacity: 0.5;
+}
+
+.rl-undo.has-undo {
+  border-color: rgba(0, 180, 220, 0.4);
+  color: #00b4dc;
+  background: rgba(0, 180, 220, 0.08);
+  opacity: 1;
+}
+
+.rl-undo.has-undo:active {
+  background: rgba(0, 180, 220, 0.2);
+  box-shadow: 0 0 20px rgba(0, 180, 220, 0.3);
+}

@@ -14,6 +14,12 @@ import { createSignal, onCleanup } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { WasmIML } from '../core/iml';
 import type { SignalBus } from '../bus/signal-bus';
+import {
+  createDefaultOverrides,
+  createDefaultOverride,
+  applyOverrideWithFreeze,
+  type ParamOverride,
+} from '../core/param-overrides';
 
 // ─── Constants ────────────────────────────────────────────────────────
 
@@ -161,6 +167,18 @@ export interface MLStore {
   /** Internal: update outputs signal from external source (e.g. heatmap drag) */
   _updateOutputs(newOutputs: Float32Array): void;
 
+  // ─── Param overrides ───
+  /** Get the override for a specific parameter index */
+  getParamOverride(paramIndex: number): ParamOverride;
+  /** Update a property of a param override */
+  setParamOverride(paramIndex: number, key: keyof ParamOverride, value: number | boolean): void;
+  /** Get all current overrides (for save/restore) */
+  getAllOverrides(): ParamOverride[];
+  /** Get the overridden output value for a parameter (respects freeze/curve/range) */
+  getOverriddenOutput(paramIndex: number): number;
+  /** Apply all overrides to raw outputs, returning a new array */
+  applyAllOverrides(rawOutputs: Float32Array): Float32Array;
+
   // Lifecycle
   dispose(): void;
 }
@@ -191,6 +209,9 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
   const undoStack: Array<{ weights: number[]; noiseLevel: number }> = [];
   // Reactive undo depth signal for UI button state
   const [undoDepthSignal, setUndoDepthSignal] = createSignal<number>(0);
+
+  // Param overrides — mutable array (not reactive itself, accessed via getParamOverride)
+  let paramOverrides: ParamOverride[] = createDefaultOverrides(initialCount);
 
   // IML instances — module-scope opaque handles (not reactive)
   let imlJoy: WasmIML | null = null;
@@ -301,6 +322,14 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     setOutputCount(newCount);
     outputsTopic.emit(newOutputs);
     outputCountTopic.emit(newCount);
+
+    // Resize param overrides array to match new output count
+    const oldOverrides = paramOverrides;
+    paramOverrides = createDefaultOverrides(newCount);
+    // Preserve existing overrides where possible
+    for (let i = 0; i < Math.min(oldOverrides.length, newCount); i++) {
+      paramOverrides[i] = { ...oldOverrides[i] };
+    }
 
     console.log(`[NISPS] MLP resized to ${newCount} outputs (joystick IML warm-started)`);
   }
@@ -525,6 +554,40 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
 
     _updateOutputs: (newOutputs: Float32Array) => {
       _updateOutputs(newOutputs);
+    },
+
+    // ─── Param overrides ───
+
+    getParamOverride: (paramIndex: number): ParamOverride => {
+      if (paramIndex < 0 || paramIndex >= paramOverrides.length) {
+        return createDefaultOverride();
+      }
+      return paramOverrides[paramIndex];
+    },
+
+    setParamOverride: (paramIndex: number, key: keyof ParamOverride, value: number | boolean): void => {
+      if (paramIndex < 0 || paramIndex >= paramOverrides.length) return;
+      (paramOverrides[paramIndex] as any)[key] = value;
+    },
+
+    getAllOverrides: (): ParamOverride[] => {
+      return paramOverrides.map(o => ({ ...o }));
+    },
+
+    getOverriddenOutput: (paramIndex: number): number => {
+      const rawOutputs = outputs();
+      const raw = rawOutputs[paramIndex] ?? 0;
+      const ov = paramOverrides[paramIndex] ?? createDefaultOverride();
+      return applyOverrideWithFreeze(raw, ov);
+    },
+
+    applyAllOverrides: (rawOutputs: Float32Array): Float32Array => {
+      const result = new Float32Array(rawOutputs.length);
+      for (let i = 0; i < rawOutputs.length; i++) {
+        const ov = paramOverrides[i] ?? createDefaultOverride();
+        result[i] = applyOverrideWithFreeze(rawOutputs[i], ov);
+      }
+      return result;
     },
 
     dispose: () => {

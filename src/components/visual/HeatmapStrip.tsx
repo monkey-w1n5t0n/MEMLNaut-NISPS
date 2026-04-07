@@ -4,7 +4,7 @@
  * Each bar width is proportional to its corresponding ML output value [0,1].
  * Bars update reactively when outputs change.
  * Drag on a bar sets the parameter value.
- * Click on a bar opens a param popup.
+ * Click on a bar opens a param popup with curve/range/freeze controls.
  * Rebuilds when mode switches (output count changes).
  *
  * Transplanted behavior from playground/js/a-app.js buildHeatmap/updateHeatmap.
@@ -16,6 +16,7 @@ import {
   Show,
 } from 'solid-js';
 import type { MLStore } from '../../stores/ml-store';
+import ParamPopup from './ParamPopup';
 import './heatmap-strip.css';
 
 // ─── Visual parameter names and colors ──────────────────────────────
@@ -257,38 +258,14 @@ export default function HeatmapStrip(props: HeatmapStripProps) {
         {tooltipText()}
       </div>
       <Show when={popup()}>
-        {(p) => {
-          const outputs = props.mlStore.outputs();
-          const value = outputs[p().paramIndex] ?? 0;
-          const names = getParamNames();
-          const name = names[p().paramIndex] ?? `p${p().paramIndex}`;
-          const colors = getParamColors();
-          const color = colors[p().paramIndex] ?? defaultParamColor(p().paramIndex);
-          const barWidth = `${Math.max(2, Math.round(value * 100))}%`;
-
-          return (
-            <div
-              class="param-popup"
-              id="param-popup"
-              style={{
-                left: `${Math.max(8, Math.min(p().cellRect.left, window.innerWidth - 220))}px`,
-                top: `${p().cellRect.bottom + 4}px`,
-              }}
-            >
-              <div class="param-popup-header">
-                <span class="param-popup-name">{name}</span>
-                <span class="param-popup-value">{value.toFixed(3)}</span>
-                <button class="param-popup-close" onClick={closePopup}>×</button>
-              </div>
-              <div class="param-popup-bar">
-                <div
-                  class="param-popup-bar-fill"
-                  style={{ width: barWidth, background: color }}
-                />
-              </div>
-            </div>
-          );
-        }}
+        {(p) => (
+          <ParamPopup
+            mlStore={props.mlStore}
+            paramIndex={p().paramIndex}
+            cellRect={p().cellRect}
+            onClose={closePopup}
+          />
+        )}
       </Show>
     </div>
   );

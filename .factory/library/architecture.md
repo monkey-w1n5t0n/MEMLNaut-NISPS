@@ -101,11 +101,31 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Reactively rebuilds when `outputCount()` changes (mode switch triggers `<For>` re-render)
 - Visual mode uses curated colors/names (VISUAL_PARAM_COLORS/VISUAL_PARAM_NAMES); other modes use hue-based color generation
 - Drag-to-set: pointer capture on cell, drag updates output value directly via `iml.setOutput()` + `_updateOutputs()`
-- Click-to-popup: short click (no drag) opens param popup (name, value, color bar, close button)
+- Click-to-popup: short click (no drag) opens ParamPopup component with full controls
 - Tooltip on hover: shows "ParamName: value" positioned below hovered cell
 - Per-cell event handler factory `createCellHandlers()` captures element reference for pointer events
 - ML store exposes `_updateOutputs(Float32Array)` for direct output signal update from drag
 - CSS: glass morphism strip, per-bar colored fill, brightness filter on hover, drag cursor
+
+### ParamPopup Component (`components/visual/ParamPopup.tsx`) — IMPLEMENTED
+- Full param control popup opened by clicking heatmap cell
+- Header: parameter name (colored), current value, close button
+- Curve row: 36×36 canvas with response curve drawn, vertical drag adjusts curve factor [0,1]
+- Range row: dual min/max range sliders with visual fill bar, enforce min ≤ max
+- Freeze row: toggle button freezes parameter at fixed value, shows value slider when frozen
+- Reads/writes overrides via ML store `getParamOverride()`/`setParamOverride()`
+- Curve math: `applyCurve(value, factor)` with exponential mapping (0.5 = linear)
+- Positions below clicked heatmap cell, centered, clamped to viewport edges
+- Closes on × button click or Escape key
+
+### Param Override System (`core/param-overrides.ts`) — IMPLEMENTED
+- Per-parameter overrides: `{ curve: 0.5, min: 0, max: 1, frozen: false, fixedValue: 0.5 }`
+- `applyCurve(value, curveFactor)`: exponential response curve, 0.5 = linear (identity)
+- `applyOverride(rawValue, override)`: applies curve + min/max range mapping
+- `applyOverrideWithFreeze(rawValue, override)`: respects frozen state
+- `drawCurveOnCanvas(ctx, curveFactor, color, w, h)`: renders response curve on canvas
+- ML store maintains `paramOverrides[]` array, resized on mode switch (preserves existing overrides)
+- Store methods: `getParamOverride(i)`, `setParamOverride(i, key, value)`, `getAllOverrides()`, `getOverriddenOutput(i)`, `applyAllOutputs(Float32Array)`
 
 ### Output Store (`stores/output-store.ts`) — NOT YET IMPLEMENTED
 - Output mode (visual/synth/midi-cc/audio-canvas)

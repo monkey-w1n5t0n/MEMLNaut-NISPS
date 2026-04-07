@@ -4,6 +4,7 @@ import { createInputStore, type InputStore } from './stores/input-store';
 import { exposeDebugProbe } from './probe/debug-probe';
 import bus from './bus';
 import Joystick from './components/input/Joystick';
+import FlowField from './components/visual/FlowField';
 
 /**
  * Root application component for the NISPS immersive app.
@@ -43,13 +44,15 @@ export default function App() {
         return;
       }
 
+      // Set mlStore BEFORE setReady(true) so the FlowField component
+      // receives a valid store reference when it first mounts.
+      mlStore = store;
+
       setReady(true);
       setStatus(`Ready — ${outputs.length} outputs loaded`);
 
       // Expose debug probe if ?debug=1
       exposeDebugProbe(store);
-
-      mlStore = store;
     } catch (err) {
       setStatus(`Error: ${err}`);
       console.error('WASM init failed:', err);
@@ -96,6 +99,10 @@ export default function App() {
             {status()}
           </p>
         </div>
+      </Show>
+      {/* Fullscreen flow field canvas (background, active in visual mode) */}
+      <Show when={ready() && mlStore !== null}>
+        <FlowField mlStore={mlStore!} />
       </Show>
       <Show when={ready() && inputStore()}>
         {(store) => <Joystick inputStore={store()} />}

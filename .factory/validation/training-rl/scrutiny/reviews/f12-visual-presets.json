@@ -1,0 +1,51 @@
+{
+  "featureId": "f12-visual-presets",
+  "reviewedAt": "2026-04-07T18:45:00.000Z",
+  "commitId": "4e46036",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation adds visual preset chips to the training drawer with 5 predefined presets (calm-to-chaotic, rainbow-sweep, vortex, spiral, embers). The data layer (VISUAL_PRESETS, VISUAL_PRESET_NAMES, VISUAL_PRESET_LABELS) is defined in ml-store.ts alongside a loadVisualPreset() method. The UI layer adds a preset-chips section in TrainingDrawer.tsx using SolidJS <For>. CSS styling uses the established glass morphism design system. The implementation correctly clears previous examples before loading a preset, pads 20-element outputs to the current output count, temporarily swaps the activeIml pointer for training, and restores it afterward.",
+    "issues": [
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 466,
+        "severity": "non_blocking",
+        "description": "loadVisualPreset() temporarily reassigns the module-scoped `activeIml` variable to `imlJoy` during training, then restores it via `prevActive`. While this works correctly, if another operation (e.g., a concurrent setInputs or thumbsUp triggered by a reactive effect) reads `activeIml` during the brief window when it's been swapped, it could operate on the wrong IML instance. In practice, SolidJS's synchronous execution model and the fact that loadVisualPreset is synchronous makes this extremely unlikely, but it's a fragile pattern that could become a real bug if the code evolves."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 447,
+        "severity": "non_blocking",
+        "description": "loadVisualPreset() does not push an undo snapshot before modifying state. Other destructive operations (randomise, thumbsDown) call pushUndoSnapshot() first. If a user loads a preset and wants to undo back to their previous state, they cannot. This is a minor UX gap rather than a correctness bug."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 453,
+        "severity": "non_blocking",
+        "description": "loadVisualPreset() always targets imlJoy regardless of which IML is currently active. If hand tracking were active, the preset would still load into imlJoy, train it, update outputs from imlJoy, but then restore activeIml back to imlHand. The outputs displayed would be from imlJoy's inference, but subsequent setInputs calls would go to imlHand. This is likely intentional (visual presets are defined for 2-input joystick), but the behavior when imlHand is active is untested and potentially confusing."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 473,
+        "severity": "non_blocking",
+        "description": "loadVisualPreset() manually duplicates the inference+output-update pattern from runInference() rather than calling runInference() directly. It calls activeIml.process(), setOutputs(), outputsTopic.emit(), setExampleCountSignal(), setLastLossSignal() inline. If runInference() is later updated (e.g., to add loss history tracking or additional signal updates), loadVisualPreset() would not pick up those changes."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The preset output arrays are hardcoded as 20-element arrays in ml-store.ts, matching N_VISUAL_OUTPUTS. The architecture.md documents this constant but doesn't document the visual preset system at all. The 'TrainingDrawer' section in architecture.md should be updated to mention preset chips as a feature of the training drawer.",
+      "evidence": "architecture.md TrainingDrawer section lists 'Action buttons: Add Example, Train (async), Clear Ex, Clear All, Randomize' but doesn't mention visual preset chips which were added in this feature."
+    },
+    {
+      "area": "conventions",
+      "observation": "The CSS for preset chips uses `rgba(255, 106, 0, 0.15)` as the active background color, hardcoding the orange accent. Other components use `var(--accent)` CSS custom property. The preset-chip:active rule should probably use `var(--accent)` for consistency.",
+      "evidence": "drawer.css line `.preset-chip:active { background: rgba(255, 106, 0, 0.15); color: var(--accent, #ff6a00); }` — background uses hardcoded orange while color uses the variable."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature f12 (visual preset chips) is well-implemented and passes review. The implementation correctly adds 5 preset chips that load predefined examples into the joystick IML, trigger sync training, update reactive signals, and display results in the status line. Test coverage is thorough with 10 tests covering all 5 presets, chip visibility, labels, example counts, training verification, preset clearing behavior, and output changes. Four non-blocking issues were identified: (1) no undo snapshot before preset loading, (2) duplicated inference pattern instead of reusing runInference(), (3) activeIml temporarily swapped during training which is fragile, and (4) potential confusion when hand-tracking IML is active. None of these are blocking — the feature works correctly for the primary use case (visual mode with joystick input)."
+}

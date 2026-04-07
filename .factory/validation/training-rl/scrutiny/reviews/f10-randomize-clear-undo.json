@@ -1,0 +1,45 @@
+{
+  "featureId": "f10-randomize-clear-undo",
+  "reviewedAt": "2026-04-07T18:30:00.000Z",
+  "commitId": "fad057a",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of undo stack, randomize, and clear examples. The undo stack is a clean ring buffer with max 20 entries, correctly capturing weights + noise level before destructive operations (thumbsDown, randomise). 17 well-structured e2e tests provide thorough coverage of all three validation assertions (VAL-ML-003, VAL-ML-013, VAL-ML-014) plus a cross-feature test (VAL-CROSS-007). The implementation follows existing project conventions and integrates cleanly with the reactive signal system.",
+    "issues": [
+      {
+        "file": "src/components/rl/RLButtons.tsx",
+        "line": 77,
+        "severity": "non_blocking",
+        "description": "Keyboard shortcut hint 'Z' is displayed in the undo button UI but no actual keyboard event handler is registered. The buttons for thumbs-down (key '1') and thumbs-up (key '2') also lack keyboard handlers. The keyboard shortcuts shown are purely decorative at this point — likely intended to be wired up in a future feature. Not blocking since the buttons work via click/touch."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 352,
+        "severity": "non_blocking",
+        "description": "clearExamples() does not clear the undo stack. This is a design choice (not a bug) — clearing examples doesn't change weights, so undo entries remain valid. However, clearAll() also doesn't clear the undo stack, which could be surprising if a user does clearAll → undo and gets weights from before the clearAll. Minor UX consideration, not a correctness bug since the weights themselves are still valid snapshots."
+      },
+      {
+        "file": "src/stores/ml-store.ts",
+        "line": 243,
+        "severity": "non_blocking",
+        "description": "pushUndoSnapshot() captures weights via _getFlatWeights() which returns a shallow copy from WASM memory. Each snapshot stores a full copy of ~13K floats (for visual mode, ~52KB per entry, ~1MB at max capacity of 20). This is acceptable for the current use case but worth noting for future modes with larger networks."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The RLButtons component shows keyboard shortcut hints (keys '1', 'Z', '2') in the button labels but there is no keyboard event handler anywhere in the codebase for these shortcuts. The old playground app likely had keyboard handlers. This is a gap between the documented UI spec ('key 1', 'key Z', 'key 2') and the current implementation. AGENTS.md mentions 'keyboard shortcuts (1/2/Z)' in the test file references but doesn't specify whether keyboard handling should be implemented as part of the component or at a higher level.",
+      "evidence": "src/components/rl/RLButtons.tsx lines 67, 77, 87 show <span class=\"key-num\">1</span>, <span class=\"key-num\">Z</span>, <span class=\"key-num\">2</span> but no keydown listener exists. The architecture.md documents 'key 1', 'key Z', 'key 2' as button properties."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The undo stack stores full weight arrays (~13K floats) per entry. For the visual mode with 20 outputs and [32,48,64] hidden layers, the weight count is manageable (~13K floats = ~52KB per snapshot, 20 entries = ~1MB). This memory profile should be documented as a consideration for synth mode (126 outputs, larger hidden layers) where weights could be significantly more.",
+      "evidence": "src/stores/ml-store.ts line 188: undoStack array, MAX_UNDO=20. Weight count for visual mode MLP with [32,48,64] hidden layers and 20 outputs is approximately (2*32 + 32*48 + 48*64 + 64*20) + biases ≈ 6,690 + biases ≈ ~7K parameters."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature f10 passes review. The implementation correctly delivers all three promised behaviors: randomize changes outputs (VAL-ML-003), clear examples resets count (VAL-ML-013), and undo restores weights within 1e-4 tolerance after thumbs-down (VAL-ML-014). The code is clean, well-structured, and follows existing project patterns (signals for reactivity, debug probe delegation, glass morphism styling). Test coverage is thorough with 17 e2e tests including edge cases (empty stack no-op, max stack cap, noise restoration, multi-step reverse order). Three non-blocking observations noted: decorative-only keyboard shortcut hints, undo stack not cleared on clearAll(), and memory footprint of weight snapshots. No blocking issues found."
+}

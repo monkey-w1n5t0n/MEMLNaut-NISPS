@@ -1,0 +1,51 @@
+{
+  "featureId": "f11-training-sync-async-loss",
+  "reviewedAt": "2026-04-07T18:35:00.000Z",
+  "commitId": "b90a717",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "This feature adds 17 Playwright e2e tests validating VAL-ML-006 through VAL-ML-010. No source code changes were needed — the sync train, async train, and loss history behaviors were already implemented by prior features (f04, f08, f09). The tests are well-structured, cover the required assertions, and follow project conventions (debug probe via window.__nisps, loadSolidApp helper, store access via window.__nispsStore).",
+    "issues": [
+      {
+        "file": "tests/solidjs/training-sync-async-loss.spec.ts",
+        "line": 113,
+        "severity": "non_blocking",
+        "description": "VAL-ML-007b has dead code: the first page.evaluate block calls probe.thumbsUp() (which is async and returns a Promise) but doesn't await it, then returns null. This is immediately overwritten by the second page.evaluate block. The first evaluate block is entirely dead code left from the worker's initial approach. While harmless (the test passes), it's confusing to read. Should be removed."
+      },
+      {
+        "file": "tests/solidjs/training-sync-async-loss.spec.ts",
+        "line": 115,
+        "severity": "non_blocking",
+        "description": "Dead code comment block: '// Wait — probe.thumbsUp is async, but we need just addExample. // Actually probe.thumbsUp adds example AND trains async. // Use store.addExample directly for adding without training.' — These are inline working notes left in the test. Should be cleaned up but has no functional impact."
+      },
+      {
+        "file": "tests/solidjs/training-sync-async-loss.spec.ts",
+        "line": 200,
+        "severity": "non_blocking",
+        "description": "VAL-ML-008b tests convergence by comparing only first and last of 5 losses. An intermediate loss could theoretically increase (e.g., due to SGD overshooting) without being caught. However, this is acceptable given the overall convergence trend check and the epsilon tolerance."
+      },
+      {
+        "file": "tests/solidjs/training-sync-async-loss.spec.ts",
+        "line": 75,
+        "severity": "non_blocking",
+        "description": "VAL-ML-006b validates label length is 20 (N_VISUAL_OUTPUTS), but the validation contract says label has length 126 (synth outputs). The test is correct for the default 'visual' mode (20 outputs), but this discrepancy with the validation contract could be confusing. The contract description appears to assume synth mode, while the tests correctly test the default visual mode. No functional issue."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The worker accessed window.__nispsStore (the raw ML store) to call store.addExample() directly, bypassing the debug probe. This is a useful testing pattern for adding examples without triggering async training. The AGENTS.md mentions window.__nispsStore is exposed for test access, but the architecture.md only documents window.__nisps (probe) and window.__nispsStore. The convention of when to use probe vs store in tests could be documented more clearly.",
+      "evidence": "tests/solidjs/training-sync-async-loss.spec.ts:94-100 uses (window as any).__nispsStore.addExample() to add examples without triggering training, while probe.thumbsUp() adds example AND trains async. AGENTS.md Debug Probe section only documents the probe methods."
+    },
+    {
+      "area": "conventions",
+      "observation": "The validation contract specifies 'label has length 126 (outputs)' for VAL-ML-006, but the SolidJS app defaults to 'visual' mode with 20 outputs. The test correctly tests with 20, matching the actual default behavior. The validation contract text may need updating to account for mode-dependent output counts.",
+      "evidence": "validation-contract.md VAL-ML-006 says 'label has length 126 (outputs)', but N_VISUAL_OUTPUTS = 20 is the default mode. Test VAL-ML-006b asserts labelLength === 20."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS — Feature f11 adds 17 comprehensive e2e tests covering all 5 validation assertions (VAL-ML-006 through VAL-ML-010). No source code changes were needed since the sync train, async train, and loss history functionality was already implemented by prior features (f04 ML store, f08 training drawer, f09 RL controls). Tests are well-structured, use the debug probe correctly, and validate the right behaviors. Minor non-blocking issues: dead code in VAL-ML-007b from the worker's exploratory coding, and inline comments that should be cleaned up. All 155 tests pass (138 existing + 17 new), typecheck clean."
+}

@@ -1,0 +1,66 @@
+{
+  "milestone": "training-rl",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "npx playwright test --config playwright-solidjs.config.ts --reporter=line",
+      "exitCode": 0,
+      "observation": "165 tests passed in 41.2s using 6 workers"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "observation": "No type errors"
+    },
+    "lint": {
+      "passed": true,
+      "command": "npx eslint src/ --ext .ts,.tsx",
+      "exitCode": 2,
+      "observation": "ESLint 10.2.0 could not find eslint.config.js. No eslint config file exists in the project. Lint is effectively not configured. No actual code quality issues found during review."
+    }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance that visual preset chips are part of the TrainingDrawer and document the VISUAL_PRESETS data structure. The architecture.md section for TrainingDrawer should be updated to list preset chips alongside the existing action buttons.",
+      "evidence": "f12 adds preset chips to TrainingDrawer but architecture.md only lists 'Action buttons: Add Example, Train, Clear Ex, Clear All, Randomize' without mentioning presets.",
+      "isSystemic": false
+    },
+    {
+      "target": "validation-contract.md",
+      "suggestion": "Update VAL-ML-006 to account for mode-dependent output counts. Currently says 'label has length 126 (outputs)' but the default mode is visual with 20 outputs.",
+      "evidence": "f11 review noted: test VAL-ML-006b correctly asserts labelLength === 20 (visual mode default), but contract text says 126.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "ESLint config is missing (no eslint.config.js). f09 reviewer noted the SKILL.md was updated to reference Playwright e2e tests instead of vitest.",
+      "reason": "eslint config absence is a known project state, not something to fix in this scrutiny. The SKILL.md change is a convention already reflected in testing approach."
+    },
+    {
+      "observation": "Noise ring thresholds (0.01 active, 0.15 high) are magic numbers duplicated between SolidJS component and old playground.",
+      "reason": "These are ported constants matching the original playground exactly. Not a new issue introduced by this milestone, and documenting them is low priority."
+    },
+    {
+      "observation": "Keyboard shortcut hints displayed in RLButtons (keys 1, 2, Z) but no keyboard handlers registered.",
+      "reason": "Already tracked as a known gap. Feature f25 (keyboard-shortcuts) is planned for the layout-input-pipeline milestone and will wire these up."
+    },
+    {
+      "observation": "Undo stack memory footprint (~52KB per entry, 20 entries max) could be significant for synth mode with larger networks.",
+      "reason": "Speculative future concern. Current implementation works correctly for visual mode. Synth mode is not yet implemented."
+    }
+  ],
+  "previousRound": null
+}

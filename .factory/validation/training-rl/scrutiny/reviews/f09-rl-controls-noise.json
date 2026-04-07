@@ -1,0 +1,39 @@
+{
+  "featureId": "f09-rl-controls-noise",
+  "reviewedAt": "2026-04-07T20:35:00.000Z",
+  "commitId": "1030b07",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean implementation of RL feedback controls with thumbs-up/thumbs-down buttons and noise ring indicator. The code correctly ports the old playground's RL feedback mechanism into SolidJS reactive patterns. All three validation assertions (VAL-ML-011, VAL-ML-012, VAL-JOY-004) are covered by 17 well-structured e2e tests. No blocking issues found.",
+    "issues": [
+      {
+        "file": "src/components/rl/RLButtons.tsx",
+        "line": 29,
+        "severity": "non_blocking",
+        "description": "The `.then(() => {})` callback after `props.mlStore.thumbsUp()` is an empty no-op. While the comment explains that reactive signals handle updates, the empty `.then()` could be simplified to just `props.mlStore.thumbsUp()` without the `.then()` chain, or the comment could be moved to the function level. Minor style nit, not a bug."
+      },
+      {
+        "file": "tests/solidjs/rl-controls-noise.spec.ts",
+        "line": 293,
+        "severity": "non_blocking",
+        "description": "Test VAL-JOY-004b checks that at default noise (0.05), the noise ring has 'active' class but not 'high'. This is technically correct (0.05 > 0.01 threshold), but the test name says 'noise ring is not active at default noise level' while the body asserts it IS active. The test name is misleading — it should say something like 'noise ring is active but not high at default noise'. The test body logic is correct though."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The SKILL.md was updated during this feature to change testing guidance from 'vitest + solid-testing-library' to 'Playwright e2e tests'. This is a significant convention change that should be reflected in the mission's AGENTS.md testing section as well, if it hasn't been already. The AGENTS.md mentions 'Playwright e2e tests' in the validation guidance section, so this is consistent.",
+      "evidence": "The diff shows SKILL.md lines 39-42 changed: 'For SolidJS components: use vitest + solid-testing-library' → 'use Playwright e2e tests against the Vite dev server'"
+    },
+    {
+      "area": "conventions",
+      "observation": "The noise ring CSS and class thresholds (0.01 for active, 0.15 for high) are magic numbers duplicated between the SolidJS component (Joystick.tsx:50-53) and the old playground (a-app.js:2697-2701). The CSS file values (3px active, 6px high) also match the old playground exactly. While this is correct porting behavior, there's no documentation of these thresholds as a shared constant or convention.",
+      "evidence": "Joystick.tsx:50-53 — `if (noise > 0.15) return 'noise-ring active high'` / `if (noise > 0.01) return 'noise-ring active'` matches playground/js/a-app.js:2697-2701 exactly"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature f09 is a clean, well-implemented port of the RL feedback controls from the old playground app. The RLButtons component provides thumbs-up/down buttons with glass morphism styling and flash feedback animations. The noise ring indicator on the joystick correctly reflects exploration noise level with 3 CSS classes (inactive/active/high) matching the old playground's exact thresholds (0.01/0.15). The ML store's thumbsUp/thumbsDown implementations use spread-aware noise caps (0.3*(1-spread) + 0.05*spread) and noise decay (0.7x on thumbs-up) correctly. 17 e2e tests cover all three validation assertions plus UI button clicks and a cross-feature flow test. One test has a misleading name (VAL-JOY-004b) but correct logic. The implementation was later extended by f10 (undo button added to RLButtons), which is expected incremental development. All tests passed (121/121) at commit time."
+}

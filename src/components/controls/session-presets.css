@@ -1,0 +1,314 @@
+/* SessionPresets — floating panel for saving, loading, and sharing session state */
+
+/* ─── Panel ──────────────────────────────────────────────────────────────────── */
+
+.sp-panel {
+  position: fixed;
+  bottom: 90px;
+  right: 12px;
+  z-index: 180;
+
+  width: 260px;
+
+  background: var(--glass-bg, rgba(10, 10, 20, 0.82));
+  backdrop-filter: blur(var(--glass-blur, 14px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 14px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.11));
+  border-radius: 12px;
+
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Mono', monospace);
+  font-size: 11px;
+  color: #bbb;
+
+  user-select: none;
+  overflow: hidden;
+}
+
+/* ─── Header bar ──────────────────────────────────────────────────────────── */
+
+.sp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.sp-title {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ─── Action bar (save / url / export / import) ───────────────────────────── */
+
+.sp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sp-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  color: #999;
+  font-size: 9px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  white-space: nowrap;
+  text-align: center;
+  touch-action: manipulation;
+  line-height: 1.5;
+}
+
+.sp-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ccc;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.sp-btn--save {
+  border-color: rgba(0, 212, 255, 0.22);
+  color: var(--accent, #00d4ff);
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.sp-btn--save:hover {
+  background: rgba(0, 212, 255, 0.13);
+  border-color: rgba(0, 212, 255, 0.4);
+}
+
+.sp-btn--url {
+  border-color: rgba(120, 200, 100, 0.22);
+  color: #78c864;
+  background: rgba(120, 200, 100, 0.06);
+}
+
+.sp-btn--url:hover {
+  background: rgba(120, 200, 100, 0.13);
+  border-color: rgba(120, 200, 100, 0.4);
+}
+
+.sp-btn--url.sp-btn--copied {
+  color: #aaffaa;
+  border-color: rgba(170, 255, 170, 0.5);
+  background: rgba(170, 255, 170, 0.1);
+}
+
+/* ─── Preset list ─────────────────────────────────────────────────────────── */
+
+.sp-list-wrap {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.sp-list-wrap::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sp-list-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sp-list-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+}
+
+.sp-empty {
+  padding: 16px 12px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  text-align: center;
+}
+
+.sp-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.sp-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 10px;
+  transition: background 0.1s;
+}
+
+.sp-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sp-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sp-item-name {
+  font-size: 12px;
+  color: var(--text, #e0e0e8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-item-time {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.28);
+  font-family: var(--font-mono, monospace);
+}
+
+/* ─── Item action buttons ─────────────────────────────────────────────────── */
+
+.sp-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sp-load-btn {
+  background: rgba(0, 180, 220, 0.09);
+  border: 1px solid rgba(0, 180, 220, 0.28);
+  border-radius: 6px;
+  color: #00b4dc;
+  font-size: 10px;
+  font-family: inherit;
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+
+.sp-load-btn:hover {
+  background: rgba(0, 180, 220, 0.2);
+}
+
+.sp-delete-btn {
+  background: rgba(220, 60, 20, 0.06);
+  border: 1px solid rgba(220, 60, 20, 0.22);
+  border-radius: 6px;
+  color: rgba(220, 100, 70, 0.8);
+  font-size: 10px;
+  font-family: inherit;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  touch-action: manipulation;
+}
+
+.sp-delete-btn:hover {
+  background: rgba(220, 60, 20, 0.16);
+  color: #dc3c14;
+}
+
+/* ─── Save prompt overlay ─────────────────────────────────────────────────── */
+
+.sp-save-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+}
+
+.sp-save-prompt {
+  position: fixed;
+  bottom: 90px;
+  right: 12px;
+  z-index: 211;
+  width: 260px;
+
+  background: var(--glass-bg, rgba(10, 10, 20, 0.92));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.13));
+  border-radius: 12px;
+  backdrop-filter: blur(var(--glass-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 16px));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  padding: 12px 14px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Mono', monospace);
+}
+
+.sp-save-prompt-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sp-save-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  color: #e0e0e8;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sp-save-input:focus {
+  border-color: rgba(0, 212, 255, 0.45);
+}
+
+.sp-save-prompt-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.sp-save-confirm-btn {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  background: rgba(0, 212, 255, 0.1);
+  color: var(--accent, #00d4ff);
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.13s;
+}
+
+.sp-save-confirm-btn:hover {
+  background: rgba(0, 212, 255, 0.2);
+}
+
+.sp-save-cancel-btn {
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  color: #888;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.13s;
+}
+
+.sp-save-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+}

@@ -1,0 +1,88 @@
+/* PresetSelector — tier-grouped synth preset chips */
+
+.preset-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Tier section ── */
+
+.preset-tier-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preset-tier-label {
+  display: block;
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Chip row ── */
+
+.preset-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ── Chip button ── */
+
+.preset-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim, #999);
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.preset-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.preset-chip:active {
+  background: rgba(0, 212, 255, 0.12);
+}
+
+/* Active (selected) state */
+
+.preset-chip.active {
+  background: rgba(0, 212, 255, 0.15);
+  border-color: rgba(0, 212, 255, 0.35);
+  color: var(--accent, #00d4ff);
+}
+
+.preset-chip.active:hover {
+  background: rgba(0, 212, 255, 0.22);
+}
+
+/* ── Chip internals ── */
+
+.preset-chip-name {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.preset-chip-count {
+  font-size: 8px;
+  opacity: 0.6;
+}
+
+.preset-chip.active .preset-chip-count {
+  opacity: 0.8;
+}

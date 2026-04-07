@@ -1,0 +1,117 @@
+/* AutoExploreToggle — small circular button with SVG progress ring */
+
+/* ---- Wrapper ---- */
+
+.ae-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Main button ---- */
+
+.ae-btn {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: var(--glass-bg, rgba(10, 10, 20, 0.65));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Mono', monospace);
+  letter-spacing: 0.04em;
+  transition: all 0.15s;
+  /* Progress ring SVG sits inside and is not interactive */
+  overflow: visible;
+}
+
+.ae-btn:active {
+  transform: scale(0.9);
+}
+
+/* Active / running state */
+
+.ae-btn--active {
+  border-color: rgba(255, 160, 40, 0.5);
+  color: #ffa028;
+  background: rgba(255, 160, 40, 0.1);
+}
+
+.ae-btn--active:active {
+  background: rgba(255, 160, 40, 0.25);
+  box-shadow: 0 0 20px rgba(255, 160, 40, 0.3);
+}
+
+/* ---- Label inside button ---- */
+
+.ae-icon {
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.ae-label {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: var(--font-mono, monospace);
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.ae-btn--active .ae-label {
+  color: rgba(255, 160, 40, 0.7);
+}
+
+/* ---- Progress ring (SVG overlay) ---- */
+
+.ae-ring {
+  position: absolute;
+  inset: -3px; /* extend just outside the button border */
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  pointer-events: none;
+  overflow: visible;
+}
+
+.ae-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 2.5;
+}
+
+.ae-ring-fill {
+  fill: none;
+  stroke: rgba(255, 160, 40, 0.75);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  /* stroke-dasharray and stroke-dashoffset are set via inline style */
+  transform-origin: center;
+  /* Start from 12 o'clock */
+  transform: rotate(-90deg);
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+/* Pulse animation on step fire */
+
+@keyframes ae-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 160, 40, 0.55); }
+  60%  { box-shadow: 0 0 0 10px rgba(255, 160, 40, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 160, 40, 0); }
+}
+
+.ae-btn--pulse {
+  animation: ae-pulse 0.35s ease-out forwards;
+}

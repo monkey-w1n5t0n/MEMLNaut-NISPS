@@ -1,0 +1,222 @@
+/* SnapshotPopup — floating overlay listing weight history */
+
+.snapshot-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.snapshot-popup {
+  position: fixed;
+  bottom: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 201;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--glass-bg, rgba(10, 10, 20, 0.88));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 14px;
+  backdrop-filter: blur(var(--glass-blur, 16px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 16px));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 8px 0;
+}
+
+.snapshot-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 14px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.snapshot-popup-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.snapshot-popup-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.snapshot-popup-close:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.snapshot-empty {
+  padding: 18px 14px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+}
+
+.snapshot-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.snapshot-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  transition: background 0.1s;
+}
+
+.snapshot-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.snapshot-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.snapshot-item-tag {
+  font-size: 13px;
+  color: var(--text, #e0e0e8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snapshot-item-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: var(--font-mono, monospace);
+}
+
+.snapshot-jump-btn {
+  flex-shrink: 0;
+  background: rgba(0, 180, 220, 0.1);
+  border: 1px solid rgba(0, 180, 220, 0.3);
+  border-radius: 8px;
+  color: #00b4dc;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+
+.snapshot-jump-btn:hover {
+  background: rgba(0, 180, 220, 0.2);
+}
+
+/* ABToggle button */
+
+.ab-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ab-toggle-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: var(--glass-bg, rgba(10, 10, 20, 0.65));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 12px;
+  font-weight: 700;
+  transition: all 0.15s;
+}
+
+.ab-toggle-btn:active {
+  transform: scale(0.9);
+}
+
+.ab-toggle-btn.ab-active {
+  border-color: rgba(180, 100, 255, 0.5);
+  color: #b464ff;
+  background: rgba(180, 100, 255, 0.1);
+}
+
+.ab-toggle-btn.ab-active:active {
+  background: rgba(180, 100, 255, 0.25);
+  box-shadow: 0 0 20px rgba(180, 100, 255, 0.3);
+}
+
+.ab-side-label {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.ab-key-hint {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.3);
+  font-family: var(--font-mono, monospace);
+  line-height: 1;
+}
+
+/* Accept / Revert mini buttons (appear when A/B is active) */
+
+.ab-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ab-action-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+.ab-action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.ab-accept-btn {
+  border-color: rgba(0, 200, 160, 0.3);
+  color: #00c8a0;
+  background: rgba(0, 200, 160, 0.07);
+}
+
+.ab-accept-btn:hover {
+  background: rgba(0, 200, 160, 0.16);
+}
+
+.ab-revert-btn {
+  border-color: rgba(220, 60, 20, 0.3);
+  color: #dc3c14;
+  background: rgba(220, 60, 20, 0.07);
+}
+
+.ab-revert-btn:hover {
+  background: rgba(220, 60, 20, 0.16);
+}

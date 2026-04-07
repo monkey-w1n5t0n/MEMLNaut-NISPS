@@ -1,0 +1,297 @@
+/* MIDI CC Panel — drawer panel + editable CC map table */
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+
+.midi-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Section ──────────────────────────────────────────────────────────────── */
+
+.midi-section {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.midi-section:last-child {
+  border-bottom: none;
+}
+
+.midi-section-header {
+  font-size: 9px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono, monospace);
+  margin-bottom: 6px;
+  user-select: none;
+}
+
+/* ── Device row (label + select) ─────────────────────────────────────────── */
+
+.midi-device-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.midi-device-label {
+  font-size: 10px;
+  color: #888;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+  min-width: 44px;
+  flex-shrink: 0;
+}
+
+.midi-select {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  color: #ccc;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  padding: 3px 6px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.midi-select:focus {
+  border-color: rgba(0, 212, 255, 0.35);
+}
+
+/* ── Status badge ─────────────────────────────────────────────────────────── */
+
+.midi-status {
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  color: #666;
+  padding: 2px 0;
+}
+
+.midi-status.ok {
+  color: #4caf50;
+}
+
+.midi-status.err {
+  color: #f44;
+}
+
+/* ── CC Map table ─────────────────────────────────────────────────────────── */
+
+.cc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+}
+
+.cc-table th {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+  font-weight: 500;
+  text-align: left;
+  padding: 0 3px 5px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.cc-table td {
+  padding: 2px 3px;
+  vertical-align: middle;
+}
+
+/* Alternate row tint */
+.cc-row:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* ── Inline number inputs (CC, ch, idx) ──────────────────────────────────── */
+
+.cc-num-input {
+  width: 36px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 4px;
+  color: #bbb;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  padding: 2px 4px;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+  transition: border-color 0.15s;
+}
+
+.cc-num-input::-webkit-outer-spin-button,
+.cc-num-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+.cc-num-input:focus {
+  border-color: rgba(0, 212, 255, 0.35);
+}
+
+/* Slightly narrower variant for channel column */
+.cc-num-input.narrow {
+  width: 28px;
+}
+
+/* ── Range slider (min/max) ───────────────────────────────────────────────── */
+
+.cc-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 52px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  cursor: pointer;
+}
+
+.cc-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent, #00d4ff);
+  cursor: pointer;
+}
+
+.cc-range::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent, #00d4ff);
+  cursor: pointer;
+}
+
+/* Curve slider — slightly orange tint */
+.cc-range.curve-slider::-webkit-slider-thumb {
+  background: #ffaa44;
+}
+
+.cc-range.curve-slider::-moz-range-thumb {
+  background: #ffaa44;
+}
+
+/* ── Mute toggle ──────────────────────────────────────────────────────────── */
+
+.cc-mute-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #666;
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.cc-mute-btn.muted {
+  background: rgba(255, 80, 80, 0.18);
+  border-color: rgba(255, 80, 80, 0.35);
+  color: #f55;
+}
+
+.cc-mute-btn:hover:not(.muted) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #aaa;
+}
+
+/* ── Remove row button ────────────────────────────────────────────────────── */
+
+.cc-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #555;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+
+.cc-remove-btn:hover {
+  color: #f55;
+}
+
+/* ── Add row button ───────────────────────────────────────────────────────── */
+
+.cc-add-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  background: transparent;
+  color: #777;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.cc-add-btn:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+  color: var(--accent, #00d4ff);
+}
+
+/* ── Scrollable table wrapper ─────────────────────────────────────────────── */
+
+.cc-table-wrap {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* thin scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.cc-table-wrap::-webkit-scrollbar {
+  width: 4px;
+}
+
+.cc-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cc-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+/* ── Range value readout ──────────────────────────────────────────────────── */
+
+.cc-val-readout {
+  font-size: 9px;
+  color: #666;
+  min-width: 22px;
+  text-align: right;
+  display: inline-block;
+}

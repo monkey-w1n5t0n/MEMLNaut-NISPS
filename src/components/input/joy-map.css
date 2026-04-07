@@ -1,0 +1,66 @@
+/**
+ * JoyMap minimap styles.
+ * Small circular canvas companion to the Joystick component.
+ * Positioned top-right of the joystick area by default; parent layout can override.
+ */
+
+.joy-map-container {
+  position: relative;
+  display: inline-block;
+  /* Circular clip for the container — mirrors the canvas arc clip */
+  border-radius: 50%;
+  /* Subtle outer glow to distinguish from the background */
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.5);
+  /* Prevent accidental text selection on long-press mobile */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.joy-map-canvas {
+  display: block;
+  border-radius: 50%;
+  /* Cursor: pointer so users know they can tap trail points */
+  cursor: pointer;
+  touch-action: none;
+  /* Transparent background so the canvas arc-clip shows correctly */
+  background: transparent;
+}
+
+/* ── Subtle entrance animation ─────────────────────────────────────────────── */
+
+.joy-map-container {
+  animation: joy-map-in 0.3s ease-out both;
+}
+
+@keyframes joy-map-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Frozen state — ring highlight ─────────────────────────────────────────── */
+/* The canvas draws its own frozen overlay; this adds a CSS ring for extra    */
+/* clarity when inspecting the component from outside.                         */
+
+.joy-map-container[data-frozen="true"] {
+  box-shadow:
+    0 0 0 2px rgba(100, 180, 255, 0.4),
+    0 4px 20px rgba(100, 180, 255, 0.2);
+}
+
+/* ── Placement helper (optional utility class) ─────────────────────────────── */
+/* Add class="joy-map-container joy-map--companion" to place it anchored       */
+/* top-right relative to the nearest positioned ancestor (e.g. joystick wrap). */
+
+.joy-map--companion {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}

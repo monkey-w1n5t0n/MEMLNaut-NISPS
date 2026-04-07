@@ -1,0 +1,76 @@
+/* EngineSwitcher — component-specific styles.
+ * Pill-toggle chrome (`.pill-toggle`, `.pill-opt`, `.pill-opt.active`) comes
+ * from layout/drawer.css. These rules handle layout and the loading overlay.
+ */
+
+/* ── Wrapper ───────────────────────────────────────────────────────────────── */
+
+.engine-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Section label ─────────────────────────────────────────────────────────── */
+
+.engine-switcher-label {
+  font-size: 9px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono, monospace);
+  user-select: none;
+}
+
+/* ── Pills wrapper ─────────────────────────────────────────────────────────── */
+
+.engine-switcher-pills {
+  /* Inherits .pill-toggle layout from drawer.css */
+}
+
+/* Dim all pills slightly while a switch is in progress */
+.engine-switcher-loading .pill-opt {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Keep the currently-active pill at full opacity even during loading */
+.engine-switcher-loading .pill-opt.active {
+  opacity: 1;
+}
+
+/* ── Inline spinner (appears inside non-active pills during loading) ─────── */
+
+.engine-switcher-spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent, #00d4ff);
+  border-radius: 50%;
+  animation: engine-switcher-spin 0.6s linear infinite;
+  margin-right: 4px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+@keyframes engine-switcher-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Loading status line ───────────────────────────────────────────────────── */
+
+.engine-switcher-status {
+  font-size: 9px;
+  color: var(--accent, #00d4ff);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.04em;
+  text-align: center;
+  animation: engine-switcher-fade-in 0.2s ease-out;
+}
+
+@keyframes engine-switcher-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

@@ -1,0 +1,71 @@
+/**
+ * Shared styles for debug panel components (WeightHealth, GradientFlow).
+ */
+
+.debug-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(10, 10, 10, 0.75);
+  border: 1px solid rgba(80, 80, 80, 0.4);
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 10px;
+  color: rgba(200, 200, 200, 0.85);
+  /* Keep on top of other overlays */
+  z-index: 50;
+  pointer-events: none;
+  user-select: none;
+}
+
+.debug-panel__label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(150, 150, 150, 0.7);
+  margin-bottom: 2px;
+}
+
+.debug-panel__canvas {
+  display: block;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.debug-panel__status {
+  font-size: 9px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  text-align: center;
+}
+
+.debug-panel__status--healthy {
+  color: rgb(100, 200, 120);
+  background: rgba(100, 200, 120, 0.12);
+}
+
+.debug-panel__status--saturating {
+  color: rgb(255, 120, 40);
+  background: rgba(255, 120, 40, 0.12);
+}
+
+.debug-panel__status--dead {
+  color: rgb(120, 120, 120);
+  background: rgba(120, 120, 120, 0.12);
+}
+
+.debug-panel__status--vanishing {
+  color: rgb(240, 80, 60);
+  background: rgba(240, 80, 60, 0.12);
+}
+
+.debug-panel__status--exploding {
+  color: rgb(230, 200, 60);
+  background: rgba(230, 200, 60, 0.12);
+}
+
+.debug-panel__status--converged {
+  color: rgb(100, 140, 200);
+  background: rgba(100, 140, 200, 0.12);
+}

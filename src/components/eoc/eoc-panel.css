@@ -1,0 +1,242 @@
+/* EOC Panel — Effects Chain drawer styles */
+
+/* ── Section labels ──────────────────────────────────────────────────────── */
+
+.eoc-section-label {
+  font-size: 9px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+  display: block;
+}
+
+/* ── NISPS mode pill row ──────────────────────────────────────────────────── */
+
+.eoc-mode-row {
+  margin-bottom: 12px;
+}
+
+/* ── Confirmation banner ─────────────────────────────────────────────────── */
+
+.eoc-confirm-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  background: rgba(255, 160, 0, 0.12);
+  border: 1px solid rgba(255, 160, 0, 0.3);
+  border-radius: 8px;
+  font-size: 10px;
+  color: #ffa500;
+  font-family: var(--font-mono, monospace);
+}
+
+.eoc-confirm-banner span {
+  flex: 1;
+}
+
+.eoc-confirm-btn {
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid currentColor;
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.eoc-confirm-btn.ok {
+  color: #ffa500;
+}
+
+.eoc-confirm-btn.ok:hover {
+  background: rgba(255, 160, 0, 0.2);
+}
+
+.eoc-confirm-btn.cancel {
+  color: #888;
+  border-color: #555;
+}
+
+.eoc-confirm-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #bbb;
+}
+
+/* ── Module list ─────────────────────────────────────────────────────────── */
+
+.eoc-module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  min-height: 20px;
+}
+
+.eoc-empty-hint {
+  font-size: 10px;
+  color: #555;
+  font-style: italic;
+  padding: 4px 2px;
+}
+
+/* ── Module card ─────────────────────────────────────────────────────────── */
+
+.eoc-module-card {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.15s;
+}
+
+.eoc-module-card:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.eoc-module-card.bypassed {
+  opacity: 0.5;
+}
+
+.eoc-module-name {
+  flex: 1;
+  font-size: 11px;
+  color: #ccc;
+  font-family: var(--font-mono, monospace);
+  user-select: none;
+}
+
+.eoc-module-badge {
+  font-size: 9px;
+  color: #666;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+/* Bypass toggle */
+.eoc-bypass-btn {
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  color: #777;
+  white-space: nowrap;
+}
+
+.eoc-bypass-btn.on {
+  color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.35);
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.eoc-bypass-btn.on:hover {
+  background: rgba(76, 175, 80, 0.18);
+}
+
+.eoc-bypass-btn.off:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+}
+
+/* Remove button */
+.eoc-remove-btn {
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #555;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.eoc-remove-btn:hover {
+  background: rgba(255, 60, 60, 0.15);
+  color: #ff6060;
+  border-color: rgba(255, 60, 60, 0.25);
+}
+
+/* ── Add-module bar ──────────────────────────────────────────────────────── */
+
+.eoc-add-bar {
+  margin-top: 2px;
+}
+
+.eoc-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+/* ── Param count summary line ────────────────────────────────────────────── */
+
+.eoc-param-summary {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 9px;
+  color: #555;
+  font-family: var(--font-mono, monospace);
+}
+
+.eoc-param-summary strong {
+  color: #888;
+}
+
+/* ── Independent FX joystick ─────────────────────────────────────────────── */
+
+.eoc-joystick-overlay {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 180;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  animation: eocJoyIn 0.2s ease-out;
+}
+
+@keyframes eocJoyIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+.eoc-joystick-label {
+  font-size: 9px;
+  font-family: var(--font-mono, monospace);
+  color: #888;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eoc-joystick-canvas {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.4);
+  cursor: crosshair;
+  touch-action: none;
+  display: block;
+}
+
+.eoc-joystick-pos {
+  font-size: 9px;
+  color: #555;
+  font-family: var(--font-mono, monospace);
+}

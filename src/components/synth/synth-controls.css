@@ -1,0 +1,228 @@
+/* SynthControls — component-specific styles.
+ * Global drawer chrome (glass background, header, close button, body padding)
+ * comes from layout/drawer.css. These rules cover synth-specific layout only.
+ */
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+
+.synth-controls-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Section ──────────────────────────────────────────────────────────────── */
+
+.synth-section {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.synth-section:last-child {
+  border-bottom: none;
+}
+
+/* ── Row layout (label + value on one line) ───────────────────────────────── */
+
+.synth-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.synth-row-select {
+  margin-bottom: 0;
+}
+
+.synth-section-header {
+  margin-bottom: 6px;
+}
+
+/* ── Labels and values ────────────────────────────────────────────────────── */
+
+.synth-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono, monospace);
+  user-select: none;
+}
+
+.synth-value {
+  font-size: 10px;
+  color: #bbb;
+  font-family: var(--font-mono, monospace);
+  min-width: 3.5em;
+  text-align: right;
+}
+
+/* ── Start / Stop button ──────────────────────────────────────────────────── */
+
+.synth-run-btn {
+  width: 100%;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.synth-run-btn.stopped {
+  background: rgba(0, 200, 80, 0.12);
+  border-color: rgba(0, 200, 80, 0.3);
+  color: #00c850;
+}
+
+.synth-run-btn.stopped:hover {
+  background: rgba(0, 200, 80, 0.22);
+  border-color: rgba(0, 200, 80, 0.5);
+}
+
+.synth-run-btn.running {
+  background: rgba(220, 50, 50, 0.14);
+  border-color: rgba(220, 50, 50, 0.35);
+  color: #e05050;
+}
+
+.synth-run-btn.running:hover {
+  background: rgba(220, 50, 50, 0.24);
+  border-color: rgba(220, 50, 50, 0.55);
+}
+
+/* ── Arp enable/disable toggle ────────────────────────────────────────────── */
+
+.synth-toggle {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.synth-toggle.off {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #666;
+}
+
+.synth-toggle.off:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+}
+
+.synth-toggle.on {
+  background: rgba(0, 212, 255, 0.14);
+  border-color: rgba(0, 212, 255, 0.3);
+  color: var(--accent, #00d4ff);
+}
+
+.synth-toggle.on:hover {
+  background: rgba(0, 212, 255, 0.22);
+}
+
+/* ── Sliders ──────────────────────────────────────────────────────────────── */
+
+.synth-slider {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+
+.synth-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent, #00d4ff);
+  border: 2px solid rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.synth-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.synth-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent, #00d4ff);
+  border: 2px solid rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+/* ── Arp expanded params ──────────────────────────────────────────────────── */
+
+.synth-arp-params {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ── Progression dropdown ─────────────────────────────────────────────────── */
+
+.synth-select {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  color: #ccc;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  padding: 3px 6px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+  max-width: 140px;
+}
+
+.synth-select:focus {
+  border-color: rgba(0, 212, 255, 0.4);
+}
+
+.synth-select option {
+  background: #111;
+  color: #ccc;
+}
+
+/* ── Engine info ──────────────────────────────────────────────────────────── */
+
+.synth-engine-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+.synth-engine-id {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: #aaa;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.synth-engine-none {
+  color: #444;
+  font-style: italic;
+}

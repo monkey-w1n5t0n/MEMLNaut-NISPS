@@ -40,6 +40,60 @@ export function outputCountForMode(mode: OutputMode, midiCCCount = N_MIDI_CC_DEF
   }
 }
 
+// ─── Visual Presets ──────────────────────────────────────────────────
+
+export interface VisualPresetExample {
+  input: number[];
+  output: number[];
+}
+
+/**
+ * Visual preset definitions — each has 20-element output arrays (N_VISUAL_OUTPUTS).
+ * When loaded, outputs are padded to current N_OUTPUTS with 0.5 defaults.
+ * Ported from playground/js/a-app.js PRESETS object.
+ */
+export const VISUAL_PRESETS: Record<string, VisualPresetExample[]> = {
+  'calm-to-chaotic': [
+    { input: [0.1, 0.9], output: [0.25, 0.3, 0.1, 0.55, 0.2, 0.3, 0.02, 0.05, 0.9, 0.45, 0.25, 0.2, 0.9, 0.0, 0.0, 0.2, 0.05, 0.0, 0.0, 0.2] },
+    { input: [0.9, 0.1], output: [0.75, 0.7, 0.9, 0.05, 0.8, 0.7, 0.9, 0.95, 0.3, 0.2, 0.85, 0.7, 0.25, 0.55, 1.0, 0.92, 0.02, 0.95, 0.8, 0.85] },
+    { input: [0.5, 0.5], output: [0.5, 0.5, 0.5, 0.3, 0.5, 0.5, 0.4, 0.5, 0.7, 0.6, 0.5, 0.45, 0.55, 0.9, 0.5, 0.65, 0.08, 0.45, 0.4, 0.5] },
+  ],
+  'rainbow-sweep': [
+    { input: [0.0, 0.5], output: [0.5, 0.5, 0.4, 0.0, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.4, 0.3, 0.8, 0.0, 0.0, 0.45, 0.08, 0.2, 0.25, 0.45] },
+    { input: [0.5, 0.5], output: [0.5, 0.5, 0.4, 0.5, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.55, 0.35, 0.7, 0.0, 0.4, 0.45, 0.08, 0.45, 0.4, 0.6] },
+    { input: [1.0, 0.5], output: [0.5, 0.5, 0.4, 1.0, 0.3, 0.4, 0.05, 0.3, 0.8, 0.55, 0.75, 0.45, 0.6, 0.0, 0.8, 0.45, 0.08, 0.7, 0.55, 0.75] },
+  ],
+  'vortex': [
+    { input: [0.5, 0.5], output: [0.0, 0.8, 0.8, 0.6, 0.1, 0.15, 0.02, 1.0, 1.0, 0.3, 0.95, 0.85, 0.25, 1.0, 0.5, 0.95, 0.01, 1.0, 1.0, 1.0] },
+    { input: [0.0, 0.0], output: [0.5, 0.2, 0.3, 0.8, 0.9, 0.6, 0.08, 0.1, 0.35, 0.8, 0.25, 0.15, 0.8, 0.5, 0.2, 0.35, 0.2, 0.15, 0.2, 0.25] },
+    { input: [1.0, 1.0], output: [0.5, 0.2, 0.3, 0.2, 0.9, 0.6, 0.08, 0.1, 0.35, 0.8, 0.25, 0.15, 0.8, 0.5, 0.8, 0.35, 0.2, 0.15, 0.2, 0.25] },
+    { input: [0.0, 1.0], output: [0.3, 0.4, 0.5, 0.4, 0.5, 0.4, 0.05, 0.5, 0.65, 0.5, 0.55, 0.45, 0.45, 0.2, 0.4, 0.7, 0.1, 0.5, 0.4, 0.55] },
+    { input: [1.0, 0.0], output: [0.7, 0.4, 0.5, 0.0, 0.5, 0.4, 0.05, 0.5, 0.65, 0.5, 0.55, 0.45, 0.45, 0.2, 0.9, 0.7, 0.1, 0.5, 0.4, 0.55] },
+  ],
+  'spiral': [
+    { input: [0.5, 0.5], output: [0.0, 0.6, 0.6, 0.3, 0.15, 0.2, 0.03, 0.7, 0.9, 0.25, 0.7, 0.6, 0.35, 0.8, 0.65, 0.9, 0.02, 0.3, 0.5, 0.7] },
+    { input: [0.0, 0.0], output: [0.8, 0.3, 0.4, 0.7, 0.8, 0.5, 0.06, 0.2, 0.5, 0.7, 0.3, 0.2, 0.7, 0.3, 0.3, 0.4, 0.15, 0.1, 0.1, 0.3] },
+    { input: [1.0, 1.0], output: [0.2, 0.3, 0.4, 0.1, 0.8, 0.5, 0.06, 0.2, 0.5, 0.7, 0.3, 0.2, 0.7, 0.3, 0.9, 0.4, 0.15, 0.1, 0.1, 0.3] },
+  ],
+  'embers': [
+    { input: [0.5, 0.5], output: [0.1, 0.4, 0.2, 0.05, 0.05, 0.6, 0.02, 0.15, 0.6, 0.3, 0.15, 0.9, 0.5, 0.7, 0.1, 0.3, 0.2, 0.0, 0.0, 0.2] },
+    { input: [0.2, 0.8], output: [0.5, 0.6, 0.15, 0.08, 0.08, 0.8, 0.015, 0.1, 0.8, 0.5, 0.1, 0.5, 0.8, 0.4, 0.05, 0.5, 0.1, 0.0, 0.0, 0.15] },
+    { input: [0.8, 0.2], output: [0.9, 0.3, 0.35, 0.02, 0.12, 0.35, 0.04, 0.3, 0.4, 0.2, 0.3, 1.0, 0.3, 0.9, 0.2, 0.15, 0.3, 0.0, 0.0, 0.3] },
+  ],
+};
+
+/** Get list of available visual preset names */
+export const VISUAL_PRESET_NAMES = Object.keys(VISUAL_PRESETS);
+
+/** Display labels for visual presets */
+export const VISUAL_PRESET_LABELS: Record<string, string> = {
+  'calm-to-chaotic': 'Calm/Chaos',
+  'rainbow-sweep': 'Rainbow',
+  'vortex': 'Vortex',
+  'spiral': 'Spiral',
+  'embers': 'Embers',
+};
+
 // ─── ML Store Interface ──────────────────────────────────────────────
 
 export interface MLState {
@@ -100,6 +154,8 @@ export interface MLStore {
   getExampleCount(): number;
   getLoss(): number | null;
   getLossHistory(): number[];
+  /** Load a visual preset: clears dataset, adds preset examples, trains, updates outputs */
+  loadVisualPreset(name: string): void;
   saveState(): void;
 
   // Lifecycle
@@ -387,6 +443,45 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     getLoss: () => activeIml?.lastLoss ?? null,
 
     getLossHistory: () => activeIml?.lossHistory.slice() ?? [],
+
+    loadVisualPreset: (name: string) => {
+      if (!imlJoy) return;
+      const preset = VISUAL_PRESETS[name];
+      if (!preset) return;
+
+      // Always apply to joystick IML (visual presets use 2 inputs)
+      imlJoy.clearDataset();
+
+      // Pad 20-element preset outputs to current output count with 0.5 defaults
+      const currentOutputCount = outputCount();
+      for (const ex of preset) {
+        const paddedOutputs = new Array(currentOutputCount).fill(0.5);
+        for (let i = 0; i < ex.output.length && i < paddedOutputs.length; i++) {
+          paddedOutputs[i] = ex.output[i];
+        }
+        imlJoy.addExample(ex.input.slice(), paddedOutputs);
+      }
+
+      // Point to joystick IML for training
+      const prevActive = activeIml;
+      activeIml = imlJoy;
+
+      // Sync training
+      activeIml.train();
+
+      // Run inference with current inputs
+      activeIml.process();
+      const newOutputs = new Float32Array(activeIml.getOutputs());
+      setOutputs(newOutputs);
+      outputsTopic.emit(newOutputs);
+
+      // Update reactive signals
+      setExampleCountSignal(activeIml.exampleCount);
+      setLastLossSignal(activeIml.lastLoss);
+
+      // Restore active IML pointer
+      activeIml = prevActive;
+    },
 
     saveState: () => {
       if (!activeIml) return;

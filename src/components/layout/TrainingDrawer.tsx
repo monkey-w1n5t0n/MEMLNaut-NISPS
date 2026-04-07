@@ -7,6 +7,7 @@
  *   - Clear Ex button (clears examples only)
  *   - Clear All button (clears everything including loss history)
  *   - Randomize button (randomizes weights)
+ *   - Visual preset chips (load predefined examples + train)
  *   - Loss plot canvas (shows loss history)
  *
  * Status line is rendered separately at the bottom of the screen.
@@ -15,8 +16,10 @@
 import {
   createSignal,
   onCleanup,
+  For,
 } from 'solid-js';
 import type { MLStore } from '../../stores/ml-store';
+import { VISUAL_PRESET_NAMES, VISUAL_PRESET_LABELS } from '../../stores/ml-store';
 import './drawer.css';
 
 export interface TrainingDrawerProps {
@@ -56,6 +59,11 @@ export default function TrainingDrawer(props: TrainingDrawerProps) {
 
   function onRandomize(): void {
     props.mlStore.randomise();
+  }
+
+  function onLoadPreset(name: string): void {
+    props.mlStore.loadVisualPreset(name);
+    drawLossPlot();
   }
 
   // ─── Button flash effect ───
@@ -130,6 +138,22 @@ export default function TrainingDrawer(props: TrainingDrawerProps) {
           <button class="action-btn dim" id="btn-randomize" onClick={onRandomize}>
             Randomize
           </button>
+        </div>
+        <div class="preset-section">
+          <label>Presets</label>
+          <div class="preset-chips">
+            <For each={VISUAL_PRESET_NAMES}>
+              {(name) => (
+                <button
+                  class="preset-chip"
+                  data-preset={name}
+                  onClick={() => onLoadPreset(name)}
+                >
+                  {VISUAL_PRESET_LABELS[name] || name}
+                </button>
+              )}
+            </For>
+          </div>
         </div>
         <div class="loss-section">
           <label>Loss History</label>

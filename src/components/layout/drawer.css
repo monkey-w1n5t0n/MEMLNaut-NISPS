@@ -126,6 +126,49 @@
   margin-top: 8px;
 }
 
+/* Preset section */
+.preset-section {
+  margin-bottom: 8px;
+}
+
+.preset-section label {
+  display: block;
+  font-size: 9px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preset-chip {
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim, #999);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: all 0.15s;
+  touch-action: manipulation;
+}
+
+.preset-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+}
+
+.preset-chip:active {
+  background: rgba(255, 106, 0, 0.15);
+  color: var(--accent, #ff6a00);
+}
+
 .loss-section label {
   display: block;
   font-size: 9px;

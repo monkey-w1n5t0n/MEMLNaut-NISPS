@@ -76,6 +76,16 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Glass morphism styling with CSS custom properties
 - Exposed as `#joystick` container for e2e test targeting
 
+### FlowField Component (`components/visual/FlowField.tsx`) — IMPLEMENTED
+- Fullscreen Canvas2D particle system (position: fixed, inset: 0)
+- Driven by first 20 ML outputs via `FlowFieldVisualizer` (core/ui/flow-field.ts)
+- Own rAF render loop — starts when outputMode === 'visual', stops otherwise
+- Canvas resizes via ResizeObserver (reinitializes particles on resize)
+- 400 particles with flow-field noise, attraction, dispersion, repulsors, trail effects
+- 20 parameters: angleOffset, scale, speed, hueBase, hueSpread, particleSize, fadeRate, turbulence, attractStrength, attractRadius, dispersionRate, dispersionAmount, particleLifetime, respawnStyle, advectionMode, inertia, drag, repulsorStrength, repulsorCount, repulsorOrbitRate
+- Exposed as `#flowfield-canvas` for e2e test targeting
+- Mounted in App.tsx when `ready()` signal is true
+
 ### Output Store (`stores/output-store.ts`) — NOT YET IMPLEMENTED
 - Output mode (visual/synth/midi-cc/audio-canvas)
 - Per-mode overrides arrays
@@ -109,7 +119,7 @@ These are copied with minimal TypeScript adaptation:
 - `core/audio/` — Arpeggiator, AudioCanvas, MIDI I/O
 - `core/eoc/` — EOC chain + effect modules
 - `core/shapeseq/` — ShapeSeq sequencer
-- `core/ui/` — Pure math/logic modules (input-pipeline, output-pipeline, control-surface, visualizer)
+- `core/ui/` — Pure math/logic modules (input-pipeline, output-pipeline, control-surface, flow-field)
 
 ## Rewritten Modules
 

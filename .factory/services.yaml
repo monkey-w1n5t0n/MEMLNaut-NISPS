@@ -4,6 +4,7 @@ commands:
   typecheck: npx tsc --noEmit
   build: npx vite build
   test-old: npx playwright test --reporter=line
+  test-solidjs: npx playwright test --config playwright-solidjs.config.ts --reporter=line
   lint: npx eslint src/ --ext .ts,.tsx 2>/dev/null || true
   dev: npx vite --port 5174
 

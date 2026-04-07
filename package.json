@@ -1,13 +1,23 @@
 {
-  "name": "memlnaut-nisps-tests",
+  "name": "memlnaut-nisps-solidjs",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
+    "dev": "vite --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --port 5174",
+    "typecheck": "tsc --noEmit",
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1"
+    "@playwright/test": "^1.59.1",
+    "solid-js": "^1.9.12",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.6",
+    "vite-plugin-cross-origin-isolation": "^0.1.6",
+    "vite-plugin-solid": "^2.11.12"
   }
 }

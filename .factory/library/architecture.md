@@ -58,9 +58,23 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Debug probe (`probe/debug-probe.ts`) now wraps MLStore instead of raw WasmIML
 - `window.__nispsStore` exposed for test access to store methods like `setOutputMode()`
 
-### Input Store (`stores/input-store.ts`) — NOT YET IMPLEMENTED
-- joyX, joyY as store properties
-- Input pipeline config (deadzone, zoom, curve, etc.)
+### Input Store (`stores/input-store.ts`) — IMPLEMENTED
+- Factory function `createInputStore(mlStore, bus)` returns `InputStore`
+- joyX, joyY as signals (createSignal, default 0.5)
+- isDragging signal tracks active pointer interaction
+- followMode signal (toggled by double-tap on joystick)
+- `setJoystickPosition(x, y)` clamps to [0,1], guards NaN/Infinity, updates signals + calls ML store setInputs
+- Bus topics created: `input.position`
+- `window.__nispsInputStore` exposed for e2e test access
+
+### Joystick Component (`components/input/Joystick.tsx`) — IMPLEMENTED
+- Canvas-based virtual joystick (180px default size)
+- Pointer events (unified mouse/touch): pointerdown → pointermove → pointerup
+- Canvas drawing: background circle, crosshair grid, draggable thumb dot, glow effect
+- Double-click toggles follow mode (badge + pulse animation)
+- Position readout (HOLD/FOLLOW mode label + coordinates)
+- Glass morphism styling with CSS custom properties
+- Exposed as `#joystick` container for e2e test targeting
 
 ### Output Store (`stores/output-store.ts`) — NOT YET IMPLEMENTED
 - Output mode (visual/synth/midi-cc/audio-canvas)

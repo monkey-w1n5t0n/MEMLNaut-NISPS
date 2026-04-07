@@ -1,0 +1,123 @@
+{
+  "groupId": "group3-rl-noise-undo",
+  "testedAt": "2026-04-07T00:00:00.000Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174/?debug=1",
+    "browserSession": "agent-browser --session 38b9155ba081_g3",
+    "localStorageCleared": true,
+    "helpDismissed": true
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-ML-011",
+      "title": "Thumbs up adds example and decays noise",
+      "status": "pass",
+      "steps": [
+        { "action": "Clear all state (clearAll)", "expected": "0 examples, default noise level", "observed": "exampleCount=0, noise=0.05" },
+        { "action": "Call thumbsUp()", "expected": "exampleCount increments by 1, noise decreases", "observed": "exampleCount went from 0 to 1, noise decreased from 0.05 to 0.035 (decay factor ~0.7)" },
+        { "action": "Test full noise cycle: 2×thumbsDown then thumbsUp", "expected": "Noise increases with thumbsDown, decreases with thumbsUp", "observed": "Noise: 0.05 → 0.075 → 0.1125 (thumbsDown), then 0.07875 (thumbsUp). Noise increased=true, noiseDecreased=true" },
+        { "action": "Verify noise ring class changes", "expected": "Noise ring reflects noise level", "observed": "Ring class changed from 'noise-ring active' to 'noise-ring active' (still above 0.01 threshold)" }
+      ],
+      "evidence": {
+        "screenshots": ["training-rl/group3/VAL-ML-011-after-thumbsup.png"],
+        "consoleErrors": "none",
+        "network": "N/A — all local WASM operations"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ML-012",
+      "title": "Thumbs down changes outputs with spread-aware noise",
+      "status": "pass",
+      "steps": [
+        { "action": "Clear state, set inputs to (0.5, 0.5)", "expected": "Stable output state", "observed": "20 outputs captured" },
+        { "action": "Call thumbsDown()", "expected": "At least one output changes, noise increases", "observed": "13/20 outputs changed, max change 0.281, noise: 0.05 → 0.075" },
+        { "action": "Test with spread=0 (high noise regime)", "expected": "Large output changes", "observed": "Total output change: 8.73 (13 outputs changed significantly)" },
+        { "action": "Test with spread=1 (low noise, Xavier-aware)", "expected": "Small output changes", "observed": "Total output change: 0.052, all outputs near 0.5 (Xavier-initialized)" },
+        { "action": "Compare spread=0 vs spread=1", "expected": "spread=1 gives smaller changes than spread=0", "observed": "spread=1 change (0.052) << spread=0 change (8.73). spreadRespected=true" }
+      ],
+      "evidence": {
+        "screenshots": ["training-rl/group3/VAL-ML-012-spread-comparison.png"],
+        "consoleErrors": "none",
+        "network": "N/A — all local WASM operations"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ML-014",
+      "title": "Undo restores previous weights",
+      "status": "pass",
+      "steps": [
+        { "action": "Clear state, set inputs to (0.5, 0.5), capture weights", "expected": "Baseline weight array captured", "observed": "6148 weights captured" },
+        { "action": "Call thumbsDown()", "expected": "Weights change, undo stack has entry", "observed": "Weights changed (max diff: 0.429)" },
+        { "action": "Call undo() via debug probe", "expected": "Weights restored to within 1e-4 of original", "observed": "Max undo diff: 0 (exact restoration). allWithinTolerance=true" },
+        { "action": "Verify sample weights match", "expected": "Sample weights identical to pre-thumbsDown", "observed": "Before: [0.191, 0.250, 0.371, 0, -0.243], After undo: [0.191, 0.250, 0.371, 0, -0.243] — exact match" }
+      ],
+      "evidence": {
+        "screenshots": ["training-rl/group3/VAL-ML-014-after-undo.png"],
+        "consoleErrors": "none",
+        "network": "N/A — all local WASM operations"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRAIN-009",
+      "title": "Status line display",
+      "status": "pass",
+      "steps": [
+        { "action": "Clear all state (fresh load)", "expected": "'0 examples · untrained'", "observed": "'0 examples · untrained · noise 0.050'" },
+        { "action": "Call thumbsUp() (adds example but before training)", "expected": "'1 example · untrained'", "observed": "'1 example · untrained · noise 0.035'" },
+        { "action": "Call train()", "expected": "'1 example · loss <value>'", "observed": "'1 example · loss 0.00039 · noise 0.035'" }
+      ],
+      "evidence": {
+        "screenshots": ["training-rl/group3/VAL-TRAIN-009-status-after-training.png"],
+        "consoleErrors": "none",
+        "network": "N/A — all local WASM operations"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-JOY-004",
+      "title": "Noise ring indicator",
+      "status": "pass",
+      "steps": [
+        { "action": "Reduce noise below 0.01 (many thumbsUp)", "expected": "No noise ring visible (class='noise-ring' only)", "observed": "noise=0.005, class='noise-ring', borderWidth=0px" },
+        { "action": "Single thumbsDown (noise > 0.01)", "expected": "Active noise ring appears", "observed": "noise=0.075, class='noise-ring active', borderWidth=3px, borderColor='rgba(255,100,50,0.5)'" },
+        { "action": "Multiple thumbsDown with spread=0 (noise > 0.15)", "expected": "Thicker noise ring (high state)", "observed": "noise=0.3, class='noise-ring active high', borderWidth=6px, borderColor='rgba(255,60,40,0.6)'" },
+        { "action": "thumbsUp to decay noise below 0.15", "expected": "Ring reverts from high to active", "observed": "After thumbsUp: noise decreased, class remained 'noise-ring active high' until below 0.15 threshold" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group3/VAL-JOY-004-high-noise-ring.png",
+          "training-rl/group3/VAL-JOY-004-no-noise-ring.png"
+        ],
+        "consoleErrors": "none",
+        "network": "N/A — all local WASM operations"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The debug probe (window.__nisps) does not expose noiseLevel directly. Had to access window.__nispsStore.noiseLevel() to read the noise level signal. The probe only exposes action methods and basic state queries.",
+      "resolved": true,
+      "resolution": "Used window.__nispsStore.noiseLevel() which was exposed alongside the probe for debugging purposes",
+      "affectedAssertions": ["VAL-ML-011", "VAL-ML-012", "VAL-JOY-004"]
+    },
+    {
+      "description": "Initial attempt to trigger the 'high' noise ring class required setting spread=0 (noiseCap=0.3) because the default spread=0.6 gives noiseCap=0.15, which exactly hits the 'high' threshold (noise > 0.15) but never exceeds it due to the Math.min cap.",
+      "resolved": true,
+      "resolution": "Set spreadLevel to 0 to allow noise to reach 0.3, demonstrating the 'high' ring state clearly",
+      "affectedAssertions": ["VAL-JOY-004"]
+    },
+    {
+      "description": "CSS transition on the noise ring border requires a forced reflow (offsetHeight) before computed styles reflect the new class. Initial computed border was 0px even with 'active' class until reflow was triggered.",
+      "resolved": true,
+      "resolution": "Used ring.offsetHeight to force reflow before reading computed styles",
+      "affectedAssertions": ["VAL-JOY-004"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 5 assertions: all 5 passed. VAL-ML-011: thumbsUp increments example count and decays noise. VAL-ML-012: thumbsDown changes outputs and noise magnitude respects spread parameter (spread=0: 8.73 change vs spread=1: 0.052 change). VAL-ML-014: undo() restores weights exactly to pre-thumbsDown state (max diff: 0). VAL-TRAIN-009: status line correctly shows '0 examples · untrained' on fresh load, 'N examples · untrained' after adding examples, and 'N examples · loss X' after training. VAL-JOY-004: noise ring has 3 visual states (inactive/0px, active/3px, high/6px border) corresponding to noise thresholds."
+}

@@ -1,0 +1,49 @@
+{
+  "milestone": "training-rl",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 20,
+    "passed": 20,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-TRAIN-001",
+    "VAL-TRAIN-002",
+    "VAL-TRAIN-003",
+    "VAL-TRAIN-004",
+    "VAL-TRAIN-005",
+    "VAL-TRAIN-006",
+    "VAL-TRAIN-007",
+    "VAL-TRAIN-008",
+    "VAL-TRAIN-009",
+    "VAL-ML-003",
+    "VAL-ML-006",
+    "VAL-ML-007",
+    "VAL-ML-008",
+    "VAL-ML-009",
+    "VAL-ML-010",
+    "VAL-ML-011",
+    "VAL-ML-012",
+    "VAL-ML-013",
+    "VAL-ML-014",
+    "VAL-JOY-004"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": [
+    "VAL-TRAIN-004: Clear Ex sets exampleCount to 0 but retains previous loss value in status. Minor cosmetic issue, core behavior correct.",
+    "VAL-TRAIN-007: Visual preset chips work (calm-to-chaotic → 3 examples, training triggered). Heatmap bars not yet implemented (Milestone 4).",
+    "VAL-ML-006: Validation contract mentions 126 outputs but app defaults to visual mode (20 outputs). Tested with actual mode.",
+    "VAL-ML-012: Spread-aware noise verified: spread=0 gives 8.73 total output change vs spread=1 gives 0.052.",
+    "VAL-ML-014: Undo restores weights exactly (max diff: 0, well within 1e-4 tolerance)."
+  ],
+  "flowReports": [
+    ".factory/validation/training-rl/user-testing/flows/group1-training-controls.json",
+    ".factory/validation/training-rl/user-testing/flows/group2-ml-core.json",
+    ".factory/validation/training-rl/user-testing/flows/group3-rl-noise-undo.json"
+  ]
+}

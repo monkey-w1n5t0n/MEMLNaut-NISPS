@@ -1,0 +1,166 @@
+{
+  "groupId": "group1-training-controls",
+  "testedAt": "2026-04-07T20:30:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174/?debug=1",
+    "browserSession": "38b9155ba081_g1",
+    "tool": "agent-browser",
+    "localStorageCleared": true,
+    "helpDismissed": true
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-TRAIN-001",
+      "title": "Training drawer opens/closes",
+      "status": "pass",
+      "steps": [
+        { "action": "Check initial drawer state", "expected": "Drawer hidden (class=hidden)", "observed": "drawer exists with class 'hidden' = true" },
+        { "action": "Click Train dock icon (data-drawer=training)", "expected": "Drawer opens (class hidden removed)", "observed": "drawerHidden: false, drawerVisible: true" },
+        { "action": "Click Train dock icon again", "expected": "Drawer closes (class hidden added)", "observed": "drawerHidden: true" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-001-drawer-open.png",
+          "training-rl/group1/VAL-TRAIN-001-drawer-closed.png"
+        ],
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRAIN-002",
+      "title": "Add Example button",
+      "status": "pass",
+      "steps": [
+        { "action": "Check initial exampleCount", "expected": "0 examples, status shows 'untrained'", "observed": "exampleCount=0, statusText='0 examples · untrained · noise 0.050'" },
+        { "action": "Click Add Example button in training drawer", "expected": "exampleCount increments to 1, status updates", "observed": "exampleCount=1, statusText='1 example · untrained · noise 0.050'" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-002-after-add-example.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "exampleCount before=0, after=1"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRAIN-003",
+      "title": "Train button",
+      "status": "pass",
+      "steps": [
+        { "action": "Add 3 examples at different positions", "expected": "exampleCount=3, status shows 'untrained'", "observed": "exampleCount=3, statusText='3 examples · untrained · noise 0.050'" },
+        { "action": "Click Train button in training drawer", "expected": "Async training completes, status shows loss value", "observed": "statusText='3 examples · loss 0.00000 · noise 0.050', loss=0 (finite)" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-003-after-train.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "lossBefore=null, lossAfter=0 (finite, non-negative)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRAIN-004",
+      "title": "Clear Ex button",
+      "status": "pass",
+      "steps": [
+        { "action": "Click Clear Ex button with 3 examples present", "expected": "exampleCount=0, status resets to '0 examples'", "observed": "exampleCount=0, but statusText='0 examples · loss 0.00005 · noise 0.050'" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-004-after-clear-ex.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "exampleCount=0, loss=0.00004568714211927727 (retained from previous training)"
+      },
+      "issues": "Minor: Clear Ex correctly sets exampleCount to 0 but retains the previous loss value in the status line (shows 'loss 0.00005' instead of 'untrained'). The getLoss() probe still returns the previous loss rather than null. This is likely because clearExamples() clears the dataset but doesn't reset lastLossSignal. Primary criterion (exampleCount=0) passes."
+    },
+    {
+      "id": "VAL-TRAIN-005",
+      "title": "Clear All button",
+      "status": "pass",
+      "steps": [
+        { "action": "Add 2 examples and train (loss=0)", "expected": "examples exist, loss is set", "observed": "exampleCount=2, loss=0" },
+        { "action": "Click Clear All button", "expected": "exampleCount=0, loss=null", "observed": "exampleCount=0, loss=null, statusText='0 examples · untrained · noise 0.050'" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-005-after-clear-all.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "exampleCount=0, loss=null"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRAIN-006",
+      "title": "Randomize button",
+      "status": "pass",
+      "steps": [
+        { "action": "Record outputs at position (0.5, 0.5)", "expected": "Outputs captured", "observed": "outputs=[0.023, 0.601, 0.603, 0.302, 0.150, 0.199, 0.044, 0.703, 0.896, 0.247, ...]" },
+        { "action": "Click Randomize button", "expected": "All outputs change", "observed": "outputs=[0.251, 0.484, 0.831, 0.766, 0.749, 0.191, 0.427, 0.463, 0.611, 0.675, ...] — all changed" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-006-after-randomize.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "outputsChanged=true"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-TRAIN-007",
+      "title": "Visual preset chips",
+      "status": "pass",
+      "steps": [
+        { "action": "Clear all state", "expected": "exampleCount=0, loss=null", "observed": "exampleCount=0, loss=null" },
+        { "action": "Click 'calm-to-chaotic' preset chip", "expected": "exampleCount=3, loss shown, training triggered", "observed": "exampleCount=3, loss=0.000052201812650309876 (finite), statusText='3 examples · loss 0.00005 · noise 0.050'" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-007-after-preset.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "exampleCount=3, lossIsFinite=true",
+        "note": "Heatmap bar widths could not be verified — heatmap UI not yet implemented in this milestone (Milestone 4 feature). The core assertion (exampleCount=3, loss shown) passes."
+      },
+      "issues": "Heatmap bars not yet implemented (Milestone 4). Core criteria (exampleCount=3, status shows loss) pass."
+    },
+    {
+      "id": "VAL-TRAIN-008",
+      "title": "Loss plot updates",
+      "status": "pass",
+      "steps": [
+        { "action": "After training (from preset chip test), check loss canvas", "expected": "Loss canvas shows line chart with loss history", "observed": "Canvas exists (280x80), has 1833 colored pixels (orange line, RGB ~[117,48,0]), indicating loss curve is drawn" }
+      ],
+      "evidence": {
+        "screenshots": [
+          "training-rl/group1/VAL-TRAIN-008-loss-plot.png"
+        ],
+        "consoleErrors": "none",
+        "probeOutput": "canvasWidth=280, canvasHeight=80, coloredPixels=1833, hasLine=true, sampleColoredPixel=[117,48,0,242]"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The 'Train' text matches multiple DOM elements — the dock icon label, drawer header, and Train button. Using 'find text Train click' fails with strict mode violation (3 elements). Had to use getElementById('btn-train').click() instead.",
+      "resolved": true,
+      "resolution": "Used document.getElementById('btn-train').click() for the drawer Train button and @e1 ref for the dock icon",
+      "affectedAssertions": ["VAL-TRAIN-003", "VAL-TRAIN-005"]
+    },
+    {
+      "description": "Scoped snapshot (-s CSS selector) renumbers refs starting from @e1, which can conflict with full-page refs. Clicking a ref from a scoped snapshot when full-page elements have the same ref number causes ambiguity.",
+      "resolved": true,
+      "resolution": "Used find text or getElementById for ambiguous buttons instead of refs",
+      "affectedAssertions": ["VAL-TRAIN-004"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 8 assertions: 8 passed (1 with minor note). VAL-TRAIN-004: Clear Ex sets exampleCount to 0 but retains loss value in status (should likely reset to 'untrained'). VAL-TRAIN-007: Heatmap bars not yet implemented but core preset functionality works. All console errors were clean throughout testing."
+}

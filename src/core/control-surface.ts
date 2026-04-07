@@ -330,8 +330,8 @@ export class ControlSurface {
    */
   setOverride(paramName: keyof ControlSurfaceParams, value: number | string | boolean): void {
     const derived = this._getDerived();
-    const base = (derived as Record<string, unknown>)[paramName] ??
-                 (PARAM_DEFAULTS as Record<string, unknown>)[paramName];
+    const base = (derived as unknown as Record<string, unknown>)[paramName] ??
+                 (PARAM_DEFAULTS as unknown as Record<string, unknown>)[paramName];
 
     if (typeof base === 'number' && typeof value === 'number') {
       this._offsets[paramName] = value - base;
@@ -373,20 +373,20 @@ export class ControlSurface {
     const resolved = { ...PARAM_DEFAULTS } as ControlSurfaceParams;
 
     for (const name of Object.keys(PARAM_DEFAULTS) as Array<keyof ControlSurfaceParams>) {
-      const base = (derived as Record<string, unknown>)[name] ??
-                   (PARAM_DEFAULTS as Record<string, unknown>)[name];
+      const base = (derived as unknown as Record<string, unknown>)[name] ??
+                   (PARAM_DEFAULTS as unknown as Record<string, unknown>)[name];
 
       if (name in this._offsets) {
         const range = PARAM_RANGES[name];
         if (range && typeof base === 'number') {
-          (resolved as Record<string, unknown>)[name] =
+          (resolved as unknown as Record<string, unknown>)[name] =
             clampParam(name, (base as number) + (this._offsets[name] as number));
         } else {
           // Discrete override: stored as literal
-          (resolved as Record<string, unknown>)[name] = this._offsets[name];
+          (resolved as unknown as Record<string, unknown>)[name] = this._offsets[name];
         }
       } else {
-        (resolved as Record<string, unknown>)[name] = base;
+        (resolved as unknown as Record<string, unknown>)[name] = base;
       }
     }
 

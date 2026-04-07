@@ -242,10 +242,9 @@ export class HandTracker implements HandTrackingController {
 
   private async _initHandLandmarker(): Promise<void> {
     // Dynamic CDN import — never bundled
-    const vision = await import(
-      /* @vite-ignore */
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
-    ) as any;
+    // Dynamic CDN import — no type declarations available
+    const cdnUrl = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs';
+    const vision = await (Function('url', 'return import(url)')(cdnUrl)) as any;
 
     const { HandLandmarker, FilesetResolver } = vision;
 

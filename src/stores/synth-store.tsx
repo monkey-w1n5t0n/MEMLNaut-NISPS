@@ -19,21 +19,9 @@ import {
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
 
-// ─── SynthEngine placeholder type ────────────────────────────────────
-//
-// Replace this with the real interface once the synth engine module exists.
-// Kept minimal and forward-compatible — only the fields the store touches.
-
-export interface SynthEngine {
-  /** Stable engine identifier (e.g. 'shaper-feedback', 'additive', 'fm') */
-  id: string;
-  /** Human-readable name shown in the UI */
-  displayName: string;
-  /** Stop the engine and release audio resources (called before swap) */
-  stop?(): void;
-  /** Apply a named synth preset by id */
-  applyPreset?(presetId: string): void;
-}
+// Import and re-export SynthEngine from the real implementation
+import { SynthEngine } from '../core/synth/engine-interface';
+export { SynthEngine };
 
 // ─── Arp config ──────────────────────────────────────────────────────
 
@@ -142,9 +130,9 @@ export function createSynthStore(): SynthStore {
     getEngine: () => engine,
 
     setEngine: (newEngine: SynthEngine | null) => {
-      // Stop and release old engine before swapping
-      if (engine?.stop) {
-        engine.stop();
+      // Dispose old engine before swapping
+      if (engine) {
+        engine.dispose();
       }
       engine = newEngine;
       setState('engineId', newEngine?.id ?? '');
@@ -156,9 +144,6 @@ export function createSynthStore(): SynthStore {
     },
 
     stop: () => {
-      if (engine?.stop) {
-        engine.stop();
-      }
       setState('isRunning', false);
     },
 
@@ -168,7 +153,7 @@ export function createSynthStore(): SynthStore {
 
     applyPreset: (presetId: string) => {
       setState('presetId', presetId);
-      if (engine?.applyPreset) {
+      if (engine) {
         engine.applyPreset(presetId);
       }
     },

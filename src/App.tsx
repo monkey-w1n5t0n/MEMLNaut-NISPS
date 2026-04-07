@@ -1,9 +1,18 @@
 import { onMount, onCleanup, createSignal } from 'solid-js';
 import { WasmIML } from './core/iml';
+import { createSignalBus, type SignalBus } from './bus/signal-bus';
 
 const N_INPUTS = 2;
 const HIDDEN_LAYERS = [32, 48, 64];
 const N_OUTPUTS = 126;
+
+// Singleton signal bus — shared across the entire app
+const bus: SignalBus = createSignalBus();
+
+// Expose bus globally for e2e tests and debug access
+(window as any).__nispsBus = bus;
+
+export { bus };
 
 /**
  * Root application component for the NISPS immersive app.

@@ -222,10 +222,13 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
 
     setInputs: (x: number, y: number) => {
       if (!activeIml) return;
-      const cx = Math.max(0, Math.min(1, x));
-      const cy = Math.max(0, Math.min(1, y));
-      activeIml.setInput(0, cx);
-      activeIml.setInput(1, cy);
+      // Clamp to [0,1] and guard against NaN/Infinity
+      const clamp = (v: number) => {
+        if (!Number.isFinite(v)) return 0.5;
+        return Math.max(0, Math.min(1, v));
+      };
+      activeIml.setInput(0, clamp(x));
+      activeIml.setInput(1, clamp(y));
       runInference();
     },
 

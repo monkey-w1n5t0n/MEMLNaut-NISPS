@@ -57,6 +57,12 @@ export interface MLStore {
   readonly state: MLState;
   readonly outputs: () => Float32Array;
   readonly outputCount: () => number;
+  /** Current noise level for RL exploration */
+  readonly noiseLevel: () => number;
+  /** Reactive example count — updates when examples are added/cleared */
+  readonly exampleCountSignal: () => number;
+  /** Reactive last loss — updates after training */
+  readonly lastLossSignal: () => number | null;
 
   // IML access (opaque handles, NOT reactive)
   getActiveIml(): WasmIML | null;
@@ -72,6 +78,10 @@ export interface MLStore {
   setInputs(x: number, y: number): void;
   randomise(): void;
   clearExamples(): void;
+  /** Clear examples, loss history, and reset noise to default */
+  clearAll(): void;
+  /** Add current input/output as a training example (updates reactive count) */
+  addExample(): void;
   train(): number | null;
   trainAsync(): Promise<number | null>;
   thumbsUp(): Promise<number | null>;
@@ -82,6 +92,7 @@ export interface MLStore {
   getWeights(): number[];
   getExampleCount(): number;
   getLoss(): number | null;
+  getLossHistory(): number[];
   saveState(): void;
 
   // Lifecycle
@@ -102,6 +113,13 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
   const initialCount = outputCountForMode('visual');
   const [outputs, setOutputs] = createSignal<Float32Array>(new Float32Array(initialCount));
   const [outputCount, setOutputCount] = createSignal<number>(initialCount);
+
+  // Noise level signal for RL exploration (reactive for status line + noise ring)
+  const [noiseLevel, setNoiseLevel] = createSignal<number>(0.05);
+
+  // Reactive example count and last loss (for status line to watch)
+  const [exampleCountSignal, setExampleCountSignal] = createSignal<number>(0);
+  const [lastLossSignal, setLastLossSignal] = createSignal<number | null>(null);
 
   // IML instances — module-scope opaque handles (not reactive)
   let imlJoy: WasmIML | null = null;
@@ -144,6 +162,9 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     const newOutputs = new Float32Array(activeIml.getOutputs());
     setOutputs(newOutputs);
     outputsTopic.emit(newOutputs);
+    // Update reactive state signals
+    setExampleCountSignal(activeIml.exampleCount);
+    setLastLossSignal(activeIml.lastLoss);
   }
 
   // ─── Helper: resize MLP (mode switch) ───
@@ -196,6 +217,9 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     get state() { return state; },
     outputs,
     outputCount,
+    noiseLevel,
+    exampleCountSignal,
+    lastLossSignal,
 
     getActiveIml: () => activeIml,
     getImlJoy: () => imlJoy,
@@ -235,11 +259,35 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     randomise: () => {
       if (!activeIml) return;
       activeIml.randomiseWeights(state.spreadLevel);
+      setNoiseLevel(0.05);
       runInference();
     },
 
     clearExamples: () => {
       activeIml?.clearDataset();
+      setExampleCountSignal(0);
+    },
+
+    clearAll: () => {
+      activeIml?.clearDataset();
+      if (activeIml) {
+        activeIml.lossHistory.length = 0;
+        activeIml.lastLoss = null;
+        activeIml.bestLoss = null;
+        activeIml.totalTrainingIterations = 0;
+      }
+      setNoiseLevel(0.05);
+      setExampleCountSignal(0);
+      setLastLossSignal(null);
+    },
+
+    addExample: () => {
+      if (!activeIml) return;
+      activeIml.addExample(
+        activeIml.inputState.slice(),
+        activeIml.outputState.slice()
+      );
+      setExampleCountSignal(activeIml.exampleCount);
     },
 
     train: () => {
@@ -251,7 +299,9 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
 
     trainAsync: () => {
       if (!activeIml) return Promise.resolve(null);
-      return activeIml.trainAsync(() => runInference());
+      return activeIml.trainAsync(() => {
+        runInference();
+      });
     },
 
     thumbsUp: () => {
@@ -260,13 +310,21 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
         activeIml.inputState.slice(),
         activeIml.outputState.slice()
       );
+      // Update reactive signals immediately
+      setExampleCountSignal(activeIml.exampleCount);
+      // Decay noise on positive feedback
+      const decayed = Math.max(noiseLevel() * 0.7, 0.005);
+      setNoiseLevel(decayed);
       return activeIml.trainAsync(() => runInference());
     },
 
     thumbsDown: (speed?: number) => {
       if (!activeIml) return;
       const spread = state.spreadLevel;
-      const s = speed ?? (0.15 * (1 - spread) + 0.05 * spread);
+      const noiseCap = 0.3 * (1 - spread) + 0.05 * spread;
+      const newNoise = Math.min(noiseLevel() * 1.5, noiseCap);
+      setNoiseLevel(newNoise);
+      const s = speed ?? newNoise;
       activeIml.moveWeights(s, spread);
       runInference();
     },
@@ -285,6 +343,8 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     getExampleCount: () => activeIml?.exampleCount ?? 0,
 
     getLoss: () => activeIml?.lastLoss ?? null,
+
+    getLossHistory: () => activeIml?.lossHistory.slice() ?? [],
 
     saveState: () => {
       if (!activeIml) return;

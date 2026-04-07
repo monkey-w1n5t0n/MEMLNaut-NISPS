@@ -1,0 +1,175 @@
+/* Drawer panels — slide in from the right */
+
+.drawer-stack {
+  position: fixed;
+  right: 56px; /* dock width */
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 190;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 90vh;
+  pointer-events: none;
+}
+
+.drawer-stack > * {
+  pointer-events: auto;
+}
+
+.drawer {
+  width: 300px;
+  max-height: 80vh;
+  background: var(--glass-bg, rgba(10, 10, 20, 0.65));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  overflow: hidden;
+  animation: drawerSlideIn 0.25s ease-out;
+}
+
+.drawer.hidden {
+  display: none;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #aaa;
+}
+
+.drawer-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.drawer-close:hover {
+  color: #fff;
+}
+
+.drawer-body {
+  padding: 10px 12px;
+  font-size: 11px;
+}
+
+/* Action buttons row */
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.action-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.15));
+  background: rgba(255, 255, 255, 0.05);
+  color: #ccc;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.action-btn.accent {
+  background: rgba(0, 212, 255, 0.15);
+  border-color: rgba(0, 212, 255, 0.3);
+  color: var(--accent, #00d4ff);
+}
+
+.action-btn.accent:hover {
+  background: rgba(0, 212, 255, 0.25);
+}
+
+.action-btn.dim {
+  color: #777;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.action-btn.dim:hover {
+  color: #aaa;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Button flash effect */
+.action-btn.flash {
+  animation: btn-flash 0.3s ease-out;
+}
+
+@keyframes btn-flash {
+  0% { background: rgba(0, 212, 255, 0.3); }
+  100% { background: rgba(255, 255, 255, 0.05); }
+}
+
+/* Loss section */
+.loss-section {
+  margin-top: 8px;
+}
+
+.loss-section label {
+  display: block;
+  font-size: 9px;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.loss-section canvas {
+  width: 100%;
+  height: 80px;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Status line */
+.status-line {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  padding: 4px 16px;
+  background: var(--glass-bg, rgba(10, 10, 20, 0.65));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 20px;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: #888;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Drawer slide-in animation */
+@keyframes drawerSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

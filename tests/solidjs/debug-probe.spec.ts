@@ -19,10 +19,12 @@ const EXPECTED_METHODS = [
   'trainAsync',
   'randomise',
   'clearExamples',
+  'clearAll',
   'saveState',
   'evalLoss',
   'inferBatch',
   'getLayerStats',
+  'getLossHistory',
 ] as const;
 
 test.describe('Debug Probe (f03)', () => {
@@ -61,8 +63,8 @@ test.describe('Debug Probe (f03)', () => {
       const expectedMethods = [
         'getOutputs', 'getLoss', 'getWeights', 'getExampleCount',
         'setInputs', 'thumbsUp', 'thumbsDown', 'train', 'trainAsync',
-        'randomise', 'clearExamples', 'saveState', 'evalLoss',
-        'inferBatch', 'getLayerStats',
+        'randomise', 'clearExamples', 'clearAll', 'saveState', 'evalLoss',
+        'inferBatch', 'getLayerStats', 'getLossHistory',
       ];
       for (const name of expectedMethods) {
         checks[name] = typeof probe[name] === 'function';

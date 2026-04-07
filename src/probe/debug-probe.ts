@@ -20,6 +20,7 @@ export interface DebugProbe {
   trainAsync: () => Promise<number | null>;
   randomise: () => void;
   clearExamples: () => void;
+  clearAll: () => void;
   saveState: () => void;
   evalLoss: () => number | null;
   inferBatch: (points: number[][]) => number[][];
@@ -29,6 +30,7 @@ export interface DebugProbe {
     deadFrac: number;
     satFrac: number;
   }>;
+  getLossHistory: () => number[];
 }
 
 /**
@@ -68,6 +70,8 @@ export function createDebugProbe(store: MLStore): DebugProbe {
 
     clearExamples: () => store.clearExamples(),
 
+    clearAll: () => store.clearAll(),
+
     saveState: () => store.saveState(),
 
     evalLoss: () => store.evalLoss(),
@@ -75,6 +79,8 @@ export function createDebugProbe(store: MLStore): DebugProbe {
     inferBatch: (points: number[][]) => store.inferBatch(points),
 
     getLayerStats: () => store.getLayerStats(),
+
+    getLossHistory: () => store.getLossHistory(),
   };
 }
 

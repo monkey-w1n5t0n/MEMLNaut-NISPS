@@ -1,0 +1,54 @@
+/* Dock — right-side vertical icon bar */
+
+.dock {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--glass-bg, rgba(10, 10, 20, 0.65));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  border-left: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px 0 0 8px;
+}
+
+.dock-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+  font-family: var(--font-mono, monospace);
+  font-size: 8px;
+}
+
+.dock-icon:hover {
+  color: #ccc;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.dock-icon.active {
+  color: var(--accent, #00d4ff);
+  background: rgba(0, 212, 255, 0.1);
+}
+
+.dock-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.dock-label {
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}

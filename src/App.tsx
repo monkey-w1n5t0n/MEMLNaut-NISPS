@@ -5,6 +5,9 @@ import { exposeDebugProbe } from './probe/debug-probe';
 import bus from './bus';
 import Joystick from './components/input/Joystick';
 import FlowField from './components/visual/FlowField';
+import Dock from './components/layout/Dock';
+import TrainingDrawer from './components/layout/TrainingDrawer';
+import StatusLine from './components/layout/StatusLine';
 
 /**
  * Root application component for the NISPS immersive app.
@@ -17,6 +20,29 @@ export default function App() {
 
   let mlStore: MLStore | null = null;
   const [inputStore, setInputStore] = createSignal<InputStore | null>(null);
+
+  // Drawer state — track which drawers are open
+  const [openDrawers, setOpenDrawers] = createSignal<Set<string>>(new Set());
+
+  function toggleDrawer(drawerName: string): void {
+    setOpenDrawers(prev => {
+      const next = new Set(prev);
+      if (next.has(drawerName)) {
+        next.delete(drawerName);
+      } else {
+        next.add(drawerName);
+      }
+      return next;
+    });
+  }
+
+  function closeDrawer(drawerName: string): void {
+    setOpenDrawers(prev => {
+      const next = new Set(prev);
+      next.delete(drawerName);
+      return next;
+    });
+  }
 
   onMount(async () => {
     try {
@@ -106,6 +132,18 @@ export default function App() {
       </Show>
       <Show when={ready() && inputStore()}>
         {(store) => <Joystick inputStore={store()} />}
+      </Show>
+      {/* Dock + Drawers + Status (only when ready and ML store exists) */}
+      <Show when={ready() && mlStore !== null}>
+        <Dock onToggleDrawer={toggleDrawer} openDrawers={openDrawers} />
+        <div class="drawer-stack">
+          <TrainingDrawer
+            mlStore={mlStore!}
+            visible={openDrawers().has('training')}
+            onClose={() => closeDrawer('training')}
+          />
+        </div>
+        <StatusLine mlStore={mlStore!} />
       </Show>
     </div>
   );

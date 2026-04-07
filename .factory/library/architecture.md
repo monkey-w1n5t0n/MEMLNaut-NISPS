@@ -53,6 +53,12 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Mode switching via `setOutputMode()` triggers MLP recreation with warm-start weight transfer
 - Output count per mode: visual=20, synth=126, midi-cc=8 (configurable), audio-canvas=36
 - All ML operations exposed as methods: setInputs, train, trainAsync, randomise, thumbsUp, thumbsDown, etc.
+- `noiseLevel` signal — reactive RL exploration noise level (default 0.05)
+- `exampleCountSignal` — reactive example count (updates on add/clear)
+- `lastLossSignal` — reactive loss value (updates after training)
+- `addExample()` — adds current I/O as training example, updates reactive count
+- `clearAll()` — clears examples, loss history, resets noise to default
+- `getLossHistory()` — returns copy of loss history array
 - `dispose()` destroys both IML instances (called in App.tsx onCleanup)
 - Bus topics created: `ml.outputs`, `ml.outputCount`, `mode.output`
 - Debug probe (`probe/debug-probe.ts`) now wraps MLStore instead of raw WasmIML
@@ -90,6 +96,26 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Output mode (visual/synth/midi-cc/audio-canvas)
 - Per-mode overrides arrays
 - Output pipeline config (globalCurve, smoothing, slewRate, freezeGate)
+
+### Dock Component (`components/layout/Dock.tsx`) — IMPLEMENTED
+- Right-side vertical dock with 6 icon buttons: Train, Mode, Synth, NISPS, FX, Help
+- macOS-style dock with glass morphism background
+- `openDrawers` signal (Set<string>) tracks which drawers are open
+- Clicking icon toggles corresponding drawer
+- Active state (accent color) shown when drawer is open
+- SVG icons matching old playground design
+
+### TrainingDrawer Component (`components/layout/TrainingDrawer.tsx`) — IMPLEMENTED
+- Drawer panel with training controls, visible when drawer 'training' is open
+- Action buttons: Add Example, Train (async), Clear Ex, Clear All, Randomize
+- Loss plot canvas (280×80) drawn with orange line on last 200 loss history entries
+- Button flash animation on click
+- Uses ML store methods: addExample(), trainAsync(), clearExamples(), clearAll(), randomise()
+
+### StatusLine Component (`components/layout/StatusLine.tsx`) — IMPLEMENTED
+- Floating pill at bottom center showing example count, loss/noise state
+- Format: "N examples · loss X.XXXXX · noise X.XXX" or "N examples · untrained · noise X.XXX"
+- Reactively watches exampleCountSignal, lastLossSignal, noiseLevel signals
 
 ### Dual IML System
 - `imlJoy`: 2 inputs (joystick), dynamic outputs — warm-started on resize

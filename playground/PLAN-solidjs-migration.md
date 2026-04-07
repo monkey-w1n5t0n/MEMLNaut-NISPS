@@ -536,20 +536,24 @@ Each provider creates its store and exposes it via context. The `SessionProvider
 
 ### Phase 1: Skeleton + Core Loop
 
-**Goal**: Joystick → MLP → FlowField working in SolidJS.
+**Goal**: Joystick → MLP → FlowField working in SolidJS. **Also**: validate all risky integration points early.
 
 1. `npm create vite@latest playground-solid -- --template solid-ts`
 2. Set up project structure (`core/`, `stores/`, `components/`, `bus/`)
-3. Transplant WASM files and `nisps-wasm.js` into `core/wasm/`
-4. Implement `createSignalBus()`
-5. Implement `ml-store.ts` and `input-store.ts` (minimal)
-6. Implement `useInference` hook
-7. Build `Joystick` component
-8. Build `FlowField` component (transplant `FlowFieldVisualizer` class)
-9. Wire it up in `App.tsx` with minimal `ImmersiveLayout`
-10. Verify: drag joystick → see particles respond
+3. **Configure Vite**: COOP/COEP headers, WASM asset handling (spike `public/` vs `locateFile`)
+4. Transplant WASM files (`nisps.wasm`, `nisps.js`, worker) into `core/wasm/`
+5. **Spike**: Verify WASM loads and runs inference in Vite dev server (before building any UI)
+6. **Spike**: Verify C15 WASM + SharedArrayBuffer works with COOP/COEP headers
+7. Implement `createSignalBus()`
+8. Implement `ml-store.ts` and `input-store.ts` (minimal)
+9. Implement reactive inference (`createEffect` on input signals, not rAF)
+10. Build `Joystick` component
+11. Build `FlowField` component (transplant `FlowFieldVisualizer` class, own rAF loop)
+12. Wire it up in `App.tsx` with minimal `ImmersiveLayout`
+13. Verify: drag joystick → see particles respond
+14. Add worker `dispose()` to IML, verify cleanup in `onCleanup()`
 
-**Validates**: SolidJS + WASM integration, signal bus, frame-rate batching, canvas components.
+**Validates**: SolidJS + WASM integration, COOP/COEP, signal bus, reactive inference, canvas components, worker lifecycle.
 
 ### Phase 2: Training + RL
 
@@ -631,6 +635,136 @@ Each provider creates its store and exposes it via context. The `SessionProvider
 
 ---
 
+## Fresh Eyes: What the Plan Was Missing
+
+### 1. COOP/COEP Headers & SharedArrayBuffer (Blocker)
+
+The C15 synth engine requires `SharedArrayBuffer` for its audio ring buffer. This means the server **must** send:
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+The current codebase uses `serve-coop.py` for this. **Vite dev server must be configured** with these headers or C15 synth mode will fail silently. This should be validated in Phase 1, not Phase 3.
+
+```typescript
+// vite.config.ts
+export default defineConfig({
+  plugins: [solidPlugin()],
+  server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
+  },
+});
+```
+
+### 2. Worker Lifecycle (Currently Leaked)
+
+Workers are **never terminated** in the current code:
+- `nisps-wasm-worker.js` — created lazily on first `trainAsync()`, lives forever
+- `arpeggiator-worker.js` — created on arpeggiator init, lives forever
+
+In a SolidJS app where components mount/unmount, workers must be cleaned up in `onCleanup()`. The current code leaks them because the page never changes — the SolidJS version will need explicit termination, especially if engine switching or mode changes recreate IML instances.
+
+**Add to architecture**: `core/iml.ts` must expose a `dispose()` method that terminates the worker. `synth-store` cleanup must terminate the arpeggiator worker.
+
+### 3. AudioContext Lifecycle Gotchas
+
+- **C15Bridge creates its own AudioContext internally**; Faust engines require one passed in. This API inconsistency means `useAudioContext()` can't own the single context — C15 creates its own.
+- **No `dispose()` on C15Bridge** — relies on GC of the AudioContext. Engine switching disconnects audio nodes (line 1121 in a-app.js) but doesn't explicitly close the context.
+- **AudioWorklet module loading** via `addModule()` — browsers deduplicate, but if the context is recreated, modules must be re-registered.
+
+**Add to architecture**: The `useAudioContext` hook needs to handle two patterns: "I own the context" (Faust) vs "the engine owns the context" (C15). Consider normalizing this in the transplant — make C15Bridge accept an external AudioContext.
+
+### 4. Debug Probe Synchrony Contract
+
+The Playwright tests depend on `window.__nisps` methods being **synchronous**:
+- `setInputs(x, y)` → synchronously runs inference + routes outputs + updates heatmap
+- `thumbsUp()` → synchronously calls `addExample()` before returning
+- `saveState()` → synchronously writes to localStorage
+- `train()` → synchronously trains and returns loss (not the async variant)
+
+In SolidJS, store updates are batched by default. If `setInputs()` writes to a signal but the effect that runs inference hasn't flushed yet, the probe will return stale data. **The probe must bypass SolidJS reactivity** and call imperative methods directly on the IML instance.
+
+**Add to Phase 5 (debug probe)**: Build the probe as a direct imperative bridge to the IML/store internals, not as a reactive consumer. Use `batch()` or `untrack()` where needed.
+
+### 5. MIDI CC Map — Engine-Scoped Dynamic Storage Keys
+
+MIDI CC maps are stored with engine-scoped localStorage keys: `nisps-midi-cc-map:${activeEngine.id}`. When the engine switches:
+1. Current map is saved to the old engine's key
+2. New map is loaded from the new engine's key
+3. `midiCCMap` and `midiCCOverrides` arrays are mutated in-place
+
+In SolidJS, in-place array mutation (`arr.length = 0; arr.push(...)`) won't trigger reactivity. The `midi-store` must use `setStore(produce(...))` or replace arrays entirely. The engine-scoped key pattern needs to be replicated in `session-store.ts`.
+
+### 6. EOC Chain — Mutable Audio Graph + MLP Resize Cascade
+
+When EOC modules are added/removed in "Shared" mode:
+1. MLP output count changes → MLP must be destroyed and recreated
+2. Training examples are lost (different output dimensionality)
+3. Audio graph nodes must be reconnected
+4. Heatmap must be rebuilt
+
+This is a **cascade of side effects** triggered by a single user action. In the current code it's handled by a `window.addEventListener('eoc:change', ...)` handler that orchestrates everything imperatively.
+
+In SolidJS, this should be modeled as: EOC module list is a store → derived signal computes total output count → `createEffect` watches output count and triggers MLP resize when it changes. But the MLP resize is async (WASM allocation) and has a confirmation dialog ("this will clear examples"). **Effects can't show dialogs**.
+
+**Proposed pattern**: EOC store exposes a `pendingResize` signal. A component watches it and shows the confirmation UI. On confirm, an action triggers the actual resize. Don't try to make this fully reactive — keep it as an explicit action flow.
+
+### 7. WASM + Emscripten Glue Loading in Vite
+
+The WASM is loaded via Emscripten's `nisps.js` glue file, which does its own `fetch()` of `nisps.wasm` using a relative path. Vite's asset handling will hash filenames in production builds, breaking the hardcoded path.
+
+**Options**:
+- Configure Vite to copy WASM files to `public/` (no hashing, always available at known path)
+- Modify the Emscripten glue to accept a custom `locateFile` override
+- Use Vite's `?url` import to get the resolved asset path and pass it to the WASM loader
+
+This must be spiked in Phase 1. Same issue applies to C15 WASM (`c15/c15_engine.wasm`), C15 parameters (`c15/parameters.json`), and Faust DSP files.
+
+### 8. Session Presets Are Shared Across Apps
+
+`nisps-session-presets` localStorage key is **shared across all three current apps**. Since we're consolidating to one app, this is fine — but the key should be documented, and the migration should handle importing presets saved by the old app.
+
+### 9. Lazy Loading Needs Suspense Boundaries
+
+Three features are lazily loaded:
+- **ShapeSeq**: dynamic `import()` when `?shapeseq=1`
+- **Hand tracking**: imports MediaPipe from CDN (`cdn.jsdelivr.net`) — external dependency that can fail
+- **Audio Canvas**: created on first switch to audio-canvas mode
+
+SolidJS `lazy()` + `<Suspense>` handles this naturally, but:
+- MediaPipe CDN fetch failure needs a fallback UI (not just a blank screen)
+- ShapeSeq lazy loading should show a loading state, not block the whole app
+- Audio Canvas creation involves AudioContext (requires gesture) — can't be wrapped in Suspense naively
+
+### 10. CSS Animations Are Stateful
+
+Several CSS classes trigger animations that encode UI state:
+- `.follow-pulse` — 1.5s infinite pulse (follow mode active)
+- `.btn-flash` / `.rl-flash` — 0.2s feedback flash
+- `.drawerSlideIn` — drawer appearance
+
+If SolidJS re-renders a component (e.g., `<Show>` toggling), CSS animations restart from the beginning. For the pulse animation this is fine, but for the flash animations, a re-render mid-flash would cause visual glitches.
+
+**Mitigation**: Use `classList` toggling on stable DOM nodes rather than conditional rendering for animation-bearing elements. Or use the Web Animations API for imperative control.
+
+### 11. `window.__nispsEoc` Is Unconditional
+
+Unlike `window.__nisps` (gated by `?debug=1`), `window.__nispsEoc` is **always exposed** (line 1528 in a-app.js). It provides `trainingTarget` getter/setter and `imlEoc` reference. If external code depends on this, it needs to be preserved in the SolidJS version unconditionally.
+
+### 12. Inference Should NOT Be in rAF
+
+The plan puts inference in a `requestAnimationFrame` loop. But inference only needs to run **when inputs change** (joystick drag, gamepad poll, hand tracking frame). Running it every frame when the joystick is idle wastes CPU.
+
+**Better pattern**: Run inference reactively — `createEffect` watching `inputState.joyX` and `inputState.joyY`. When they change, run inference and update outputs. The canvas render loops (FlowField, SynthVisualizer) still run on rAF for smooth animation, but they just read the latest outputs signal — they don't trigger inference.
+
+Exception: gamepad polling needs a rAF loop to read the Gamepad API, but that loop should only set input signals, not run inference directly.
+
+---
+
 ## Key Risks & Mitigations
 
 | Risk | Mitigation |
@@ -642,6 +776,13 @@ Each provider creates its store and exposes it via context. The `SessionProvider
 | Canvas components fighting rAF | Each canvas owns its loop. No shared orchestrator unless profiling shows frame contention. |
 | MLP resize destroys training data | Same as current: warn user, warm-start weights for joystick IML. Store handles the state transition. |
 | `equals: false` on bus signals | Required for event semantics but means every emit triggers all subscribers. Keep topic count bounded. |
+| SharedArrayBuffer / COOP+COEP | Configure Vite dev server headers in Phase 1. Validate C15 works before Phase 3. |
+| WASM asset paths broken by Vite hashing | Spike in Phase 1: use `public/` dir or `locateFile` override for all WASM/JSON assets. |
+| Worker leak on component unmount | Add `dispose()` to IML and arpeggiator. Call in `onCleanup()`. |
+| EOC resize cascade needs confirmation dialog | Model as pending action, not reactive effect. Component shows dialog, action triggers resize. |
+| Debug probe expects synchronous execution | Build probe as imperative bridge, bypass SolidJS batching with `batch()`/`untrack()`. |
+| CSS animation restart on re-render | Use `classList` on stable nodes, not `<Show>`/`<Switch>` for animated elements. |
+| Idle inference wastes CPU | Make inference reactive to input changes, not rAF-driven. Canvas loops stay on rAF. |
 
 ---
 

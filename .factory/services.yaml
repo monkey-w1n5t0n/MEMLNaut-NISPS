@@ -1,0 +1,23 @@
+commands:
+  install: npm install
+  install-solid: npm install && cd /home/w1n5t0n/src/MEMLNaut-NISPS-SOLIDJS && npm install
+  typecheck: npx tsc --noEmit
+  build: npx vite build
+  test-old: npx playwright test --reporter=line
+  lint: npx eslint src/ --ext .ts,.tsx 2>/dev/null || true
+  dev: npx vite --port 5174
+
+services:
+  vite-dev:
+    start: npx vite --port 5174 --host
+    stop: lsof -ti :5174 | xargs kill 2>/dev/null || true
+    healthcheck: curl -sf http://localhost:5174 > /dev/null 2>&1
+    port: 5174
+    depends_on: []
+
+  old-playground:
+    start: cd playground && python3 -m http.server 7331
+    stop: lsof -ti :7331 | xargs kill 2>/dev/null || true
+    healthcheck: curl -sf http://localhost:7331/a-immersive.html > /dev/null 2>&1
+    port: 7331
+    depends_on: []

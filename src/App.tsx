@@ -1,42 +1,32 @@
 import { onMount, onCleanup, createSignal } from 'solid-js';
-import { WasmIML } from './core/iml';
-import { createSignalBus, type SignalBus } from './bus/signal-bus';
+import { createMLStore, type MLStore } from './stores/ml-store';
 import { exposeDebugProbe } from './probe/debug-probe';
-
-const N_INPUTS = 2;
-const HIDDEN_LAYERS = [32, 48, 64];
-const N_OUTPUTS = 126;
-
-// Singleton signal bus — shared across the entire app
-const bus: SignalBus = createSignalBus();
-
-// Expose bus globally for e2e tests and debug access
-(window as any).__nispsBus = bus;
-
-export { bus };
+import bus from './bus';
 
 /**
  * Root application component for the NISPS immersive app.
- * Initializes WASM IML, runs initial inference, and exposes debug probe.
+ * Initializes ML store (dual WasmIML instances), runs initial inference,
+ * and exposes debug probe.
  */
 export default function App() {
   const [status, setStatus] = createSignal<string>('Loading WASM...');
   const [ready, setReady] = createSignal(false);
 
-  // IML instance lives outside reactive state (opaque handle)
-  let iml: WasmIML | null = null;
+  let mlStore: MLStore | null = null;
 
   onMount(async () => {
     try {
-      iml = await WasmIML.create(N_INPUTS, N_OUTPUTS, HIDDEN_LAYERS);
+      const store = await createMLStore(bus);
 
-      // Run initial inference at center position
-      iml.setInput(0, 0.5);
-      iml.setInput(1, 0.5);
-      iml.process();
+      // Expose store globally for e2e tests
+      (window as any).__nispsStore = store;
 
-      const outputs = iml.getOutputs();
-      const allBounded = outputs.every((v: number) => v >= 0 && v <= 1);
+      // Expose bus topics for testing dual IML and mode switching
+      bus.createTopic('ml.imlJoy').emit(store.getImlJoy() as any);
+      bus.createTopic('ml.imlHand').emit(store.getImlHand() as any);
+
+      const outputs = store.outputs();
+      const allBounded = Array.from(outputs).every(v => v >= 0 && v <= 1);
       if (!allBounded) {
         setStatus('ERROR: outputs out of bounds');
         console.error('Unbounded outputs:', outputs);
@@ -47,7 +37,9 @@ export default function App() {
       setStatus(`Ready — ${outputs.length} outputs loaded`);
 
       // Expose debug probe if ?debug=1
-      exposeDebugProbe(iml);
+      exposeDebugProbe(store);
+
+      mlStore = store;
     } catch (err) {
       setStatus(`Error: ${err}`);
       console.error('WASM init failed:', err);
@@ -55,7 +47,7 @@ export default function App() {
   });
 
   onCleanup(() => {
-    iml?.destroy();
+    mlStore?.dispose();
   });
 
   return (

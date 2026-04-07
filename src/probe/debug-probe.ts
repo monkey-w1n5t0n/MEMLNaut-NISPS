@@ -3,9 +3,10 @@
  * Used by Playwright e2e tests. Zero footprint in production.
  *
  * All methods are synchronous (bypass SolidJS batching with batch()/untrack()).
+ * Updated to work with MLStore interface.
  */
 
-import type { WasmIML } from '../core/iml';
+import type { MLStore } from '../stores/ml-store';
 
 export interface DebugProbe {
   getOutputs: () => number[];
@@ -39,59 +40,41 @@ export function isDebugMode(): boolean {
 }
 
 /**
- * Create the debug probe object, wired to a WasmIML instance.
+ * Create the debug probe object, wired to an MLStore instance.
  */
-export function createDebugProbe(iml: WasmIML): DebugProbe {
+export function createDebugProbe(store: MLStore): DebugProbe {
   return {
-    getOutputs: () => iml.getOutputs(),
+    getOutputs: () => Array.from(store.outputs()),
 
-    getLoss: () => iml.lastLoss,
+    getLoss: () => store.getLoss(),
 
-    getWeights: () => iml._getFlatWeights(),
+    getWeights: () => store.getWeights(),
 
-    getExampleCount: () => iml.exampleCount,
+    getExampleCount: () => store.getExampleCount(),
 
     setInputs: (x: number, y: number) => {
-      iml.setInput(0, Math.max(0, Math.min(1, x)));
-      iml.setInput(1, Math.max(0, Math.min(1, y)));
-      iml.process();
+      store.setInputs(x, y);
     },
 
-    thumbsUp: () => {
-      iml.addExample(iml.inputState.slice(), iml.outputState.slice());
-      return iml.trainAsync();
-    },
+    thumbsUp: () => store.thumbsUp(),
 
-    thumbsDown: () => {
-      const spread = 0.6;
-      const speed = 0.15 * (1 - spread) + 0.05 * spread;
-      iml.moveWeights(speed, spread);
-    },
+    thumbsDown: () => store.thumbsDown(),
 
-    train: () => iml.train(),
+    train: () => store.train(),
 
-    trainAsync: () => iml.trainAsync(),
+    trainAsync: () => store.trainAsync(),
 
-    randomise: () => iml.randomiseWeights(0.6),
+    randomise: () => store.randomise(),
 
-    clearExamples: () => iml.clearDataset(),
+    clearExamples: () => store.clearExamples(),
 
-    saveState: () => {
-      const state = {
-        weights: iml._getFlatWeights(),
-        inputState: iml.inputState.slice(),
-        outputState: iml.outputState.slice(),
-        exampleCount: iml.exampleCount,
-        lossHistory: iml.lossHistory.slice(),
-      };
-      localStorage.setItem('nisps-a-immersive', JSON.stringify(state));
-    },
+    saveState: () => store.saveState(),
 
-    evalLoss: () => iml.evalLoss(),
+    evalLoss: () => store.evalLoss(),
 
-    inferBatch: (points: number[][]) => iml.inferBatch(points),
+    inferBatch: (points: number[][]) => store.inferBatch(points),
 
-    getLayerStats: () => iml.getLayerStats(),
+    getLayerStats: () => store.getLayerStats(),
   };
 }
 
@@ -99,10 +82,10 @@ export function createDebugProbe(iml: WasmIML): DebugProbe {
  * Expose window.__nisps if ?debug=1 is present.
  * Returns the probe object (or undefined if not in debug mode).
  */
-export function exposeDebugProbe(iml: WasmIML): DebugProbe | undefined {
+export function exposeDebugProbe(store: MLStore): DebugProbe | undefined {
   if (!isDebugMode()) return undefined;
 
-  const probe = createDebugProbe(iml);
+  const probe = createDebugProbe(store);
   (window as any).__nisps = probe;
   console.log('[NISPS] Debug probe exposed at window.__nisps');
   return probe;

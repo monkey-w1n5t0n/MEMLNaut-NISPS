@@ -1,0 +1,49 @@
+{
+  "featureId": "f03-debug-probe-scaffold",
+  "reviewedAt": "2026-04-07T15:30:00.000Z",
+  "commitId": "4613cbb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean extraction of the inline debug probe from App.tsx into a dedicated module (src/probe/debug-probe.ts) with typed DebugProbe interface. All 15 methods from VAL-PROJ-005 are correctly implemented and wired to the WasmIML instance. The probe is only exposed when ?debug=1 is present (VAL-PROJ-006). 17 comprehensive Playwright e2e tests cover method enumeration, presence checks, and smoke tests for every method. The feature description mentions '16 methods' but the validation contract VAL-PROJ-005 lists exactly 15 methods, which is what was implemented — this is a description wording issue, not an implementation gap.",
+    "issues": [
+      {
+        "file": "src/probe/debug-probe.ts",
+        "line": 5,
+        "severity": "non_blocking",
+        "description": "Module-level comment says 'All methods are synchronous (bypass SolidJS batching with batch()/untrack())' but thumbsUp() returns Promise<number|null> and trainAsync() returns Promise<number|null>. The comment is misleading — these two methods are async. The sync methods (getOutputs, getLoss, setInputs, train, etc.) correctly bypass batching, but the blanket 'All methods are synchronous' claim is inaccurate."
+      },
+      {
+        "file": "src/probe/debug-probe.ts",
+        "line": 77,
+        "severity": "non_blocking",
+        "description": "getOutputs() returns iml.getOutputs() which is a direct reference to the internal outputState array (not a copy). While consistent with the old playground behavior, this means external code could accidentally mutate the IML's internal state via probe.getOutputs()[0] = 999. The old playground had the same pattern so this is acceptable parity, but worth noting for future hardening."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The feature description says '16 methods' but VAL-PROJ-005 in the validation contract explicitly lists 15 methods: getOutputs, getLoss, getWeights, getExampleCount, setInputs, thumbsUp, thumbsDown, train, trainAsync, randomise, clearExamples, saveState, evalLoss, inferBatch, getLayerStats. The handoff correctly identifies this as 15 methods. Future workers should count the actual methods in the validation contract rather than trusting the feature description count.",
+      "evidence": "features.json description says 'all 16 methods' but the handoff says '15 methods'. Counting VAL-PROJ-005 methods: 15. The EXPECTED_METHODS array in debug-probe.spec.ts has 15 entries."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The debug probe module uses the pattern of checking URLSearchParams in a standalone function (isDebugMode()) rather than inline in App.tsx. The guard is in exposeDebugProbe() itself, so callers don't need to check — App.tsx just calls exposeDebugProbe(iml) unconditionally. This is a clean pattern for future feature modules that need conditional activation based on URL params.",
+      "evidence": "src/probe/debug-probe.ts: exposeDebugProbe() calls isDebugMode() internally and returns undefined early if not in debug mode. App.tsx:51 just calls exposeDebugProbe(iml) without any conditional."
+    },
+    {
+      "area": "conventions",
+      "observation": "The probe's thumbsDown() hardcodes spread=0.6 and computes speed as a linear interpolation: speed = 0.15 * (1 - spread) + 0.05 * spread. This matches the default spread parameter documented in CLAUDE.md for the immersive app. However, when the full control surface is implemented, spread should come from the control surface state rather than being hardcoded. The architecture.md documents spreadLevel in the ML store, so future workers should wire this up.",
+      "evidence": "src/probe/debug-probe.ts:73-75 hardcodes spread=0.6. architecture.md mentions 'spreadLevel' in ML Store section. The old playground a-app.js reads spread from URL params and passes it to moveWeights."
+    },
+    {
+      "area": "knowledge",
+      "observation": "agent-browser required a symlink workaround (chromium_headless_shell-1208 → chromium_headless_shell-1217) because the tool expects a different Playwright version than what's installed. This is an environment quirk that may affect other workers using agent-browser.",
+      "evidence": "Transcript shows: ln -s /home/w1n5t0n/.cache/ms-playwright/chromium_headless_shell-1217 /home/w1n5t0n/.cache/ms-playwright/chromium_headless_shell-1208"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The debug probe implementation cleanly extracts the inline probe from App.tsx into src/probe/debug-probe.ts with proper TypeScript typing. All 15 methods required by VAL-PROJ-005 are correctly implemented and wired to the WasmIML API. The probe is properly gated behind ?debug=1 with zero production footprint (VAL-PROJ-006). Test coverage is thorough — 17 Playwright e2e tests covering method enumeration, type checks, and smoke tests for every method. Two non-blocking issues noted: a misleading 'all synchronous' comment when thumbsUp/trainAsync are async, and getOutputs() returning a direct reference to internal state rather than a copy. Both are consistent with the old playground behavior."
+}

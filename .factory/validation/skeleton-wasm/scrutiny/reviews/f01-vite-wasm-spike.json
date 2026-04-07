@@ -1,0 +1,81 @@
+{
+  "featureId": "f01-vite-wasm-spike",
+  "reviewedAt": "2026-04-07T14:55:00.000Z",
+  "commitId": "7337e8e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid greenfield project setup. Vite + SolidJS + TypeScript configured with strict mode. COOP/COEP headers are doubly ensured via both the vite-plugin-cross-origin-isolation plugin AND explicit header configuration in server/preview blocks. WasmIML is a faithful TypeScript port of the playground's nisps-wasm.js with complete API coverage including sync/async training, batch inference, weight snapshots, and warm-start transfer. Dataset class implements FIFO ring buffer with recency/local/combined sample weighting. Debug probe is properly gated behind ?debug=1 with synchronous method wrappers. 8 Playwright e2e tests cover all 3 validation assertions (VAL-PROJ-001/002/003) plus probe visibility, initial state, randomise, and input clamping. TypeScript typecheck clean, Vite build succeeds, all 35 SolidJS tests pass (including the 8 f01-specific ones).",
+    "issues": [
+      {
+        "file": "vite.config.ts",
+        "line": 9,
+        "severity": "non_blocking",
+        "description": "COOP/COEP headers are set both via the `crossOriginIsolation()` plugin AND explicitly in server/preview headers config. This is redundant but not harmful — the plugin sets response headers for all requests, and the explicit headers serve as fallback documentation. No action needed, just noting the duplication."
+      },
+      {
+        "file": "vite.config.ts",
+        "line": 12,
+        "severity": "non_blocking",
+        "description": "`watch.usePolling: true` with 1s interval is a workaround for EMFILE errors from too many file descriptors. This adds ~1s latency to HMR. Acceptable for the spike but may want refinement later (e.g., more restrictive ignore patterns). The worker noted this in discoveredIssues."
+      },
+      {
+        "file": "src/core/wasm/nisps.js",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "Minified Emscripten glue code (single line, ~8KB) checked into source. This is a standard pattern for Emscripten output — the source of truth is the C++ in playground/wasm/nisps_bindings.cpp. No issue, just noting it's not hand-written."
+      },
+      {
+        "file": "src/core/iml.ts",
+        "line": 511,
+        "severity": "non_blocking",
+        "description": "Worker URL uses `new URL('./wasm/nisps-wasm-worker.js', import.meta.url)` which relies on Vite's module worker support. This works in dev and build (Vite bundles it as a separate chunk), confirmed by the build output showing `nisps-wasm-worker-BKLdeUNa.js`. Good pattern."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The WASM binary is placed in `public/` to avoid Vite asset hashing, and the Emscripten glue code (`nisps.js`) is in `src/core/wasm/` with a `locateFile` override that routes `.wasm` requests to `/` (the public root). This pattern is documented in AGENTS.md under 'WASM Integration' but the specific locateFile override pattern could be called out more explicitly for future workers who need to add additional WASM modules.",
+      "evidence": "src/core/iml.ts:16-20, AGENTS.md 'WASM Integration' section"
+    },
+    {
+      "area": "conventions",
+      "observation": "The MLP architecture uses `[nInputs+1, ...hiddenLayers, nOutputs]` where the +1 is a bias node prepended to the input layer. This is consistent with the C++ core and playground JS but could confuse future workers who expect the bias to be implicit.",
+      "evidence": "src/core/iml.ts:155 — `this.layerSizes = [nInputs + BIAS, ...hiddenLayers, nOutputs]` where BIAS=1"
+    },
+    {
+      "area": "conventions",
+      "observation": "The activation function mapping is `hiddenLayers → RELU`, `output → SIGMOID`, matching the playground app. The ACTIVATION enum values (SIGMOID=0, TANH=1, LINEAR=2, RELU=3) must match the C++ nisps::ACTIVATION_FUNCTIONS enum. This mapping isn't documented in AGENTS.md.",
+      "evidence": "src/core/iml.ts:10-12"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The `vite-plugin-cross-origin-isolation` package provides the COOP/COEP headers. It's a small plugin that adds middleware to both the dev and preview servers. The project also redundantly sets the headers explicitly in vite.config.ts server/preview headers blocks. Future workers adding COOP/COEP-related features should know the plugin exists.",
+      "evidence": "vite.config.ts lines 7 and 15-24, package.json devDependencies"
+    },
+    {
+      "area": "knowledge",
+      "observation": "There's a pre-existing EMFILE issue with Vite's default fs.watch when many file descriptors are open. The workaround is `usePolling: true` in the Vite config. The worker noted this in discoveredIssues. This may affect future workers who notice slow HMR.",
+      "evidence": "vite.config.ts:12-14, handoff discoveredIssues"
+    },
+    {
+      "area": "services",
+      "observation": "The handoff mentions `.factory/services.yaml` was updated with a `test-solidjs` command, but this file doesn't exist at the expected path. The project has no `.factory/services.yaml` or `.factory/library/` directory at the repo root. The mission-level `.factory/` directory exists at `/home/w1n5t0n/.factory/` but not at the project level.",
+      "evidence": "Handoff states 'Updated with type:module, dev/build/preview/typecheck/test-solidjs scripts' and '.factory/services.yaml: Added test-solidjs command'. Running `ls .factory/services.yaml` returns ENOENT. The `test-solidjs` script is in package.json scripts but no services.yaml was created."
+    },
+    {
+      "area": "skills",
+      "observation": "The worker deviated from Step 3 (TDD) by writing tests and implementation in parallel, justified by the greenfield nature of the spike. This is reasonable for infrastructure setup where the test harness itself depends on the project existing. No skill update needed — the skill correctly prescribes TDD and the worker documented the deviation.",
+      "evidence": "Handoff skillFeedback.deviations[0]"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The agent-browser skill has a Playwright version mismatch: it expects `chromium_headless_shell-1208` but `chromium-1217` is installed. The worker worked around this with the `--executable-path` flag. This is likely to affect other workers using agent-browser.",
+      "evidence": "Handoff skillFeedback.deviations[1]"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature f01-vite-wasm-spike passes review. The implementation correctly sets up a Vite + SolidJS + TypeScript project with COOP/COEP headers for SharedArrayBuffer, loads the nisps.wasm binary, and runs inference producing 126 bounded [0,1] outputs. The WasmIML class is a thorough TypeScript port of the playground's JS engine with full API coverage. The Dataset class provides FIFO ring buffer management with configurable sample weighting. Debug probe is properly gated behind ?debug=1. All 8 dedicated e2e tests pass, TypeScript typecheck is clean, and Vite build succeeds. The only items of note are: (1) redundant COOP/COEP headers (both plugin and explicit), (2) polling-based file watching as an EMFILE workaround, (3) minified Emscripten glue checked into source (standard pattern), and (4) the .factory/services.yaml mentioned in the handoff was never actually created."
+}

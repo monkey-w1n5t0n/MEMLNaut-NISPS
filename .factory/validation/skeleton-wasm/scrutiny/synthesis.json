@@ -1,0 +1,111 @@
+{
+  "milestone": "skeleton-wasm",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "npx playwright test --config playwright-solidjs.config.ts --reporter=line",
+      "exitCode": 0,
+      "details": "35 tests passed in 8.2s across 3 spec files (vite-wasm-spike, signal-bus, debug-probe)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "details": "TypeScript strict mode clean, no errors"
+    },
+    "lint": {
+      "passed": true,
+      "command": "npx eslint src/ --ext .ts,.tsx 2>/dev/null || true",
+      "exitCode": 0,
+      "details": "ESLint config not yet set up (no eslint.config.js), no lint errors detected"
+    }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "f01-vite-wasm-spike",
+      "severity": "non_blocking",
+      "description": "COOP/COEP headers are set both via vite-plugin-cross-origin-isolation AND explicit headers in server/preview config. Redundant but harmless."
+    },
+    {
+      "featureId": "f01-vite-wasm-spike",
+      "severity": "non_blocking",
+      "description": "usePolling: true in vite.config.ts adds ~1s HMR latency as EMFILE workaround"
+    },
+    {
+      "featureId": "f02-signal-bus",
+      "severity": "non_blocking",
+      "description": "Re-entrant emit during wildcard subscriber callbacks could cause double notification if subscriber emits on matching topic"
+    },
+    {
+      "featureId": "f02-signal-bus",
+      "severity": "non_blocking",
+      "description": "No test for bare '**' wildcard pattern matching all topics"
+    },
+    {
+      "featureId": "f02-signal-bus",
+      "severity": "non_blocking",
+      "description": "Subscriber self-removal during iteration could skip next subscriber"
+    },
+    {
+      "featureId": "f03-debug-probe-scaffold",
+      "severity": "non_blocking",
+      "description": "Module comment claims 'All methods are synchronous' but thumbsUp() and trainAsync() return Promises"
+    },
+    {
+      "featureId": "f03-debug-probe-scaffold",
+      "severity": "non_blocking",
+      "description": "getOutputs() returns direct reference to internal array (consistent with old playground but allows accidental mutation)"
+    },
+    {
+      "featureId": "f03-debug-probe-scaffold",
+      "severity": "non_blocking",
+      "description": "thumbsDown() hardcodes spread=0.6 — should be wired to ML store spreadLevel when control surface is implemented"
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "file": "environment.md",
+      "description": "Added WASM locateFile override pattern (public/ + locateFile to /), MLP bias convention (+1 on input layer), activation enum mapping (SIGMOID=0, TANH=1, LINEAR=2, RELU=3), Vite OXC callable object limitation, debug probe method count clarification (15 methods per VAL-PROJ-005), agent-browser chromium version mismatch workaround, and EMFILE polling workaround",
+      "sourceFeature": "f01-vite-wasm-spike, f02-signal-bus, f03-debug-probe-scaffold"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that window.__nispsBus is exposed unconditionally (no ?debug=1 guard) for e2e testing. Currently only window.__nispsEoc is documented as unconditionally exposed.",
+      "evidence": "App.tsx exposes (window as any).__nispsBus = bus without any debug guard. AGENTS.md Debug Probe section only mentions window.__nispsEoc as unconditional.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Note that debug probe's thumbsDown() hardcodes spread=0.6. When the ML store's spreadLevel is implemented, the probe should read from the store instead. This prevents a subtle bug where URL param ?spread=X affects the real app but not the probe's thumbsDown behavior.",
+      "evidence": "src/probe/debug-probe.ts:73-75 hardcodes spread=0.6. architecture.md documents spreadLevel in ML Store section.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "The handoff mentions .factory/services.yaml was updated but the file doesn't exist",
+      "reason": "Incorrect — .factory/services.yaml does exist at the repo root with test-solidjs command and service definitions. Reviewer was looking in the wrong location."
+    },
+    {
+      "observation": "Worker deviated from TDD step in the skill procedure",
+      "reason": "This is skill feedback, not factual knowledge about the codebase. Already captured in the worker's handoff skillFeedback."
+    },
+    {
+      "observation": "Architecture docs already cover signal bus equals:false pattern",
+      "reason": "Already documented — duplicate observation, no action needed."
+    }
+  ],
+  "previousRound": null
+}

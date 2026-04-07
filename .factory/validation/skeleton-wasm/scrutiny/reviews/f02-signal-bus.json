@@ -1,0 +1,50 @@
+{
+  "featureId": "f02-signal-bus",
+  "reviewedAt": "2026-04-07T15:30:00.000Z",
+  "commitId": "f325200",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Well-implemented reactive signal bus with named topics, wildcard matching, and equals:false semantics. The wildcard matching algorithm (recursive matchParts) is correct for both * (single segment) and ** (zero-or-more segments). The bus is wired into App.tsx and exposed as window.__nispsBus for e2e testing. All 10 tests cover the key behaviors and pass. The callable topic pattern (function with attached properties) was a thoughtful workaround for Vite's OXC parser limitation. A non-blocking issue exists with wildcard match subscriber removal when the matchSubscribers array has grown via push() (entries are compared by reference but stored by value), though the current code works correctly because the entry object reference is captured in the closure.",
+    "issues": [
+      {
+        "file": "src/bus/signal-bus.ts",
+        "line": 127,
+        "severity": "non_blocking",
+        "description": "Wildcard match subscribers receive notifications synchronously during emit() via a loop over the shared matchSubscribers array. If a subscriber calls emit() on a matching topic during its callback, this causes re-entrant iteration over matchSubscribers. This is unlikely to cause issues at the current scale but could lead to surprising behavior if a subscriber emits on a matching topic (double notification). This is acceptable for the skeleton milestone but should be documented or guarded against before production use."
+      },
+      {
+        "file": "src/bus/signal-bus.ts",
+        "line": 169,
+        "severity": "non_blocking",
+        "description": "The wildcard `**` at the end of a pattern like `a.**` correctly matches 'a' itself (zero additional segments). This is well-tested. However, a pattern of just `**` would match every single topic — there is no test for this edge case. Minor gap in coverage, not blocking."
+      },
+      {
+        "file": "src/bus/signal-bus.ts",
+        "line": 91,
+        "severity": "non_blocking",
+        "description": "The direct subscriber list `subs` is iterated with a for-of loop during emit(). If a subscriber synchronously unsubscribes itself or another subscriber during iteration, the splice() modifies the array being iterated, potentially skipping the next subscriber. A common pattern to avoid this is iterating a copy ([...subs]). Not blocking for the skeleton milestone given expected usage patterns."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Vite's OXC parser does not support function-call shorthand inside object literals. The worker discovered this when a first attempt using an object literal with a call signature failed to parse. The workaround is to use a factory function + Object.assign pattern (create a function, then attach properties). This is a Vite/OXC-specific gotcha that other workers may encounter.",
+      "evidence": "Worker transcript shows a parse error on the initial implementation attempt, then a rewrite to the makeTopic() factory function pattern. The file header comment at signal-bus.ts:80 explains the rationale."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The architecture.md already documents the Signal Bus component and its equals:false pattern. The solidjs-patterns.md also has the store-vs-signal decision table including 'Event streams → Signal bus topic'. No gaps in documentation for this feature.",
+      "evidence": "architecture.md 'Signal Bus' section, solidjs-patterns.md 'Store vs Signal Decision' table"
+    },
+    {
+      "area": "conventions",
+      "observation": "The signal bus is exposed as window.__nispsBus (unconditionally) for e2e testing, separate from window.__nisps which requires ?debug=1. The mission AGENTS.md does not document this unconditional exposure — it only mentions window.__nispsEoc as always exposed. If this convention (unconditional bus exposure) is intentional, it should be documented.",
+      "evidence": "App.tsx:12 — (window as any).__nispsBus = bus; — no debug guard. AGENTS.md mentions window.__nispsEoc is unconditional but not __nispsBus."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The signal bus implementation is clean, well-tested, and fully satisfies the feature requirements. The wildcard matching algorithm is correct (recursive, handles both * and ** including zero-segment matches for **). The equals:false semantics are properly implemented via createSignal options. The 10 e2e tests comprehensively cover all expected behaviors including the critical forward-compatible match() test. Three non-blocking issues were identified: (1) re-entrant emit during wildcard subscriber callbacks, (2) no test for the bare '**' wildcard pattern, and (3) subscriber self-removal during iteration. None of these are blocking for the skeleton milestone. One shared state observation: __nispsBus is unconditionally exposed but this convention is not documented in AGENTS.md."
+}

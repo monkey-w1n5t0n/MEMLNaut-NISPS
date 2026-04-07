@@ -59,6 +59,22 @@
   to { transform: rotate(360deg); }
 }
 
+/* ── Loading bar (sliding gradient on top of the switcher while loading) ───── */
+
+.engine-switcher-loading::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent, #00d4ff), transparent);
+  animation: engine-loading-bar 1.2s linear infinite;
+}
+
+@keyframes engine-loading-bar {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(300%); }
+}
+
 /* ── Loading status line ───────────────────────────────────────────────────── */
 
 .engine-switcher-status {

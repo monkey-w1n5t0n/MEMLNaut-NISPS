@@ -201,6 +201,25 @@
   color: #ccc;
 }
 
+/* ── Play button audio-init pulse ─────────────────────────────────────────── */
+
+.play-btn.audio-needs-init {
+  animation: audioInitPulse 2s ease-in-out infinite;
+}
+
+@keyframes audioInitPulse {
+  0%, 100% {
+    border-color: rgba(255, 106, 0, 0.3);
+    box-shadow: 0 0 6px rgba(255, 106, 0, 0.15);
+    color: var(--accent, #ff6a00);
+  }
+  50% {
+    border-color: rgba(255, 106, 0, 0.6);
+    box-shadow: 0 0 14px rgba(255, 106, 0, 0.3);
+    color: #ffaa55;
+  }
+}
+
 /* ── Engine info ──────────────────────────────────────────────────────────── */
 
 .synth-engine-info {

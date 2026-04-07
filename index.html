@@ -12,7 +12,14 @@
       --accent: #00d4ff;
       --accent-dim: rgba(0, 212, 255, 0.3);
       --danger: #ff3b5c;
-      --font-mono: 'JetBrains Mono', monospace;
+      --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --text: #e0e0e8;
+      --text-dim: #888;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --dock-width: 48px;
+      --dock-gap: 8px;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -22,14 +29,43 @@
       height: 100%;
       overflow: hidden;
       background: #0a0a14;
-      color: #e0e0e8;
+      color: var(--text);
       font-family: var(--font-mono);
+      font-size: 13px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     #root {
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+
+    .glass {
+      background: var(--glass-bg);
+      backdrop-filter: blur(var(--glass-blur));
+      -webkit-backdrop-filter: blur(var(--glass-blur));
+      border: 1px solid var(--glass-border);
+    }
+
+    .drawer::-webkit-scrollbar { width: 3px; }
+    .drawer::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+    @media (max-width: 480px) {
+      :root {
+        --dock-width: 40px;
+      }
+      .dock-icon { width: 32px; height: 32px; }
+      .drawer { width: 220px; }
+      .rl-btn { width: 48px; height: 48px; }
+    }
+
+    @media (min-width: 768px) {
+      .rl-btn { width: 72px; height: 72px; font-size: 1.6em; }
+      .drawer { width: 280px; }
     }
   </style>
 </head>

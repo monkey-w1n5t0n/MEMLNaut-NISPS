@@ -1,0 +1,124 @@
+{
+  "groupId": "group-1",
+  "testedAt": "2026-04-07T00:00:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174/?debug=1",
+    "session": "9776ea6c39e9__g1",
+    "localStorageCleared": true
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-PROJ-001",
+      "title": "Vite dev server starts with COOP/COEP headers",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Navigate to http://localhost:5174/?debug=1",
+          "expected": "Page loads without errors",
+          "observed": "Page loaded successfully with title 'MEMLNaut NISPS'"
+        },
+        {
+          "action": "Check console errors",
+          "expected": "No JavaScript errors",
+          "observed": "No console errors"
+        },
+        {
+          "action": "Check SharedArrayBuffer availability via typeof SharedArrayBuffer !== 'undefined'",
+          "expected": "true (SharedArrayBuffer available)",
+          "observed": "true"
+        },
+        {
+          "action": "Check window.crossOriginIsolated",
+          "expected": "true (cross-origin isolation active)",
+          "observed": "true"
+        },
+        {
+          "action": "Fetch '/' and check response headers",
+          "expected": "COOP: same-origin, COEP: require-corp",
+          "observed": "COOP: same-origin, COEP: require-corp"
+        }
+      ],
+      "evidence": {
+        "screenshots": ["skeleton-wasm/group-1/VAL-PROJ-001-app-loaded.png"],
+        "consoleErrors": "none",
+        "network": "GET / -> 200, headers: {coop: 'same-origin', coep: 'require-corp'}"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROJ-002",
+      "title": "SolidJS app renders without errors",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Clear localStorage and set nisps-help-seen, reload with ?debug=1",
+          "expected": "Page loads fresh without help modal",
+          "observed": "Page loaded cleanly, no help modal"
+        },
+        {
+          "action": "Wait for page to fully load and WASM to initialize",
+          "expected": "window.__nisps becomes available",
+          "observed": "window.__nisps available after ~3s"
+        },
+        {
+          "action": "Check DOM for heading and status",
+          "expected": "Heading 'MEMLNaut NISPS' and status 'Ready — 126 outputs loaded'",
+          "observed": "heading 'MEMLNaut NISPS' [ref=e1], paragraph 'Ready — 126 outputs loaded'"
+        },
+        {
+          "action": "Check console errors",
+          "expected": "No JavaScript errors",
+          "observed": "No console errors"
+        },
+        {
+          "action": "Take screenshot",
+          "expected": "App renders with immersive layout visible",
+          "observed": "Screenshot shows app rendered correctly with heading and status text"
+        }
+      ],
+      "evidence": {
+        "screenshots": ["skeleton-wasm/group-1/VAL-PROJ-002-app-rendered.png"],
+        "consoleErrors": "none"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROJ-003",
+      "title": "WASM ML engine loads",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Wait for WASM initialization (window.__nisps !== undefined)",
+          "expected": "Debug probe available",
+          "observed": "window.__nisps defined and available"
+        },
+        {
+          "action": "Call window.__nisps.getOutputs() and check length, bounds",
+          "expected": "Float32Array length 126, all values in [0,1]",
+          "observed": "length=126, min=2.066e-13, max=1, allBounded=true, sample=[0.300, 0.835, 0.688, 8.96e-8, 0.9999]"
+        },
+        {
+          "action": "Check console errors",
+          "expected": "No JavaScript errors",
+          "observed": "No console errors"
+        }
+      ],
+      "evidence": {
+        "screenshots": ["skeleton-wasm/group-1/VAL-PROJ-003-wasm-loaded.png"],
+        "consoleErrors": "none",
+        "probeOutput": {
+          "length": 126,
+          "min": "2.066e-13",
+          "max": 1,
+          "allBounded": true,
+          "sample": [0.30002, 0.83461, 0.68781, 8.96e-8, 0.99994]
+        }
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions: all 3 passed. VAL-PROJ-001: Vite dev server correctly serves COOP/COEP headers with SharedArrayBuffer available and crossOriginIsolated=true. VAL-PROJ-002: SolidJS app renders without errors showing 'MEMLNaut NISPS' heading and 'Ready — 126 outputs loaded' status. VAL-PROJ-003: WASM ML engine loads successfully, debug probe returns 126 bounded outputs in [0,1]."
+}

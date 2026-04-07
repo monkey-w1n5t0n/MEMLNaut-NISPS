@@ -72,3 +72,31 @@ These assertions require physical hardware and cannot be validated in headless b
 - Max concurrent: 5 validators (5 × 500MB = 2.5GB, well within budget)
 
 **Playwright tests**: Run serially (single browser, single server)
+
+---
+
+## Flow Validator Guidance: Browser
+
+**Surface**: Browser-based web application served by Vite dev server
+
+**Isolation rules**:
+- Each validator gets its own agent-browser session
+- All validators share the same Vite dev server at http://localhost:5174
+- localStorage is per-browser-profile — since each agent-browser session is independent, there's no state leakage between validators
+- The debug probe (`window.__nisps`) is the primary testing interface; use JavaScript evaluation to call probe methods
+- The app state is ephemeral per page load — clearing localStorage or reloading resets state
+
+**Shared state concerns**:
+- The Vite dev server is shared — if one validator causes a crash, it affects all validators
+- No database or server-side state to worry about
+- WASM binary is loaded fresh per page load
+
+**Resource constraints**:
+- Max 5 concurrent agent-browser sessions
+- Each session: ~300MB RAM + browser process
+- Keep screenshots minimal to avoid disk pressure
+
+**Navigation patterns**:
+- Load app with `?debug=1` to enable debug probe: `http://localhost:5174/?debug=1`
+- Load without query params for production behavior: `http://localhost:5174`
+- Use `localStorage.clear()` before tests requiring fresh state

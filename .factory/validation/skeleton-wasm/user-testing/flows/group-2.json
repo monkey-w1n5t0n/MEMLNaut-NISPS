@@ -1,0 +1,114 @@
+{
+  "groupId": "group-2",
+  "testedAt": "2026-04-07T00:00:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174",
+    "session": "9776ea6c39e9__g2",
+    "localStorageClearedBeforeTests": true
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-PROJ-004",
+      "title": "Signal bus creates topics and emits/receives",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Navigate to http://localhost:5174/?debug=1, clear localStorage, reload",
+          "expected": "Page loads without errors, __nispsBus available",
+          "observed": "Page loaded successfully, window.__nispsBus is an object with createTopic, getTopic, match methods"
+        },
+        {
+          "action": "Create topics test.a and test.b, subscribe to each, emit values 42 and 99",
+          "expected": "Subscribers receive emitted values",
+          "observed": "topicResults = [{sub:'a',data:42},{sub:'b',data:99},{sub:'a',data:100},{sub:'b',data:200}] — subscribers received all emitted values"
+        },
+        {
+          "action": "Subscribe to wildcard pattern 'test.*' via bus.match(), then emit 100 and 200 to test.a and test.b",
+          "expected": "Wildcard subscriber captures emits after match() subscription",
+          "observed": "wildcardResults = [100, 200, 1, 1] — captured emits from test.a, test.b, and test.same matching test.*"
+        },
+        {
+          "action": "Subscribe to test.same, emit 1 twice",
+          "expected": "sameDataCount is 2 (equals:false ensures every emit triggers subscriber)",
+          "observed": "sameDataCount = 2 — both emits triggered the subscriber even with identical data"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "skeleton-wasm/group-2/VAL-PROJ-004-initial-load.png",
+          "skeleton-wasm/group-2/VAL-PROJ-004-after-test.png"
+        ],
+        "consoleErrors": "none",
+        "javascriptOutput": "{\"topicResults\":[{\"sub\":\"a\",\"data\":42},{\"sub\":\"b\",\"data\":99},{\"sub\":\"a\",\"data\":100},{\"sub\":\"b\",\"data\":200}],\"wildcardResults\":[100,200,1,1],\"sameDataCount\":2}"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROJ-005",
+      "title": "Debug probe exposed with ?debug=1",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Navigate to http://localhost:5174/?debug=1 (already loaded from VAL-PROJ-004)",
+          "expected": "window.__nisps is an object",
+          "observed": "window.__nisps exists and is an object (not null)"
+        },
+        {
+          "action": "Check typeof for all 15 required methods",
+          "expected": "All methods are functions",
+          "observed": "All 15 methods present: getOutputs, getLoss, getWeights, getExampleCount, setInputs, thumbsUp, thumbsDown, train, trainAsync, randomise, clearExamples, saveState, evalLoss, inferBatch, getLayerStats — allPresent: true"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "skeleton-wasm/group-2/VAL-PROJ-005-debug-probe-present.png"
+        ],
+        "consoleErrors": "none",
+        "javascriptOutput": "{\"exists\":true,\"methods\":[{\"name\":\"getOutputs\",\"exists\":true},{\"name\":\"getLoss\",\"exists\":true},{\"name\":\"getWeights\",\"exists\":true},{\"name\":\"getExampleCount\",\"exists\":true},{\"name\":\"setInputs\",\"exists\":true},{\"name\":\"thumbsUp\",\"exists\":true},{\"name\":\"thumbsDown\",\"exists\":true},{\"name\":\"train\",\"exists\":true},{\"name\":\"trainAsync\",\"exists\":true},{\"name\":\"randomise\",\"exists\":true},{\"name\":\"clearExamples\",\"exists\":true},{\"name\":\"saveState\",\"exists\":true},{\"name\":\"evalLoss\",\"exists\":true},{\"name\":\"inferBatch\",\"exists\":true},{\"name\":\"getLayerStats\",\"exists\":true}],\"allPresent\":true}"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROJ-006",
+      "title": "Debug probe NOT exposed without ?debug=1",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Navigate to http://localhost:5174/ (without ?debug=1)",
+          "expected": "Page loads successfully",
+          "observed": "Page loaded without errors"
+        },
+        {
+          "action": "Check typeof window.__nisps",
+          "expected": "typeof window.__nisps === 'undefined'",
+          "observed": "nispsType: 'undefined', isUndefined: true"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "skeleton-wasm/group-2/VAL-PROJ-006-no-debug-probe.png"
+        ],
+        "consoleErrors": "none",
+        "javascriptOutput": "{\"nispsType\":\"undefined\",\"isUndefined\":true}"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The validation contract task description referenced bus.topic() API but the actual implementation uses bus.createTopic()/getTopic(). The match() method takes (pattern, callback) directly rather than returning a subscribable object. Required reading the source code to discover the correct API.",
+      "resolved": true,
+      "resolution": "Read src/bus/signal-bus.ts to identify the actual API: createTopic(name), getTopic(name), match(pattern, fn)",
+      "affectedAssertions": ["VAL-PROJ-004"]
+    },
+    {
+      "description": "Arrow function callbacks in eval() caused 'ms.fn is not a function' error on first attempt after page reload with cleared localStorage. Switching to function declarations resolved it, suggesting a possible serialization issue with arrow functions in the browser eval context.",
+      "resolved": true,
+      "resolution": "Used function declarations instead of arrow functions in eval() JavaScript code",
+      "affectedAssertions": ["VAL-PROJ-004"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 3 assertions: all 3 passed. VAL-PROJ-004 (signal bus): topics emit/receive correctly, wildcard matching works, equals:false ensures duplicate data triggers subscribers. VAL-PROJ-005 (debug probe with ?debug=1): all 15 required methods present. VAL-PROJ-006 (no probe without ?debug=1): window.__nisps is undefined."
+}

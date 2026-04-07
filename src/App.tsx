@@ -8,6 +8,7 @@ import FlowField from './components/visual/FlowField';
 import Dock from './components/layout/Dock';
 import TrainingDrawer from './components/layout/TrainingDrawer';
 import StatusLine from './components/layout/StatusLine';
+import RLButtons from './components/rl/RLButtons';
 
 /**
  * Root application component for the NISPS immersive app.
@@ -131,7 +132,7 @@ export default function App() {
         <FlowField mlStore={mlStore!} />
       </Show>
       <Show when={ready() && inputStore()}>
-        {(store) => <Joystick inputStore={store()} />}
+        {(store) => <Joystick inputStore={store()} mlStore={mlStore!} />}
       </Show>
       {/* Dock + Drawers + Status (only when ready and ML store exists) */}
       <Show when={ready() && mlStore !== null}>
@@ -143,6 +144,7 @@ export default function App() {
             onClose={() => closeDrawer('training')}
           />
         </div>
+        <RLButtons mlStore={mlStore!} />
         <StatusLine mlStore={mlStore!} />
       </Show>
     </div>

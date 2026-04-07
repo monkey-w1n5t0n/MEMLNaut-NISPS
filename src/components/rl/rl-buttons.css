@@ -1,0 +1,83 @@
+/* RL floating buttons — thumbs-up/down for reinforcement learning feedback */
+
+.rl-buttons {
+  position: fixed;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 24px;
+  z-index: 45;
+  transition: opacity 0.3s;
+}
+
+.rl-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  background: var(--glass-bg, rgba(10, 10, 20, 0.65));
+  backdrop-filter: blur(var(--glass-blur, 12px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
+  color: var(--text, #e0e0e8);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+  gap: 0;
+}
+
+.rl-icon {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.key-num {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: var(--font-mono, monospace);
+  line-height: 1;
+  margin-top: -1px;
+}
+
+.rl-btn:active {
+  transform: scale(0.9);
+}
+
+/* Thumbs-up — green accent */
+.rl-up {
+  border-color: rgba(0, 200, 160, 0.4);
+  color: #00c8a0;
+  background: rgba(0, 200, 160, 0.08);
+}
+
+.rl-up:active {
+  background: rgba(0, 200, 160, 0.2);
+  box-shadow: 0 0 20px rgba(0, 200, 160, 0.3);
+}
+
+/* Thumbs-down — red/orange accent */
+.rl-down {
+  border-color: rgba(220, 60, 20, 0.4);
+  color: #dc3c14;
+  background: rgba(220, 60, 20, 0.08);
+}
+
+.rl-down:active {
+  background: rgba(220, 60, 20, 0.2);
+  box-shadow: 0 0 20px rgba(220, 60, 20, 0.3);
+}
+
+/* Button flash animation */
+.rl-btn.flash {
+  animation: rl-flash 0.3s ease-out;
+}
+
+@keyframes rl-flash {
+  0% { filter: brightness(1.8); }
+  100% { filter: brightness(1); }
+}

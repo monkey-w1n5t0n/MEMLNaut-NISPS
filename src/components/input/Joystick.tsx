@@ -6,6 +6,7 @@
  *   - Draggable thumb dot that follows pointer
  *   - Glow effect when touching
  *   - Follow mode (toggled by double-click) with badge and pulse
+ *   - Noise ring indicator (RL exploration level)
  *   - Position readout at bottom
  *
  * Pointer events (unified mouse/touch):
@@ -22,19 +23,33 @@ import {
   onMount,
   onCleanup,
   createEffect,
+  createMemo,
   Show,
 } from 'solid-js';
 import type { InputStore } from '../../stores/input-store';
+import type { MLStore } from '../../stores/ml-store';
 import './joystick.css';
 
 export interface JoystickProps {
   inputStore: InputStore;
+  mlStore?: MLStore;
   size?: number;
 }
 
 export default function Joystick(props: JoystickProps) {
   let canvasRef: HTMLCanvasElement | undefined;
   const size = () => props.size ?? 180;
+
+  // ─── Noise ring class computation ─────────────────────────────────
+
+  const noiseRingClass = createMemo(() => {
+    const mlStore = props.mlStore;
+    if (!mlStore) return 'noise-ring';
+    const noise = mlStore.noiseLevel();
+    if (noise > 0.15) return 'noise-ring active high';
+    if (noise > 0.01) return 'noise-ring active';
+    return 'noise-ring';
+  });
 
   // ─── Drawing ─────────────────────────────────────────────────────
 
@@ -166,6 +181,8 @@ export default function Joystick(props: JoystickProps) {
     props.inputStore.joyY();
     props.inputStore.isDragging();
     props.inputStore.followMode();
+    // Also track noise level (triggers redraw for noise-dependent visuals)
+    if (props.mlStore) props.mlStore.noiseLevel();
     draw();
   });
 
@@ -185,6 +202,7 @@ export default function Joystick(props: JoystickProps) {
         onPointerUp={onPointerUp}
         onDblClick={onDoubleClick}
       />
+      <div class={noiseRingClass()} id="noise-ring" />
       <Show when={props.inputStore.followMode()}>
         <div class="follow-badge">FOLLOW</div>
       </Show>

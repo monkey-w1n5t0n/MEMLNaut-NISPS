@@ -36,9 +36,9 @@ All feature implementation for the SolidJS migration. This worker builds compone
 ### Step 3: Write Tests First (TDD)
 
 1. Write failing tests BEFORE implementation. Tests go in `tests/` at the repo root.
-2. For SolidJS components: use vitest + solid-testing-library (install if needed).
+2. For SolidJS components: use Playwright e2e tests against the Vite dev server (see `playwright-solidjs.config.ts`).
 3. For behavioral assertions matching the validation contract: write Playwright e2e tests that use the `window.__nisps` debug probe.
-4. For transplanted core modules: write unit tests verifying the same behavior as the old JS code.
+4. For transplanted core modules: write Playwright e2e tests verifying the same behavior as the old JS code.
 5. Run tests to confirm they fail (red).
 
 ### Step 4: Implement

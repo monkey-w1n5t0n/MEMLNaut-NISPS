@@ -1,0 +1,125 @@
+{
+  "groupId": "flowfield-rerun",
+  "testedAt": "2026-04-07T12:00:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:5174/?debug=1",
+    "session": "e2e2da32b61b",
+    "port": 5174
+  },
+  "toolsUsed": ["agent-browser"],
+  "assertions": [
+    {
+      "id": "VAL-VIS-001",
+      "title": "Particles render in visual mode",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Clear localStorage and reload with ?debug=1",
+          "expected": "App loads in visual mode with debug probe",
+          "observed": "App loaded, window.__nisps available, getOutputs().length = 20 (visual mode confirmed)"
+        },
+        {
+          "action": "Wait 3 seconds for WASM initialization and particle rendering",
+          "expected": "Particles appear on fullscreen canvas",
+          "observed": "Canvas pixel analysis: 114,427 non-black pixels out of 921,600 (12.4% coverage) — particles actively rendering"
+        },
+        {
+          "action": "Verify canvas dimensions match viewport",
+          "expected": "Canvas fills entire viewport (not 300x150 default)",
+          "observed": "Canvas dimensions: 1280x720, matching viewport 1280x720"
+        },
+        {
+          "action": "Take screenshot",
+          "expected": "Screenshot shows visible particles on canvas",
+          "observed": "Screenshot captured showing green/cyan particles flowing across the dark canvas background"
+        }
+      ],
+      "evidence": {
+        "screenshots": ["ml-core-loop/flowfield-rerun/VAL-VIS-001-particles-rendering.png"],
+        "consoleErrors": "none",
+        "network": "n/a",
+        "probeData": {
+          "outputCount": 20,
+          "canvasSize": {"width": 1280, "height": 720},
+          "nonBlackPixelRatio": 0.124
+        }
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-VIS-002",
+      "title": "Particles respond to ML outputs",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Set inputs to (0.2, 0.2) via setInputs(0.2, 0.2)",
+          "expected": "Outputs change, particles adjust behavior",
+          "observed": "Outputs at (0.2, 0.2): [0.006, 0.891, 0.267, 0.000, 1.000, 0.002, 0.491, 0.975, 0.000, 0.753, ...] — screenshot shows particles in one configuration"
+        },
+        {
+          "action": "Take screenshot at position (0.2, 0.2)",
+          "expected": "Screenshot shows particle state at position 1",
+          "observed": "Screenshot captured with visible particles at first position"
+        },
+        {
+          "action": "Set inputs to (0.8, 0.8) via setInputs(0.8, 0.8)",
+          "expected": "Outputs change significantly, particles adjust behavior",
+          "observed": "Outputs at (0.8, 0.8): [0.535, 0.457, 0.807, 0.000, 0.999, 0.000, 0.000, 1.000, 0.000, 0.657, ...] — significant differences from position 1 (e.g., output[0]: 0.006 → 0.535, output[2]: 0.267 → 0.807)"
+        },
+        {
+          "action": "Take screenshot at position (0.8, 0.8)",
+          "expected": "Screenshot shows different particle behavior",
+          "observed": "Screenshot captured showing particles in visibly different configuration — flow patterns changed"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "ml-core-loop/flowfield-rerun/VAL-VIS-002-position-1-0.2-0.2.png",
+          "ml-core-loop/flowfield-rerun/VAL-VIS-002-position-2-0.8-0.8.png"
+        ],
+        "consoleErrors": "none",
+        "network": "n/a",
+        "probeData": {
+          "outputs_at_0202": [0.006, 0.891, 0.267, 0.000, 1.000, 0.002, 0.491, 0.975, 0.000, 0.753, 0.251, 0.121, 0.305, 0.000, 0.020, 0.000, 0.000, 0.872, 0.002, 0.000],
+          "outputs_at_0808": [0.535, 0.457, 0.807, 0.000, 0.999, 0.000, 0.000, 1.000, 0.000, 0.657, 0.888, 0.000, 0.001, 0.000, 0.001, 0.000, 0.000, 0.995, 0.000, 0.000]
+        }
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-VIS-003",
+      "title": "Canvas resizes with window",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Record canvas dimensions at initial viewport (1280x720)",
+          "expected": "Canvas matches viewport",
+          "observed": "Canvas: 1280x720, viewport: 1280x720"
+        },
+        {
+          "action": "Resize viewport to 800x600",
+          "expected": "Canvas resizes to match new viewport",
+          "observed": "Canvas resized to 800x600, getBoundingClientRect confirms 800x600"
+        },
+        {
+          "action": "Take screenshot after resize",
+          "expected": "Screenshot shows canvas fills the new viewport",
+          "observed": "Screenshot confirms canvas fills 800x600 viewport with particles still rendering"
+        }
+      ],
+      "evidence": {
+        "screenshots": ["ml-core-loop/flowfield-rerun/VAL-VIS-003-resized-800x600.png"],
+        "consoleErrors": "none",
+        "network": "n/a",
+        "probeData": {
+          "beforeResize": {"canvasWidth": 1280, "canvasHeight": 720, "viewportWidth": 1280, "viewportHeight": 720},
+          "afterResize": {"canvasWidth": 800, "canvasHeight": 600, "viewportWidth": 800, "viewportHeight": 600}
+        }
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "All 3 assertions PASSED. The fix for defaulting to visual mode is confirmed working — getOutputs().length returns 20 (not 126). Particles render on the fullscreen canvas, respond to ML output changes when joystick position changes, and the canvas correctly resizes with the browser window."
+}

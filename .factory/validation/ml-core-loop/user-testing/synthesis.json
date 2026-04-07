@@ -1,11 +1,11 @@
 {
   "milestone": "ml-core-loop",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "assertionsSummary": {
     "total": 10,
-    "passed": 7,
-    "failed": 3,
+    "passed": 10,
+    "failed": 0,
     "blocked": 0
   },
   "passedAssertions": [
@@ -15,31 +15,19 @@
     "VAL-ML-005",
     "VAL-ML-022",
     "VAL-JOY-001",
-    "VAL-JOY-005"
+    "VAL-JOY-005",
+    "VAL-VIS-001",
+    "VAL-VIS-002",
+    "VAL-VIS-003"
   ],
-  "failedAssertions": [
-    {
-      "id": "VAL-VIS-001",
-      "reason": "App defaults to synth mode (126 outputs) instead of visual mode (20 outputs). FlowField render loop only activates when mode === 'visual', so particles never render on default load. Root cause: ml-store.ts line 82 sets outputMode: 'synth' as default."
-    },
-    {
-      "id": "VAL-VIS-002",
-      "reason": "Blocked by VAL-VIS-001 — no particles render to observe joystick response to ML output changes"
-    },
-    {
-      "id": "VAL-VIS-003",
-      "reason": "Blocked by VAL-VIS-001 — canvas attribute dimensions (300x150) don't match CSS layout (1280x720). resize() runs before layout and rAF loop never starts in synth mode. Secondary bug: ResizeObserver canvas resize not working when rAF loop inactive."
-    }
-  ],
+  "failedAssertions": [],
   "blockedAssertions": [],
   "appliedUpdates": [],
-  "previousRound": null,
-  "rootCauseAnalysis": {
-    "primaryIssue": "Default outputMode is 'synth' instead of 'visual' in ml-store.ts",
-    "affectedFile": "src/stores/ml-store.ts",
-    "affectedLine": 82,
-    "suggestedFix": "Change default outputMode from 'synth' to 'visual' in ml-store.ts. This will cause the FlowField render loop to start, enable particle rendering, and fix canvas resizing. A single-line change should fix all 3 failed assertions.",
-    "secondaryIssue": "Canvas attribute dimensions (300x150) not updated to match CSS layout (1280x720) when rAF loop is inactive. The FlowFieldVisualizer resize() method may need to be called after the canvas has its layout dimensions, not just in the constructor."
+  "previousRound": ".factory/validation/ml-core-loop/user-testing/synthesis.json (round 1)",
+  "reTestedFromRound1": {
+    "ids": ["VAL-VIS-001", "VAL-VIS-002", "VAL-VIS-003"],
+    "reason": "Failed in round 1 due to default outputMode being 'synth' instead of 'visual'. Fix feature 'fix-default-output-mode' was applied.",
+    "result": "All 3 re-tested assertions now pass."
   },
-  "notes": "VAL-ML-001 passes with a minor type discrepancy: getOutputs() returns a plain Array instead of Float32Array as specified in the validation contract. Values are numerically correct and bounded [0,1]. VAL-ML-022 passes noting that mode switching UI is not yet implemented (Milestone 4), but the outputCountForMode function correctly maps modes to output counts."
+  "notes": "All 10 ml-core-loop milestone assertions now pass. Round 1 had 3 failures related to default output mode. The fix (changing ml-store.ts default from 'synth' to 'visual') resolved all three. VAL-VIS-001 confirmed particles rendering (12.4% pixel coverage), VAL-VIS-002 confirmed particles respond to input changes (output[0]: 0.006→0.535 between positions), VAL-VIS-003 confirmed canvas resizes correctly (1280x720→800x600)."
 }

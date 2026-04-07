@@ -44,25 +44,34 @@ User Input (drag/gamepad/hands)
 ### Signal Bus (`bus/signal-bus.ts`)
 Unified event system replacing EventBus + CustomEvents. Topics with `equals: false` for event semantics. Wildcard matching via `match()`.
 
-### ML Store (`stores/ml-store.ts`)
-- IML instances (WasmIML) live OUTSIDE the store (opaque handles)
+### ML Store (`stores/ml-store.ts`) — IMPLEMENTED
+- Factory function `createMLStore(bus)` returns `Promise<MLStore>`
+- Dual WasmIML instances: `imlJoy` (2 inputs), `imlHand` (14 inputs)
 - `outputs` is a `createSignal<Float32Array>` (NOT a store property — proxies break typed arrays)
-- Store tracks: loss, lossHistory, exampleCount, isTraining, spreadLevel, noiseLevel, undoStack
+- `outputCount` signal tracks current MLP output dimension
+- Store state (via createStore): outputMode, midiCCCount, spreadLevel, initialized
+- Mode switching via `setOutputMode()` triggers MLP recreation with warm-start weight transfer
+- Output count per mode: visual=20, synth=126, midi-cc=8 (configurable), audio-canvas=36
+- All ML operations exposed as methods: setInputs, train, trainAsync, randomise, thumbsUp, thumbsDown, etc.
+- `dispose()` destroys both IML instances (called in App.tsx onCleanup)
+- Bus topics created: `ml.outputs`, `ml.outputCount`, `mode.output`
+- Debug probe (`probe/debug-probe.ts`) now wraps MLStore instead of raw WasmIML
+- `window.__nispsStore` exposed for test access to store methods like `setOutputMode()`
 
-### Input Store (`stores/input-store.ts`)
+### Input Store (`stores/input-store.ts`) — NOT YET IMPLEMENTED
 - joyX, joyY as store properties
 - Input pipeline config (deadzone, zoom, curve, etc.)
 
-### Output Store (`stores/output-store.ts`)
+### Output Store (`stores/output-store.ts`) — NOT YET IMPLEMENTED
 - Output mode (visual/synth/midi-cc/audio-canvas)
 - Per-mode overrides arrays
 - Output pipeline config (globalCurve, smoothing, slewRate, freezeGate)
 
 ### Dual IML System
-- `imlJoy`: 2 inputs (joystick), dynamic outputs
-- `imlHand`: 14 inputs (hand tracking), dynamic outputs
-- `activeIml`: points to whichever is active
-- EOC IML: separate instance for Linked/Independent modes
+- `imlJoy`: 2 inputs (joystick), dynamic outputs — warm-started on resize
+- `imlHand`: 14 inputs (hand tracking), dynamic outputs — fresh on resize
+- `activeIml`: points to whichever is active (default: imlJoy)
+- EOC IML: separate instance for Linked/Independent modes (NOT YET IMPLEMENTED)
 
 ### WASM Integration
 - WASM files in `public/` (no Vite hashing)

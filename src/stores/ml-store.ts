@@ -158,6 +158,9 @@ export interface MLStore {
   loadVisualPreset(name: string): void;
   saveState(): void;
 
+  /** Internal: update outputs signal from external source (e.g. heatmap drag) */
+  _updateOutputs(newOutputs: Float32Array): void;
+
   // Lifecycle
   dispose(): void;
 }
@@ -233,6 +236,13 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     // Update reactive state signals
     setExampleCountSignal(activeIml.exampleCount);
     setLastLossSignal(activeIml.lastLoss);
+  }
+
+  // ─── Helper: update outputs signal from external source (e.g. heatmap drag) ───
+
+  function _updateOutputs(newOutputs: Float32Array): void {
+    setOutputs(newOutputs);
+    outputsTopic.emit(newOutputs);
   }
 
   // ─── Helper: push undo snapshot ───
@@ -511,6 +521,10 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
         spreadLevel: state.spreadLevel,
       };
       localStorage.setItem('nisps-a-immersive', JSON.stringify(data));
+    },
+
+    _updateOutputs: (newOutputs: Float32Array) => {
+      _updateOutputs(newOutputs);
     },
 
     dispose: () => {

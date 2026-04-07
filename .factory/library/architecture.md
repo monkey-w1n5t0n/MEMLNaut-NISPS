@@ -64,6 +64,7 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - Bus topics created: `ml.outputs`, `ml.outputCount`, `mode.output`
 - Debug probe (`probe/debug-probe.ts`) now wraps MLStore instead of raw WasmIML
 - `window.__nispsStore` exposed for test access to store methods like `setOutputMode()`
+- `_updateOutputs(Float32Array)` — internal method for direct output signal update (used by HeatmapStrip drag-to-set)
 
 ### Input Store (`stores/input-store.ts`) — IMPLEMENTED
 - Factory function `createInputStore(mlStore, bus)` returns `InputStore`
@@ -92,6 +93,19 @@ Unified event system replacing EventBus + CustomEvents. Topics with `equals: fal
 - 20 parameters: angleOffset, scale, speed, hueBase, hueSpread, particleSize, fadeRate, turbulence, attractStrength, attractRadius, dispersionRate, dispersionAmount, particleLifetime, respawnStyle, advectionMode, inertia, drag, repulsorStrength, repulsorCount, repulsorOrbitRate
 - Exposed as `#flowfield-canvas` for e2e test targeting
 - Mounted in App.tsx when `ready()` signal is true
+
+### HeatmapStrip Component (`components/visual/HeatmapStrip.tsx`) — IMPLEMENTED
+- Fixed-position bar chart strip at top of viewport (height 22px, z-index 20)
+- One bar per ML output; bar width proportional to output value (0-100%)
+- Bar count matches current output mode: visual=20, synth=126, midi-cc=8, audio-canvas=36
+- Reactively rebuilds when `outputCount()` changes (mode switch triggers `<For>` re-render)
+- Visual mode uses curated colors/names (VISUAL_PARAM_COLORS/VISUAL_PARAM_NAMES); other modes use hue-based color generation
+- Drag-to-set: pointer capture on cell, drag updates output value directly via `iml.setOutput()` + `_updateOutputs()`
+- Click-to-popup: short click (no drag) opens param popup (name, value, color bar, close button)
+- Tooltip on hover: shows "ParamName: value" positioned below hovered cell
+- Per-cell event handler factory `createCellHandlers()` captures element reference for pointer events
+- ML store exposes `_updateOutputs(Float32Array)` for direct output signal update from drag
+- CSS: glass morphism strip, per-bar colored fill, brightness filter on hover, drag cursor
 
 ### Output Store (`stores/output-store.ts`) — NOT YET IMPLEMENTED
 - Output mode (visual/synth/midi-cc/audio-canvas)

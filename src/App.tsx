@@ -5,6 +5,7 @@ import { exposeDebugProbe } from './probe/debug-probe';
 import bus from './bus';
 import Joystick from './components/input/Joystick';
 import FlowField from './components/visual/FlowField';
+import HeatmapStrip from './components/visual/HeatmapStrip';
 import Dock from './components/layout/Dock';
 import TrainingDrawer from './components/layout/TrainingDrawer';
 import ModeDrawer from './components/layout/ModeDrawer';
@@ -137,6 +138,7 @@ export default function App() {
       </Show>
       {/* Dock + Drawers + Status (only when ready and ML store exists) */}
       <Show when={ready() && mlStore !== null}>
+        <HeatmapStrip mlStore={mlStore!} />
         <Dock onToggleDrawer={toggleDrawer} openDrawers={openDrawers} />
         <div class="drawer-stack">
           <TrainingDrawer

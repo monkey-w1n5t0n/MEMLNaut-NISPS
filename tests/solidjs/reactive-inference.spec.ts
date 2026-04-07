@@ -77,7 +77,7 @@ test.describe('Reactive Inference Loop (f05)', () => {
     expect(result.allDifferent).toBe(true);
     expect(result.allBounded).toBe(true);
     expect(result.count).toBe(5);
-    expect(result.eachLength).toBe(126);
+    expect(result.eachLength).toBe(20); // visual mode default
   });
 
   test('VAL-ML-004c: changing only X produces different outputs', async ({ page }) => {
@@ -140,7 +140,7 @@ test.describe('Reactive Inference Loop (f05)', () => {
       };
     });
 
-    expect(result.length).toBe(126);
+    expect(result.length).toBe(20); // visual mode default
     expect(result.allBounded).toBe(true);
     expect(result.allFinite).toBe(true);
     // With random weights, outputs shouldn't all be zero
@@ -227,7 +227,7 @@ test.describe('Reactive Inference Loop (f05)', () => {
       };
     });
 
-    expect(result.length).toBe(126);
+    expect(result.length).toBe(20); // visual mode default
     expect(result.allBounded).toBe(true);
     expect(result.allFinite).toBe(true);
     // Clamped values should produce same outputs as explicitly clamped values
@@ -392,7 +392,7 @@ test.describe('Reactive Inference Loop (f05)', () => {
     });
 
     expect(result.hasTopic).toBe(true);
-    expect(result.afterLength).toBe(126);
+    expect(result.afterLength).toBe(20); // visual mode default
     expect(result.changed).toBe(true);
   });
 });

@@ -95,7 +95,7 @@ test.describe('Debug Probe (f03)', () => {
 
   // ─── Probe method smoke tests ───
 
-  test('probe.getOutputs returns array of 126 bounded values', async ({ page }) => {
+  test('probe.getOutputs returns array of 20 bounded values (visual mode default)', async ({ page }) => {
     await loadSolidApp(page);
 
     const result = await page.evaluate(() => {
@@ -108,7 +108,7 @@ test.describe('Debug Probe (f03)', () => {
     });
 
     expect(result.isArray).toBe(true);
-    expect(result.length).toBe(126);
+    expect(result.length).toBe(20); // visual mode is default
     expect(result.allBounded).toBe(true);
   });
 
@@ -202,7 +202,7 @@ test.describe('Debug Probe (f03)', () => {
     });
 
     expect(result.length).toBe(3);
-    expect(result.eachLength).toEqual([126, 126, 126]);
+    expect(result.eachLength).toEqual([20, 20, 20]); // visual mode default
     expect(result.allBounded).toBe(true);
   });
 

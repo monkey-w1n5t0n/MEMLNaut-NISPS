@@ -92,14 +92,14 @@ export interface MLStore {
 
 export async function createMLStore(bus: SignalBus): Promise<MLStore> {
   const [state, setState] = createStore<MLState>({
-    outputMode: 'synth',  // default mode — old app starts at N_SYNTH_OUTPUTS
+    outputMode: 'visual',  // default mode — FlowField particles render on load
     midiCCCount: N_MIDI_CC_DEFAULT,
     spreadLevel: 0.6,
     initialized: false,
   });
 
   // Outputs as signal — Float32Array MUST NOT go in store (proxy overhead)
-  const initialCount = outputCountForMode('synth');
+  const initialCount = outputCountForMode('visual');
   const [outputs, setOutputs] = createSignal<Float32Array>(new Float32Array(initialCount));
   const [outputCount, setOutputCount] = createSignal<number>(initialCount);
 

@@ -13,7 +13,6 @@ import {
   onMount,
   onCleanup,
   createEffect,
-  Show,
 } from 'solid-js';
 import type { MLStore } from '../../stores/ml-store';
 import { FlowFieldVisualizer } from '../../core/ui/flow-field';
@@ -28,9 +27,12 @@ export default function FlowField(props: FlowFieldProps) {
   let visualizer: FlowFieldVisualizer | undefined;
   let rafId: number = 0;
 
-  // Resize handler — updates canvas buffer dimensions
+  // Resize handler — updates canvas buffer dimensions and reinitializes particles
   function handleResize(): void {
-    if (visualizer && canvasRef) {
+    if (!canvasRef) return;
+    if (!visualizer) {
+      visualizer = new FlowFieldVisualizer(canvasRef);
+    } else {
       visualizer.resize();
       visualizer.initParticles();
     }
@@ -57,27 +59,39 @@ export default function FlowField(props: FlowFieldProps) {
     }
   }
 
+  onMount(() => {
+    if (!canvasRef) return;
+
+    // Set up resize observer — this fires after the canvas has layout dimensions,
+    // avoiding the default 300x150 canvas size problem
+    const observer = new ResizeObserver(() => {
+      handleResize();
+    });
+    observer.observe(canvasRef);
+    onCleanup(() => observer.disconnect());
+
+    // Also handle window resize as fallback
+    window.addEventListener('resize', handleResize);
+    onCleanup(() => window.removeEventListener('resize', handleResize));
+  });
+
   // Start/stop render loop based on output mode
   createEffect(() => {
     const mode = props.mlStore.state.outputMode;
-    if (mode === 'visual' && canvasRef) {
-      if (!visualizer) {
-        visualizer = new FlowFieldVisualizer(canvasRef);
+    if (mode === 'visual') {
+      // If visualizer isn't created yet (e.g. first effect run before ResizeObserver fires),
+      // create it now — but only if canvas has real dimensions (not default 300x150)
+      if (!visualizer && canvasRef) {
+        const rect = canvasRef.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          visualizer = new FlowFieldVisualizer(canvasRef);
+        }
       }
-      startLoop();
+      if (visualizer) {
+        startLoop();
+      }
     } else {
       stopLoop();
-    }
-  });
-
-  onMount(() => {
-    // Set up resize observer
-    if (canvasRef) {
-      const observer = new ResizeObserver(() => {
-        handleResize();
-      });
-      observer.observe(canvasRef);
-      onCleanup(() => observer.disconnect());
     }
   });
 

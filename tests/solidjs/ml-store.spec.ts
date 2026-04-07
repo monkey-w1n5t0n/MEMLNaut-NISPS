@@ -12,7 +12,7 @@ test.describe('ML Store — Dual IML', () => {
 
   // ─── VAL-ML-001: Initial outputs bounded [0,1] ───
 
-  test('VAL-ML-001a: getOutputs() returns 126 values on fresh load', async ({ page }) => {
+  test('VAL-ML-001a: getOutputs() returns 20 values on fresh load (visual mode default)', async ({ page }) => {
     await loadSolidApp(page);
 
     const result = await page.evaluate(() => {
@@ -25,7 +25,7 @@ test.describe('ML Store — Dual IML', () => {
     });
 
     expect(result.isArray).toBe(true);
-    expect(result.length).toBe(126);
+    expect(result.length).toBe(20); // visual mode is default
   });
 
   test('VAL-ML-001b: all initial outputs are in [0,1]', async ({ page }) => {
@@ -65,11 +65,11 @@ test.describe('ML Store — Dual IML', () => {
 
   // ─── VAL-ML-022: Output count changes with mode ───
 
-  test('VAL-ML-022a: default output count is 126 (synth mode default)', async ({ page }) => {
+  test('VAL-ML-022a: default output count is 20 (visual mode default)', async ({ page }) => {
     await loadSolidApp(page);
 
     const length = await page.evaluate(() => (window as any).__nisps.getOutputs().length);
-    expect(length).toBe(126);
+    expect(length).toBe(20); // visual mode is default
   });
 
   test('VAL-ML-022b: outputCount signal tracks current count', async ({ page }) => {
@@ -80,8 +80,8 @@ test.describe('ML Store — Dual IML', () => {
       return store.outputCount();
     });
 
-    // Default is 126 (synth mode is default)
-    expect(result).toBe(126);
+    // Default is 20 (visual mode is default)
+    expect(result).toBe(20);
   });
 
   test('VAL-ML-022c: mode change to visual produces 20 outputs', async ({ page }) => {
@@ -215,8 +215,8 @@ test.describe('ML Store — Dual IML', () => {
     expect(result.hasHandIml).toBe(true);
     expect(result.joyInputs).toBe(2);
     expect(result.handInputs).toBe(14);
-    expect(result.joyOutputs).toBe(126);
-    expect(result.handOutputs).toBe(126);
+    expect(result.joyOutputs).toBe(20); // visual mode is default
+    expect(result.handOutputs).toBe(20); // visual mode is default
   });
 
   test('loss remains null and exampleCount remains 0 after mode switch', async ({ page }) => {

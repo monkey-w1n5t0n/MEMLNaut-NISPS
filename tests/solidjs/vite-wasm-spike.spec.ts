@@ -38,7 +38,7 @@ test.describe('Vite + WASM spike', () => {
     expect(criticalErrors).toEqual([]);
   });
 
-  test('VAL-PROJ-003: WASM loads and inference returns 126 bounded outputs', async ({ page }) => {
+  test('VAL-PROJ-003: WASM loads and inference returns 20 bounded outputs (visual mode default)', async ({ page }) => {
     await loadSolidApp(page);
 
     const result = await page.evaluate(() => {
@@ -53,7 +53,7 @@ test.describe('Vite + WASM spike', () => {
       };
     });
 
-    expect(result.length).toBe(126);
+    expect(result.length).toBe(20); // visual mode is default
     expect(result.min).toBeGreaterThanOrEqual(0);
     expect(result.max).toBeLessThanOrEqual(1);
     expect(result.allBounded).toBe(true);
@@ -80,7 +80,7 @@ test.describe('Vite + WASM spike', () => {
     });
 
     expect(result.same).toBe(false);
-    expect(result.outputs2Length).toBe(126);
+    expect(result.outputs2Length).toBe(20); // visual mode default
     expect(result.outputs2Bounded).toBe(true);
   });
 
@@ -143,7 +143,7 @@ test.describe('Vite + WASM spike', () => {
       };
     });
 
-    expect(result.length).toBe(126);
+    expect(result.length).toBe(20); // visual mode default
     expect(result.allBounded).toBe(true);
     expect(result.allFinite).toBe(true);
   });

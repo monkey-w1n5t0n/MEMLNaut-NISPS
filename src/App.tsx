@@ -7,6 +7,7 @@ import Joystick from './components/input/Joystick';
 import FlowField from './components/visual/FlowField';
 import Dock from './components/layout/Dock';
 import TrainingDrawer from './components/layout/TrainingDrawer';
+import ModeDrawer from './components/layout/ModeDrawer';
 import StatusLine from './components/layout/StatusLine';
 import RLButtons from './components/rl/RLButtons';
 
@@ -142,6 +143,11 @@ export default function App() {
             mlStore={mlStore!}
             visible={openDrawers().has('training')}
             onClose={() => closeDrawer('training')}
+          />
+          <ModeDrawer
+            mlStore={mlStore!}
+            visible={openDrawers().has('mode')}
+            onClose={() => closeDrawer('mode')}
           />
         </div>
         <RLButtons mlStore={mlStore!} />

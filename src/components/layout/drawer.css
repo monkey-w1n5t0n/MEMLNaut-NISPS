@@ -205,6 +205,41 @@
   pointer-events: none;
 }
 
+/* Pill toggle for mode switching */
+.pill-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.pill-opt {
+  flex: 1;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #888;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.pill-opt:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ccc;
+}
+
+.pill-opt.active {
+  background: rgba(0, 212, 255, 0.15);
+  color: var(--accent, #00d4ff);
+  font-weight: 600;
+}
+
 /* Drawer slide-in animation */
 @keyframes drawerSlideIn {
   from {

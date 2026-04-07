@@ -311,11 +311,27 @@ export async function createMLStore(bus: SignalBus): Promise<MLStore> {
     getImlHand: () => imlHand,
 
     setOutputMode: async (mode: OutputMode) => {
+      const targetCount = outputCountForMode(mode, state.midiCCCount);
+      const needsResize = targetCount !== outputCount();
+
+      // Warn about training data loss if resizing with existing examples
+      if (needsResize && activeIml && activeIml.exampleCount > 0) {
+        const confirmed = window.confirm(
+          `Switching to ${mode} mode requires ${targetCount} outputs (currently ${outputCount()}). ` +
+          `This will reset training examples. Network weights will be partially preserved. Continue?`
+        );
+        if (!confirmed) {
+          // Abort — mode stays unchanged
+          return;
+        }
+      }
+
       setState('outputMode', mode);
       modeTopic.emit(mode);
 
-      const targetCount = outputCountForMode(mode, state.midiCCCount);
-      await resizeMLP(targetCount);
+      if (needsResize) {
+        await resizeMLP(targetCount);
+      }
     },
 
     setMidiCCCount: async (count: number) => {

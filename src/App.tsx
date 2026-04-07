@@ -1,6 +1,7 @@
 import { onMount, onCleanup, createSignal } from 'solid-js';
 import { WasmIML } from './core/iml';
 import { createSignalBus, type SignalBus } from './bus/signal-bus';
+import { exposeDebugProbe } from './probe/debug-probe';
 
 const N_INPUTS = 2;
 const HIDDEN_LAYERS = [32, 48, 64];
@@ -46,10 +47,7 @@ export default function App() {
       setStatus(`Ready — ${outputs.length} outputs loaded`);
 
       // Expose debug probe if ?debug=1
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('debug') === '1') {
-        exposeDebugProbe(iml);
-      }
+      exposeDebugProbe(iml);
     } catch (err) {
       setStatus(`Error: ${err}`);
       console.error('WASM init failed:', err);
@@ -87,51 +85,4 @@ export default function App() {
       </p>
     </div>
   );
-}
-
-/**
- * Expose window.__nisps debug probe for Playwright tests.
- * All methods are synchronous (bypass SolidJS batching).
- */
-function exposeDebugProbe(iml: WasmIML): void {
-  const probe = {
-    getOutputs: () => iml.getOutputs(),
-    getLoss: () => iml.lastLoss,
-    getWeights: () => iml._getFlatWeights(),
-    getExampleCount: () => iml.exampleCount,
-    setInputs: (x: number, y: number) => {
-      iml.setInput(0, Math.max(0, Math.min(1, x)));
-      iml.setInput(1, Math.max(0, Math.min(1, y)));
-      iml.process();
-    },
-    thumbsUp: () => {
-      iml.addExample(iml.inputState.slice(), iml.outputState.slice());
-      return iml.trainAsync();
-    },
-    thumbsDown: () => {
-      const spread = 0.6;
-      const speed = 0.15 * (1 - spread) + 0.05 * spread;
-      iml.moveWeights(speed, spread);
-    },
-    train: () => iml.train(),
-    trainAsync: () => iml.trainAsync(),
-    randomise: () => iml.randomiseWeights(0.6),
-    clearExamples: () => iml.clearDataset(),
-    saveState: () => {
-      const state = {
-        weights: iml._getFlatWeights(),
-        inputState: iml.inputState.slice(),
-        outputState: iml.outputState.slice(),
-        exampleCount: iml.exampleCount,
-        lossHistory: iml.lossHistory.slice(),
-      };
-      localStorage.setItem('nisps-a-immersive', JSON.stringify(state));
-    },
-    evalLoss: () => iml.evalLoss(),
-    inferBatch: (points: number[][]) => iml.inferBatch(points),
-    getLayerStats: () => iml.getLayerStats(),
-  };
-
-  (window as any).__nisps = probe;
-  console.log('[NISPS] Debug probe exposed at window.__nisps');
 }

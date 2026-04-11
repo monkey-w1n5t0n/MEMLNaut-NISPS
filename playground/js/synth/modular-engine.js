@@ -108,6 +108,11 @@ const LFO_MLP_PARAMS  = ['rate', 'morph'];
 // -----------------------------------------------------------------------------
 
 export class ModularEngine extends SynthEngine {
+  // Processor names we've already registered via _registerCombinedWorklet.
+  // Shared across all ModularEngine instances since AudioWorklet deduplicates
+  // processor names per AudioContext; double-registering throws.
+  static _registeredProcessors = new Set();
+
   constructor() {
     super();
 
@@ -738,11 +743,14 @@ export class ModularEngine extends SynthEngine {
     }
     const wasmBytes = await wasmResp.arrayBuffer();
 
-    // Register worklet modules (addModule is idempotent — browser dedupes).
-    // faust-worklet-processor.js defines the FaustWorkletProcessor base class
-    // that modular-subtractive-processor.js extends.
-    await audioCtx.audioWorklet.addModule('faust/faust-worklet-processor.js');
-    await audioCtx.audioWorklet.addModule(cfg.workletUrl);
+    // Register the worklet. In practice Chrome's AudioWorkletGlobalScope
+    // isolates classes declared at the top of separate addModule() scripts
+    // (contrary to the spec's "shared global" phrasing), so a base class
+    // defined in faust-worklet-processor.js is not visible when a subclass
+    // script is loaded via a second addModule() call. To sidestep this we
+    // fetch both files, concatenate them, and addModule() a single blob URL
+    // — the base class and subclass end up in one script evaluation.
+    await this._registerCombinedWorklet(audioCtx, cfg.workletUrl);
 
     this._workletNode = new AudioWorkletNode(audioCtx, cfg.processorName, {
       numberOfInputs:    0,
@@ -767,6 +775,42 @@ export class ModularEngine extends SynthEngine {
     }, [wasmBytes]);
 
     await this._waitForReady(10_000);
+  }
+
+  /**
+   * Fetch faust-worklet-processor.js (base class) and the sub-engine's
+   * processor file, concatenate them, and addModule() the result as one
+   * blob. Cached per processor name so repeated sub-engine swaps don't
+   * re-register.
+   *
+   * Chrome has deduped addModule() by URL in the past, so a blob URL with
+   * a fresh identity each call is safe but slightly wasteful; we memoise
+   * on processorName to keep things tidy.
+   */
+  async _registerCombinedWorklet(audioCtx, workletUrl) {
+    const name = this._subCfg.processorName;
+    if (ModularEngine._registeredProcessors.has(name)) return;
+
+    const [baseSrc, subSrc] = await Promise.all([
+      fetch('faust/faust-worklet-processor.js').then(r => {
+        if (!r.ok) throw new Error(`base worklet fetch failed: ${r.status}`);
+        return r.text();
+      }),
+      fetch(workletUrl).then(r => {
+        if (!r.ok) throw new Error(`sub worklet fetch failed: ${r.status}`);
+        return r.text();
+      }),
+    ]);
+
+    const combined = baseSrc + '\n' + subSrc;
+    const blob = new Blob([combined], { type: 'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      await audioCtx.audioWorklet.addModule(blobUrl);
+      ModularEngine._registeredProcessors.add(name);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
   }
 
   _teardownWorklet() {

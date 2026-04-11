@@ -26,7 +26,45 @@ class FaustWorkletProcessor extends AudioWorkletProcessor {
     this._ready = false;
     this._paramValues = {};  // index → current value (raw Faust units)
 
+    // Messages that arrive before init() finishes are buffered here and
+    // drained by _drainPendingMessages() in order once the subclass sets
+    // _ready = true. Subclasses with extended _handleMessage() should call
+    // _queueIfNotReady(msg) as their first line to participate.
+    this._pendingMessages = [];
+
     this.port.onmessage = (e) => this._handleMessage(e.data);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pre-ready message buffering
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns true if the message was queued (processor not ready yet).
+   * Subclasses should call this at the top of their _handleMessage override
+   * after the 'init' special case, before touching _dspInst.
+   */
+  _queueIfNotReady(msg) {
+    if (this._ready) return false;
+    if (!msg || msg.type === 'init') return false;
+    this._pendingMessages.push(msg);
+    return true;
+  }
+
+  /** Drain all buffered pre-ready messages, in arrival order. */
+  _drainPendingMessages() {
+    if (this._pendingMessages.length === 0) return;
+    const pending = this._pendingMessages;
+    this._pendingMessages = [];
+    for (const msg of pending) {
+      try { this._handleMessage(msg); }
+      catch (err) {
+        this.port.postMessage({
+          type: 'error',
+          message: 'drain failed: ' + String(err),
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -36,18 +74,22 @@ class FaustWorkletProcessor extends AudioWorkletProcessor {
   _handleMessage(msg) {
     if (!msg || !msg.type) return;
 
-    switch (msg.type) {
-      case 'init':
-        this._initWasm(msg.wasmBytes, msg.sampleRate || sampleRate)
-          .then(() => {
-            this._ready = true;
-            this.port.postMessage({ type: 'ready' });
-          })
-          .catch((err) => {
-            this.port.postMessage({ type: 'error', message: String(err) });
-          });
-        break;
+    if (msg.type === 'init') {
+      this._initWasm(msg.wasmBytes, msg.sampleRate || sampleRate)
+        .then(() => {
+          this._ready = true;
+          this.port.postMessage({ type: 'ready' });
+          this._drainPendingMessages();
+        })
+        .catch((err) => {
+          this.port.postMessage({ type: 'error', message: String(err) });
+        });
+      return;
+    }
 
+    if (this._queueIfNotReady(msg)) return;
+
+    switch (msg.type) {
       case 'setParam':
         this._paramValues[msg.index] = msg.value;
         this._onSetParam(msg.index, msg.value);

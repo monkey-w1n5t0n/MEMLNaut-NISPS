@@ -25,6 +25,9 @@
 *.la
 *.a
 *.lib
+# Exception: Faust shared library files (text source, .lib extension by
+# Faust convention) should be tracked.
+!playground/faust/*.lib
 
 # Executables
 *.exe

@@ -21,8 +21,11 @@ import { EOCChain } from './eoc/index.js';
 import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 import { EngineSwitcher } from './ui/engine-switcher.js';
 import { EOCJoystick } from './ui/eoc-joystick.js';
+import { initModularUI } from './ui/modular-ui.js';
 import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
+import { ModularEngine } from './synth/modular-engine.js';
+import { MODULAR_PRESETS, applyPreset as applyModularPreset, findPreset as findModularPreset } from './synth/modular-presets.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -35,6 +38,10 @@ let N_OUTPUTS = N_SYNTH_OUTPUTS; // Dynamic — changes with output mode
 
 let audioCanvas = null; // lazily created on first switch to audio-canvas mode
 const STORAGE_KEY = 'nisps-a-immersive';
+
+// Phase E — deferred modular DSP state. loadState() stashes this; the
+// engine-switch handler consumes it as soon as a ModularEngine exists.
+let _pendingModularDspState = null;
 
 const VISUAL_PARAM_NAMES = [
   'Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb',
@@ -115,6 +122,10 @@ let _eocInited = false; // guard: init once per AudioContext lifetime
 let imlEoc = null;       // second IML for EOC params (Linked/Independent mode)
 let eocTrainingTarget = 'synth'; // 'synth' | 'eoc' — which MLP RL feedback targets
 let eocJoystick = null;  // EOCJoystick instance for Independent mode
+
+// Modular-mode UI (Phase C) — created once during init(), toggled via show/hide
+// by setActiveEngine() when the modular engine becomes active.
+let modularUI = null;
 
 // ---- MIDI CC state ----
 let midiOutput = null;
@@ -1164,6 +1175,13 @@ async function setActiveEngine(engine) {
 
   // Clear active preset — it belongs to the previous engine
   activeSynthPresetId = null;
+
+  // Modular UI show/hide (Phase C). The UI is created once during init()
+  // and stays in the DOM; we toggle its visibility via the dock icon.
+  if (modularUI) {
+    if (engine.id === 'modular') modularUI.show();
+    else                         modularUI.hide();
+  }
 }
 
 async function resizeMLP(newOutputCount) {
@@ -1292,6 +1310,12 @@ async function init() {
       paramCount: 55,
       description: '4-operator FM with continuous routing matrix. Algorithm emerges from exploration.',
     },
+    {
+      id: 'modular',
+      displayName: 'Modular',
+      paramCount: 512,
+      description: 'Shared mod pool (ADSRs + LFOs) routed through a matrix into a swappable voice. Starts with a 3-osc subtractive sub-engine.',
+    },
   ];
   const engineSwitcherEl = document.getElementById('synth-engine-switcher');
   if (engineSwitcherEl) {
@@ -1308,6 +1332,26 @@ async function init() {
           newEngine = new AdditiveEngine();
         } else if (engineId === 'fm') {
           newEngine = new FMEngine();
+        } else if (engineId === 'modular') {
+          newEngine = new ModularEngine();
+          // When the modular engine's paramMeta changes (sub-engine swap or
+          // expose/unexpose toggles from Phase C UI), resize the MLP and
+          // rebuild downstream state that depends on paramCount.
+          newEngine.on('paramMeta:change', async () => {
+            if (activeEngine !== newEngine) return;
+            await resizeMLP(totalOutputCount());
+            if (eocChain?.nispsMode === 'shared') {
+              const combinedMeta = [...(newEngine.paramMeta ?? []), ...eocChain.paramMeta];
+              rebuildHeatmap(combinedMeta);
+            } else {
+              rebuildHeatmap(newEngine.paramMeta);
+            }
+            if (newEngine.paramMeta?.length > 0) {
+              rebuildParamToSection(newEngine.paramMeta);
+              if (synthVisualizer) synthVisualizer.rebuild(newEngine.paramMeta);
+            }
+            buildEngineParamOverrides();
+          });
         } else {
           showToast(`Unknown engine: ${engineId}`);
           return;
@@ -1332,6 +1376,27 @@ async function init() {
             await newEngine.init(audioCtxForInit);
           }
 
+          // Phase E — apply any pending modular DSP snapshot from loadState().
+          // Runs BEFORE setActiveEngine so paramMeta is correct when the MLP
+          // resizes below. Note: Phase C's UI state (counts, sub-engine,
+          // exposed params, enables) is applied separately by modular-ui.js
+          // on its first refresh(); that runs AFTER setActiveEngine via
+          // modularUI.show(), so the load ordering is:
+          //   1. setState() here — restores raw DSP values + sub-engine
+          //   2. modular-ui refresh() — replays Phase C's UI state
+          // Step 2 may call setModSourceCount() which re-emits
+          // paramMeta:change; that's fine since the raw values are already
+          // in _lastRawByLabel.
+          if (engineId === 'modular' && _pendingModularDspState &&
+              typeof newEngine.setState === 'function') {
+            try {
+              await newEngine.setState(_pendingModularDspState);
+            } catch (err) {
+              console.warn('[NISPS] modular setState on engine switch failed:', err);
+            }
+            _pendingModularDspState = null;
+          }
+
           await setActiveEngine(newEngine);
         }
       } catch (err) {
@@ -1351,6 +1416,22 @@ async function init() {
   // Wire events
   wireJoystick();
   wireDock();
+
+  // Phase C: Modular UI. Mount once here (after dock + drawer-stack exist).
+  // The UI is hidden until the modular engine becomes active.
+  try {
+    modularUI = initModularUI({
+      getEngine: () => activeEngine,
+      // Phase E: when modular UI mutates its state (preset applied,
+      // enables toggled, etc.) trigger the top-level save so the DSP
+      // snapshot is re-persisted alongside Phase C's UI-state key.
+      onStateChange: () => saveState(),
+    });
+    if (activeEngine?.id === 'modular') modularUI.show();
+  } catch (err) {
+    console.error('[NISPS] Failed to init modular UI:', err);
+  }
+
   wireControls();
   wireSynthControls();
   wireGamepad();
@@ -1520,6 +1601,47 @@ async function init() {
       inferBatch:   (points) => iml.inferBatch(points),
       getLayerStats:() => iml.getLayerStats(),
       eocChain,
+      // ---- Phase E — modular engine hooks ----
+      get activeEngine() { return activeEngine; },
+      get activeEngineId() { return activeEngine?.id ?? null; },
+      get paramCount() { return activeEngine?.paramCount ?? 0; },
+      /** Returns the modular engine's full DSP snapshot, or null if not active. */
+      getModularState: () => {
+        if (activeEngine?.id !== 'modular' ||
+            typeof activeEngine.getState !== 'function') return null;
+        return activeEngine.getState();
+      },
+      /** Restores a modular DSP snapshot. Returns a Promise. */
+      setModularState: async (s) => {
+        if (activeEngine?.id !== 'modular' ||
+            typeof activeEngine.setState !== 'function') return false;
+        await activeEngine.setState(s);
+        return true;
+      },
+      /** Swap the active sub-engine (subtractive/additive/fm). */
+      setModularSubEngine: async (id) => {
+        if (activeEngine?.id !== 'modular' ||
+            typeof activeEngine.setSubEngine !== 'function') return false;
+        await activeEngine.setSubEngine(id);
+        return true;
+      },
+      /** Apply a named modular preset. Returns a Promise<boolean>. */
+      applyModularPreset: async (presetId) => {
+        if (activeEngine?.id !== 'modular') return false;
+        const p = findModularPreset(presetId);
+        if (!p) return false;
+        await applyModularPreset(activeEngine, p);
+        return true;
+      },
+      /** Change modular ADSR/LFO counts. */
+      setModularSourceCount: (adsr, lfo) => {
+        if (activeEngine?.id !== 'modular' ||
+            typeof activeEngine.setModSourceCount !== 'function') return false;
+        activeEngine.setModSourceCount(adsr, lfo);
+        return true;
+      },
+      /** List of known modular preset ids. */
+      listModularPresets: () => MODULAR_PRESETS.map(p => ({ id: p.id, name: p.name })),
     };
   }
 
@@ -4091,6 +4213,21 @@ function saveState() {
       })) : [],
       eocNispsMode: eocChain ? eocChain.nispsMode : 'bypass',
       eocTrainingTarget,
+      // Phase E — full modular DSP snapshot. Only stored when the active
+      // engine is the modular engine. Contains raw per-label values; the
+      // UI-facing state (sub-engine choice, counts, enables, exposed params)
+      // lives in a separate localStorage key 'nisps-modular-state' owned by
+      // modular-ui.js. On load we apply the UI state first (sub-engine swap,
+      // counts) and then this dsp dict overwrites any default values.
+      modularDspState: (activeEngine && activeEngine.id === 'modular' &&
+                        typeof activeEngine.getState === 'function')
+        ? (() => {
+            const s = activeEngine.getState();
+            // Strip fields already owned by Phase C's UI state key to keep a
+            // single source of truth per field.
+            return { version: s.version, dsp: s.dsp };
+          })()
+        : null,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -4196,6 +4333,22 @@ async function loadState() {
     // happens on first audio-start click (Faust engines require a running AudioContext).
     if (typeof state.engineId === 'string') {
       EngineSwitcher.setActive(activeEngine ? activeEngine.id : 'shaper-feedback');
+    }
+
+    // Phase E — stash modular DSP state so it can be applied once the
+    // ModularEngine instance actually exists. Applied either right now (if
+    // the active engine is already modular) or later from the engine-switch
+    // handler when the user clicks the Modular card.
+    if (state.modularDspState && typeof state.modularDspState === 'object') {
+      _pendingModularDspState = state.modularDspState;
+      if (activeEngine?.id === 'modular' && typeof activeEngine.setState === 'function') {
+        try {
+          await activeEngine.setState(_pendingModularDspState);
+          _pendingModularDspState = null;
+        } catch (err) {
+          console.warn('[NISPS] modular setState on load failed:', err);
+        }
+      }
     }
 
     // Restore EOC chain state (modules, enabled flags, param values, nispsMode)

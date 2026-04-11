@@ -68,30 +68,32 @@ for DSP in "${DSP_FILES[@]}"; do
   NAME="$(basename "$DSP" .dsp)"
   echo "Compiling $NAME.dsp ..."
 
+  # Faust -o is interpreted relative to -O (so we must cd into SCRIPT_DIR
+  # and pass just the filename). Class names (-cn) must be valid C identifiers,
+  # so dash characters are replaced with underscores.
+  CLASSNAME="$(echo "$NAME" | tr '-' '_')"
+
   # Step 1: emit WASM binary + JS glue
   # -lang wasm      — target WebAssembly
   # -cn <Name>      — class name prefix in generated JS
-  # -e              — export all DSP metadata into the WASM module
   # -O <dir>        — output directory
-  faust -lang wasm \
-        -cn "$NAME" \
-        -e \
-        -O "$SCRIPT_DIR" \
-        "$DSP" \
-        -o "$SCRIPT_DIR/${NAME}.wasm"
+  #
+  # NB: do NOT pass -e here. In Faust 2.79, -e means "export expanded DSP
+  # (textual)" — it causes the .wasm output to be Faust source text, not a
+  # real WebAssembly binary. This script historically used -e by mistake.
+  ( cd "$SCRIPT_DIR" && \
+    faust -lang wasm \
+          -cn "$CLASSNAME" \
+          -O "$SCRIPT_DIR" \
+          "${NAME}.dsp" \
+          -o "${NAME}.wasm" )
 
-  # Step 2: emit the standalone JSON descriptor (separate pass so the JSON
-  # is always present even if the WASM glue is regenerated).
-  # -json produces <dsp-file>.json next to the source.
-  faust -json "$DSP" -o /dev/null 2>/dev/null || \
-  faust -lang codebox -json "$DSP" -o /dev/null 2>/dev/null || true
-
-  # Faust places the JSON next to the .dsp; rename to sit next to outputs.
-  if [ -f "${DSP}.json" ]; then
-    mv "${DSP}.json" "$SCRIPT_DIR/${NAME}.json"
-  elif [ -f "$SCRIPT_DIR/${NAME}.json" ]; then
-    : # already in the right place (some faust versions)
-  else
+  # Note: `faust -lang wasm -O . foo.dsp -o foo.wasm` already writes
+  # foo.json alongside foo.wasm with the wasm-native descriptor (including
+  # numeric `index` fields that workers use as setParamValue zone addresses).
+  # The old standalone `-json` pass produced a smaller JSON WITHOUT the
+  # `index` field, which is the wrong shape for workers — don't run it.
+  if [ ! -f "$SCRIPT_DIR/${NAME}.json" ]; then
     echo "  WARNING: ${NAME}.json not produced — check faust version"
   fi
 

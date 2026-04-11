@@ -2398,8 +2398,16 @@ function routeOutputs(outputs) {
       modularUI.updateLive(overridden);
     }
 
+    // Modular mode cold-start gate: with no training examples, an untrained
+    // MLP produces outputs around 0.5 which denormalise to ~0 for matrix
+    // cells (min=-1, max=1) and clobber the default patch's s00_d08_amp=1.0.
+    // Result: silence. Until the user captures at least one example, leave
+    // the worklet running on the default patch we already pushed at init.
+    const skipModularRouting = activeEngine?.id === 'modular' &&
+      (iml?.exampleCount ?? 0) === 0;
+
     // Engine param updates: throttle + dead-zone filter
-    if (activeEngine && activeEngine.running) {
+    if (activeEngine && activeEngine.running && !skipModularRouting) {
       const now = performance.now();
       if (now - _lastParamSendTime >= PARAM_SEND_INTERVAL) {
         _lastParamSendTime = now;

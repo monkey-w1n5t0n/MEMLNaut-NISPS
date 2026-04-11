@@ -347,8 +347,7 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     // Seed current values from the engine's _lastRawByLabel map (which
     // tracks every write via setParam / _setRawByLabel / default patch),
     // falling back to the walk-entry init value for cells the user has
-    // never touched.
-    const destNames = engine.destNames || [];
+    // never touched. (destNames is already in scope from the early guard.)
     const lastRaw = engine._lastRawByLabel || new Map();
     for (let d = 0; d < destNames.length; d++) {
       const destName = destNames[d];

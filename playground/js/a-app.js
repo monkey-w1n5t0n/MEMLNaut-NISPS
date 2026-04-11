@@ -1351,8 +1351,8 @@ async function init() {
     {
       id: 'modular',
       displayName: 'Modular',
-      paramCount: 512,
-      description: 'Shared mod pool (ADSRs + LFOs) routed through a matrix into a swappable voice. Starts with a 3-osc subtractive sub-engine.',
+      paramCount: 32,
+      description: 'Shared mod pool (4 ADSRs + 8 LFOs) driving a swappable voice via a routing matrix. Starts with a 3-osc subtractive sub-engine.',
     },
   ];
   const engineSwitcherEl = document.getElementById('synth-engine-switcher');

@@ -2392,6 +2392,12 @@ function routeOutputs(outputs) {
     // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);
 
+    // Modular matrix UI: mirror live MLP outputs into visible matrix cells
+    // (the UI throttles its own DOM writes internally)
+    if (modularUI && activeEngine?.id === 'modular') {
+      modularUI.updateLive(overridden);
+    }
+
     // Engine param updates: throttle + dead-zone filter
     if (activeEngine && activeEngine.running) {
       const now = performance.now();

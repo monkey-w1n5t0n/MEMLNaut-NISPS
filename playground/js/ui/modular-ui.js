@@ -754,12 +754,60 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
   // However, wireDock was wired at init time — any new dock-click delegation
   // works because it's attached to #dock via event delegation.
 
+  // Live-update throttle: the MLP can push ~60 Hz of new output vectors, but
+  // rewriting ~120 visible DOM cells that often is wasteful. Cap to ~20 fps.
+  const LIVE_UPDATE_INTERVAL_MS = 50;
+  let _lastLiveUpdate = 0;
+
+  /**
+   * Called from the inference loop with the MLP output vector (normalized
+   * [0,1]). Updates visible matrix cell DOM to reflect live values without
+   * touching the engine (engine.setParam is already being called on the
+   * same tick by routeOutputs).
+   */
+  function updateLive(outputs) {
+    if (!isVisible()) return;
+    if (!outputs || outputs.length === 0) return;
+    const engine = getEngine?.();
+    if (!engine || engine.id !== 'modular') return;
+    if (matrixIndexCache.size === 0) return;
+
+    const now = performance.now();
+    if (now - _lastLiveUpdate < LIVE_UPDATE_INTERVAL_MS) return;
+    _lastLiveUpdate = now;
+
+    const meta = engine.paramMeta;
+    const adsrN = uiState.adsrCount;
+    const lfoN  = uiState.lfoCount;
+    const nVisibleSources = adsrN + lfoN;
+
+    for (const [key, idx] of matrixIndexCache.entries()) {
+      // Only update cells whose source is currently visible.
+      const barIdx = key.indexOf('|');
+      const s = +key.slice(0, barIdx);
+      if (s >= 16) {
+        // LFO: sources 16..47 map to LFO slots 0..31
+        if ((s - 16) >= lfoN) continue;
+      } else if (s >= adsrN) {
+        continue;
+      }
+      const m = meta[idx];
+      if (!m) continue;
+      const norm = outputs[idx];
+      if (norm == null) continue;
+      const raw = m.min + norm * (m.max - m.min);
+      cellValues.set(key, raw);
+      updateCellDOM(+key.slice(0, barIdx), +key.slice(barIdx + 1), raw);
+    }
+  }
+
   return {
     teardown,
     refresh,
     show,
     hide,
     isVisible,
+    updateLive,
     /** Exposed for testability. */
     _debug: {
       getCell,

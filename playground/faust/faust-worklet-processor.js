@@ -174,6 +174,13 @@ class FaustWorkletProcessor extends AudioWorkletProcessor {
   }
 }
 
+// Explicitly attach to globalThis so subsequent addModule() scripts can see
+// it. Class declarations at the top of a classic script are lexically scoped
+// to that script's evaluation context and do NOT propagate across separate
+// addModule() calls; an explicit property assignment is required for the
+// cross-script reference to resolve.
+globalThis.FaustWorkletProcessor = FaustWorkletProcessor;
+
 // Note: registerProcessor() is called by each concrete engine file, not here,
 // because each engine has its own processor name.
 // Subclass files should end with:

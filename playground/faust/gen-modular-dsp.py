@@ -204,7 +204,12 @@ filtered = mix_driven : ve.moog_vcf(eff_res, eff_cutoff);
 // Velocity gain: blend 1.0 (no velocity) -> vel. Referenced here so Faust
 // keeps the _vel hidden param alive in the JSON descriptor.
 vel_gain = (1.0 - 0.3) + 0.3 * vel;  // 30% velocity sensitivity, fixed
-amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain;
+// d08_amp modulation is additive on top of base_amp (positive only). A
+// fully untrained or adversarial matrix therefore cannot silence the
+// voice while base_amp is high — which is the safety the "main amp gate
+// on at all times" default relies on. Users who want envelope-gated
+// voices set base_amp=0 and route a positive ADSR/LFO amount.
+amp_val = max(0.0, min(1.0, base_amp + max(0.0, mod_amp(gate)))) * master_level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 // equal-power pan
@@ -385,7 +390,8 @@ vel_gain = (1.0 - 0.3) + 0.3 * vel;
 // ---------------------------------------------------------------------------
 // Amplitude and pan (both mod-driven)
 // ---------------------------------------------------------------------------
-amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * level * vel_gain;
+// See subtractive engine for the positive-only mod_amp rationale.
+amp_val = max(0.0, min(1.0, base_amp + max(0.0, mod_amp(gate)))) * level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 pan_l = cos((pan_val + 1.0) * 0.25 * ma.PI);
@@ -548,7 +554,8 @@ soft_clip(x) = x / max(0.001, 1.0 + output_saturation * abs(x));
 hp_out(x)    = fi.highpass(1, output_hp, x);
 
 // Master amplitude destination (route an ADSR here for VCA)
-amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain * 0.25;
+// See subtractive engine for the positive-only mod_amp rationale.
+amp_val = max(0.0, min(1.0, base_amp + max(0.0, mod_amp(gate)))) * master_level * vel_gain * 0.25;
 
 // Pan
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));

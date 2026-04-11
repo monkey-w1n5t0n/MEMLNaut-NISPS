@@ -695,21 +695,20 @@ export class ModularEngine extends SynthEngine {
       }
     }
 
-    // ----- 2. Matrix cells — opt-in via _exposedMatrixCells -----
-    // Default: empty set, i.e. no matrix cells in paramMeta. The mod matrix
-    // is a "patch" setting: users wire up specific routes via the modular
-    // UI and only explicitly-exposed cells are driven by the MLP. Keeping
-    // all 480 cells in paramMeta by default caused the voice to go silent
-    // on joystick movement because the amp-gate destination (d08_amp) has
-    // signed range [-1,+1] and a sigmoid output near 0.5 denormalises to 0.
-    // Walk in dest-major, source-major order so paramMeta stays stable
-    // regardless of the insertion order of _exposedMatrixCells.
+    // ----- 2. Matrix cells — always in paramMeta (dest-major, source-major) -----
+    // Every 48 × 10 cell lives in paramMeta so modular-ui.updateLive() can
+    // mirror live MLP outputs into the matrix DOM. This is required for
+    // the visual feedback loop in the modular drawer. The historical
+    // concern — that a denormalised matrix cell near 0 could silence the
+    // voice via the d08_amp route — is now handled at the DSP level:
+    // each sub-engine's amp_val is `clamp(base_amp + max(0, mod_amp))`,
+    // so matrix cells can only add to the amp floor, never cut it.
+    // (`_exposedMatrixCells` is kept for forward compatibility but the
+    // default is always-include.)
     for (let d = 0; d < cfg.destCount; d++) {
       const destName = cfg.destNames[d];
       for (let s = 0; s < 48; s++) {
-        const key = `s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}`;
-        if (!this._exposedMatrixCells.has(key)) continue;
-        const label = `MM_Matrix/${key}_${destName}`;
+        const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
         const e = this._labelToWalk.get(label);
         if (!e) continue;
         meta.push(this._makeMetaEntry(e, {

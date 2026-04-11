@@ -43,6 +43,14 @@ function mxLabel(s, d, name) {
   return `MM_Matrix/s${pad2(s)}_d${pad2(d)}_${name}`;
 }
 
+// Sub-engine-specific base_amp labels. base_amp is a static floor on the
+// voice amp — defaults to 1.0 (always audible). Presets that want classic
+// ADSR-gated voices drop it to 0.0 and route a positive ADSR→amp matrix
+// amount on top.
+const BASE_AMP_SUB = '4_Master/04_base_amp'; // subtractive
+const BASE_AMP_ADD = '3_Master/05_base_amp'; // additive
+const BASE_AMP_FM  = '4_Master/06_base_amp'; // fm
+
 // -----------------------------------------------------------------------------
 // Presets
 // -----------------------------------------------------------------------------
@@ -82,8 +90,11 @@ const SLOW_PAD_PRESET = {
     [lfoLabel(2, 'rate')]:   0.5,
     [lfoLabel(2, 'morph')]:  0.0,
 
+    // Base amp: 0 → envelope-gated voice (ADSR1→amp drives the whole VCA).
+    [BASE_AMP_SUB]: 0.0,
+
     // Matrix routes
-    [mxLabel(0,  8, 'amp')]:    1.0,  // ADSR1 → amp (reinforce default)
+    [mxLabel(0,  8, 'amp')]:    1.0,  // ADSR1 → amp (full envelope gate)
     [mxLabel(16, 5, 'cutoff')]: 0.4,  // LFO1 → cutoff
     [mxLabel(17, 0, 'pitch')]:  0.05, // LFO2 → pitch
 
@@ -116,6 +127,9 @@ const PLUCKY_BASS_PRESET = {
     [adsrLabel(2, 'sustain')]: 0.0,
     [adsrLabel(2, 'release')]: 0.1,
 
+    // Base amp 0 → ADSR1 fully gates the voice.
+    [BASE_AMP_SUB]: 0.0,
+
     [mxLabel(0, 8, 'amp')]:    1.0, // ADSR1 → amp
     [mxLabel(1, 5, 'cutoff')]: 0.8, // ADSR2 → cutoff
 
@@ -146,6 +160,10 @@ const CRYSTAL_PRESET = {
     [lfoLabel(2, 'enable')]: 1.0,
     [lfoLabel(2, 'rate')]:   0.2,
     [lfoLabel(2, 'morph')]:  0.33, // tri
+
+    // Base amp 0 → ADSR1 shapes the voice envelope (0.8 route leaves some
+    // body even at the attack tail).
+    [BASE_AMP_ADD]: 0.0,
 
     [mxLabel(0,  8, 'amp')]:         0.8, // ADSR1 → amp
     [mxLabel(16, 1, 'bright')]:      0.3, // LFO1 → bright
@@ -215,6 +233,9 @@ const MORPHING_DRONE_PRESET = {
     [lfoLabel(2, 'enable')]: 1.0,
     [lfoLabel(2, 'rate')]:   0.15,
     [lfoLabel(2, 'morph')]:  0.66,
+
+    // Base amp 0 → very slow ADSR1 gates the voice.
+    [BASE_AMP_ADD]: 0.0,
 
     [mxLabel(0,  8, 'amp')]:           1.0, // ADSR1 → amp
     [mxLabel(16, 3, 'inharmonicity')]: 0.3, // LFO1 → inharmonicity

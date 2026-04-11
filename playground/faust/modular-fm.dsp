@@ -1177,7 +1177,8 @@ soft_clip(x) = x / max(0.001, 1.0 + output_saturation * abs(x));
 hp_out(x)    = fi.highpass(1, output_hp, x);
 
 // Master amplitude destination (route an ADSR here for VCA)
-amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain * 0.25;
+// See subtractive engine for the positive-only mod_amp rationale.
+amp_val = max(0.0, min(1.0, base_amp + max(0.0, mod_amp(gate)))) * master_level * vel_gain * 0.25;
 
 // Pan
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));

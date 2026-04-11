@@ -1196,7 +1196,8 @@ vel_gain = (1.0 - 0.3) + 0.3 * vel;
 // ---------------------------------------------------------------------------
 // Amplitude and pan (both mod-driven)
 // ---------------------------------------------------------------------------
-amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * level * vel_gain;
+// See subtractive engine for the positive-only mod_amp rationale.
+amp_val = max(0.0, min(1.0, base_amp + max(0.0, mod_amp(gate)))) * level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 pan_l = cos((pan_val + 1.0) * 0.25 * ma.PI);

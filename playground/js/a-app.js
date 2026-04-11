@@ -311,6 +311,43 @@ function rebuildParamToSection(paramMeta) {
 }
 
 /**
+ * Dynamic section metadata for non-C15 engines (parallel to SYNTH_SECTIONS
+ * for C15). Indexed by section index (the `si` field in paramToSection).
+ *
+ *   nonC15Sections[si]      = { name, color, count, startIndex }
+ *   nonC15GroupCurves[si]   = scalar group-master curve [0,1]
+ *
+ * Group curves persist across engine switches keyed by section NAME, so a
+ * user's "Filter" curve survives a sub-engine swap that keeps the same
+ * group label.
+ */
+let nonC15Sections = [];
+let nonC15GroupCurves = [];
+const _nonC15GroupCurveMemory = new Map(); // groupName -> curve
+
+function rebuildNonC15Sections(paramMeta) {
+  nonC15Sections = [];
+  nonC15GroupCurves = [];
+  let currentGroup = null;
+  let si = -1;
+  for (let i = 0; i < paramMeta.length; i++) {
+    const g = paramMeta[i].group ?? 'Other';
+    if (g !== currentGroup) {
+      si++;
+      currentGroup = g;
+      nonC15Sections.push({
+        name: g,
+        color: _colorFromGroup(g),
+        count: 0,
+        startIndex: i,
+      });
+      nonC15GroupCurves.push(_nonC15GroupCurveMemory.get(g) ?? 0.5);
+    }
+    nonC15Sections[si].count++;
+  }
+}
+
+/**
  * Restore paramToSection to the static C15 layout (from SYNTH_SECTIONS).
  */
 function restoreC15ParamToSection() {
@@ -1158,6 +1195,7 @@ async function setActiveEngine(engine) {
     }
   } else if (engine.paramMeta?.length > 0) {
     rebuildParamToSection(engine.paramMeta);
+    rebuildNonC15Sections(engine.paramMeta);
     if (synthVisualizer) {
       synthVisualizer.rebuild(engine.paramMeta);
     }
@@ -1348,6 +1386,7 @@ async function init() {
             }
             if (newEngine.paramMeta?.length > 0) {
               rebuildParamToSection(newEngine.paramMeta);
+              rebuildNonC15Sections(newEngine.paramMeta);
               if (synthVisualizer) synthVisualizer.rebuild(newEngine.paramMeta);
             }
             buildEngineParamOverrides();
@@ -2398,16 +2437,8 @@ function routeOutputs(outputs) {
       modularUI.updateLive(overridden);
     }
 
-    // Modular mode cold-start gate: with no training examples, an untrained
-    // MLP produces outputs around 0.5 which denormalise to ~0 for matrix
-    // cells (min=-1, max=1) and clobber the default patch's s00_d08_amp=1.0.
-    // Result: silence. Until the user captures at least one example, leave
-    // the worklet running on the default patch we already pushed at init.
-    const skipModularRouting = activeEngine?.id === 'modular' &&
-      (iml?.exampleCount ?? 0) === 0;
-
     // Engine param updates: throttle + dead-zone filter
-    if (activeEngine && activeEngine.running && !skipModularRouting) {
+    if (activeEngine && activeEngine.running) {
       const now = performance.now();
       if (now - _lastParamSendTime >= PARAM_SEND_INTERVAL) {
         _lastParamSendTime = now;
@@ -3855,23 +3886,62 @@ function wireGroupDrawer() {
   }, true); // capture phase so it fires before bar interaction
 }
 
-function showGroupDrawer(region) {
-  // Group drawer is C15-specific: indexes into the hardcoded SYNTH_SECTIONS
-  // table and groupOverrides, which only exist for the shaper-feedback engine.
-  // Other engines (additive, fm, modular) have their own param UIs.
-  if (activeEngine?.id !== 'shaper-feedback') return;
-  activeDrawerSection = region.index;
-  const sec = SYNTH_SECTIONS[region.index];
-  const ov = groupOverrides[region.index];
+/**
+ * Uniform view of a "section" (aka param group) for the active engine.
+ * C15 gets the static SYNTH_SECTIONS + groupOverrides + SYNTH_PARAM_MAP view;
+ * non-C15 gets a view derived from paramMeta + engineParamOverrides +
+ * nonC15Sections/nonC15GroupCurves.
+ *
+ * Returns { name, color, count, startIndex, getCurve, setCurve,
+ *           getParamName, getParamOverride } or null if the section doesn't
+ * exist for the active engine.
+ */
+function getSectionView(sectionIndex) {
+  if (activeEngine?.id === 'shaper-feedback') {
+    const sec = SYNTH_SECTIONS[sectionIndex];
+    const ov  = groupOverrides[sectionIndex];
+    if (!sec || !ov) return null;
+    let start = 0;
+    for (let i = 0; i < sectionIndex; i++) start += SYNTH_SECTIONS[i].count;
+    return {
+      name: sec.name,
+      color: sec.color,
+      count: sec.count,
+      startIndex: start,
+      getCurve: () => ov.curve,
+      setCurve: (v) => { ov.curve = v; },
+      getParamName: (li) => SYNTH_PARAM_MAP[start + li]?.label ?? `p${start + li}`,
+      getParamOverride: (li) => ov.params[li],
+    };
+  }
+  // Non-C15 engines
+  const sec = nonC15Sections[sectionIndex];
+  if (!sec || !engineParamOverrides) return null;
+  const start = sec.startIndex;
+  return {
+    name: sec.name,
+    color: sec.color,
+    count: sec.count,
+    startIndex: start,
+    getCurve: () => nonC15GroupCurves[sectionIndex] ?? 0.5,
+    setCurve: (v) => {
+      nonC15GroupCurves[sectionIndex] = v;
+      _nonC15GroupCurveMemory.set(sec.name, v);
+    },
+    getParamName: (li) => activeEngine?.paramMeta?.[start + li]?.name ?? `p${start + li}`,
+    getParamOverride: (li) => engineParamOverrides[start + li],
+  };
+}
 
-  // Find global param start index for this section
-  let paramStart = 0;
-  for (let i = 0; i < region.index; i++) paramStart += SYNTH_SECTIONS[i].count;
+function showGroupDrawer(region) {
+  const view = getSectionView(region.index);
+  if (!view) return;
+  activeDrawerSection = region.index;
 
   // Header with section name
   const header = $groupDrawer.querySelector('.group-drawer-header');
-  header.textContent = sec.name;
-  header.style.color = sec.color;
+  header.textContent = view.name;
+  header.style.color = view.color;
 
   // Body: group curve + per-param rows
   const body = $groupDrawer.querySelector('.group-drawer-body');
@@ -3892,10 +3962,10 @@ function showGroupDrawer(region) {
 
   const curveVal = document.createElement('span');
   curveVal.className = 'gd-val';
-  curveVal.textContent = ov.curve.toFixed(2);
+  curveVal.textContent = view.getCurve().toFixed(2);
 
   function drawGroupCurvePreview() {
-    _drawCurveOnCanvas(curveCanvas, ov.curve, sec.color);
+    _drawCurveOnCanvas(curveCanvas, view.getCurve(), view.color);
   }
 
   // Vertical drag on group curve — applies relative delta to all param curves
@@ -3907,8 +3977,11 @@ function showGroupDrawer(region) {
       e.preventDefault(); e.stopPropagation();
       dragging = true;
       startY = e.clientY;
-      startGroupCurve = ov.curve;
-      startParamCurves = ov.params.map(p => p.curve);
+      startGroupCurve = view.getCurve();
+      startParamCurves = [];
+      for (let i = 0; i < view.count; i++) {
+        startParamCurves.push(view.getParamOverride(i)?.curve ?? 0.5);
+      }
       curveCanvas.setPointerCapture(e.pointerId);
     });
     curveCanvas.addEventListener('pointermove', (e) => {
@@ -3917,11 +3990,12 @@ function showGroupDrawer(region) {
       const dy = e.clientY - startY;
       const delta = dy / 80;
       const newGroup = Math.max(0, Math.min(1, startGroupCurve + delta));
-      ov.curve = newGroup;
+      view.setCurve(newGroup);
       curveVal.textContent = newGroup.toFixed(2);
       // Apply same delta to each param, preserving relative offsets
-      for (let i = 0; i < ov.params.length; i++) {
-        ov.params[i].curve = Math.max(0, Math.min(1, startParamCurves[i] + delta));
+      for (let i = 0; i < view.count; i++) {
+        const pov = view.getParamOverride(i);
+        if (pov) pov.curve = Math.max(0, Math.min(1, startParamCurves[i] + delta));
       }
       drawGroupCurvePreview();
       body.querySelectorAll('.gd-param-curve-canvas').forEach(c => {
@@ -3940,11 +4014,10 @@ function showGroupDrawer(region) {
   drawGroupCurvePreview();
 
   // -- Per-param rows --
-  for (let li = 0; li < sec.count; li++) {
-    const pi = paramStart + li;
-    if (pi >= SYNTH_PARAM_MAP.length) break;
-    const param = SYNTH_PARAM_MAP[pi];
-    const pov = ov.params[li];
+  for (let li = 0; li < view.count; li++) {
+    const pov = view.getParamOverride(li);
+    if (!pov) continue;
+    const paramName = view.getParamName(li);
 
     const row = document.createElement('div');
     row.className = 'gd-param-row';
@@ -3953,14 +4026,14 @@ function showGroupDrawer(region) {
     // Name
     const nameSpan = document.createElement('span');
     nameSpan.className = 'gd-param-name';
-    nameSpan.textContent = param.label;
+    nameSpan.textContent = paramName;
 
     // Per-param curve canvas (vertically draggable, no slider)
     const pCurveCanvas = document.createElement('canvas');
     pCurveCanvas.className = 'gd-param-curve-canvas';
     pCurveCanvas.width = 28;
     pCurveCanvas.height = 28;
-    pCurveCanvas._redraw = () => _drawCurveOnCanvas(pCurveCanvas, pov.curve, sec.color);
+    pCurveCanvas._redraw = () => _drawCurveOnCanvas(pCurveCanvas, pov.curve, view.color);
 
     _wireCurveDrag(pCurveCanvas, () => pov.curve, (v) => {
       pov.curve = v;

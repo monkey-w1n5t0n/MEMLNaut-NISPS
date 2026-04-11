@@ -282,16 +282,17 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     if (!persistToEngine) return;
     const engine = getEngine?.();
     if (!engine || engine.id !== 'modular') return;
-    const idx = matrixIndexCache.get(`${s}|${d}`);
-    if (idx == null) return; // not in paramMeta (s out of adsr/lfo counts maybe)
-    const meta = engine.paramMeta[idx];
-    if (!meta) return;
-    const range = (meta.max - meta.min) || 1;
-    // v is the raw value in the paramMeta [min, max] space for matrix cells
-    // because we set min=-1, max=1 in the DSP — but meta.min/max are raw,
-    // so normalise generically.
-    const norm = (v - meta.min) / range;
-    engine.setParam(idx, Math.max(0, Math.min(1, norm)));
+
+    // Matrix cells are direct DSP knobs by default — write straight to
+    // the worklet by Faust label. (If a cell has been opt'd into the MLP
+    // output vector via setExposeMatrixCell, the MLP will overwrite it on
+    // the next inference tick; that's fine, this write still feeds the
+    // worklet immediately for tactile feedback.)
+    const destNames = engine.destNames || [];
+    const destName = destNames[d];
+    if (!destName) return;
+    const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
+    engine._setRawByLabel?.(label, v);
   }
 
   function cycleCell(s, d) {
@@ -336,20 +337,28 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
       return;
     }
 
+    // Matrix cells may or may not be in paramMeta (they're opt-in for MLP
+    // control; default is that the matrix is a direct-DSP patch editor).
+    // Build the paramMeta index for cells that ARE exposed, so updateLive
+    // can mirror MLP outputs into them; other cells are direct-edit only.
     matrixIndexCache = buildMatrixIndex(engine);
-    if (matrixIndexCache.size === 0) {
-      if (refs.matrixEmpty) refs.matrixEmpty.textContent = 'No matrix cells in paramMeta.';
-      return;
-    }
     if (refs.matrixEmpty) refs.matrixEmpty.textContent = '';
 
-    // Seed current values from paramMeta init (normalized 0..1).
-    const meta = engine.paramMeta;
-    for (const [key, idx] of matrixIndexCache.entries()) {
-      const m = meta[idx];
-      const range = (m.max - m.min) || 1;
-      const raw = m.min + m.init * range;
-      cellValues.set(key, raw);
+    // Seed current values from the engine's _lastRawByLabel map (which
+    // tracks every write via setParam / _setRawByLabel / default patch),
+    // falling back to the walk-entry init value for cells the user has
+    // never touched.
+    const destNames = engine.destNames || [];
+    const lastRaw = engine._lastRawByLabel || new Map();
+    for (let d = 0; d < destNames.length; d++) {
+      const destName = destNames[d];
+      for (let s = 0; s < 48; s++) {
+        const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
+        const walk = engine._labelToWalk?.get?.(label);
+        if (!walk) continue;
+        const raw = lastRaw.has(label) ? lastRaw.get(label) : walk.init;
+        cellValues.set(`${s}|${d}`, raw);
+      }
     }
 
     // Determine visible source range from current counts.

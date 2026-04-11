@@ -141,6 +141,13 @@ export class ModularEngine extends SynthEngine {
     // Exposure toggles (Phase C hooks).
     this._exposedEngineParams = new Set(); // label strings
 
+    // Matrix cell exposure: keys are "sXX_dYY" strings. Default-empty —
+    // matrix routing is a "patch" setting (user-configured once) rather
+    // than a "performance" surface (wiggled by the MLP). Users can opt in
+    // individual cells via the modular UI; each opt-in triggers a
+    // paramMeta:change event and an MLP resize.
+    this._exposedMatrixCells = new Set();
+
     // Most-recent raw value written to each DSP label (by _setRawByLabel
     // or setParam). Used by getState() to snapshot current DSP values
     // without round-tripping through the worklet. Cleared on sub-engine
@@ -454,6 +461,7 @@ export class ModularEngine extends SynthEngine {
     this._subCfg = SUB_ENGINES[id];
     this._faustJson = null;
     this._exposedEngineParams.clear();
+    this._exposedMatrixCells.clear();
     this._lastRawByLabel.clear();
 
     await this._loadSubEngineJson(id);
@@ -485,6 +493,32 @@ export class ModularEngine extends SynthEngine {
     else return;
     this._rebuildParamMeta();
     this._emit('paramMeta:change', { engine: this });
+  }
+
+  /**
+   * Opt a single matrix cell into (or out of) the MLP-driven paramMeta.
+   * When `exposed` is true, the cell joins the MLP output vector and its
+   * value is driven by inference every tick. When false, it stays at
+   * whatever raw value the worklet currently holds (e.g. from the default
+   * patch or the user's direct edits).
+   *
+   * @param {number} s   0..47 source index
+   * @param {number} d   0..9 destination index
+   * @param {boolean} exposed
+   */
+  setExposeMatrixCell(s, d, exposed) {
+    const key = `s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}`;
+    const had = this._exposedMatrixCells.has(key);
+    if (exposed && !had) this._exposedMatrixCells.add(key);
+    else if (!exposed && had) this._exposedMatrixCells.delete(key);
+    else return;
+    this._rebuildParamMeta();
+    this._emit('paramMeta:change', { engine: this });
+  }
+
+  /** Snapshot of currently-exposed matrix cell keys (e.g. "s00_d08"). */
+  getExposedMatrixCells() {
+    return [...this._exposedMatrixCells];
   }
 
   /**
@@ -636,18 +670,24 @@ export class ModularEngine extends SynthEngine {
       }
     }
 
-    // ----- 2. Matrix cells — dest-major, source-major within each destination -----
-    for (let d = 0; d < cfg.destCount; d++) {
-      const destName = cfg.destNames[d];
-      for (let s = 0; s < 48; s++) {
-        const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
-        const e = this._labelToWalk.get(label);
-        if (!e) continue;
-        meta.push(this._makeMetaEntry(e, {
-          id:    `mm_s${s}_d${d}_${destName}`,
-          name:  `s${String(s).padStart(2, '0')} \u2192 ${destName}`,
-          group: `Matrix/${destName}`,
-        }));
+    // ----- 2. Matrix cells — opt-in only (empty by default) -----
+    // Stored as "sXX_dYY" keys. The paramMeta order follows insertion
+    // order, grouped by destination for locality when scanning.
+    if (this._exposedMatrixCells.size > 0) {
+      for (let d = 0; d < cfg.destCount; d++) {
+        const destName = cfg.destNames[d];
+        for (let s = 0; s < 48; s++) {
+          const cellKey = `s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}`;
+          if (!this._exposedMatrixCells.has(cellKey)) continue;
+          const label = `MM_Matrix/${cellKey}_${destName}`;
+          const e = this._labelToWalk.get(label);
+          if (!e) continue;
+          meta.push(this._makeMetaEntry(e, {
+            id:    `mm_s${s}_d${d}_${destName}`,
+            name:  `s${String(s).padStart(2, '0')} \u2192 ${destName}`,
+            group: `Matrix/${destName}`,
+          }));
+        }
       }
     }
 

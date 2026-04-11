@@ -283,13 +283,22 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     const engine = getEngine?.();
     if (!engine || engine.id !== 'modular') return;
 
-    // Matrix cells are direct DSP knobs by default — write straight to
-    // the worklet by Faust label. (If a cell has been opt'd into the MLP
-    // output vector via setExposeMatrixCell, the MLP will overwrite it on
-    // the next inference tick; that's fine, this write still feeds the
-    // worklet immediately for tactile feedback.)
-    const destNames = engine.destNames || [];
-    const destName = destNames[d];
+    // Prefer routing through paramMeta (engine.setParam) so the write
+    // is visible to getDefaultNormalizedOutputs() and to the a-app's
+    // inference routing path. The cell exists in paramMeta by default
+    // now that matrix cells are MLP-driven. Fall back to _setRawByLabel
+    // if the index lookup fails (e.g. sub-engine swap in flight).
+    const idx = matrixIndexCache.get(`${s}|${d}`);
+    if (idx != null) {
+      const meta = engine.paramMeta[idx];
+      if (meta) {
+        const range = (meta.max - meta.min) || 1;
+        const norm = Math.max(0, Math.min(1, (v - meta.min) / range));
+        engine.setParam(idx, norm);
+        return;
+      }
+    }
+    const destName = (engine.destNames || [])[d];
     if (!destName) return;
     const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
     engine._setRawByLabel?.(label, v);

@@ -527,6 +527,26 @@ export class ModularEngine extends SynthEngine {
   }
 
   /**
+   * Return a Float32Array of length paramCount holding the normalised
+   * [0,1] default value for each paramMeta entry — reading from
+   * _lastRawByLabel if the user has set a value, otherwise from the
+   * walk-entry init. Used by the app's cold-start bias shift so an
+   * untrained MLP output of 0.5 still reproduces the default patch.
+   */
+  getDefaultNormalizedOutputs() {
+    const out = new Float32Array(this._paramMeta.length);
+    for (let i = 0; i < this._paramMeta.length; i++) {
+      const m = this._paramMeta[i];
+      const range = (m.max - m.min) || 1;
+      const raw = this._lastRawByLabel.has(m.label)
+        ? this._lastRawByLabel.get(m.label)
+        : (this._labelToWalk.get(m.label)?.init ?? m.min);
+      out[i] = Math.max(0, Math.min(1, (raw - m.min) / range));
+    }
+    return out;
+  }
+
+  /**
    * Change how many ADSR / LFO slots appear in paramMeta. Rebuilds paramMeta
    * and emits 'paramMeta:change' so a-app.js resizes the MLP. Slots past the
    * new counts remain alive in the Faust DSP (always 16 + 32 exist) but are
@@ -675,24 +695,18 @@ export class ModularEngine extends SynthEngine {
       }
     }
 
-    // ----- 2. Matrix cells — opt-in only (empty by default) -----
-    // Stored as "sXX_dYY" keys. The paramMeta order follows insertion
-    // order, grouped by destination for locality when scanning.
-    if (this._exposedMatrixCells.size > 0) {
-      for (let d = 0; d < cfg.destCount; d++) {
-        const destName = cfg.destNames[d];
-        for (let s = 0; s < 48; s++) {
-          const cellKey = `s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}`;
-          if (!this._exposedMatrixCells.has(cellKey)) continue;
-          const label = `MM_Matrix/${cellKey}_${destName}`;
-          const e = this._labelToWalk.get(label);
-          if (!e) continue;
-          meta.push(this._makeMetaEntry(e, {
-            id:    `mm_s${s}_d${d}_${destName}`,
-            name:  `s${String(s).padStart(2, '0')} \u2192 ${destName}`,
-            group: `Matrix/${destName}`,
-          }));
-        }
+    // ----- 2. Matrix cells — always in paramMeta (dest-major, source-major) -----
+    for (let d = 0; d < cfg.destCount; d++) {
+      const destName = cfg.destNames[d];
+      for (let s = 0; s < 48; s++) {
+        const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
+        const e = this._labelToWalk.get(label);
+        if (!e) continue;
+        meta.push(this._makeMetaEntry(e, {
+          id:    `mm_s${s}_d${d}_${destName}`,
+          name:  `s${String(s).padStart(2, '0')} \u2192 ${destName}`,
+          group: `Matrix/${destName}`,
+        }));
       }
     }
 

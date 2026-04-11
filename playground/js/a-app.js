@@ -1351,8 +1351,8 @@ async function init() {
     {
       id: 'modular',
       displayName: 'Modular',
-      paramCount: 32,
-      description: 'Shared mod pool (4 ADSRs + 8 LFOs) driving a swappable voice via a routing matrix. Starts with a 3-osc subtractive sub-engine.',
+      paramCount: 512,
+      description: 'Shared mod pool (4 ADSRs + 8 LFOs) routed through a matrix into a swappable voice. Starts with a 3-osc subtractive sub-engine.',
     },
   ];
   const engineSwitcherEl = document.getElementById('synth-engine-switcher');
@@ -2424,9 +2424,26 @@ const PARAM_SEND_INTERVAL = 50; // max ~20fps for synth param updates
 
 function routeOutputs(outputs) {
   if (outputMode === 'synth') {
-    const overridden = new Array(outputs.length);
-    for (let i = 0; i < outputs.length; i++) {
-      overridden[i] = applyGroupOverrides(outputs[i], i);
+    // Modular cold-start: before the user has captured any training
+    // examples, the MLP output is arbitrary — an untrained sigmoid
+    // network with spread=0.6 on 512 outputs tends toward ~0, which
+    // denormalises matrix cells to raw=0 and silences the default
+    // patch's ADSR1→amp routing. Ignore the MLP entirely and drive the
+    // engine with the default-normalised vector. Once exampleCount > 0
+    // the MLP has a target to hit and resumes driving normally.
+    let shiftedOutputs = outputs;
+    if (activeEngine?.id === 'modular' &&
+        (iml?.exampleCount ?? 0) === 0 &&
+        typeof activeEngine.getDefaultNormalizedOutputs === 'function') {
+      const defaults = activeEngine.getDefaultNormalizedOutputs();
+      if (defaults && defaults.length === outputs.length) {
+        shiftedOutputs = defaults;
+      }
+    }
+
+    const overridden = new Array(shiftedOutputs.length);
+    for (let i = 0; i < shiftedOutputs.length; i++) {
+      overridden[i] = applyGroupOverrides(shiftedOutputs[i], i);
     }
     // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);

@@ -24,10 +24,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # ---------------------------------------------------------------------------
 # Dependency checks
 # ---------------------------------------------------------------------------
+#
+# If faust isn't in PATH, automatically re-exec under `nix-shell -p faust`
+# when nix-shell is available. NISPS_BUILD_IN_NIX_SHELL prevents infinite
+# recursion if the nix-shell environment somehow still lacks faust.
 
 if ! command -v faust &>/dev/null; then
+  if [ "${NISPS_BUILD_IN_NIX_SHELL:-0}" = "1" ]; then
+    echo "ERROR: 'faust' still not found inside nix-shell. Check your nixpkgs channel."
+    exit 1
+  fi
+  if command -v nix-shell &>/dev/null; then
+    echo "faust not in PATH — re-exec under nix-shell -p faust ..."
+    exec env NISPS_BUILD_IN_NIX_SHELL=1 nix-shell -p faust --run "\"$0\" $*"
+  fi
   echo ""
-  echo "ERROR: 'faust' not found in PATH."
+  echo "ERROR: 'faust' not found in PATH (and nix-shell is unavailable)."
   echo ""
   echo "Install options:"
   echo "  nix-shell -p faust             # one-off"

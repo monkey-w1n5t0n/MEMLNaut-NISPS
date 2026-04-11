@@ -77,6 +77,10 @@ master_level = hslider("4_Master/00_master_level", 0.7, 0.0, 1.0, 0.001);
 master_glide = hslider("4_Master/01_master_glide[unit:s][scale:log]", 0.0, 0.0, 2.0, 0.001);
 master_tune  = hslider("4_Master/02_master_tune[unit:ct]", 0.0, -50.0, 50.0, 0.1);
 master_pan   = hslider("4_Master/03_master_pan", 0.0, -1.0, 1.0, 0.001);
+// Static amp floor. At 1.0 the voice is always fully open and d08_amp
+// modulation is purely additive decoration. Drop to 0 for classic
+// ADSR-gated VCA behaviour (route s00_d08_amp to an ADSR).
+base_amp     = hslider("4_Master/04_base_amp", 1.0, 0.0, 1.0, 0.001);
 
 // ---------------------------------------------------------------------------
 // Modulation matrix — 48 sources × 10 destinations.
@@ -1178,7 +1182,7 @@ filtered = mix_driven : ve.moog_vcf(eff_res, eff_cutoff);
 // Velocity gain: blend 1.0 (no velocity) -> vel. Referenced here so Faust
 // keeps the _vel hidden param alive in the JSON descriptor.
 vel_gain = (1.0 - 0.3) + 0.3 * vel;  // 30% velocity sensitivity, fixed
-amp_val = max(0.0, min(1.0, mod_amp(gate))) * master_level * vel_gain;
+amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 // equal-power pan

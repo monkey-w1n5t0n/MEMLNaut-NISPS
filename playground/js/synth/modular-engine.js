@@ -695,11 +695,21 @@ export class ModularEngine extends SynthEngine {
       }
     }
 
-    // ----- 2. Matrix cells — always in paramMeta (dest-major, source-major) -----
+    // ----- 2. Matrix cells — opt-in via _exposedMatrixCells -----
+    // Default: empty set, i.e. no matrix cells in paramMeta. The mod matrix
+    // is a "patch" setting: users wire up specific routes via the modular
+    // UI and only explicitly-exposed cells are driven by the MLP. Keeping
+    // all 480 cells in paramMeta by default caused the voice to go silent
+    // on joystick movement because the amp-gate destination (d08_amp) has
+    // signed range [-1,+1] and a sigmoid output near 0.5 denormalises to 0.
+    // Walk in dest-major, source-major order so paramMeta stays stable
+    // regardless of the insertion order of _exposedMatrixCells.
     for (let d = 0; d < cfg.destCount; d++) {
       const destName = cfg.destNames[d];
       for (let s = 0; s < 48; s++) {
-        const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
+        const key = `s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}`;
+        if (!this._exposedMatrixCells.has(key)) continue;
+        const label = `MM_Matrix/${key}_${destName}`;
         const e = this._labelToWalk.get(label);
         if (!e) continue;
         meta.push(this._makeMetaEntry(e, {
@@ -883,24 +893,24 @@ export class ModularEngine extends SynthEngine {
   }
 
   /**
-   * Apply the Phase B default patch so the first noteOn produces sound.
+   * Apply the default patch so the first noteOn produces sound.
    *
-   * Strategy: ADSR 1 → amp at full depth, reasonable ADSR 1 envelope,
-   * osc1 up, osc2/3 silent, filter fully open, master level 0.7.
-   * Everything else the .dsp file already has sane defaults for.
+   * Strategy: base_amp=1.0 keeps the voice fully open regardless of the
+   * mod matrix — users opt into ADSR/LFO→amp gating by lowering base_amp
+   * and routing a mod source to s##_d08_amp themselves. ADSR 1 is still
+   * pre-armed with a sensible envelope shape so a single matrix cell
+   * expose is all it takes to get classic VCA behaviour.
    */
   _applyDefaultPatch() {
-    // ADSR 1 — amplifier envelope
+    // ADSR 1 — pre-armed envelope (enabled, sensible shape). Not routed
+    // to amp by default; the user wires it up via the matrix UI.
     this._setRawByLabel('MM_ADSR/00_adsr01_enable',  1.0);
     this._setRawByLabel('MM_ADSR/00_adsr01_attack',  0.01);
     this._setRawByLabel('MM_ADSR/00_adsr01_decay',   0.2);
     this._setRawByLabel('MM_ADSR/00_adsr01_sustain', 0.7);
     this._setRawByLabel('MM_ADSR/00_adsr01_release', 0.3);
 
-    // Matrix: s00 (adsr01) → d08 (amp), depth 1.0
-    this._setRawByLabel('MM_Matrix/s00_d08_amp', 1.0);
-
-    // Engine sound defaults (subtractive-specific)
+    // Engine sound defaults (subtractive-specific).
     if (this._activeSubId === 'subtractive') {
       this._setRawByLabel('3_Filter/00_cutoff',         3000);
       this._setRawByLabel('3_Filter/01_resonance',      0.2);

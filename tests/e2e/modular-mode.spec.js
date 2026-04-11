@@ -1,16 +1,15 @@
 /**
- * Modular mode e2e tests (Phase E).
+ * Modular mode e2e tests.
  *
  * These tests exercise the modular engine end-to-end via the debug probe
- * (?debug=1, window.__nisps). They verify:
- *   1. Switching to the modular engine gives paramCount = 512
- *   2. Sub-engine swaps keep paramCount = 512 and update destNames
- *   3. Matrix cell / DSP state round-trips through getState/setState
- *   4. The full state survives a page reload (a-app.js save/load path)
- *   5. ADSR/LFO count changes rebuild paramMeta consistently
- *   6. Presets apply and produce the expected matrix/source state
- *   7. The default patch allows noteOn to produce non-silent output
- *   8. destNames differ between sub-engines (sanity)
+ * (?debug=1, window.__nisps).
+ *
+ * NB: modular paramMeta now defaults to mod-source params only
+ * (4 ADSR × 4 = 16 + 8 LFO × 2 = 16 = 32 total). Matrix cells and engine
+ * sound params are opt-in via setExposeMatrixCell / setExposeEngineParam,
+ * so joystick movement can't silence the voice by denormalising the amp
+ * gate. base_amp (per sub-engine) defaults to 1.0 so the voice is
+ * audible without any modulation.
  */
 const { test, expect } = require('@playwright/test');
 const { loadApp } = require('./helpers');
@@ -50,11 +49,14 @@ async function switchToModular(page) {
 
 test.describe('Modular mode', () => {
 
-  test('switching to modular yields paramCount = 512', async ({ page }) => {
+  test('switching to modular yields paramCount = 32 (mod sources only)', async ({ page }) => {
     await loadApp(page);
     await switchToModular(page);
     const count = await page.evaluate(() => window.__nisps.paramCount);
-    expect(count).toBe(512);
+    // 4 ADSR × (attack, decay, sustain, release) = 16
+    // 8 LFO  × (rate, morph)                      = 16
+    // Matrix cells are opt-in (default empty).
+    expect(count).toBe(32);
   });
 
   test('debug probe exposes modular hooks', async ({ page }) => {
@@ -76,7 +78,7 @@ test.describe('Modular mode', () => {
     expect(hooks.presetList).toBe(6);
   });
 
-  test('sub-engine swap keeps paramCount = 512', async ({ page }) => {
+  test('sub-engine swap keeps paramCount = 32 (default mod sources only)', async ({ page }) => {
     await loadApp(page);
     await switchToModular(page);
 
@@ -89,7 +91,7 @@ test.describe('Modular mode', () => {
         subId:      window.__nisps.activeEngine?.activeSubEngineId,
       }));
       expect(info.subId).toBe(sub);
-      expect(info.paramCount).toBe(512);
+      expect(info.paramCount).toBe(32);
     }
   });
 
@@ -113,16 +115,16 @@ test.describe('Modular mode', () => {
     await switchToModular(page);
 
     const baseline = await page.evaluate(() => window.__nisps.paramCount);
-    expect(baseline).toBe(512);
+    expect(baseline).toBe(32);
 
     await page.evaluate(() => window.__nisps.setModularSourceCount(6, 8));
     const after = await page.evaluate(() => window.__nisps.paramCount);
-    // 6 ADSRs * 4 + 8 LFOs * 2 + 48*10 = 24 + 16 + 480 = 520
-    expect(after).toBe(520);
+    // 6 ADSR × 4 + 8 LFO × 2 = 24 + 16 = 40 (matrix is opt-in, empty here)
+    expect(after).toBe(40);
 
     await page.evaluate(() => window.__nisps.setModularSourceCount(4, 8));
     const reset = await page.evaluate(() => window.__nisps.paramCount);
-    expect(reset).toBe(512);
+    expect(reset).toBe(32);
   });
 
   test('getState returns a snapshot with raw dsp values', async ({ page }) => {
@@ -133,21 +135,23 @@ test.describe('Modular mode', () => {
     expect(snap.version).toBe(1);
     expect(snap.subEngine).toBe('subtractive');
     expect(typeof snap.dsp).toBe('object');
-    // At least the default amp route should be set to 1.0 by the default patch.
-    expect(snap.dsp['MM_Matrix/s00_d08_amp']).toBeCloseTo(1.0, 4);
+    // Default patch pre-arms ADSR1 but does NOT route it to amp. Voice is
+    // audible because subtractive's base_amp defaults to 1.0.
     expect(snap.dsp['MM_ADSR/00_adsr01_enable']).toBeCloseTo(1.0, 4);
+    expect(snap.dsp['4_Master/04_base_amp']).toBeCloseTo(1.0, 4);
   });
 
-  test('matrix cell persistence across setState', async ({ page }) => {
+  test('matrix cell persistence across setState (via opt-in expose)', async ({ page }) => {
     await loadApp(page);
     await switchToModular(page);
 
-    // Pick a distinctive cell: ADSR2 (s=1) → cutoff (d=5) on subtractive.
+    // Matrix cells are opt-in — expose one first so it lands in paramMeta.
     await page.evaluate(() => {
       const engine = window.__nisps.activeEngine;
+      engine.setExposeMatrixCell(1, 5, true); // ADSR2 → cutoff on subtractive
       const idx = engine.paramMeta.findIndex(m =>
         m.label === 'MM_Matrix/s01_d05_cutoff');
-      if (idx < 0) throw new Error('no s01_d05_cutoff cell in paramMeta');
+      if (idx < 0) throw new Error('no s01_d05_cutoff cell in paramMeta after expose');
       // paramMeta min=-1 max=1; 0.9 in norm = 0.8 raw.
       engine.setParam(idx, 0.9);
     });
@@ -242,9 +246,11 @@ test.describe('Modular mode', () => {
     expect(snap.subEngine).toBe('fm');
     expect(snap.dsp['MM_Matrix/s02_d03_op3_level']).toBeCloseTo(1.0, 4);
 
-    // paramCount should still be 512 after the cross-engine swap.
+    // paramCount is the 32-param default after the cross-engine swap
+    // — the preset writes matrix cells via _setRawByLabel (direct DSP),
+    // which does not expose them to the MLP.
     const count = await page.evaluate(() => window.__nisps.paramCount);
-    expect(count).toBe(512);
+    expect(count).toBe(32);
   });
 
   test('initial outputs are in [0,1] after modular swap', async ({ page }) => {
@@ -254,7 +260,7 @@ test.describe('Modular mode', () => {
     // Set inputs so the MLP runs a forward pass.
     await page.evaluate(() => window.__nisps.setInputs(0.3, 0.7));
     const outputs = await page.evaluate(() => window.__nisps.getOutputs());
-    expect(outputs.length).toBe(512);
+    expect(outputs.length).toBe(32);
     for (const v of outputs) {
       expect(v).toBeGreaterThanOrEqual(0);
       expect(v).toBeLessThanOrEqual(1);

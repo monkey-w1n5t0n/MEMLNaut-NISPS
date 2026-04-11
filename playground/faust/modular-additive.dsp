@@ -74,6 +74,8 @@ fine_tune          = hslider("3_Master/01_fine_tune[unit:ct]", 0.0, -50.0, 50.0,
 saturation         = hslider("3_Master/02_saturation",         0.0,  0.0, 1.0, 0.001);
 stereo_phase_spread= hslider("3_Master/03_stereo_phase_spread",0.1,  0.0, 1.0, 0.001);
 master_pan         = hslider("3_Master/04_master_pan",         0.0, -1.0, 1.0, 0.001);
+// Static amp floor — see subtractive engine for full explanation.
+base_amp           = hslider("3_Master/05_base_amp",           1.0,  0.0, 1.0, 0.001);
 
 // ---------------------------------------------------------------------------
 // Modulation matrix — 48 sources × 10 destinations.
@@ -1194,7 +1196,7 @@ vel_gain = (1.0 - 0.3) + 0.3 * vel;
 // ---------------------------------------------------------------------------
 // Amplitude and pan (both mod-driven)
 // ---------------------------------------------------------------------------
-amp_val = max(0.0, min(1.0, mod_amp(gate))) * level * vel_gain;
+amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 pan_l = cos((pan_val + 1.0) * 0.25 * ma.PI);

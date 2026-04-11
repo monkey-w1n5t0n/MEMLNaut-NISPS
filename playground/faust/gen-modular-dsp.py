@@ -109,6 +109,10 @@ master_level = hslider("4_Master/00_master_level", 0.7, 0.0, 1.0, 0.001);
 master_glide = hslider("4_Master/01_master_glide[unit:s][scale:log]", 0.0, 0.0, 2.0, 0.001);
 master_tune  = hslider("4_Master/02_master_tune[unit:ct]", 0.0, -50.0, 50.0, 0.1);
 master_pan   = hslider("4_Master/03_master_pan", 0.0, -1.0, 1.0, 0.001);
+// Static amp floor. At 1.0 the voice is always fully open and d08_amp
+// modulation is purely additive decoration. Drop to 0 for classic
+// ADSR-gated VCA behaviour (route s00_d08_amp to an ADSR).
+base_amp     = hslider("4_Master/04_base_amp", 1.0, 0.0, 1.0, 0.001);
 """
 
 SUBTRACTIVE_FLOW = """\
@@ -200,7 +204,7 @@ filtered = mix_driven : ve.moog_vcf(eff_res, eff_cutoff);
 // Velocity gain: blend 1.0 (no velocity) -> vel. Referenced here so Faust
 // keeps the _vel hidden param alive in the JSON descriptor.
 vel_gain = (1.0 - 0.3) + 0.3 * vel;  // 30% velocity sensitivity, fixed
-amp_val = max(0.0, min(1.0, mod_amp(gate))) * master_level * vel_gain;
+amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 // equal-power pan
@@ -269,6 +273,8 @@ fine_tune          = hslider("3_Master/01_fine_tune[unit:ct]", 0.0, -50.0, 50.0,
 saturation         = hslider("3_Master/02_saturation",         0.0,  0.0, 1.0, 0.001);
 stereo_phase_spread= hslider("3_Master/03_stereo_phase_spread",0.1,  0.0, 1.0, 0.001);
 master_pan         = hslider("3_Master/04_master_pan",         0.0, -1.0, 1.0, 0.001);
+// Static amp floor — see subtractive engine for full explanation.
+base_amp           = hslider("3_Master/05_base_amp",           1.0,  0.0, 1.0, 0.001);
 """
 
 ADDITIVE_FLOW = """\
@@ -379,7 +385,7 @@ vel_gain = (1.0 - 0.3) + 0.3 * vel;
 // ---------------------------------------------------------------------------
 // Amplitude and pan (both mod-driven)
 // ---------------------------------------------------------------------------
-amp_val = max(0.0, min(1.0, mod_amp(gate))) * level * vel_gain;
+amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * level * vel_gain;
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));
 
 pan_l = cos((pan_val + 1.0) * 0.25 * ma.PI);
@@ -458,6 +464,8 @@ stereo_spread     = hslider("4_Master/02_stereo_spread",     0.1,  0.0,  1.0,  0
 output_saturation = hslider("4_Master/03_output_saturation", 0.0,  0.0,  1.0,  0.001);
 output_hp         = hslider("4_Master/04_output_hp[unit:Hz]",20.0, 20.0, 200.0,0.1);
 master_pan        = hslider("4_Master/05_master_pan",        0.0, -1.0,  1.0,  0.001);
+// Static amp floor — see subtractive engine for full explanation.
+base_amp          = hslider("4_Master/06_base_amp",          1.0,  0.0,  1.0,  0.001);
 """
 
 FM_FLOW = """\
@@ -540,7 +548,7 @@ soft_clip(x) = x / max(0.001, 1.0 + output_saturation * abs(x));
 hp_out(x)    = fi.highpass(1, output_hp, x);
 
 // Master amplitude destination (route an ADSR here for VCA)
-amp_val = max(0.0, min(1.0, mod_amp(gate))) * master_level * vel_gain * 0.25;
+amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain * 0.25;
 
 // Pan
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));

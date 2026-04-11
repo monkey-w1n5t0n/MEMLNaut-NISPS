@@ -95,7 +95,8 @@ test.describe('Engine switching', () => {
     test('synth drawer contains engine cards', async ({ page }) => {
       await page.click('[data-drawer="synth"]');
       const cards = page.locator('.engine-card');
-      await expect(cards).toHaveCount(3);
+      // C15 shaper-feedback, additive, fm, modular
+      await expect(cards).toHaveCount(4);
     });
 
     test('C15 card is active by default', async ({ page }) => {

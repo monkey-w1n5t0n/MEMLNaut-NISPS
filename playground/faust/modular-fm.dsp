@@ -83,6 +83,8 @@ stereo_spread     = hslider("4_Master/02_stereo_spread",     0.1,  0.0,  1.0,  0
 output_saturation = hslider("4_Master/03_output_saturation", 0.0,  0.0,  1.0,  0.001);
 output_hp         = hslider("4_Master/04_output_hp[unit:Hz]",20.0, 20.0, 200.0,0.1);
 master_pan        = hslider("4_Master/05_master_pan",        0.0, -1.0,  1.0,  0.001);
+// Static amp floor — see subtractive engine for full explanation.
+base_amp          = hslider("4_Master/06_base_amp",          1.0,  0.0,  1.0,  0.001);
 
 // ---------------------------------------------------------------------------
 // Modulation matrix — 48 sources × 10 destinations.
@@ -1175,7 +1177,7 @@ soft_clip(x) = x / max(0.001, 1.0 + output_saturation * abs(x));
 hp_out(x)    = fi.highpass(1, output_hp, x);
 
 // Master amplitude destination (route an ADSR here for VCA)
-amp_val = max(0.0, min(1.0, mod_amp(gate))) * master_level * vel_gain * 0.25;
+amp_val = max(0.0, min(1.0, base_amp + mod_amp(gate))) * master_level * vel_gain * 0.25;
 
 // Pan
 pan_val = max(-1.0, min(1.0, master_pan + mod_pan(gate)));

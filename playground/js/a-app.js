@@ -3842,6 +3842,10 @@ function wireGroupDrawer() {
 }
 
 function showGroupDrawer(region) {
+  // Group drawer is C15-specific: indexes into the hardcoded SYNTH_SECTIONS
+  // table and groupOverrides, which only exist for the shaper-feedback engine.
+  // Other engines (additive, fm, modular) have their own param UIs.
+  if (activeEngine?.id !== 'shaper-feedback') return;
   activeDrawerSection = region.index;
   const sec = SYNTH_SECTIONS[region.index];
   const ov = groupOverrides[region.index];

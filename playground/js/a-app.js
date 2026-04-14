@@ -1846,9 +1846,10 @@ async function init() {
       // per-engine __no_preset__ pseudo-key. Reuses the A3 payload shape.
       const prevEngineId = activeEngine?.id ?? null;
       const prevPresetKey = activeSynthPresetId || NO_PRESET_KEY;
-      if (prevEngineId) {
+      if (prevEngineId && _sessionDirty) {
         try {
           saveSessionMem(prevEngineId, prevPresetKey, capturePresetSession());
+          clearSessionDirty();
         } catch (e) {
           console.warn('[NISPS] engine-switch session save (outgoing) failed:', e);
         }
@@ -2015,7 +2016,7 @@ async function init() {
     patchBay = createPatchBay({
       engine: activeEngine?.id === 'modular' ? activeEngine : null,
       preset: _currentPreset(),
-      onChange: () => saveState(),
+      onChange: () => { markSessionDirty(); saveState(); },
     });
     const pbGear = document.getElementById('patch-bay-gear');
     if (pbGear) {
@@ -2045,6 +2046,7 @@ async function init() {
       },
       onChange: () => {
         try { routeOutputs(iml.getOutputs()); } catch (e) { /* non-fatal */ }
+        markSessionDirty();
         saveState();
       },
       onLoadPreset: async (presetId) => {
@@ -3578,6 +3580,7 @@ function onAddExample() {
   const inputs = getCurrentInputs();
   const outputs = [...rawParamValues];
   iml.addExample(inputs, outputs);
+  markSessionDirty();
   updateStatus();
   drawJoyMap();
   flash('btn-add-example');
@@ -3591,6 +3594,7 @@ function onTrain() {
 
 function onRandomize() {
   iml.randomiseWeights(spreadLevel);
+  markSessionDirty();
   setCurrentInputs();
   iml.process();
   const outputs = iml.getOutputs();
@@ -3680,6 +3684,7 @@ function onThumbsUp() {
   const inputs = getCurrentInputs();
   const outputs = [...rawParamValues];
   target.addExample(inputs, outputs);
+  markSessionDirty();
 
   noiseLevel *= rlExplorationDecay;
   noiseLevel = Math.max(noiseLevel, 0.005);
@@ -3705,6 +3710,7 @@ function onThumbsDown() {
   noiseLevel = Math.min(noiseLevel * 1.5, noiseCap);
 
   target.moveWeights(noiseLevel, spreadLevel);
+  markSessionDirty();
 
   // Re-route outputs from whichever IML was affected
   if (target === iml) {
@@ -3732,10 +3738,16 @@ function trainModel() {
 
 // Async — used for interactive training (thumbs-up, train button)
 function trainModelAsync(onDone) {
-  iml.trainAsync(({ loss, outputs }) => {
-    routeOutputs(outputs);
-    updateHeatmap(outputs);
-    syncRawParamsFromOutputs(outputs);
+  iml.trainAsync((res) => {
+    // res may be {cancelled:true} if the IML was rebuilt mid-training.
+    if (res && res.cancelled) { if (onDone) onDone(); return; }
+    const { loss, outputs } = res || {};
+    if (outputs) {
+      routeOutputs(outputs);
+      updateHeatmap(outputs);
+      syncRawParamsFromOutputs(outputs);
+    }
+    markSessionDirty();
     updateStatus();
     drawLossPlot();
     drawJoyMap();
@@ -5238,6 +5250,12 @@ async function loadState() {
   } catch (e) {
     console.warn('[NISPS] Failed to load state:', e);
   }
+}
+
+// Registered at init time so session-memory.js can surface user-visible
+// errors without importing DOM-aware code.
+if (typeof window !== 'undefined') {
+  window.__nispsShowToast = (msg) => showToast(msg);
 }
 
 function showToast(message, durationMs = 2500) {

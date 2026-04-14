@@ -24,11 +24,12 @@ JSDoc typedefs that mirror this document live in `playground/js/synth/preset-typ
   },
   params: {                        // flat table keyed by engine-specific label
     [label]: {
-      muted:      false,            // required — see "Muted semantics" below
-      fixedValue: 0.5,              // optional — value to pin when muted
-      min:        0.0,              // required when NOT muted (else default 0)
-      max:        1.0,              // required when NOT muted (else default 1)
-      curve:      0.5,              // required when NOT muted
+      bypassed:   false,            // required — structural; see "Bypass vs. mute" below
+      muted:      false,            // required — runtime; see "Bypass vs. mute" below
+      fixedValue: 0.5,              // optional — value to pin when bypassed or muted
+      min:        0.0,              // required when live (else default 0)
+      max:        1.0,              // required when live (else default 1)
+      curve:      0.5,              // required when live
     },
   },
   matrix: {                        // modular only, optional
@@ -86,24 +87,46 @@ Example: `s00_d08` = ADSR 1 → voice amp.
 
 ---
 
-## Muted semantics
+## Bypass vs. mute semantics (see `meml-7qnz`)
 
-**Muted = the MLP is NOT allowed to modulate this param.** The runtime holds the param at `fixedValue` (or, if omitted, at the engine's default). Non-muted = live MLP-controlled within `[min, max]`, biased by `curve`.
+Two formally distinct concepts; both can appear on the same param entry.
 
-### Omission rules (important for loader correctness)
+### BYPASS — structural, preset-level, compile-time for the MLP
 
-1. **C15 / modular param omitted from `params`** → treated as **MLP-controlled with default bounds** `{ muted: false, min: 0, max: 1, curve: 0.5 }`. This preserves the "unspecified = let the ML engine drive it" invariant that current `presets.js` relies on.
-2. **Matrix cell omitted from `matrix`** → treated as **deactivated** (`muted: true, fixedValue: 0`). Matrix cells are the exception: silence is the default, and a preset must explicitly opt a cell in. This matches current `modular-presets.js` behaviour, which only lists the cells it wants active. See `meml-gqiv` for the authoritative runtime semantics.
-3. **`fixedValue` omitted on a muted param** → runtime uses the engine's own baked-in default (C15 factory default, or Faust patch default after `resetToDefaults()`).
+- The param is **NOT** in the engine's `paramMeta` for this preset.
+- The MLP has **no output node** for it. It does not participate in training.
+- The param is held at the preset-specified `fixedValue` (or the engine's DSP default if `fixedValue` is omitted) for the life of the preset.
+- Toggling `bypassed` → the MLP must be rebuilt (output layer resizes; weights are invalidated — coordinates with `meml-gmus`).
+- **Use for**: discrete/structural knobs (waveform selectors, mode switches), params outside the current research scope, whole sub-modules you want silent/disabled at the DSP level.
 
-### Bypass vs. mute (see `meml-7qnz`)
+### MUTE — dynamic, runtime, per-output toggle
 
-There is a distinction the runtime must preserve:
+- The param **IS** in `paramMeta`; the MLP has an output node for it.
+- The network trains with it, but at runtime the MLP's output for this node is **ignored** and the param is held at `fixedValue`.
+- Can be toggled freely at runtime without rebuilding the MLP or touching weights.
+- **Use for**: params you want to temporarily freeze during exploration without retraining — e.g. A/B against a pinned value, or silence a flapping output.
 
-- **Muted param** — the MLP does not drive it, but the audio path still runs. The param sits at `fixedValue`.
-- **Bypassed module** — an entire sub-module (e.g. an LFO slot, a matrix destination, the reverb) is switched off at the DSP level via its `enable` / `bypass` Faust flag, saving CPU and guaranteeing silence.
+### Interaction rules
 
-A preset expresses bypass by muting the relevant `enable` param at `fixedValue: 0`. The loader does NOT infer bypass from muted routing cells alone — each DSP module has an explicit enable param.
+| `bypassed` | `muted` | Effect |
+|-----------:|--------:|--------|
+| `false`    | `false` | Fully live: MLP drives the param within `[min, max]`, biased by `curve`. |
+| `false`    | `true`  | In paramMeta (trained), but runtime-frozen at `fixedValue`. |
+| `true`     | (n/a)   | Not in paramMeta. Held at `fixedValue` (or DSP default). `muted` is ignored. |
+
+### Default pattern in curated presets
+
+Most params `bypassed:true`; a curated set included (`bypassed:false`); a few of those start `muted:true` as a "quick-unmute for exploration" affordance. This replaces the pre-split behaviour where `muted:true` served double duty.
+
+### Schema change notice
+
+**Earlier drafts of this schema used only `muted`.** That single flag has been split into two: `bypassed` (structural) and `muted` (runtime). Preset migrations MUST emit both flags — `meml-2l83` (C15 preset migration) and `meml-pu12` (modular preset migration) own this. Downstream: `meml-4bin` (normalised `setParam`) must consult both flags, and `meml-17mp` (`getSectionView`) must filter by `bypassed`.
+
+### Omission rules (loader correctness)
+
+1. **Param omitted from `params`** → default `{ bypassed:false, muted:false, min:0, max:1, curve:0.5 }`. Preserves the "unspecified = let the MLP drive it" invariant that current `presets.js` relies on.
+2. **Matrix cell omitted from `matrix`** → treated as **deactivated** (`muted:true`, raw routing value = 0). Matrix cells are the exception: silence is the default. See `meml-gqiv` for full matrix-cell semantics.
+3. **`fixedValue` omitted on a bypassed or muted param** → runtime uses the engine's baked-in default (C15 factory default, or Faust patch default after `resetToDefaults()`).
 
 ---
 

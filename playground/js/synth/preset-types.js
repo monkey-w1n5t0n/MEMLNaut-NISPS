@@ -16,12 +16,28 @@
  * engineering units (Hz, seconds, semitones, …) — see meml-4bin for the
  * modular-side normalised setParam work.
  *
+ * Two independent flags control how the MLP interacts with this param:
+ *
+ * - `bypassed` (structural) — param is NOT in `paramMeta`. MLP has no output
+ *   for it. Held at `fixedValue` (or DSP default) for the life of the preset.
+ *   Toggling requires an MLP rebuild (coordinates with meml-gmus).
+ * - `muted` (runtime) — param IS in `paramMeta` and trains, but its MLP output
+ *   is ignored at runtime and the param is pinned at `fixedValue`. Can be
+ *   toggled freely without touching the MLP.
+ *
+ * `bypassed:true` takes precedence over `muted` (a bypassed param has no MLP
+ * output to mute). See meml-7qnz and the schema doc's "Bypass vs. mute" section.
+ *
  * @typedef {Object} PresetParamEntry
+ * @property {boolean} bypassed
+ *   If true, param is NOT in paramMeta; MLP has no output for it.
+ *   Held at `fixedValue` (or engine DSP default).
  * @property {boolean} muted
- *   If true, the MLP does NOT drive this param. Runtime holds it at
- *   `fixedValue` (or the engine default if omitted).
+ *   If true (and not bypassed), MLP output is ignored at runtime; param pinned
+ *   at `fixedValue`. If `bypassed` is true, `muted` is ignored.
  * @property {number} [fixedValue]
- *   Value in [0, 1] to pin the param at when muted. Omitted → engine default.
+ *   Value in [0, 1] to pin the param at when bypassed or muted. Omitted →
+ *   engine default.
  * @property {number} [min]
  *   Lower bound of MLP-controlled range, in [0, 1]. Defaults to 0.
  * @property {number} [max]
@@ -79,7 +95,7 @@
  * @property {Object.<string, PresetParamEntry>} params
  *   Keyed by engine-specific label. C15 uses flat names (e.g. `Osc_A_Pitch`);
  *   modular uses Faust paths (e.g. `/MatrixMixer/MM_Osc1/freq`). Omitted
- *   labels default to `{ muted:false, min:0, max:1, curve:0.5 }`.
+ *   labels default to `{ bypassed:false, muted:false, min:0, max:1, curve:0.5 }`.
  * @property {Object.<string, PresetMatrixCell>} [matrix]
  *   Modular only. Omitted cells default to muted (deactivated).
  * @property {Object.<string, number>} [groupCurves]

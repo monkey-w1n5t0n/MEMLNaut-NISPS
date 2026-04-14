@@ -23,6 +23,7 @@ import { EngineSwitcher } from './ui/engine-switcher.js';
 import { EOCJoystick } from './ui/eoc-joystick.js';
 import { initModularUI } from './ui/modular-ui.js';
 import { createPatchBay } from './ui/patch-bay-modal.js';
+import { createPatchEditor } from './ui/patch-editor-modal.js';
 import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
 import { ModularEngine } from './synth/modular-engine.js';
@@ -176,6 +177,7 @@ let eocJoystick = null;  // EOCJoystick instance for Independent mode
 // by setActiveEngine() when the modular engine becomes active.
 let modularUI = null;
 let patchBay = null;
+let patchEditor = null;
 
 // ---- MIDI CC state ----
 let midiOutput = null;
@@ -1772,6 +1774,60 @@ async function init() {
     window.__patchBayLaunchBtn = btn;
   } catch (err) {
     console.error('[NISPS] Failed to init Patch Bay:', err);
+  }
+
+  // meml-n3uh: Patch Editor modal — card-per-group three-column editor
+  // (Sound | Modulation | Routing). meml-coh8 will add a gear icon and
+  // keyboard shortcut; for now expose a temporary launcher button.
+  try {
+    const _currentPreset = () => {
+      const engineId = activeEngine?.id ?? 'shaper-feedback';
+      const presets = getPresetsForEngine(engineId);
+      return presets.find(p => p.id === activeSynthPresetId) || null;
+    };
+    patchEditor = createPatchEditor({
+      engine: activeEngine,
+      preset: _currentPreset(),
+      sectionView: (si) => getSectionView(si),
+      sectionCount: () => {
+        const engineId = activeEngine?.id ?? 'shaper-feedback';
+        if (engineId === 'shaper-feedback') return SYNTH_SECTIONS.length;
+        return nonC15Sections.length;
+      },
+      onChange: () => {
+        try { routeOutputs(iml.getOutputs()); } catch (e) { /* non-fatal */ }
+        saveState();
+      },
+    });
+    const peBtn = document.createElement('button');
+    peBtn.id = 'patch-editor-temp-launch';
+    peBtn.textContent = 'Edit Patch';
+    peBtn.title = 'Open Patch Editor (card-per-group)';
+    peBtn.style.cssText = [
+      'position:fixed', 'bottom:12px', 'right:120px', 'z-index:9000',
+      'background:#2a2a2e', 'color:#eee', 'border:1px solid #3a3a3e',
+      'border-radius:6px', 'padding:8px 14px', 'font:inherit',
+      'font-size:12px', 'font-weight:600', 'cursor:pointer',
+      'box-shadow:0 4px 12px rgba(0,0,0,0.4)',
+    ].join(';');
+    peBtn.addEventListener('click', () => {
+      if (!patchEditor) return;
+      patchEditor.setContext({
+        engine: activeEngine,
+        preset: _currentPreset(),
+        sectionView: (si) => getSectionView(si),
+        sectionCount: () => {
+          const engineId = activeEngine?.id ?? 'shaper-feedback';
+          if (engineId === 'shaper-feedback') return SYNTH_SECTIONS.length;
+          return nonC15Sections.length;
+        },
+      });
+      patchEditor.open();
+    });
+    document.body.appendChild(peBtn);
+    window.__patchEditorLaunchBtn = peBtn;
+  } catch (err) {
+    console.error('[NISPS] Failed to init Patch Editor:', err);
   }
 
   wireControls();

@@ -917,9 +917,6 @@ async function applyPreset(presetId) {
   // Sync Patch Editor preset picker (active highlight)
   syncPatchEditorPresets();
 
-  // Save to storage
-  saveState();
-
   console.log(`[NISPS] Applied synth preset: ${preset.name} (engine: ${engineId})`);
 
   // --- Step 2: check localStorage for prior session under new preset key ---
@@ -939,11 +936,9 @@ async function applyPreset(presetId) {
         if (choice === 'restore') {
           restorePresetSession(saved.payload);
           clearSessionDirty(); // newly-restored state is not "dirty" yet
-          saveState();
           console.log(`[NISPS] Restored prior session for ${presetId}`);
         } else if (choice === 'fresh') {
           freshPresetSession();
-          saveState();
           console.log(`[NISPS] Started fresh session for ${presetId}`);
         } else {
           // 'cancel' → revert preset application. Overrides were already
@@ -983,6 +978,13 @@ async function applyPreset(presetId) {
       }
     }
   }
+
+  // Persist the final resolved state — AFTER the restore modal has
+  // been resolved (restore/fresh/cancel). This ensures the Cancel
+  // branch's in-memory revert also survives reload, rather than
+  // leaking the half-applied state that would have been persisted
+  // had we called saveState() before showing the modal.
+  saveState();
 }
 
 // ---- SynthVisualizer class ----

@@ -26,6 +26,7 @@ import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
 import { ModularEngine } from './synth/modular-engine.js';
 import { MODULAR_PRESETS, applyPreset as applyModularPreset, findPreset as findModularPreset } from './synth/modular-presets.js';
+import { saveSession as saveSessionMem, loadSession as loadSessionMem, showRestoreModal } from './nisps/session-memory.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -503,7 +504,129 @@ function isParamMuted(paramIndex) {
  * Sets muted/active, min/max/curve/fixedValue for all params,
  * re-routes outputs, saves state, and updates the UI dropdown.
  */
-function applyPreset(presetId) {
+// ---- Per-preset session memory helpers (meml-4uye) ----
+
+/**
+ * Capture a snapshot of the current preset's ML state.
+ * Returned object is JSON-serializable.
+ */
+function capturePresetSession() {
+  const engineId = activeEngine?.id ?? 'shaper-feedback';
+  const payload = {
+    engineId,
+    presetId: activeSynthPresetId,
+    nOutputs: N_OUTPUTS,
+    // IML weights + datasets. imlJoy is primary (warm-started across rebuilds);
+    // imlHand is included when we have one so hand mode doesn't lose its work.
+    joy: imlJoy ? {
+      layerSizes: [...imlJoy.layerSizes],
+      weights: imlJoy._getFlatWeights(),
+      features: imlJoy.dataset.features.map(r => [...r]),
+      labels:   imlJoy.dataset.labels.map(r => [...r]),
+    } : null,
+    hand: imlHand ? {
+      layerSizes: [...imlHand.layerSizes],
+      weights: imlHand._getFlatWeights(),
+      features: imlHand.dataset.features.map(r => [...r]),
+      labels:   imlHand.dataset.labels.map(r => [...r]),
+    } : null,
+    // Applied overrides (user tweaks on top of preset).
+    groupOverrides: (engineId === 'shaper-feedback') ? groupOverrides : null,
+    engineParamOverrides: (engineId !== 'shaper-feedback') ? engineParamOverrides : null,
+    // Snapshot stack + A/B slots — held externally today, but we reserve the
+    // slots so they can be wired in without a schema bump.
+    snapshotStack: null,
+    abCompare: null,
+    noiseLevel,
+  };
+  return payload;
+}
+
+/**
+ * Restore a previously saved preset session onto the live IMLs.
+ * Assumes the MLP output count already matches; if not, examples with
+ * mismatched dims are dropped (dataset.add enforces shape).
+ */
+function restorePresetSession(payload) {
+  if (!payload) return;
+  try {
+    if (payload.joy && imlJoy) {
+      const expected = imlJoy._weightCount;
+      if (payload.joy.weights && payload.joy.weights.length === expected) {
+        imlJoy._setFlatWeights(payload.joy.weights);
+      } else {
+        console.warn('[NISPS] session: joy weights length mismatch, skipping');
+      }
+      imlJoy.dataset.clear();
+      if (Array.isArray(payload.joy.features)) {
+        for (let i = 0; i < payload.joy.features.length; i++) {
+          imlJoy.dataset.add(payload.joy.features[i], payload.joy.labels[i] || []);
+        }
+      }
+    }
+    if (payload.hand && imlHand) {
+      const expected = imlHand._weightCount;
+      if (payload.hand.weights && payload.hand.weights.length === expected) {
+        imlHand._setFlatWeights(payload.hand.weights);
+      } else {
+        console.warn('[NISPS] session: hand weights length mismatch, skipping');
+      }
+      imlHand.dataset.clear();
+      if (Array.isArray(payload.hand.features)) {
+        for (let i = 0; i < payload.hand.features.length; i++) {
+          imlHand.dataset.add(payload.hand.features[i], payload.hand.labels[i] || []);
+        }
+      }
+    }
+    if (typeof payload.noiseLevel === 'number') noiseLevel = payload.noiseLevel;
+    // Run inference so routed outputs reflect the restored weights.
+    if (iml) {
+      iml.inputUpdated = true;
+      iml.process();
+      routeOutputs(iml.getOutputs());
+    }
+  } catch (e) {
+    console.warn('[NISPS] restorePresetSession failed:', e);
+  }
+}
+
+/**
+ * Reset the ML state to a "fresh" starting point: clear datasets and
+ * randomise weights. Used when the user chooses "Start Fresh" on the
+ * restore dialog.
+ */
+function freshPresetSession() {
+  try {
+    if (imlJoy) {
+      imlJoy.dataset.clear();
+      imlJoy.randomiseWeights(spreadLevel);
+    }
+    if (imlHand) {
+      imlHand.dataset.clear();
+      imlHand.randomiseWeights(spreadLevel);
+    }
+    if (iml) {
+      iml.inputUpdated = true;
+      iml.process();
+      routeOutputs(iml.getOutputs());
+    }
+  } catch (e) {
+    console.warn('[NISPS] freshPresetSession failed:', e);
+  }
+}
+
+async function applyPreset(presetId) {
+  // --- Step 1: capture outgoing session under its {engine, presetId} key ---
+  const prevEngineId = activeEngine?.id ?? 'shaper-feedback';
+  const prevPresetId = activeSynthPresetId;
+  if (prevPresetId && prevPresetId !== presetId) {
+    try {
+      saveSessionMem(prevEngineId, prevPresetId, capturePresetSession());
+    } catch (e) {
+      console.warn('[NISPS] session save (outgoing) failed:', e);
+    }
+  }
+
   const engineId = activeEngine?.id ?? 'shaper-feedback';
   const presets = getPresetsForEngine(engineId);
   const preset = presets.find(p => p.id === presetId);
@@ -624,6 +747,37 @@ function applyPreset(presetId) {
   saveState();
 
   console.log(`[NISPS] Applied synth preset: ${preset.name} (engine: ${engineId})`);
+
+  // --- Step 2: check localStorage for prior session under new preset key ---
+  // Only prompt if we're actually switching to a different preset (avoid
+  // re-prompting on init/same-preset re-apply) and we have a saved entry.
+  if (prevPresetId !== presetId) {
+    const saved = loadSessionMem(engineId, presetId);
+    if (saved && saved.payload) {
+      const exampleCount = (saved.payload.joy?.features?.length ?? 0)
+                         + (saved.payload.hand?.features?.length ?? 0);
+      try {
+        const choice = await showRestoreModal({
+          presetName: preset.name,
+          timestamp: saved.timestamp,
+          exampleCount,
+        });
+        if (choice === 'restore') {
+          restorePresetSession(saved.payload);
+          saveState();
+          console.log(`[NISPS] Restored prior session for ${presetId}`);
+        } else if (choice === 'fresh') {
+          freshPresetSession();
+          saveState();
+          console.log(`[NISPS] Started fresh session for ${presetId}`);
+        }
+        // 'cancel' → proceed as Start Fresh without clearing storage (user can
+        // re-apply the preset to get the dialog again).
+      } catch (e) {
+        console.warn('[NISPS] restore modal failed:', e);
+      }
+    }
+  }
 }
 
 // ---- SynthVisualizer class ----

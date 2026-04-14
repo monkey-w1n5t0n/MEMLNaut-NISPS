@@ -73,6 +73,7 @@ Living architecture map for the `playground/` web app. **Updated by every commit
 | File | Role |
 |------|------|
 | `unified-preset-schema.md` | Canonical preset schema for both C15 and modular engines (`meml-piri`). |
+| `spike-matrix-muted.md` | SPIKE finding: modular-subtractive is audible with all matrix cells at raw=0 (`meml-ik2l`). |
 
 ## Related types
 

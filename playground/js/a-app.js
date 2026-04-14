@@ -1418,10 +1418,25 @@ function outputCountForMode(mode) {
  * @returns {number}
  */
 function totalOutputCount() {
+  // If the user explicitly pinned an output count via ?arch=..., honour it
+  // across engine switches. The engine's own paramCount may not line up, in
+  // which case excess outputs route to nothing and a one-shot warning fires.
+  if (ARCH_OUTPUTS_OVERRIDE) {
+    const engineParams = activeEngine?.paramCount ?? N_SYNTH_OUTPUTS;
+    if (!_archOverrideWarned && engineParams !== ARCH_OUTPUTS_OVERRIDE) {
+      _archOverrideWarned = true;
+      console.warn(
+        `[NISPS] ?arch override ${ARCH_OUTPUTS_OVERRIDE} doesn't match engine paramCount ${engineParams}; ` +
+        `MLP will use ${ARCH_OUTPUTS_OVERRIDE} but some outputs may not route.`
+      );
+    }
+    return ARCH_OUTPUTS_OVERRIDE;
+  }
   const engineParams = activeEngine?.paramCount ?? N_SYNTH_OUTPUTS;
   const eocParams = (eocChain?.nispsMode === 'shared') ? (eocChain?.paramCount ?? 0) : 0;
   return engineParams + eocParams;
 }
+let _archOverrideWarned = false;
 
 /**
  * Recreate IML instances with a new output count.

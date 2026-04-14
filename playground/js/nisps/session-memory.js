@@ -159,6 +159,15 @@ export function saveSession(engine, presetId, payload) {
   }
   const incomingBytes = sizeOf(json);
 
+  // If the incoming payload alone exceeds the budget, pruning cannot save
+  // us — refuse early and surface a toast so the user knows.
+  if (incomingBytes > SESSION_BUDGET_BYTES) {
+    const mb = (incomingBytes / (1024 * 1024)).toFixed(2);
+    console.warn(`[session-memory] incoming payload ${mb}MB exceeds budget; refusing`);
+    _surfaceToast(`Session too large to save (${mb}MB > 4MB cap) — consider clearing examples or using a smaller model`);
+    return false;
+  }
+
   // Current total minus any existing entry for this key (we're replacing it).
   const existing = listSessions();
   const existingKey = keyFor(engine, presetId);
@@ -191,9 +200,28 @@ export function saveSession(engine, presetId, payload) {
       return true;
     } catch (e2) {
       console.warn('[session-memory] save failed after prune:', e2);
+      _surfaceToast('Could not save session (storage quota exceeded)');
       return false;
     }
   }
+}
+
+/** Return total bytes + count for all session-memory entries. */
+export function getSessionStatus() {
+  const entries = listSessions();
+  const totalBytes = entries.reduce((s, e) => s + e.size, 0);
+  return { totalBytes, budget: SESSION_BUDGET_BYTES, count: entries.length };
+}
+
+// Best-effort toast hook — uses the global `window.__nispsShowToast` if the
+// host app has registered one, otherwise silently drops. Keeps session-memory
+// free of direct DOM deps while still surfacing failures to the user.
+function _surfaceToast(msg) {
+  try {
+    if (typeof window !== 'undefined' && typeof window.__nispsShowToast === 'function') {
+      window.__nispsShowToast(msg);
+    }
+  } catch (_) { /* ignore */ }
 }
 
 // ------------------------------------------------------------------

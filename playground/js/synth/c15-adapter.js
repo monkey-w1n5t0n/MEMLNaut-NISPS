@@ -23,7 +23,7 @@ function _inferGroup(name) {
   if (name.startsWith('Shp_A'))     return 'Shaper A';
   if (name.startsWith('Shp_B'))     return 'Shaper B';
   if (name.startsWith('Comb_Flt'))  return 'Comb Filter';
-  if (name.startsWith('SV_Flt'))    return 'SVF';
+  if (name.startsWith('SV_Flt'))    return 'State Variable Filter';
   if (name.startsWith('Gap_Flt'))   return 'Gap Filter';
   if (name.startsWith('FB_Mix'))    return 'Feedback Mixer';
   if (name.startsWith('Out_Mix'))   return 'Output Mixer';

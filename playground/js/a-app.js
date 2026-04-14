@@ -641,10 +641,55 @@ async function applyPreset(presetId) {
     return;
   }
 
-  const allActive = preset.active === null; // null = all params active
-  const activeSet = allActive ? null : new Set(preset.active);
-  const overrides = preset.overrides || {};
-  const mutedOv = preset.mutedOverrides || {};
+  // meml-17mp: read from unified `preset.params`; fall back to legacy
+  // `active`/`overrides`/`mutedOverrides` shim for safety.
+  const unifiedParams = (preset.params && typeof preset.params === 'object' && !Array.isArray(preset.params))
+    ? preset.params : null;
+
+  /**
+   * Resolve a per-param entry from either the unified `params` map (preferred)
+   * or the legacy shim. Returns `{ bypassed, muted, min, max, curve, fixedValue }`
+   * with schema defaults filled. An absent param is treated as fully live
+   * per unified-preset-schema omission rules.
+   */
+  function resolveEntry(labelOrId, defaultFixed) {
+    if (unifiedParams) {
+      const e = unifiedParams[labelOrId];
+      if (e) {
+        return {
+          bypassed: !!e.bypassed,
+          muted:    !!e.muted,
+          min:      e.min   !== undefined ? e.min   : 0,
+          max:      e.max   !== undefined ? e.max   : 1,
+          curve:    e.curve !== undefined ? e.curve : 0.5,
+          fixedValue: e.fixedValue !== undefined ? e.fixedValue : defaultFixed,
+        };
+      }
+      return { bypassed: false, muted: false, min: 0, max: 1, curve: 0.5, fixedValue: defaultFixed };
+    }
+    // Legacy shim fallback
+    const legacyActive    = preset.active; // null = all active
+    const legacyOverrides = preset.overrides || {};
+    const legacyMutedOv   = preset.mutedOverrides || {};
+    const isActive = legacyActive === null
+      || (Array.isArray(legacyActive) && legacyActive.includes(labelOrId));
+    if (isActive) {
+      const ov = legacyOverrides[labelOrId];
+      return {
+        bypassed: false, muted: false,
+        min:   ov?.min   ?? 0,
+        max:   ov?.max   ?? 1,
+        curve: ov?.curve ?? 0.5,
+        fixedValue: ov?.fixedValue ?? defaultFixed,
+      };
+    }
+    const mov = legacyMutedOv[labelOrId];
+    return {
+      bypassed: true, muted: false,
+      min: 0, max: 1, curve: 0.5,
+      fixedValue: mov?.fixedValue ?? defaultFixed,
+    };
+  }
 
   if (engineId === 'shaper-feedback') {
     // ---- C15 path: uses groupOverrides / paramToSection ----
@@ -654,51 +699,43 @@ async function applyPreset(presetId) {
       const mapping = paramToSection[i];
       if (!mapping) continue;
       const gp = groupOverrides[mapping.si].params[mapping.li];
-      const paramName = param.name;
 
       const safeMin = param.safeMin ?? 0;
       const safeMax = param.safeMax ?? 1;
       const tameMin = safeMin * t;
       const tameMax = 1 - (1 - safeMax) * t;
 
-      const isActive = allActive || activeSet.has(paramName);
+      const entry = resolveEntry(param.name, param.defaultValue);
 
-      if (isActive) {
-        gp.muted = false;
-        const ov = overrides[paramName];
-        if (ov) {
-          gp.min = ov.min !== undefined ? ov.min : tameMin;
-          gp.max = ov.max !== undefined ? ov.max : tameMax;
-          gp.curve = ov.curve !== undefined ? ov.curve : 0.5;
-          gp.fixedValue = ov.fixedValue !== undefined ? ov.fixedValue : param.defaultValue;
-        } else {
-          gp.min = tameMin;
-          gp.max = tameMax;
-          gp.curve = 0.5;
-          gp.fixedValue = param.defaultValue;
-        }
-      } else {
+      // bypassed | muted collapse to "pinned at fixedValue" at runtime (the
+      // MLP still has an output node; meml-gmus-driven structural rebuild
+      // will consume the bypassed flag for true paramMeta filtering).
+      if (entry.bypassed || entry.muted) {
         gp.muted = true;
-        const mov = mutedOv[paramName];
-        gp.fixedValue = (mov && mov.fixedValue !== undefined) ? mov.fixedValue : param.defaultValue;
+        gp.fixedValue = entry.fixedValue;
         gp.min = tameMin;
         gp.max = tameMax;
         gp.curve = 0.5;
+      } else {
+        gp.muted = false;
+        // Preset min/max are already normalised [0,1]; keep them as-is but
+        // clamp to the tame envelope so ?tame=1 still constrains unsafe values.
+        gp.min = Math.max(entry.min, tameMin);
+        gp.max = Math.min(entry.max, tameMax);
+        gp.curve = entry.curve;
+        gp.fixedValue = entry.fixedValue;
       }
     }
 
-    // Apply group curves
+    // Apply group curves — keyed by SYNTH_SECTIONS.name for back-compat.
+    const gc = preset.groupCurves || {};
     for (let si = 0; si < SYNTH_SECTIONS.length; si++) {
-      const gc = preset.groupCurves || {};
       const secName = SYNTH_SECTIONS[si].name;
       groupOverrides[si].curve = (gc[secName] !== undefined) ? gc[secName] : 0.5;
     }
   } else {
     // ---- Faust engine path: uses engineParamOverrides (flat array) ----
     const meta = activeEngine?.paramMeta ?? [];
-    // Build id -> index lookup
-    const idToIndex = new Map();
-    meta.forEach((p, i) => idToIndex.set(p.id, i));
 
     // Ensure engineParamOverrides exists with correct length
     if (!engineParamOverrides || engineParamOverrides.length !== meta.length) {
@@ -707,30 +744,32 @@ async function applyPreset(presetId) {
 
     for (let i = 0; i < meta.length; i++) {
       const paramId = meta[i].id;
+      const defFixed = meta[i].init ?? 0.5;
       const ep = engineParamOverrides[i];
-      const isActive = allActive || activeSet.has(paramId);
+      const entry = resolveEntry(paramId, defFixed);
 
-      if (isActive) {
-        ep.muted = false;
-        const ov = overrides[paramId];
-        if (ov) {
-          ep.min = ov.min !== undefined ? ov.min : 0;
-          ep.max = ov.max !== undefined ? ov.max : 1;
-          ep.curve = ov.curve !== undefined ? ov.curve : 0.5;
-          ep.fixedValue = ov.fixedValue !== undefined ? ov.fixedValue : 0.5;
-        } else {
-          ep.min = 0;
-          ep.max = 1;
-          ep.curve = 0.5;
-          ep.fixedValue = 0.5;
-        }
-      } else {
+      if (entry.bypassed || entry.muted) {
         ep.muted = true;
-        const mov = mutedOv[paramId];
-        ep.fixedValue = (mov && mov.fixedValue !== undefined) ? mov.fixedValue : 0.5;
+        ep.fixedValue = entry.fixedValue;
         ep.min = 0;
         ep.max = 1;
         ep.curve = 0.5;
+      } else {
+        ep.muted = false;
+        ep.min = entry.min;
+        ep.max = entry.max;
+        ep.curve = entry.curve;
+        ep.fixedValue = entry.fixedValue;
+      }
+    }
+
+    // Faust engines: apply group curves keyed by paramMeta-derived section names.
+    const gc = preset.groupCurves || {};
+    for (let si = 0; si < nonC15Sections.length; si++) {
+      const secName = nonC15Sections[si].name;
+      if (gc[secName] !== undefined) {
+        nonC15GroupCurves[si] = gc[secName];
+        _nonC15GroupCurveMemory.set(secName, gc[secName]);
       }
     }
   }
@@ -4032,7 +4071,9 @@ function rebuildPresetSelector() {
   for (const tier of tiers) {
     const group = document.createElement('optgroup');
     group.label = tier.label;
-    for (const preset of presets.filter(p => p.tier === tier.tier)) {
+    // meml-17mp: prefer unified `complexity`; fall back to legacy `tier` shim.
+    const _presetLevel = (p) => p.complexity ?? p.tier;
+    for (const preset of presets.filter(p => _presetLevel(p) === tier.tier)) {
       const opt = document.createElement('option');
       opt.value = preset.id;
       opt.textContent = preset.name;

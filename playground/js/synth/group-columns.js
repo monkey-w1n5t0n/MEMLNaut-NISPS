@@ -95,6 +95,56 @@ export const C15_GROUP_COLUMNS = {
 };
 
 // ---------------------------------------------------------------------------
+// Additive engine group classification
+// Faust additive.json exposes a single top-level 'additive' group, so the
+// nonC15Sections machinery currently emits one section. If/when future
+// DSP splits the UI tree, add entries here. The name-regex fallback in
+// getColumn() also catches common patterns (ADSR/Env/LFO → Modulation).
+// ---------------------------------------------------------------------------
+
+/** @type {Record<string, Column>} */
+export const ADDITIVE_GROUP_COLUMNS = {
+  'additive':        'Sound',
+  'Spectral Shape':  'Sound',
+  'Partials':        'Sound',
+  'Oscillator':      'Sound',
+  'Filter':          'Sound',
+  'Output':          'Sound',
+  'Master':          'Sound',
+  'Phase':           'Sound',
+  'Temporal':        'Modulation',
+  'ADSR':            'Modulation',
+  'Envelope':        'Modulation',
+  'LFO':             'Modulation',
+  'Modulation':      'Modulation',
+  'Matrix':          'Routing',
+};
+
+// ---------------------------------------------------------------------------
+// FM engine group classification
+// fm-matrix.json exposes a single top-level 'fm-matrix' group. Included
+// names cover plausible Faust subgroup labels if the DSP is split later.
+// ---------------------------------------------------------------------------
+
+/** @type {Record<string, Column>} */
+export const FM_GROUP_COLUMNS = {
+  'fm-matrix':       'Sound',
+  'Operators':       'Sound',
+  'Operator':        'Sound',
+  'Carrier':         'Sound',
+  'Modulator':       'Sound',
+  'Output':          'Sound',
+  'Master':          'Sound',
+  'Filter':          'Sound',
+  'ADSR':            'Modulation',
+  'Envelope':        'Modulation',
+  'LFO':             'Modulation',
+  'Modulation':      'Modulation',
+  'Matrix':          'Routing',
+  'Routing':         'Routing',
+};
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -107,9 +157,17 @@ export const C15_GROUP_COLUMNS = {
  * @returns {Column}
  */
 export function getColumn(engine, groupName) {
-  const table = engine === 'modular' ? MODULAR_GROUP_COLUMNS
-              : engine === 'c15'     ? C15_GROUP_COLUMNS
+  const table = engine === 'modular'  ? MODULAR_GROUP_COLUMNS
+              : engine === 'c15'      ? C15_GROUP_COLUMNS
+              : engine === 'additive' ? ADDITIVE_GROUP_COLUMNS
+              : engine === 'fm'       ? FM_GROUP_COLUMNS
               : null;
   if (table && table[groupName]) return table[groupName];
+  // Name-regex fallback for unknown groups — covers new subgroups that
+  // appear in Faust UI without needing a code change.
+  if (typeof groupName === 'string' && groupName.length > 0) {
+    if (/^(ADSR|LFO|Env|Envelope|Modulation|Temporal)\b/i.test(groupName)) return 'Modulation';
+    if (/^(Matrix|Routing|FB\s*Mix)/i.test(groupName)) return 'Routing';
+  }
   return 'Sound';
 }

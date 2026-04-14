@@ -137,6 +137,7 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
   // Throttled live update
   let _lastLive = 0;
   let _matrixIndex = new Map(); // 's|d' → paramMeta index
+  let _activeDismiss = null;    // active cell-menu dismiss handler (for cleanup)
 
   // ---------------------------------------------------------------------------
   // Matrix paramMeta index (mirrors modular-ui.js buildMatrixIndex)
@@ -181,8 +182,10 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
         if (_preset?.matrix && _preset.matrix[key]) {
           const mc = _preset.matrix[key];
           muted = !!mc.muted;
-          if (typeof mc.fixedValue === 'number' && muted) {
-            // fixedValue on muted matrix cell is ignored per schema
+          // Persisted live value (set by writeCell/toggleMute); used so a
+          // muted cell round-trips its last unmuted value on reopen.
+          if (typeof mc.fixedValue === 'number') {
+            norm01 = Math.max(0, Math.min(1, mc.fixedValue));
           }
         }
 
@@ -388,6 +391,11 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
       const engineNorm = next.muted ? 0.5 : next.norm01;
       _engine.setMatrixCell(s, d, engineNorm);
     }
+    // Un-expose muted cells from the MLP output vector; expose live ones.
+    // Without this, the next inference tick would re-drive the cell.
+    if (_engine && typeof _engine.setExposeMatrixCell === 'function') {
+      _engine.setExposeMatrixCell(s, d, !next.muted);
+    }
 
     // Preset.matrix sync (if preset supplied)
     if (_preset) {
@@ -395,6 +403,8 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
       const cur = _preset.matrix[key] || {};
       _preset.matrix[key] = {
         muted: next.muted,
+        // Persist the live value so reload/syncFromEngine reproduces it.
+        fixedValue: next.norm01,
         min:   typeof cur.min === 'number' ? cur.min : 0,
         max:   typeof cur.max === 'number' ? cur.max : 1,
         curve: typeof cur.curve === 'number' ? cur.curve : 0.5,
@@ -416,11 +426,16 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
       // muted → raw 0, unmuted → replay stored norm01
       _engine.setMatrixCell(s, d, next.muted ? 0.5 : next.norm01);
     }
+    // Un-expose muted cells so MLP inference can't overwrite them next tick.
+    if (_engine && typeof _engine.setExposeMatrixCell === 'function') {
+      _engine.setExposeMatrixCell(s, d, !next.muted);
+    }
     if (_preset) {
       if (!_preset.matrix) _preset.matrix = {};
       const cur = _preset.matrix[key] || {};
       _preset.matrix[key] = {
         muted: next.muted,
+        fixedValue: next.norm01,
         min:   typeof cur.min === 'number' ? cur.min : 0,
         max:   typeof cur.max === 'number' ? cur.max : 1,
         curve: typeof cur.curve === 'number' ? cur.curve : 0.5,
@@ -469,10 +484,17 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
         writeCell(s, d, norm, true);
       } },
     ];
+    const closeMenu = () => {
+      try { menu.remove(); } catch (_) {}
+      if (_activeDismiss) {
+        document.removeEventListener('pointerdown', _activeDismiss, true);
+        _activeDismiss = null;
+      }
+    };
     for (const a of actions) {
       const b = document.createElement('button');
       b.textContent = a.label;
-      b.addEventListener('click', () => { a.fn(); menu.remove(); });
+      b.addEventListener('click', () => { a.fn(); closeMenu(); });
       menu.appendChild(b);
     }
 
@@ -483,12 +505,20 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
     menu.style.left = `${x}px`;
     menu.style.top  = `${y}px`;
 
+    // Remove any previously-registered dismiss handler (guards against
+    // leak if a menu was opened while another was already tracked).
+    if (_activeDismiss) {
+      document.removeEventListener('pointerdown', _activeDismiss, true);
+      _activeDismiss = null;
+    }
     const dismiss = (e) => {
       if (!menu.contains(e.target)) {
         menu.remove();
         document.removeEventListener('pointerdown', dismiss, true);
+        if (_activeDismiss === dismiss) _activeDismiss = null;
       }
     };
+    _activeDismiss = dismiss;
     setTimeout(() => document.addEventListener('pointerdown', dismiss, true), 0);
   }
 
@@ -535,6 +565,10 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
     root.setAttribute('aria-hidden', 'true');
     const menu = document.getElementById('pb-cell-menu');
     if (menu) menu.remove();
+    if (_activeDismiss) {
+      document.removeEventListener('pointerdown', _activeDismiss, true);
+      _activeDismiss = null;
+    }
   }
 
   function isOpen() {

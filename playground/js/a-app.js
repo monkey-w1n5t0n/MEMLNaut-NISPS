@@ -2143,6 +2143,26 @@ async function init() {
       },
       /** List of known modular preset ids. */
       listModularPresets: () => MODULAR_PRESETS.map(p => ({ id: p.id, name: p.name })),
+      /** Returns the currently-applied preset for the active engine, or null. */
+      getCurrentPreset: () => {
+        const engineId = activeEngine?.id ?? 'shaper-feedback';
+        const presets = getPresetsForEngine(engineId);
+        return presets.find(p => p.id === activeSynthPresetId) || null;
+      },
+      /** Returns the currently-applied preset id, or null. */
+      getCurrentPresetId: () => activeSynthPresetId,
+      /**
+       * Apply a preset by id for the current engine. Returns Promise.
+       * Triggers the per-preset session memory restore flow.
+       */
+      applyPresetById: async (presetId) => {
+        const engineId = activeEngine?.id ?? 'shaper-feedback';
+        const presets = getPresetsForEngine(engineId);
+        const p = presets.find(pr => pr.id === presetId);
+        if (!p) return false;
+        await applyPreset(presetId);
+        return true;
+      },
     };
   }
 

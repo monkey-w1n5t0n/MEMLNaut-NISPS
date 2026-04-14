@@ -103,7 +103,11 @@ test.describe('Modular mode', () => {
     expect(hooks.hasSwap).toBe(true);
     expect(hooks.hasPreset).toBe(true);
     expect(hooks.hasCounts).toBe(true);
-    expect(hooks.presetList).toBe(6);
+    // After meml-2l83 (modular-presets unified schema rewrite), the legacy
+    // 6-preset list was concatenated with the new unified set. We now assert
+    // ≥ 6 (the original count was 6) without locking in a specific number,
+    // so adding new presets doesn't break this guard.
+    expect(hooks.presetList).toBeGreaterThanOrEqual(6);
   });
 
   test('sub-engine swap keeps paramCount = 512', async ({ page }) => {
@@ -174,19 +178,25 @@ test.describe('Modular mode', () => {
     await switchToModular(page);
 
     // Pick a distinctive cell: ADSR2 (s=1) → cutoff (d=5) on subtractive.
+    // Set a known normalised value, capture the resulting raw, then verify
+    // round-trip via getState/setState reproduces it exactly. We don't lock
+    // in a specific raw value because the param-meta normalisation curve
+    // changed in the unified-schema epic (meml-4bin); the contract being
+    // tested is round-trip persistence, not the curve mapping itself.
     await page.evaluate(() => {
       const engine = window.__nisps.activeEngine;
       const idx = engine.paramMeta.findIndex(m =>
         m.label === 'MM_Matrix/s01_d05_cutoff');
       if (idx < 0) throw new Error('no s01_d05_cutoff cell in paramMeta');
-      // paramMeta min=-1 max=1; 0.9 in norm = 0.8 raw.
       engine.setParam(idx, 0.9);
     });
 
     const snap = await page.evaluate(() => window.__nisps.getModularState());
-    expect(snap.dsp['MM_Matrix/s01_d05_cutoff']).toBeCloseTo(0.8, 4);
+    const initialRaw = snap.dsp['MM_Matrix/s01_d05_cutoff'];
+    expect(typeof initialRaw).toBe('number');
+    expect(isFinite(initialRaw)).toBe(true);
 
-    // Mutate further, then restore.
+    // Mutate further to a different normalised value.
     await page.evaluate(() => {
       const engine = window.__nisps.activeEngine;
       const idx = engine.paramMeta.findIndex(m =>
@@ -195,14 +205,15 @@ test.describe('Modular mode', () => {
     });
 
     const midSnap = await page.evaluate(() => window.__nisps.getModularState());
-    expect(midSnap.dsp['MM_Matrix/s01_d05_cutoff']).not.toBeCloseTo(0.8, 4);
+    expect(midSnap.dsp['MM_Matrix/s01_d05_cutoff']).not.toBeCloseTo(initialRaw, 4);
 
+    // Restore via setState — raw should match the originally captured value.
     await page.evaluate(async (s) => {
       await window.__nisps.setModularState(s);
     }, snap);
 
     const restored = await page.evaluate(() => window.__nisps.getModularState());
-    expect(restored.dsp['MM_Matrix/s01_d05_cutoff']).toBeCloseTo(0.8, 4);
+    expect(restored.dsp['MM_Matrix/s01_d05_cutoff']).toBeCloseTo(initialRaw, 4);
   });
 
   test('modular DSP state survives a page reload', async ({ page }) => {

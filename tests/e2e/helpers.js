@@ -29,4 +29,66 @@ async function statusText(page) {
   return page.locator('#status-text').textContent();
 }
 
-module.exports = { loadApp, statusText };
+/**
+ * Switch to synth output mode (required for Patch Editor / synth preset flows).
+ */
+async function enterSynthMode(page) {
+  await page.click('[data-drawer="mode"]');
+  await page.click('[data-mode="synth"]');
+  // Close mode drawer to avoid covering other controls.
+  const drawer = page.locator('#drawer-mode');
+  if (!(await drawer.evaluate(el => el.classList.contains('hidden')))) {
+    const closeBtn = drawer.locator('.drawer-close');
+    if (await closeBtn.count() > 0) await closeBtn.first().click();
+  }
+}
+
+/**
+ * Switch active engine to modular via the engine-switcher UI.
+ * Waits for `__nisps.activeEngineId === 'modular'` and the modular dock icon.
+ */
+async function switchToModular(page) {
+  const drawer = page.locator('#drawer-synth');
+  if (await drawer.evaluate(el => el.classList.contains('hidden'))) {
+    await page.click('[data-drawer="synth"]');
+  }
+  page.once('dialog', d => d.accept());
+  await page.click('.engine-card[data-engine-id="modular"]');
+  await page.waitForFunction(
+    () => window.__nisps?.activeEngineId === 'modular',
+    null,
+    { timeout: 20_000 },
+  );
+  await page.waitForFunction(
+    () => !document.querySelector('.dock-icon[data-drawer="modular"]')?.classList.contains('hidden'),
+    null,
+    { timeout: 20_000 },
+  );
+  await page.evaluate(() => new Promise(r => setTimeout(r, 0)));
+}
+
+/**
+ * Open the Patch Editor by pressing 'E'. Requires synth output mode.
+ * Waits for the modal to be visible (not .hidden).
+ */
+async function openPatchEditor(page) {
+  await page.keyboard.press('e');
+  await page.waitForSelector('.pe-root:not(.hidden)', { timeout: 5_000 });
+}
+
+/**
+ * Open the Patch Bay by pressing 'M'. Requires modular engine active.
+ */
+async function openPatchBay(page) {
+  await page.keyboard.press('m');
+  await page.waitForSelector('.pb-root:not(.hidden)', { timeout: 5_000 });
+}
+
+module.exports = {
+  loadApp,
+  statusText,
+  enterSynthMode,
+  switchToModular,
+  openPatchEditor,
+  openPatchBay,
+};

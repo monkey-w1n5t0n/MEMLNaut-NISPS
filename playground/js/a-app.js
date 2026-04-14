@@ -47,6 +47,18 @@ const STORAGE_KEY = 'nisps-a-immersive';
 // engine-switch handler consumes it as soon as a ModularEngine exists.
 let _pendingModularDspState = null;
 
+// Guard hot paths (rAF tick, joystick move, heatmap, RL feedback) from
+// racing `resizeMLP` — during the WasmIML.create(...) await window the
+// active `iml` references a destroyed WASM instance (bug: iml.process()
+// writing to freed heap). Set true at start of resizeMLP, false at end.
+let _rebuilding = false;
+
+// Dirty flag for session-memory saves. Outgoing save (engine/preset switch)
+// skips when false so fresh-init state doesn't evict useful older sessions.
+let _sessionDirty = false;
+function markSessionDirty() { _sessionDirty = true; }
+function clearSessionDirty() { _sessionDirty = false; }
+
 const VISUAL_PARAM_NAMES = [
   'Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb',
   'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn',
@@ -1562,41 +1574,78 @@ async function setActiveEngine(engine) {
 
 async function resizeMLP(newOutputCount) {
   if (newOutputCount === N_OUTPUTS) return;
-  N_OUTPUTS = newOutputCount;
+  _rebuilding = true;
+  try {
+    N_OUTPUTS = newOutputCount;
 
-  // Extract joystick weights before destroying (for warm-start transfer)
-  const joySnapshot = imlJoy ? imlJoy.extractWeights() : null;
+    // Extract joystick weights + dataset before destroying
+    const joySnapshot = imlJoy ? imlJoy.extractWeights() : null;
+    const oldJoyFeatures = imlJoy ? imlJoy.dataset.features.map(r => [...r]) : [];
+    const oldJoyLabels   = imlJoy ? imlJoy.dataset.labels.map(r => [...r])   : [];
+    const oldHandFeatures = imlHand ? imlHand.dataset.features.map(r => [...r]) : [];
+    const oldHandLabels   = imlHand ? imlHand.dataset.labels.map(r => [...r])   : [];
+    const oldOutputsForToast = imlJoy ? imlJoy.nOutputs : newOutputCount;
 
-  // Destroy old IML instances (free WASM memory)
-  if (imlJoy) imlJoy.destroy();
-  if (imlHand) imlHand.destroy();
+    // Destroy old IML instances (free WASM memory).
+    // Any pending trainAsync promises get resolved as { cancelled: true }.
+    if (imlJoy) imlJoy.destroy();
+    if (imlHand) imlHand.destroy();
 
-  // Joystick IML: warm-start from previous weights when possible
-  if (joySnapshot) {
-    imlJoy = await WasmIML.createWithWarmStart(joySnapshot, N_OUTPUTS, 1000, 1.0, 0.00001);
-  } else {
-    imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, JOY_HIDDEN_LAYERS, 1000, 1.0, 0.00001);
-    imlJoy.randomiseWeights(spreadLevel);
+    // Joystick IML: warm-start from previous weights when possible
+    if (joySnapshot) {
+      imlJoy = await WasmIML.createWithWarmStart(joySnapshot, N_OUTPUTS, 1000, 1.0, 0.00001);
+    } else {
+      imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, JOY_HIDDEN_LAYERS, 1000, 1.0, 0.00001);
+      imlJoy.randomiseWeights(spreadLevel);
+    }
+    imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
+
+    // Hand IML: fresh init (warm-start for 14-input networks is a future concern)
+    imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, DEFAULT_HAND_HIDDEN, 1000, 1.0, 0.00001);
+    imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
+    imlHand.randomiseWeights(spreadLevel);
+
+    // Replay examples that still match the new output dim (dataset is
+    // JS-side; both WasmIML.create and createWithWarmStart start with a
+    // fresh Dataset(100), so we need to re-add here to preserve training
+    // examples across resizes.)
+    let dropped = 0;
+    for (let i = 0; i < oldJoyFeatures.length; i++) {
+      if (oldJoyLabels[i] && oldJoyLabels[i].length === N_OUTPUTS &&
+          oldJoyFeatures[i] && oldJoyFeatures[i].length === N_JOY_INPUTS) {
+        imlJoy.dataset.add(oldJoyFeatures[i], oldJoyLabels[i]);
+      } else {
+        dropped++;
+      }
+    }
+    for (let i = 0; i < oldHandFeatures.length; i++) {
+      if (oldHandLabels[i] && oldHandLabels[i].length === N_OUTPUTS &&
+          oldHandFeatures[i] && oldHandFeatures[i].length === N_HAND_INPUTS) {
+        imlHand.dataset.add(oldHandFeatures[i], oldHandLabels[i]);
+      } else {
+        dropped++;
+      }
+    }
+    if (dropped > 0 && oldOutputsForToast !== N_OUTPUTS) {
+      try { showToast(`${dropped} training example(s) dropped (output shape changed)`); }
+      catch (_) { /* toast is best-effort */ }
+    }
+
+    iml = (inputMode === 'joystick') ? imlJoy : imlHand;
+
+    // Reset dependent state
+    rawParamValues = new Array(N_OUTPUTS).fill(0.5);
+    _lastSentParams = new Float32Array(N_OUTPUTS);
+
+    // Re-run inference
+    iml.setInput(0, joyX);
+    iml.setInput(1, joyY);
+    iml.process();
+
+    console.log(`[NISPS] MLP resized to ${N_OUTPUTS} outputs (joystick IML warm-started)`);
+  } finally {
+    _rebuilding = false;
   }
-  imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
-
-  // Hand IML: fresh init (warm-start for 14-input networks is a future concern)
-  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, DEFAULT_HAND_HIDDEN, 1000, 1.0, 0.00001);
-  imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
-  imlHand.randomiseWeights(spreadLevel);
-
-  iml = (inputMode === 'joystick') ? imlJoy : imlHand;
-
-  // Reset dependent state
-  rawParamValues = new Array(N_OUTPUTS).fill(0.5);
-  _lastSentParams = new Float32Array(N_OUTPUTS);
-
-  // Re-run inference
-  iml.setInput(0, joyX);
-  iml.setInput(1, joyY);
-  iml.process();
-
-  console.log(`[NISPS] MLP resized to ${N_OUTPUTS} outputs (joystick IML warm-started)`);
 }
 
 // ---- Init ----
@@ -2921,6 +2970,7 @@ function updateFollowUI() {
 
 function onJoystickMove() {
   if (inputMode !== 'joystick') return;
+  if (_rebuilding || !iml) return; // MLP mid-rebuild — skip this tick
   iml.setInput(0, joyX);
   iml.setInput(1, joyY);
   iml.process();

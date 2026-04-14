@@ -772,9 +772,9 @@ export class ModularEngine extends SynthEngine {
     }
 
     // ----- 2. Matrix cells — always in paramMeta (dest-major, source-major) -----
-    // Every 48 × 10 cell lives in paramMeta so modular-ui.updateLive() can
-    // mirror live MLP outputs into the matrix DOM. This is required for
-    // the visual feedback loop in the modular drawer. The historical
+    // Every 48 × 10 cell lives in paramMeta so patch-bay-modal.updateLive()
+    // can mirror live MLP outputs into the matrix DOM. This is required for
+    // the visual feedback loop in the Patch Bay modal. The historical
     // concern — that a denormalised matrix cell near 0 could silence the
     // voice via the d08_amp route — is now handled at the DSP level:
     // each sub-engine's amp_val is `clamp(base_amp + max(0, mod_amp))`,

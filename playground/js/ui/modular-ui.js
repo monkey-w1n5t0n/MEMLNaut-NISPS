@@ -1,28 +1,23 @@
 import { MODULAR_PRESETS, applyPreset } from '../synth/modular-presets.js';
 
 /**
- * modular-ui.js — Phase C of the "Modular" audio mode.
+ * modular-ui.js — "Quick peek" drawer for the Modular audio mode.
  *
  * User-facing control panel for ModularEngine:
  *   - Sub-engine toggle (Subtractive / Additive / FM)
  *   - Mod pool count steppers (ADSR 1..16, LFO 1..32)
  *   - Per-slot enable toggles (independent of count)
- *   - Matrix grid editor (sources × destinations, signed [-1, 1] amounts)
  *   - Expose engine sound params to the MLP
+ *   - Quick preset overlay
+ *
+ * The matrix editor used to live here as a cramped 48×N grid. As of
+ * `meml-ptgi` that editor has moved to the full-viewport Patch Bay modal
+ * (`patch-bay-modal.js`, `meml-usd6`); this drawer remains as a quick-peek
+ * alternative per `meml-coh8`.
  *
  * The panel is mounted as a drawer in the existing `#drawer-stack`, with a
  * matching dock icon injected into `#dock`. Both are hidden until the
  * modular engine becomes active.
- *
- * Matrix paramMeta layout (from Phase B, VERIFIED at runtime via label
- * prefix `MM_Matrix/` on rebuild): mod sources first (ADSR + LFO), matrix
- * cells second (dest-major, source-major within each destination), opted-in
- * engine sound params last. We discover matrix cells by group prefix, not
- * by hardcoded offsets, so that count changes / sub-engine swaps are safe.
- *
- * Raw matrix cell range is [-1, 1]; paramMeta normalises to [0, 1] via
- * `(raw - min) / (max - min)`. UI uses signed values directly and converts
- * `(v + 1) / 2` when calling `engine.setParam(i, norm01)`.
  *
  * @module modular-ui
  */
@@ -35,10 +30,6 @@ const STORAGE_KEY = 'nisps-modular-state';
 
 const MAX_ADSR = 16;
 const MAX_LFO  = 32;
-
-// Matrix cell cycle on left-click (positive only). Shift-click → 0.
-// Right-click opens a menu with ±1 / 0 / random.
-const CLICK_CYCLE = [0, 0.25, 0.5, 0.75, 1.0];
 
 const SUB_ENGINE_OPTIONS = [
   { id: 'subtractive', label: 'Subtractive' },
@@ -79,8 +70,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     lfoCountValue:  null,
     adsrEnables:    [],
     lfoEnables:     [],
-    matrixGrid:     null,
-    matrixEmpty:    null,
     soundParamList: null,
   };
 
@@ -89,14 +78,7 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
   buildPresetsSection(drawer.body, openPresetOverlay);
   buildCountSection(drawer.body, refs, applyCountChange);
   buildEnableSection(drawer.body, refs, applyEnableChange);
-  buildMatrixSection(drawer.body, refs, {
-    onCellCycle:    (src, dst)        => cycleCell(src, dst),
-    onCellInvert:   (src, dst)        => setCell(src, dst, -getCell(src, dst)),
-    onCellZero:     (src, dst)        => setCell(src, dst, 0),
-    onCellPrecise:  (src, dst, el)    => openPreciseEditor(src, dst, el),
-    onCellMenu:     (src, dst, el, e) => openCellMenu(src, dst, el, e),
-  });
-  buildSoundParamSection(drawer.body, refs, applyExposeChange);
+  buildSoundParamSection(drawer.body, refs);
 
   // ---- Apply saved UI state to engine as soon as we can ----
   // We defer engine mutations until refresh() is called with a live engine.
@@ -113,7 +95,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     lastWiredEngine = engine;
     if (engine && typeof engine.on === 'function') {
       unsubParamMeta = engine.on('paramMeta:change', () => {
-        rebuildMatrixGrid();
         rebuildSoundParamList();
         refreshSubEngineButtons();
       });
@@ -148,7 +129,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
       await engine.setSubEngine(id);
       uiState.subEngine = id;
       saveUIState();
-      // paramMeta:change listener rebuilds the grid
     } catch (err) {
       console.error('[modular-ui] setSubEngine failed:', err);
     } finally {
@@ -179,7 +159,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     saveUIState();
     refreshCountValues();
     refreshEnableRow();
-    rebuildMatrixGrid();
   }
 
   function refreshCountValues() {
@@ -192,7 +171,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
   // ---------------------------------------------------------------------------
 
   function refreshEnableRow() {
-    const active = getEngine?.();
     for (let i = 0; i < MAX_ADSR; i++) {
       const btn = refs.adsrEnables[i];
       if (!btn) continue;
@@ -242,279 +220,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     for (let i = 0; i < MAX_LFO; i++) {
       writeEnableToEngine(engine, 'lfo', i, !!uiState.lfoEnables[i]);
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Matrix grid
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Given engine paramMeta, discover matrix cells by group prefix.
-   * Returns a Map: `${s}|${d}` -> paramMeta index.
-   */
-  function buildMatrixIndex(engine) {
-    const out = new Map();
-    const meta = engine?.paramMeta ?? [];
-    for (let i = 0; i < meta.length; i++) {
-      const m = meta[i];
-      if (!m || !m.group || !m.group.startsWith('Matrix/')) continue;
-      // Label is like "MM_Matrix/s03_d08_amp" — parse out s and d.
-      const lbl = m.label || '';
-      const match = lbl.match(/s(\d{2})_d(\d{2})_/);
-      if (!match) continue;
-      const s = parseInt(match[1], 10);
-      const d = parseInt(match[2], 10);
-      out.set(`${s}|${d}`, i);
-    }
-    return out;
-  }
-
-  // Current cell values (signed [-1, 1]), keyed by "s|d". Populated from
-  // paramMeta entries on rebuild; mutated by user interaction.
-  const cellValues = new Map();
-
-  function getCell(s, d) { return cellValues.get(`${s}|${d}`) ?? 0; }
-
-  function setCell(s, d, value, { persistToEngine = true } = {}) {
-    const v = Math.max(-1, Math.min(1, value));
-    cellValues.set(`${s}|${d}`, v);
-    updateCellDOM(s, d, v);
-    if (!persistToEngine) return;
-    const engine = getEngine?.();
-    if (!engine || engine.id !== 'modular') return;
-
-    // Prefer routing through the canonical normalised API (meml-4bin): map
-    // signed [-1,+1] cell amount to [0,1] and let setMatrixCell apply the
-    // safe range + curve via modular-param-meta.js. Falls back to the raw
-    // escape hatch for sub-engines whose destName isn't available yet.
-    if (typeof engine.setMatrixCell === 'function') {
-      const norm = Math.max(0, Math.min(1, (v + 1) / 2));
-      engine.setMatrixCell(s, d, norm);
-      return;
-    }
-    const destName = (engine.destNames || [])[d];
-    if (!destName) return;
-    const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
-    engine._setRawByLabel?.(label, v);
-  }
-
-  function cycleCell(s, d) {
-    const cur = getCell(s, d);
-    // Cycle positive steps only, wrapping back to 0.
-    // Negatives reached via right-click menu or precise editor.
-    let nextIdx = 0;
-    // Match to nearest current step, then advance.
-    if (cur > 0) {
-      let best = 0, bestD = Infinity;
-      for (let i = 0; i < CLICK_CYCLE.length; i++) {
-        const diff = Math.abs(CLICK_CYCLE[i] - cur);
-        if (diff < bestD) { bestD = diff; best = i; }
-      }
-      nextIdx = (best + 1) % CLICK_CYCLE.length;
-    } else {
-      // From 0 or negative: jump up to 0.25 to start the cycle.
-      nextIdx = 1;
-    }
-    setCell(s, d, CLICK_CYCLE[nextIdx]);
-  }
-
-  let matrixIndexCache = new Map();
-
-  function rebuildMatrixGrid() {
-    const engine = getEngine?.();
-    const gridEl = refs.matrixGrid;
-    if (!gridEl) return;
-
-    gridEl.innerHTML = '';
-    matrixIndexCache = new Map();
-    cellValues.clear();
-
-    if (!engine || engine.id !== 'modular') {
-      if (refs.matrixEmpty) refs.matrixEmpty.textContent = 'Modular engine not active.';
-      return;
-    }
-
-    const destNames = engine.destNames || [];
-    if (destNames.length === 0) {
-      if (refs.matrixEmpty) refs.matrixEmpty.textContent = 'Waiting for sub-engine…';
-      return;
-    }
-
-    // Matrix cells may or may not be in paramMeta (they're opt-in for MLP
-    // control; default is that the matrix is a direct-DSP patch editor).
-    // Build the paramMeta index for cells that ARE exposed, so updateLive
-    // can mirror MLP outputs into them; other cells are direct-edit only.
-    matrixIndexCache = buildMatrixIndex(engine);
-    if (refs.matrixEmpty) refs.matrixEmpty.textContent = '';
-
-    // Seed current values from the engine's _lastRawByLabel map (which
-    // tracks every write via setParam / _setRawByLabel / default patch),
-    // falling back to the walk-entry init value for cells the user has
-    // never touched. (destNames is already in scope from the early guard.)
-    const lastRaw = engine._lastRawByLabel || new Map();
-    for (let d = 0; d < destNames.length; d++) {
-      const destName = destNames[d];
-      for (let s = 0; s < 48; s++) {
-        const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
-        const walk = engine._labelToWalk?.get?.(label);
-        if (!walk) continue;
-        const raw = lastRaw.has(label) ? lastRaw.get(label) : walk.init;
-        cellValues.set(`${s}|${d}`, raw);
-      }
-    }
-
-    // Determine visible source range from current counts.
-    const adsrN = uiState.adsrCount;
-    const lfoN  = uiState.lfoCount;
-    const visibleSources = [];
-    for (let i = 0; i < adsrN; i++) visibleSources.push({ s: i,            label: `A${i + 1}`, kind: 'adsr' });
-    for (let i = 0; i < lfoN;  i++) visibleSources.push({ s: 16 + i,       label: `L${i + 1}`, kind: 'lfo'  });
-    // NOTE: source index layout — sources 0..15 are ADSRs, 16..47 are LFOs.
-    // This mirrors the Faust .dsp's MM_* declaration order, VERIFIED by the
-    // walk-entry labels: matrix column s00..s15 are ADSRs, s16..s47 are LFOs.
-
-    const cols = destNames.length;
-    const rows = visibleSources.length;
-
-    // CSS grid: 1 header col + N dest cols × 1 header row + M source rows
-    gridEl.style.gridTemplateColumns = `auto repeat(${cols}, minmax(28px, 1fr))`;
-    gridEl.style.gridTemplateRows    = `auto repeat(${rows}, 32px)`;
-
-    // Top-left corner
-    const corner = document.createElement('div');
-    corner.className = 'mm-corner';
-    gridEl.appendChild(corner);
-
-    // Column headers
-    destNames.forEach((name, d) => {
-      const h = document.createElement('div');
-      h.className = 'mm-col-header';
-      h.textContent = shortDest(name);
-      h.title = name;
-      gridEl.appendChild(h);
-    });
-
-    // Rows
-    visibleSources.forEach((src) => {
-      const rh = document.createElement('div');
-      rh.className = `mm-row-header mm-src-${src.kind}`;
-      rh.textContent = src.label;
-      rh.title = src.kind === 'adsr' ? `ADSR ${src.s + 1}` : `LFO ${src.s - 15}`;
-      gridEl.appendChild(rh);
-
-      for (let d = 0; d < cols; d++) {
-        const cell = document.createElement('div');
-        cell.className = 'mm-cell';
-        cell.dataset.s = src.s;
-        cell.dataset.d = d;
-        const has = matrixIndexCache.has(`${src.s}|${d}`);
-        if (!has) cell.classList.add('unavailable');
-        attachCellHandlers(cell, src.s, d);
-        gridEl.appendChild(cell);
-        updateCellDOM(src.s, d, getCell(src.s, d));
-      }
-    });
-  }
-
-  function updateCellDOM(s, d, v) {
-    const cell = refs.matrixGrid?.querySelector(`.mm-cell[data-s="${s}"][data-d="${d}"]`);
-    if (!cell) return;
-    const abs = Math.abs(v);
-    const label = v === 0
-      ? ''
-      : (v > 0 ? '' : '−') + abs.toFixed(2).replace(/^0/, '');
-    cell.textContent = label;
-    const alpha = Math.min(1, abs);
-    const color = v >= 0
-      ? `rgba(255, 106, 0, ${alpha * 0.85})`   // accent (positive)
-      : `rgba(80, 160, 255, ${alpha * 0.85})`; // blue (negative / inverted)
-    cell.style.background = alpha > 0.01
-      ? color
-      : 'rgba(255, 255, 255, 0.04)';
-    cell.classList.toggle('nonzero', alpha > 0.01);
-  }
-
-  function attachCellHandlers(cell, s, d) {
-    let longPressTimer = null;
-    let didLongPress = false;
-
-    cell.addEventListener('click', (e) => {
-      if (cell.classList.contains('unavailable')) return;
-      if (didLongPress) { didLongPress = false; return; }
-      if (e.shiftKey) { setCell(s, d, 0); return; }
-      cycleCell(s, d);
-    });
-
-    cell.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      if (cell.classList.contains('unavailable')) return;
-      openCellMenu(s, d, cell, e);
-    });
-
-    // Long-press → precise editor (mobile-friendly).
-    const startLong = () => {
-      longPressTimer = setTimeout(() => {
-        didLongPress = true;
-        openPreciseEditor(s, d, cell);
-      }, 500);
-    };
-    const cancelLong = () => {
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-    };
-    cell.addEventListener('pointerdown', startLong);
-    cell.addEventListener('pointerup',     cancelLong);
-    cell.addEventListener('pointerleave',  cancelLong);
-    cell.addEventListener('pointercancel', cancelLong);
-  }
-
-  function openPreciseEditor(s, d, cellEl) {
-    const cur = getCell(s, d);
-    const input = prompt(`Matrix s${pad2(s)} → d${pad2(d)}  (range -1..1)`, String(cur));
-    if (input == null) return;
-    const v = parseFloat(input);
-    if (!Number.isFinite(v)) return;
-    setCell(s, d, v);
-  }
-
-  function openCellMenu(s, d, cellEl, ev) {
-    const existing = document.getElementById('mm-cell-menu');
-    if (existing) existing.remove();
-
-    const menu = document.createElement('div');
-    menu.id = 'mm-cell-menu';
-    menu.className = 'mm-cell-menu';
-    const actions = [
-      { label: 'Set +1',   fn: () => setCell(s, d,  1) },
-      { label: 'Set +0.5', fn: () => setCell(s, d,  0.5) },
-      { label: 'Set 0',    fn: () => setCell(s, d,  0) },
-      { label: 'Set -0.5', fn: () => setCell(s, d, -0.5) },
-      { label: 'Set -1',   fn: () => setCell(s, d, -1) },
-      { label: 'Invert',   fn: () => setCell(s, d, -getCell(s, d)) },
-      { label: 'Random',   fn: () => setCell(s, d, (Math.random() * 2) - 1) },
-      { label: 'Precise…', fn: () => openPreciseEditor(s, d, cellEl) },
-    ];
-    for (const a of actions) {
-      const b = document.createElement('button');
-      b.textContent = a.label;
-      b.addEventListener('click', () => { a.fn(); menu.remove(); });
-      menu.appendChild(b);
-    }
-
-    document.body.appendChild(menu);
-    const rect = cellEl.getBoundingClientRect();
-    const x = Math.min(window.innerWidth  - 180, rect.left);
-    const y = Math.min(window.innerHeight - menu.offsetHeight - 10, rect.bottom + 4);
-    menu.style.left = `${x}px`;
-    menu.style.top  = `${y}px`;
-
-    // Dismiss on outside click.
-    const dismiss = (e) => {
-      if (!menu.contains(e.target)) {
-        menu.remove();
-        document.removeEventListener('pointerdown', dismiss, true);
-      }
-    };
-    setTimeout(() => document.addEventListener('pointerdown', dismiss, true), 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -582,7 +287,7 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
   }
 
   // ---------------------------------------------------------------------------
-  // Preset overlay (Phase E)
+  // Preset overlay
   // ---------------------------------------------------------------------------
 
   async function openPresetOverlay() {
@@ -633,8 +338,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
           const engine = getEngine?.();
           if (engine && engine.id === 'modular') {
             await applyPreset(engine, preset);
-            // Sync Phase C UI state to reflect the preset's sub-engine
-            // and counts so the rebuild that follows matches the engine.
             if (preset.state?.subEngine) uiState.subEngine = preset.state.subEngine;
             if (typeof preset.state?.adsrCount === 'number') {
               uiState.adsrCount = preset.state.adsrCount;
@@ -643,7 +346,7 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
               uiState.lfoCount = preset.state.lfoCount;
             }
             saveUIState();
-            onStateChange?.(); // trigger a-app saveState -> persists DSP snapshot
+            onStateChange?.();
             refresh();
           }
         } catch (err) {
@@ -658,7 +361,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     panel.appendChild(list);
     overlay.appendChild(panel);
 
-    // Dismiss on backdrop click
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) overlay.remove();
     });
@@ -678,7 +380,7 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
       uiState.exposedEngineParams = uiState.exposedEngineParams.filter(l => l !== label);
     }
     saveUIState();
-    // paramMeta:change listener rebuilds the matrix & list.
+    // paramMeta:change listener rebuilds the sound param list.
   }
 
   // ---------------------------------------------------------------------------
@@ -715,11 +417,9 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
             && engine.availableSubEngines?.includes(uiState.subEngine)) {
           engine.setSubEngine?.(uiState.subEngine);
         }
-        // Sync counts (UI persisted → engine). Guard if method missing.
         if (typeof engine.setModSourceCount === 'function') {
           engine.setModSourceCount(uiState.adsrCount, uiState.lfoCount);
         }
-        // Re-expose saved sound params.
         for (const label of uiState.exposedEngineParams) {
           engine.setExposeEngineParam?.(label, true);
         }
@@ -737,7 +437,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     refreshSubEngineButtons();
     refreshCountValues();
     refreshEnableRow();
-    rebuildMatrixGrid();
     rebuildSoundParamList();
   }
 
@@ -753,64 +452,10 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
   // Start hidden (engine-gated).
   hide();
 
-  // Listen for close button on our drawer so the dock icon state stays synced.
   drawer.closeBtn.addEventListener('click', () => {
     drawer.root.classList.add('hidden');
     dockIcon.classList.remove('active');
   });
-
-  // Dock icon opens/closes our drawer. We piggy-back on the existing
-  // wireDock() event delegation — but since our drawer's id is `drawer-modular`
-  // and our icon uses `data-drawer="modular"`, wireDock() already handles it.
-  // However, wireDock was wired at init time — any new dock-click delegation
-  // works because it's attached to #dock via event delegation.
-
-  // Live-update throttle: the MLP can push ~60 Hz of new output vectors, but
-  // rewriting ~120 visible DOM cells that often is wasteful. Cap to ~20 fps.
-  const LIVE_UPDATE_INTERVAL_MS = 50;
-  let _lastLiveUpdate = 0;
-
-  /**
-   * Called from the inference loop with the MLP output vector (normalized
-   * [0,1]). Updates visible matrix cell DOM to reflect live values without
-   * touching the engine (engine.setParam is already being called on the
-   * same tick by routeOutputs).
-   */
-  function updateLive(outputs) {
-    if (!isVisible()) return;
-    if (!outputs || outputs.length === 0) return;
-    const engine = getEngine?.();
-    if (!engine || engine.id !== 'modular') return;
-    if (matrixIndexCache.size === 0) return;
-
-    const now = performance.now();
-    if (now - _lastLiveUpdate < LIVE_UPDATE_INTERVAL_MS) return;
-    _lastLiveUpdate = now;
-
-    const meta = engine.paramMeta;
-    const adsrN = uiState.adsrCount;
-    const lfoN  = uiState.lfoCount;
-    const nVisibleSources = adsrN + lfoN;
-
-    for (const [key, idx] of matrixIndexCache.entries()) {
-      // Only update cells whose source is currently visible.
-      const barIdx = key.indexOf('|');
-      const s = +key.slice(0, barIdx);
-      if (s >= 16) {
-        // LFO: sources 16..47 map to LFO slots 0..31
-        if ((s - 16) >= lfoN) continue;
-      } else if (s >= adsrN) {
-        continue;
-      }
-      const m = meta[idx];
-      if (!m) continue;
-      const norm = outputs[idx];
-      if (norm == null) continue;
-      const raw = m.min + norm * (m.max - m.min);
-      cellValues.set(key, raw);
-      updateCellDOM(+key.slice(0, barIdx), +key.slice(barIdx + 1), raw);
-    }
-  }
 
   return {
     teardown,
@@ -818,14 +463,6 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     show,
     hide,
     isVisible,
-    updateLive,
-    /** Exposed for testability. */
-    _debug: {
-      getCell,
-      setCell,
-      cycleCell,
-      uiState: () => ({ ...uiState }),
-    },
   };
 
   // ===========================================================================
@@ -922,32 +559,7 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     body.appendChild(section);
   }
 
-  function buildMatrixSection(body, refs, handlers) {
-    const section = el('div', 'mm-section mm-matrix-section');
-    const header = el('div', 'mm-section-header', 'Matrix');
-    // Phase E: the tap-vs-drag mode toggle stub was deleted — drag-to-paint
-    // is non-goal for Phase E and the button did nothing functional.
-    section.appendChild(header);
-
-    const legend = el('div', 'mm-hint',
-      'Click to cycle 0 → 0.25 → 0.5 → 0.75 → 1 → 0. ' +
-      'Shift-click: zero. Long-press: precise. Right-click: menu (negatives).');
-    section.appendChild(legend);
-
-    const scrollWrap = el('div', 'mm-scroll');
-    const grid = el('div', 'mm-grid');
-    refs.matrixGrid = grid;
-    scrollWrap.appendChild(grid);
-    section.appendChild(scrollWrap);
-
-    const empty = el('div', 'mm-hint warn', '');
-    refs.matrixEmpty = empty;
-    section.appendChild(empty);
-
-    body.appendChild(section);
-  }
-
-  function buildSoundParamSection(body, refs, onExposeChange) {
+  function buildSoundParamSection(body, refs) {
     const section = el('div', 'mm-section');
     section.appendChild(el('div', 'mm-section-header', 'Engine sound params'));
     const list = el('div', 'mm-sound-list');
@@ -1004,12 +616,11 @@ function createDockIcon() {
   const dock = document.getElementById('dock');
   if (!dock) throw new Error('[modular-ui] #dock not found');
 
-  // Insert before the help icon if present, else append.
   const helpIcon = dock.querySelector('.dock-icon[data-drawer="help"]');
   const btn = document.createElement('button');
   btn.className = 'dock-icon hidden';
   btn.dataset.drawer = 'modular';
-  btn.title = 'Modular mod pool & matrix';
+  btn.title = 'Modular mod pool';
   btn.innerHTML = `
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <rect x="2" y="2" width="3" height="3" rx="0.5"/>
@@ -1213,127 +824,6 @@ function injectStyles() {
       opacity: 0.35;
     }
 
-    /* Matrix grid */
-    .mm-matrix-section {
-      /* Allow this section to take extra vertical space */
-    }
-    .mm-mode-toggle {
-      font-size: 0.6rem;
-      padding: 2px 6px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
-      border-radius: 4px;
-      color: var(--text-dim, #888);
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-    .mm-scroll {
-      overflow-x: auto;
-      overflow-y: auto;
-      max-height: 360px;
-      border-radius: 4px;
-      border: 1px solid var(--glass-border, rgba(255,255,255,0.06));
-    }
-    .mm-grid {
-      display: grid;
-      gap: 1px;
-      background: rgba(255,255,255,0.05);
-      padding: 1px;
-      min-width: max-content;
-      touch-action: manipulation;
-    }
-    .mm-corner,
-    .mm-col-header,
-    .mm-row-header {
-      background: #0d0d0d;
-      color: var(--text-dim, #888);
-      font-size: 0.55rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2px 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      position: sticky;
-      z-index: 2;
-    }
-    .mm-col-header {
-      top: 0;
-      writing-mode: vertical-rl;
-      transform: rotate(180deg);
-      min-height: 48px;
-      min-width: 28px;
-    }
-    .mm-row-header {
-      left: 0;
-      min-width: 32px;
-      font-weight: 500;
-    }
-    .mm-row-header.mm-src-adsr { color: #ffb070; }
-    .mm-row-header.mm-src-lfo  { color: #6bb6ff; }
-    .mm-corner {
-      top: 0;
-      left: 0;
-      z-index: 3;
-    }
-    .mm-cell {
-      background: rgba(255,255,255,0.04);
-      cursor: pointer;
-      font-size: 0.55rem;
-      font-variant-numeric: tabular-nums;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 32px;
-      min-width: 28px;
-      user-select: none;
-      color: #fff;
-      transition: background 120ms ease;
-    }
-    .mm-cell:hover:not(.unavailable) {
-      outline: 1px solid rgba(255,255,255,0.25);
-    }
-    .mm-cell.unavailable {
-      cursor: not-allowed;
-      background: repeating-linear-gradient(
-        45deg,
-        rgba(255,255,255,0.02),
-        rgba(255,255,255,0.02) 4px,
-        rgba(255,255,255,0.05) 4px,
-        rgba(255,255,255,0.05) 8px
-      );
-    }
-
-    /* Context menu */
-    .mm-cell-menu {
-      position: fixed;
-      background: #0d0d0d;
-      border: 1px solid var(--glass-border, rgba(255,255,255,0.15));
-      border-radius: 6px;
-      padding: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-      z-index: 9999;
-      min-width: 140px;
-    }
-    .mm-cell-menu button {
-      background: transparent;
-      border: none;
-      color: var(--text, #e0e0e0);
-      text-align: left;
-      padding: 6px 10px;
-      font-size: 0.7rem;
-      border-radius: 4px;
-      cursor: pointer;
-      touch-action: manipulation;
-    }
-    .mm-cell-menu button:hover {
-      background: var(--accent-dim, rgba(255,106,0,0.25));
-      color: var(--accent, #ff6a00);
-    }
-
     /* Sound params list */
     .mm-sound-list {
       display: flex;
@@ -1366,7 +856,7 @@ function injectStyles() {
       height: 16px;
     }
 
-    /* Preset overlay (Phase E) */
+    /* Preset overlay */
     .mm-preset-open-btn {
       padding: 8px 12px;
       background: rgba(255,255,255,0.04);
@@ -1468,8 +958,6 @@ function injectStyles() {
     /* Mobile tweaks */
     @media (max-width: 640px) {
       .mm-drawer .mm-body { padding: 6px 8px 12px; gap: 10px; }
-      .mm-cell { min-width: 26px; min-height: 28px; font-size: 0.5rem; }
-      .mm-scroll { max-height: 300px; }
     }
   `;
   document.head.appendChild(s);
@@ -1514,12 +1002,5 @@ function stripIndexPrefix(leaf) {
 }
 
 function prettyGroup(group) {
-  // "1_Oscillators" → "Oscillators"
   return group.replace(/^\d+_/, '').replace(/_/g, ' ');
-}
-
-function shortDest(name) {
-  // Truncate long destination names for column headers.
-  if (name.length <= 10) return name;
-  return name.slice(0, 9) + '…';
 }

@@ -2910,11 +2910,6 @@ function routeOutputs(outputs) {
     // Visualizer always gets every frame (it's local, no buffer)
     synthVisualizer.setParams(overridden);
 
-    // Modular matrix UI: mirror live MLP outputs into visible matrix cells
-    // (the UI throttles its own DOM writes internally)
-    if (modularUI && activeEngine?.id === 'modular') {
-      modularUI.updateLive(overridden);
-    }
     // meml-usd6: mirror live MLP outputs into Patch Bay cells when open
     if (patchBay && patchBay.isOpen() && activeEngine?.id === 'modular') {
       patchBay.updateLive(overridden);

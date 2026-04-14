@@ -6,7 +6,11 @@
 // restored via a confirmation dialog.
 //
 // Storage: one localStorage key per {engine, presetId}:
-//   nisps.session.<engine>.<presetId>  → JSON payload
+//   nisps.session.<engine>::<presetId>  → JSON payload
+//
+// Uses '::' as separator because preset ids may contain '.' (e.g.
+// 'beginner-1.2'). The previous '.' separator would collide with dotted
+// ids and split parsing incorrectly.
 //
 // Quota-aware: before writing, we ensure the total "nisps.session.*" size
 // (including the incoming blob) stays under SESSION_BUDGET_BYTES; if not,
@@ -16,11 +20,52 @@
 // memory instead of globally persisted.
 
 const PREFIX = 'nisps.session.';
+const SEP = '::';
 const SESSION_BUDGET_BYTES = 4 * 1024 * 1024; // 4 MB soft cap
 const SCHEMA_VERSION = 1;
 
+/**
+ * Sanitise an incoming preset id — the '::' separator must not appear
+ * inside the id itself. Replaces any occurrence with '_'.
+ */
+export function sanitizePresetId(id) {
+  if (id == null) return '';
+  return String(id).split(SEP).join('_');
+}
+
 function keyFor(engine, presetId) {
-  return `${PREFIX}${engine}.${presetId}`;
+  return `${PREFIX}${engine}${SEP}${sanitizePresetId(presetId)}`;
+}
+
+// One-shot migration of legacy 'nisps.session.<engine>.<presetId>' keys
+// to the new '::' separator. Idempotent; only runs once per page load.
+let _migrated = false;
+function migrateLegacyKeys() {
+  if (_migrated) return;
+  _migrated = true;
+  const legacy = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith(PREFIX)) continue;
+    const tail = k.slice(PREFIX.length);
+    if (tail.includes(SEP)) continue; // already new format
+    legacy.push(k);
+  }
+  for (const k of legacy) {
+    const tail = k.slice(PREFIX.length);
+    const dot = tail.indexOf('.');
+    if (dot < 0) continue;
+    const engine = tail.slice(0, dot);
+    const presetId = tail.slice(dot + 1);
+    const newKey = `${PREFIX}${engine}${SEP}${presetId}`;
+    const val = localStorage.getItem(k);
+    if (val != null) {
+      try {
+        localStorage.setItem(newKey, val);
+        localStorage.removeItem(k);
+      } catch (_) { /* ignore quota hiccups during migration */ }
+    }
+  }
 }
 
 /** Estimate UTF-16 byte size of a string (JS string). */
@@ -31,6 +76,7 @@ function sizeOf(str) {
 
 /** List all session keys with timestamp + size. */
 export function listSessions() {
+  migrateLegacyKeys();
   const out = [];
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
@@ -42,9 +88,9 @@ export function listSessions() {
     } catch (_) { /* ignore */ }
     // Recover {engine, presetId} from key tail.
     const tail = k.slice(PREFIX.length);
-    const dot = tail.indexOf('.');
-    const engine   = dot >= 0 ? tail.slice(0, dot) : tail;
-    const presetId = dot >= 0 ? tail.slice(dot + 1) : '';
+    const sepIdx = tail.indexOf(SEP);
+    const engine   = sepIdx >= 0 ? tail.slice(0, sepIdx) : tail;
+    const presetId = sepIdx >= 0 ? tail.slice(sepIdx + SEP.length) : '';
     out.push({ key: k, engine, presetId, timestamp: ts, size: sizeOf(raw) });
   }
   return out;
@@ -71,6 +117,7 @@ export function clearSession(engine, presetId) {
 /** Load the session payload for {engine, presetId}, or null if absent. */
 export function loadSession(engine, presetId) {
   if (!engine || !presetId) return null;
+  migrateLegacyKeys();
   const raw = localStorage.getItem(keyFor(engine, presetId));
   if (!raw) return null;
   try {

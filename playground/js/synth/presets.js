@@ -1,8 +1,96 @@
 // Synth presets for NISPS playground
 // Each preset defines which of the 126 C15 params are active (ML-controlled)
 // and which are muted at safe defaults. Organized in 4 tiers of complexity.
+//
+// SCHEMA MIGRATION (meml-pu12): presets now conform to the unified schema
+// (see `playground/docs/unified-preset-schema.md` and `preset-types.js`).
+// Each preset carries:
+//   - engine: 'c15'
+//   - complexity: 1..5   (direct rename of former `tier` 1..4)
+//   - params: { [label]: { bypassed, muted, fixedValue?, min, max, curve } }
+//   - groupCurves: preserved verbatim
+// Legacy fields (`active`, `overrides`, `mutedOverrides`, `tier`) are also
+// still emitted on each preset for backward compatibility with the current
+// loader in `a-app.js`. meml-17mp will migrate the loader to read `params`
+// directly and drop the legacy fields. TODO(meml-17mp): drop legacy shim.
+//
+// The raw authoring data is kept in `_RAW_PRESETS` below; the final
+// `SYNTH_PRESETS` array is built at module load by `_toUnifiedPreset()`.
 
-export const SYNTH_PRESETS = [
+import { SYNTH_PARAM_MAP } from './param-map.js';
+
+// Param-name -> DSP default (from SYNTH_PARAM_MAP `defaultValue`).
+// Used as the fallback `fixedValue` for bypassed params without an override.
+const _DSP_DEFAULTS = Object.fromEntries(
+  SYNTH_PARAM_MAP.map((p) => [p.name, p.defaultValue ?? 0.5]),
+);
+const _ALL_PARAM_NAMES = SYNTH_PARAM_MAP.map((p) => p.name);
+
+function _toUnifiedPreset(raw) {
+  const {
+    id, name, description, tier,
+    active, overrides = {}, mutedOverrides = {}, groupCurves = {},
+  } = raw;
+
+  // active === null ⟹ all params active (current semantics).
+  const allActive = active === null;
+  const activeSet = allActive ? new Set(_ALL_PARAM_NAMES) : new Set(active);
+
+  const params = {};
+  for (const pname of _ALL_PARAM_NAMES) {
+    const ov = overrides[pname];
+    const mov = mutedOverrides[pname];
+    const dspDefault = _DSP_DEFAULTS[pname];
+
+    if (!activeSet.has(pname)) {
+      // Bypassed: not MLP-controlled. Hold at override-fixedValue or DSP default.
+      params[pname] = {
+        bypassed: true,
+        muted:    false,
+        fixedValue: (ov && ov.fixedValue !== undefined) ? ov.fixedValue : dspDefault,
+      };
+    } else if (mov) {
+      // Active but muted: MLP has an output, but pinned at fixedValue.
+      params[pname] = {
+        bypassed:   false,
+        muted:      true,
+        fixedValue: mov.fixedValue !== undefined ? mov.fixedValue : dspDefault,
+        min:        mov.min   !== undefined ? mov.min   : 0,
+        max:        mov.max   !== undefined ? mov.max   : 1,
+        curve:      mov.curve !== undefined ? mov.curve : 0.5,
+      };
+    } else {
+      // Fully live.
+      const entry = {
+        bypassed: false,
+        muted:    false,
+        min:      (ov && ov.min   !== undefined) ? ov.min   : 0,
+        max:      (ov && ov.max   !== undefined) ? ov.max   : 1,
+        curve:    (ov && ov.curve !== undefined) ? ov.curve : 0.5,
+      };
+      if (ov && ov.fixedValue !== undefined) entry.fixedValue = ov.fixedValue;
+      params[pname] = entry;
+    }
+  }
+
+  return {
+    // Unified schema
+    id,
+    name,
+    description,
+    engine:     'c15',
+    complexity: tier, // direct 1..4 rename; complexity 5 reserved for modular
+    params,
+    groupCurves,
+    // Legacy shim (TODO(meml-17mp): remove once loader is migrated)
+    tier,
+    active,
+    overrides,
+    mutedOverrides,
+  };
+}
+
+const _RAW_PRESETS = [
   // ======================================================================
   // TIER 1 — Beginner (15 active params)
   // ======================================================================
@@ -619,7 +707,10 @@ export const SYNTH_PRESETS = [
   },
 ];
 
-// Tier metadata for UI grouping
+export const SYNTH_PRESETS = _RAW_PRESETS.map(_toUnifiedPreset);
+
+// Tier metadata for UI grouping.
+// TODO(meml-17mp): replace with complexity-based grouping once loader migrates.
 export const PRESET_TIERS = [
   { tier: 1, label: 'Beginner' },
   { tier: 2, label: 'Intermediate' },

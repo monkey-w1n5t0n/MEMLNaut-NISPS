@@ -279,14 +279,19 @@ export function applyTame(rawValue, paramEntry, tameLevel) {
  * curveFactor 0.5 = linear (no change)
  * curveFactor 1 = exponential (flat at start, steep at end)
  *
- * Internally maps curveFactor to an exponent: exp = 2^(4*(curve-0.5))
- *   curve=0   -> exp=0.25 (log-ish)
+ * Internally maps curveFactor to an exponent: exp = 2^(-4*(curve-0.5))
+ *   curve=0   -> exp=4    (x^4 pulls toward 0 → bias low)
  *   curve=0.5 -> exp=1    (linear)
- *   curve=1   -> exp=4    (exp-ish)
+ *   curve=1   -> exp=0.25 (x^0.25 pulls toward 1 → bias high)
+ *
+ * Note: convention (per CLAUDE.md and unified-preset-schema.md) is
+ * "curve<0.5 → bias low, curve>0.5 → bias high". Earlier revisions of
+ * this function had the exponent sign inverted; this now matches the
+ * modular engine's applyCurve in modular-param-meta.js.
  */
 export function applyCurve(value, curveFactor) {
   if (curveFactor === 0.5) return value;
-  const exponent = Math.pow(2, 4 * (curveFactor - 0.5));
+  const exponent = Math.pow(2, -4 * (curveFactor - 0.5));
   return Math.pow(Math.max(0, Math.min(1, value)), exponent);
 }
 

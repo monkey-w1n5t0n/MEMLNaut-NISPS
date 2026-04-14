@@ -144,7 +144,7 @@ Most params `bypassed:true`; a curated set included (`bypassed:false`); a few of
 This matches `applyCurve()` in `js/synth/param-map.js` — treat that function as the reference implementation; any new renderer MUST produce identical output:
 
 ```
-exponent = 2 ^ (4 * (curve - 0.5))
+exponent = 2 ^ (-4 * (curve - 0.5))
 curved   = clamp(x, 0, 1) ^ exponent
 output   = min + curved * (max - min)
 ```
@@ -153,9 +153,9 @@ Exponent range across `curve ∈ [0,1]`:
 
 | `curve` | exponent | shape |
 |--------:|---------:|-------|
-| 0.0 | 0.25 | strong low-bias (log-like) |
+| 0.0 | 4.00 | strong low-bias (`x^4` pulls output toward min) |
 | 0.5 | 1.00 | linear |
-| 1.0 | 4.00 | strong high-bias (exp-like) |
+| 1.0 | 0.25 | strong high-bias (`x^0.25` pulls output toward max) |
 
 Note: an earlier draft of this doc suggested `exp = 2^((curve*2)-1)` (range 0.5..2). That formulation is **rejected** in favour of the `param-map.js` implementation above, which has a usefully wider dynamic range and is already shipped in the C15 adapter. All engines (C15, modular, additive, fm) and all preset renderers must use the `param-map.js` formula.
 

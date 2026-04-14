@@ -683,13 +683,26 @@ async function applyPreset(presetId) {
   // --- Step 1: capture outgoing session under its {engine, presetId} key ---
   const prevEngineId = activeEngine?.id ?? 'shaper-feedback';
   const prevPresetId = activeSynthPresetId;
-  if (prevPresetId && prevPresetId !== presetId) {
+  if (prevPresetId && prevPresetId !== presetId && _sessionDirty) {
     try {
       saveSessionMem(prevEngineId, prevPresetId, capturePresetSession());
+      clearSessionDirty();
     } catch (e) {
       console.warn('[NISPS] session save (outgoing) failed:', e);
     }
   }
+
+  // Snapshot preset-scoped state so we can revert on Cancel from the restore
+  // modal. Deep-clones cover the mutations done below (groupOverrides params
+  // array + engineParamOverrides entries).
+  const _prevStateSnapshot = {
+    presetId: prevPresetId,
+    groupOverrides: groupOverrides ? JSON.parse(JSON.stringify(groupOverrides)) : null,
+    engineParamOverrides: engineParamOverrides
+      ? JSON.parse(JSON.stringify(engineParamOverrides))
+      : null,
+    nonC15GroupCurves: Array.isArray(nonC15GroupCurves) ? [...nonC15GroupCurves] : nonC15GroupCurves,
+  };
 
   const engineId = activeEngine?.id ?? 'shaper-feedback';
   const presets = getPresetsForEngine(engineId);
@@ -915,15 +928,46 @@ async function applyPreset(presetId) {
         });
         if (choice === 'restore') {
           restorePresetSession(saved.payload);
+          clearSessionDirty(); // newly-restored state is not "dirty" yet
           saveState();
           console.log(`[NISPS] Restored prior session for ${presetId}`);
         } else if (choice === 'fresh') {
           freshPresetSession();
           saveState();
           console.log(`[NISPS] Started fresh session for ${presetId}`);
+        } else {
+          // 'cancel' → revert preset application. Overrides were already
+          // mutated above; restore them from the snapshot and flip the
+          // active preset id back. Do NOT persist the half-applied state.
+          if (_prevStateSnapshot.groupOverrides && groupOverrides) {
+            // Preserve live object identity — copy fields in place.
+            for (let si = 0; si < groupOverrides.length && si < _prevStateSnapshot.groupOverrides.length; si++) {
+              const src = _prevStateSnapshot.groupOverrides[si];
+              const dst = groupOverrides[si];
+              dst.curve = src.curve;
+              if (Array.isArray(src.params) && Array.isArray(dst.params)) {
+                for (let li = 0; li < dst.params.length && li < src.params.length; li++) {
+                  Object.assign(dst.params[li], src.params[li]);
+                }
+              }
+            }
+          }
+          if (_prevStateSnapshot.engineParamOverrides && engineParamOverrides) {
+            for (let i = 0; i < engineParamOverrides.length && i < _prevStateSnapshot.engineParamOverrides.length; i++) {
+              Object.assign(engineParamOverrides[i], _prevStateSnapshot.engineParamOverrides[i]);
+            }
+          }
+          if (Array.isArray(_prevStateSnapshot.nonC15GroupCurves)) {
+            for (let i = 0; i < nonC15GroupCurves.length && i < _prevStateSnapshot.nonC15GroupCurves.length; i++) {
+              nonC15GroupCurves[i] = _prevStateSnapshot.nonC15GroupCurves[i];
+            }
+          }
+          activeSynthPresetId = _prevStateSnapshot.presetId;
+          const $ps2 = document.getElementById('synth-preset-select');
+          if ($ps2) $ps2.value = activeSynthPresetId || '';
+          if (iml) routeOutputs(iml.getOutputs());
+          console.log(`[NISPS] Cancelled preset switch; reverted to ${_prevStateSnapshot.presetId ?? '(none)'}`);
         }
-        // 'cancel' → proceed as Start Fresh without clearing storage (user can
-        // re-apply the preset to get the dialog again).
       } catch (e) {
         console.warn('[NISPS] restore modal failed:', e);
       }

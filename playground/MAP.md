@@ -49,6 +49,7 @@ Living architecture map for the `playground/` web app. **Updated by every commit
 | `weight-health.js`, `gradient-flow.js` | Network health / gradient diagnostics. |
 | `session-presets.js` | Save/load full session state + URL sharing. |
 | `modular-ui.js` | Modular-engine drawer UI (ADSR/LFO/matrix editors). |
+| `patch-bay-modal.js` | Full-viewport 48×10 Patch Bay matrix editor (`meml-usd6`): mute+depth per cell, sub-engine-aware destination labels, live MLP feedback, horizontally scrollable on mobile. Replaces modular-ui's cramped grid (old grid still present, cleanup in `meml-ptgi`). |
 | `engine-switcher.js` | Switch between C15 / modular / additive / fm engines. |
 | `eoc-joystick.js`, `eoc-chain-ui.js` | End-of-cycle event chain UI. |
 | `hand-tracker.js`, `gamepad.js` | Alternate input devices. |

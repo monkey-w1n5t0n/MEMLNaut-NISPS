@@ -22,10 +22,12 @@ import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 import { EngineSwitcher } from './ui/engine-switcher.js';
 import { EOCJoystick } from './ui/eoc-joystick.js';
 import { initModularUI } from './ui/modular-ui.js';
+import { createPatchBay } from './ui/patch-bay-modal.js';
 import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
 import { ModularEngine } from './synth/modular-engine.js';
 import { MODULAR_PRESETS, applyPreset as applyModularPreset, findPreset as findModularPreset } from './synth/modular-presets.js';
+import { getColumn as getGroupColumn } from './synth/group-columns.js';
 import { saveSession as saveSessionMem, loadSession as loadSessionMem, showRestoreModal } from './nisps/session-memory.js';
 
 // ---- Constants ----
@@ -173,6 +175,7 @@ let eocJoystick = null;  // EOCJoystick instance for Independent mode
 // Modular-mode UI (Phase C) — created once during init(), toggled via show/hide
 // by setActiveEngine() when the modular engine becomes active.
 let modularUI = null;
+let patchBay = null;
 
 // ---- MIDI CC state ----
 let midiOutput = null;
@@ -382,9 +385,12 @@ function rebuildNonC15Sections(paramMeta) {
     if (g !== currentGroup) {
       si++;
       currentGroup = g;
+      // Prefer curated SYNTH_SECTIONS[si].color for C15 (same enumeration
+      // order as paramMeta), otherwise hash-derive from the group name.
+      const curated = (activeEngine?.id === 'shaper-feedback') ? SYNTH_SECTIONS[si] : null;
       nonC15Sections.push({
         name: g,
-        color: _colorFromGroup(g),
+        color: curated?.color ?? _colorFromGroup(g),
         count: 0,
         startIndex: i,
       });
@@ -1375,9 +1381,16 @@ async function setActiveEngine(engine) {
     }
   }
 
-  // Rebuild paramToSection and SynthVisualizer for the new engine
+  // Rebuild paramToSection and SynthVisualizer for the new engine.
+  // Unified path (meml-17mp): derive sections from paramMeta.group for ALL
+  // engines. For C15, paramToSection keeps the static SYNTH_SECTIONS layout
+  // (preserves legacy groupOverrides indexing), but nonC15Sections is now
+  // populated from paramMeta so getSectionView() has a single codepath.
   if (engine.id === 'shaper-feedback') {
     restoreC15ParamToSection();
+    if (engine.paramMeta?.length > 0) {
+      rebuildNonC15Sections(engine.paramMeta);
+    }
     // Restore C15 section map in SynthVisualizer
     if (synthVisualizer) {
       synthVisualizer.sectionMap = [];
@@ -1420,6 +1433,13 @@ async function setActiveEngine(engine) {
     if (engine.id === 'modular') modularUI.show();
     else                         modularUI.hide();
   }
+  // meml-usd6: sync Patch Bay engine binding + temp launcher visibility
+  if (patchBay) {
+    patchBay.setEngine(engine.id === 'modular' ? engine : null);
+    if (engine.id !== 'modular' && patchBay.isOpen()) patchBay.close();
+  }
+  const pbBtn = window.__patchBayLaunchBtn;
+  if (pbBtn) pbBtn.style.display = engine.id === 'modular' ? '' : 'none';
 }
 
 async function resizeMLP(newOutputCount) {
@@ -1675,6 +1695,44 @@ async function init() {
     if (activeEngine?.id === 'modular') modularUI.show();
   } catch (err) {
     console.error('[NISPS] Failed to init modular UI:', err);
+  }
+
+  // meml-usd6: Patch Bay modal — full-viewport 48×10 matrix editor,
+  // replacing the cramped grid in modular-ui.js. meml-coh8 will wire a
+  // proper entry point (M keyboard shortcut + Routing column button);
+  // for now we expose a temporary visible button so it's reachable.
+  try {
+    patchBay = createPatchBay({
+      engine: activeEngine?.id === 'modular' ? activeEngine : null,
+      preset: null, // preset integration comes in meml-coh8
+      onChange: () => saveState(),
+    });
+    // Temporary launcher button (removed by meml-coh8). Visible only when
+    // modular engine is active.
+    const btn = document.createElement('button');
+    btn.id = 'patch-bay-temp-launch';
+    btn.textContent = 'Patch Bay';
+    btn.title = 'Open Patch Bay (48×10 modulation matrix)';
+    btn.style.cssText = [
+      'position:fixed', 'bottom:12px', 'right:12px', 'z-index:9000',
+      'background:#ff6a00', 'color:#fff', 'border:0', 'border-radius:6px',
+      'padding:8px 14px', 'font:inherit', 'font-size:12px', 'font-weight:600',
+      'cursor:pointer', 'box-shadow:0 4px 12px rgba(0,0,0,0.4)',
+    ].join(';');
+    btn.addEventListener('click', () => {
+      // Re-bind engine at click time in case it was swapped
+      if (patchBay) {
+        patchBay.setEngine(activeEngine?.id === 'modular' ? activeEngine : null);
+        patchBay.open();
+      }
+    });
+    btn.style.display = activeEngine?.id === 'modular' ? '' : 'none';
+    document.body.appendChild(btn);
+    // Update visibility when engine swaps (piggy-back on the modularUI
+    // show/hide site below — handled by existing engine-change flow).
+    window.__patchBayLaunchBtn = btn;
+  } catch (err) {
+    console.error('[NISPS] Failed to init Patch Bay:', err);
   }
 
   wireControls();
@@ -2683,6 +2741,10 @@ function routeOutputs(outputs) {
     // (the UI throttles its own DOM writes internally)
     if (modularUI && activeEngine?.id === 'modular') {
       modularUI.updateLive(overridden);
+    }
+    // meml-usd6: mirror live MLP outputs into Patch Bay cells when open
+    if (patchBay && patchBay.isOpen() && activeEngine?.id === 'modular') {
+      patchBay.updateLive(overridden);
     }
 
     // Engine param updates: throttle + dead-zone filter
@@ -4136,48 +4198,65 @@ function wireGroupDrawer() {
 
 /**
  * Uniform view of a "section" (aka param group) for the active engine.
- * C15 gets the static SYNTH_SECTIONS + groupOverrides + SYNTH_PARAM_MAP view;
- * non-C15 gets a view derived from paramMeta + engineParamOverrides +
- * nonC15Sections/nonC15GroupCurves.
  *
- * Returns { name, color, count, startIndex, getCurve, setCurve,
- *           getParamName, getParamOverride } or null if the section doesn't
- * exist for the active engine.
+ * meml-17mp: single codepath. Sections are derived from `paramMeta.group`
+ * for every engine (see `rebuildNonC15Sections`). Per-param overrides are
+ * dispatched to the engine-appropriate store:
+ *   - C15 (`shaper-feedback`): `groupOverrides[si].params[li]` (seeded from
+ *     SYNTH_PARAM_MAP safeMin/safeMax + tame).
+ *   - Faust engines (modular/additive/fm): `engineParamOverrides[startIdx+li]`.
+ *
+ * The `column` field (`Sound | Modulation | Routing`) comes from
+ * `group-columns.js:getColumn()` and is what the Patch Editor modal
+ * (meml-n3uh) will consume.
+ *
+ * Returns { name, color, count, startIndex, column, getCurve, setCurve,
+ *           getParamName, getParamOverride } or null.
  */
 function getSectionView(sectionIndex) {
-  if (activeEngine?.id === 'shaper-feedback') {
-    const sec = SYNTH_SECTIONS[sectionIndex];
-    const ov  = groupOverrides[sectionIndex];
-    if (!sec || !ov) return null;
-    let start = 0;
-    for (let i = 0; i < sectionIndex; i++) start += SYNTH_SECTIONS[i].count;
-    return {
-      name: sec.name,
-      color: sec.color,
-      count: sec.count,
-      startIndex: start,
-      getCurve: () => ov.curve,
-      setCurve: (v) => { ov.curve = v; },
-      getParamName: (li) => SYNTH_PARAM_MAP[start + li]?.label ?? `p${start + li}`,
-      getParamOverride: (li) => ov.params[li],
-    };
-  }
-  // Non-C15 engines
   const sec = nonC15Sections[sectionIndex];
-  if (!sec || !engineParamOverrides) return null;
+  if (!sec) return null;
   const start = sec.startIndex;
+  const engineId = activeEngine?.id ?? '';
+  const engineKey = engineId === 'shaper-feedback' ? 'c15' : engineId;
+  const column = getGroupColumn(engineKey, sec.name);
+
+  // Resolve storage dispatch. For C15, overrides live in groupOverrides[si].
+  // For Faust engines, overrides live in the flat engineParamOverrides.
+  const isC15 = engineId === 'shaper-feedback';
+
+  const getCurve = () => {
+    if (isC15) return groupOverrides[sectionIndex]?.curve ?? 0.5;
+    return nonC15GroupCurves[sectionIndex] ?? 0.5;
+  };
+  const setCurve = (v) => {
+    if (isC15) {
+      if (groupOverrides[sectionIndex]) groupOverrides[sectionIndex].curve = v;
+    } else {
+      nonC15GroupCurves[sectionIndex] = v;
+      _nonC15GroupCurveMemory.set(sec.name, v);
+    }
+  };
+  const getParamName = (li) => {
+    const pm = activeEngine?.paramMeta?.[start + li];
+    return pm?.name ?? `p${start + li}`;
+  };
+  const getParamOverride = (li) => {
+    if (isC15) return groupOverrides[sectionIndex]?.params?.[li] ?? null;
+    if (!engineParamOverrides) return null;
+    return engineParamOverrides[start + li];
+  };
+
   return {
     name: sec.name,
     color: sec.color,
     count: sec.count,
     startIndex: start,
-    getCurve: () => nonC15GroupCurves[sectionIndex] ?? 0.5,
-    setCurve: (v) => {
-      nonC15GroupCurves[sectionIndex] = v;
-      _nonC15GroupCurveMemory.set(sec.name, v);
-    },
-    getParamName: (li) => activeEngine?.paramMeta?.[start + li]?.name ?? `p${start + li}`,
-    getParamOverride: (li) => engineParamOverrides[start + li],
+    column,
+    getCurve,
+    setCurve,
+    getParamName,
+    getParamOverride,
   };
 }
 

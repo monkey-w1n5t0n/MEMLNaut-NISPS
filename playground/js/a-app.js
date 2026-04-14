@@ -587,33 +587,60 @@ function capturePresetSession() {
 function restorePresetSession(payload) {
   if (!payload) return;
   try {
+    let weightMismatch = false;
+    let droppedExamples = 0;
+
     if (payload.joy && imlJoy) {
       const expected = imlJoy._weightCount;
       if (payload.joy.weights && payload.joy.weights.length === expected) {
         imlJoy._setFlatWeights(payload.joy.weights);
-      } else {
-        console.warn('[NISPS] session: joy weights length mismatch, skipping');
-      }
-      imlJoy.dataset.clear();
-      if (Array.isArray(payload.joy.features)) {
-        for (let i = 0; i < payload.joy.features.length; i++) {
-          imlJoy.dataset.add(payload.joy.features[i], payload.joy.labels[i] || []);
+        imlJoy.dataset.clear();
+        if (Array.isArray(payload.joy.features)) {
+          for (let i = 0; i < payload.joy.features.length; i++) {
+            const f = payload.joy.features[i];
+            const l = payload.joy.labels[i] || [];
+            if (f && f.length === imlJoy.nInputs && l.length === imlJoy.nOutputs) {
+              imlJoy.dataset.add(f, l);
+            } else {
+              droppedExamples++;
+            }
+          }
         }
+      } else {
+        // Weight mismatch: whole payload for this IML is incompatible — skip
+        // dataset reload too so we don't leave a partial state.
+        weightMismatch = true;
+        console.warn('[NISPS] session: joy weights length mismatch, skipping entire joy payload');
       }
     }
     if (payload.hand && imlHand) {
       const expected = imlHand._weightCount;
       if (payload.hand.weights && payload.hand.weights.length === expected) {
         imlHand._setFlatWeights(payload.hand.weights);
-      } else {
-        console.warn('[NISPS] session: hand weights length mismatch, skipping');
-      }
-      imlHand.dataset.clear();
-      if (Array.isArray(payload.hand.features)) {
-        for (let i = 0; i < payload.hand.features.length; i++) {
-          imlHand.dataset.add(payload.hand.features[i], payload.hand.labels[i] || []);
+        imlHand.dataset.clear();
+        if (Array.isArray(payload.hand.features)) {
+          for (let i = 0; i < payload.hand.features.length; i++) {
+            const f = payload.hand.features[i];
+            const l = payload.hand.labels[i] || [];
+            if (f && f.length === imlHand.nInputs && l.length === imlHand.nOutputs) {
+              imlHand.dataset.add(f, l);
+            } else {
+              droppedExamples++;
+            }
+          }
         }
+      } else {
+        weightMismatch = true;
+        console.warn('[NISPS] session: hand weights length mismatch, skipping entire hand payload');
       }
+    }
+
+    if (weightMismatch) {
+      try { showToast('Saved session incompatible with new topology — starting fresh'); }
+      catch (_) { /* best-effort */ }
+    } else if (droppedExamples > 0) {
+      try { showToast(`${droppedExamples} saved example(s) dropped (shape mismatch)`); }
+      catch (_) { /* best-effort */ }
     }
     if (typeof payload.noiseLevel === 'number') noiseLevel = payload.noiseLevel;
     // Run inference so routed outputs reflect the restored weights.

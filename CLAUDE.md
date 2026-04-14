@@ -155,20 +155,72 @@ The 126 synth parameters in `js/synth/param-map.js` were curated from the C15's 
 | PM shaper blend | 4 | Secondary routing params |
 | FB Mix source selects | 4 | Discrete A/B selectors |
 
-### Synth Presets
+### Unified Preset System
 
-Presets (`js/synth/presets.js`) control which parameters the ML engine can modify, with unselected params muted at safe defaults. Each preset defines per-param `{ muted, fixedValue, min, max, curve }` — no training examples or model weights.
+A single preset schema covers **both** the C15 WASM synth and the Faust-based modular engine (and, by extension, additive / fm sub-engines that share modular's infrastructure). The authoritative contract lives in `playground/docs/unified-preset-schema.md`; JSDoc typedefs in `playground/js/synth/preset-types.js` (`__presetSchemaVersion`).
 
-4 tiers of progressive complexity:
+#### Schema shape
 
-| Tier | Presets | Active params | What's exposed |
-|------|---------|---------------|----------------|
-| 1 (Beginner) | 1.1–1.4 | 15 | Basic ADSR, SVF cutoff/res, Shaper A drive/fold, output levels, reverb mix |
-| 2 (Intermediate) | 2.1–2.4 | 40 | + Env B/C, filter FM, effects (reverb/echo/flanger), cabinet, stereo panning |
-| 3 (Advanced) | 3.1–3.3 | ~95 | + Cross-oscillator PM, feedback mixer, dual shapers, comb/gap filters, ring mod |
-| 4 (Expert) | 4.1–4.2 | 126 | Full engine |
+Each preset is a plain object:
 
-Presets use `curve` values to bias parameter distributions (< 0.5 = spend more time low, > 0.5 = bias high) without clamping extremes. Users can tweak any preset via the group drawer after loading.
+```js
+{
+  id, name, description,
+  engine: 'c15' | 'modular',
+  complexity: 1..5,                  // replaces old C15 tier 1..4
+  meta: { subEngine, adsrCount, lfoCount },   // modular only
+  params: { [label]: { bypassed, muted, fixedValue?, min, max, curve } },
+  matrix: { [cellKey]: { muted, min, max, curve } },   // modular only; key format 'sNN_dNN'
+  groupCurves: { [groupName]: 0.5 },
+}
+```
+
+All param values are normalised `[0, 1]`; per-engine metadata tables convert to raw units (Hz, seconds, semitones). Curve formula is anchored to `param-map.js:applyCurve()`: `exp = 2^(4*(curve-0.5))`, output = `min + clamp(x,0,1)^exp * (max-min)`.
+
+#### Bypass vs. mute
+
+Two formally distinct flags on every param entry:
+
+- **`bypassed`** — *structural*. Param is NOT in `paramMeta`; MLP has no output node for it; held at `fixedValue` (or engine default). Toggling rebuilds the MLP. Use for discrete/structural knobs or whole disabled sub-modules.
+- **`muted`** — *runtime*. Param IS in `paramMeta` and trained, but its MLP output is ignored at runtime and held at `fixedValue`. Toggle freely without retraining.
+
+Matrix cells use `muted` only (the routing grid is fixed-shape). `muted: true` ⟹ raw routing value = 0 AND the cell is not exposed to the MLP. An omitted cell defaults to muted.
+
+#### Complexity 1–5
+
+Replaces the old C15 tier field. 1 = Beginner (≤15 active params for C15), 4 = Expert (full engine surface), 5 reserved for modular patches with unusual matrix coverage. Complexity is a UI hint (filter / sort); runtime behaviour is identical across levels. C15 presets ship at 1..4 (from `presets.js`, still curated from `param-map.js`'s 126-param catalogue); modular ships 13 presets at 1..5 (`modular-presets.js`).
+
+#### Patch Editor & Patch Bay modals
+
+Two full-viewport modals replace the old group-drawer edit flow:
+
+- **Patch Editor** (`js/ui/patch-editor-modal.js`) — card-per-group layout in three columns **Sound / Modulation / Routing** derived from `js/synth/group-columns.js:getColumn(engine, groupName)`. Each group card shows exposed-count, group mute-all, group curve (binds to `preset.groupCurves`), and expands to per-param rows (bypass / mute / min / max / curve / fixed). On the modular engine, the `Matrix` group collapses to a single "Open Patch Bay" card in Routing. Mobile <480px collapses to a single vertical stack. Includes a left slide-out **preset picker** with complexity-filter chips (All / 1..5, only chips that have presets) above a scrollable list (active highlighted; Load dispatches to the engine's `applyPreset`).
+- **Patch Bay** (`js/ui/patch-bay-modal.js`) — modular only. 48×10 matrix editor with mute+depth per cell, sub-engine-aware destination labels (only `d00`=pitch, `d08`=amp, `d09`=pan are stable across sub-engines), live MLP feedback, horizontally scrollable on mobile.
+
+**Entry points**: gear icons in `#synth-quick-controls` (`#patch-editor-gear`, and `#patch-bay-gear` when modular is active — both auto-hide outside synth output mode). Keyboard shortcuts **`E`** (Patch Editor) and **`M`** (Patch Bay, modular only) toggle open/close, gated on synth mode + `INPUT/SELECT/TEXTAREA` focus guard.
+
+#### `getSectionView()` & group columns
+
+`a-app.js:getSectionView(sectionIndex)` is a single codepath for both C15 and Faust engines. Sections are derived from `activeEngine.paramMeta` by bucketing contiguous same-`group` params. The returned view exposes `{ name, color, count, startIndex, column, getCurve, setCurve, getParamName, getParamOverride }`, where `column` is what `getColumn()` returns. This is what the Patch Editor consumes to lay out Sound/Modulation/Routing.
+
+Group → column tables live in `js/synth/group-columns.js` (`C15_GROUP_COLUMNS`, `MODULAR_GROUP_COLUMNS`). ADSR/LFO slots are generated automatically (`ADSR 1..16`, `LFO 1..32` → Modulation).
+
+#### Session memory (per-preset + cross-engine)
+
+`js/nisps/session-memory.js` persists `{weights, dataset, overrides}` keyed by `{engine, presetId}` in `nisps.session.*` localStorage entries. Quota-aware (4 MB budget; prunes oldest on overflow, retries on setItem failure).
+
+- **Per-preset** — on preset swap, the outgoing preset's state is saved and a **restore modal** offers to reload any previously saved state for the incoming preset. Never auto-restores.
+- **Cross-engine** — on engine switch (`EngineSwitcher onSwitch` wrapper in `a-app.js`), the outgoing engine's active preset (or `__no_preset__` pseudo-key if none) is saved and the incoming engine's last state offered via the same modal.
+
+Schema version (`__presetSchemaVersion` from `preset-types.js`) is stored alongside. On mismatch the app shows a modal with **default = Cancel** (non-destructive); only explicit Confirm wipes. Never auto-wipes user weights/examples.
+
+#### Modular normalised `setParam`
+
+`ModularEngine.setParam(label|index, norm01)` is normalised `[0, 1]` via `normToRaw`/`rawToNorm` from `modular-param-meta.js` (679 labels: 23 sound + 16×5 ADSR + 32×3 LFO + 48×10 Matrix). Sibling `setMatrixCell(s, d, norm01)` and `getParam(label)` round-trip through the same metadata. `_setRawByLabel` is the internal escape hatch for Patch Bay / default-patch writes.
+
+#### Mode scoping
+
+Presets affect **only synth output mode**. Visual / MIDI CC / Audio Canvas route MLP outputs unchanged. Switching modes does not disable an active preset; switching back re-engages its bounds immediately.
 
 ### Control Surface (Phase 1)
 

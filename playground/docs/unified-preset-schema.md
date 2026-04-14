@@ -4,7 +4,7 @@ Canonical preset shape for the NISPS playground. A single schema covers **both**
 
 JSDoc typedefs that mirror this document live in `playground/js/synth/preset-types.js`.
 
-> Status: draft contract for epic `meml-iid8`. Issues `meml-7qnz` (bypass-vs-mute), `meml-gqiv` (matrix muted-cell semantics) and `meml-4bin` (normalised `setParam` on modular) fill in runtime semantics.
+> Status: shipped contract for epic `meml-iid8`. All referenced sub-issues (`meml-7qnz` bypass-vs-mute, `meml-gqiv` matrix muted-cell semantics, `meml-4bin` normalised `setParam` on modular, `meml-17mp` unified `getSectionView`) have landed.
 
 ---
 
@@ -245,9 +245,13 @@ The schema is versioned by `__presetSchemaVersion` (exported from `js/synth/pres
 
 ---
 
-## Open questions (tracked as follow-ups)
+## Landed sub-issues
 
-- `meml-7qnz` — **resolved in this doc**: bypass is now a first-class preset flag alongside mute.
-- `meml-gqiv` — **resolved in this doc**: muted matrix cell ⟹ raw 0 and not in paramMeta; curve formula anchored to `param-map.js`; mobile, mode-scoping, and localStorage-migration semantics specified.
-- `meml-4bin` — finalise the normalised `setParam` API on `ModularEngine` so the loader can speak in [0,1] regardless of engine. Must respect `bypassed` (don't route to param) vs `muted` (pin to `fixedValue`).
-- `meml-17mp` — `getSectionView` filters by `bypassed` (hide structurally absent) but shows muted params (visually distinct, toggle-able).
+- `meml-7qnz` — bypass-vs-mute split as first-class preset flags.
+- `meml-gqiv` — muted matrix cell ⟹ raw 0 and not in paramMeta; curve formula anchored to `param-map.js`; mobile, mode-scoping, and localStorage-migration semantics specified.
+- `meml-4bin` — normalised `setParam` API on `ModularEngine`; loader speaks [0,1] regardless of engine. Respects `bypassed` (not routed) vs `muted` (pinned to `fixedValue`).
+- `meml-17mp` — unified `getSectionView` filters by `bypassed`; muted params remain visible + toggle-able.
+- `meml-pu12` / `meml-2l83` — C15 and modular preset migrations.
+- `meml-usd6` / `meml-n3uh` — Patch Bay + Patch Editor modals.
+- `meml-4uye` / `meml-u78y` — per-preset and cross-engine session memory.
+- `meml-iww9` / `meml-coh8` / `meml-ptgi` — preset picker, gear/keyboard entry points, legacy matrix-grid removal.

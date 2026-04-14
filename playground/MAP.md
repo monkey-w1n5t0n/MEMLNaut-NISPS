@@ -95,6 +95,10 @@ Ongoing work to unify C15 and modular presets behind a single schema/loader. Dow
 
 This map will be updated as each issue lands.
 
+Landed contract extensions:
+- `meml-7qnz` — bypass-vs-mute split: `PresetParamEntry` now carries both `bypassed` (structural, affects paramMeta/MLP shape) and `muted` (runtime, pins to `fixedValue`). See `docs/unified-preset-schema.md` § "Bypass vs. mute semantics".
+- `meml-gqiv` — matrix muted cells ⟹ raw 0 and not in paramMeta (not "frozen last value"); canonical curve formula anchored to `param-map.js` `applyCurve()` (`exp = 2^(4*(curve-0.5))`); sub-engine-aware destination labels (only `d00`/`d08`/`d09` stable); mobile <480px collapses columns; presets scope to synth mode only; localStorage version mismatch → modal confirm (never auto-wipe).
+
 ## MLP architecture is experimental (`meml-gmus`)
 
 The MLP is intentionally flexible — resize freely:

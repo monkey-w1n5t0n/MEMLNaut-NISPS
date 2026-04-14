@@ -139,9 +139,27 @@ Most params `bypassed:true`; a curated set included (`bypassed:false`); a few of
 - `> 0.5` — biased high (spends more time near `max`)
 - Values near 0 or 1 are **soft biases, not clamps**. The full `[min, max]` range remains reachable.
 
-Implementation is a simple power-curve: `y = x^k` where `k = 2^(2*(0.5 - curve))` (or similar — implementation detail owned by the renderer). The key contract is monotonic, endpoint-preserving, smooth.
+### Canonical formula (single source of truth)
 
-`groupCurves[group]` applies an additional curve bias on top of each param's `curve`, allowing the user to globally push a whole group (e.g. "Envelopes") more percussive or more sustained without editing every param.
+This matches `applyCurve()` in `js/synth/param-map.js` — treat that function as the reference implementation; any new renderer MUST produce identical output:
+
+```
+exponent = 2 ^ (4 * (curve - 0.5))
+curved   = clamp(x, 0, 1) ^ exponent
+output   = min + curved * (max - min)
+```
+
+Exponent range across `curve ∈ [0,1]`:
+
+| `curve` | exponent | shape |
+|--------:|---------:|-------|
+| 0.0 | 0.25 | strong low-bias (log-like) |
+| 0.5 | 1.00 | linear |
+| 1.0 | 4.00 | strong high-bias (exp-like) |
+
+Note: an earlier draft of this doc suggested `exp = 2^((curve*2)-1)` (range 0.5..2). That formulation is **rejected** in favour of the `param-map.js` implementation above, which has a usefully wider dynamic range and is already shipped in the C15 adapter. All engines (C15, modular, additive, fm) and all preset renderers must use the `param-map.js` formula.
+
+`groupCurves[group]` applies an additional curve bias on top of each param's `curve`, allowing the user to globally push a whole group (e.g. "Envelopes") more percussive or more sustained without editing every param. Group curve composes by multiplying exponents (i.e. applying `applyCurve` twice).
 
 ---
 
@@ -175,8 +193,61 @@ The resolver is pure: feed it a preset + engine metadata and you get a fully-qua
 
 ---
 
+## Matrix cell semantics (see `meml-gqiv`)
+
+Matrix cells use `muted` (not `bypassed`) because the modular matrix is a fixed-shape routing grid — cells don't structurally appear/disappear from the DSP, they're just zeroed.
+
+- **`muted: true`** ⟹ **raw routing value = 0** (hard zero, not "frozen at last value") AND the cell is **not exposed to the MLP**. The MLP has no output for this cell. This is the default for any cell omitted from `matrix`.
+- **`muted: false`** ⟹ cell is live: MLP drives the routing amount within `[min, max]`, biased by `curve`.
+- **`fixedValue` on a muted matrix cell is ignored.** A muted cell is always 0. (If you want a non-zero fixed routing, leave the cell un-muted with `min == max == fixedValue`.)
+
+### Sub-engine-aware destination labels
+
+Matrix destination labels (`d00`..`d09`) **differ per sub-engine**. Only three labels are stable across `subtractive` / `additive` / `fm`:
+
+- `d00` = pitch
+- `d08` = amp
+- `d09` = pan
+
+All other destination slots vary (filter cutoff in subtractive ≠ partial morph in additive ≠ modulator ratio in fm). Matrix-cell metadata keys are therefore **sub-engine-aware**: the same `s00_d05` key means different things across engines. Preset loaders MUST consult `meta.subEngine` when resolving destination semantics. See `faust/MODULAR_DESTINATIONS.md` (per `meml-kw1f`) for the full table.
+
+---
+
+## Mode scoping
+
+Presets affect **only the `synth` output mode.** The other output modes route MLP outputs unchanged by any preset:
+
+- **Visual** — first 20 outputs drive the flow-field visualizer.
+- **MIDI CC** — outputs routed to user-configured CCs.
+- **Audio Canvas** — 36 outputs drive the generative sampler.
+
+Switching to a non-synth mode does not disable/ignore the active preset; it just means the preset's `params`/`matrix` bounds have no consumer. Switching back re-engages them immediately.
+
+---
+
+## Mobile layout
+
+The group-drawer UI (column cards: **Sound** / **Modulation** / **Routing**, per `meml-1gx8`) uses a three-column layout on desktop. Below a **480px viewport width** breakpoint, the columns collapse to a single vertically-scrolling stack. Individual cards remain collapsible/expandable; nothing is hidden, just linearised.
+
+---
+
+## localStorage migration
+
+The schema is versioned by `__presetSchemaVersion` (exported from `js/synth/preset-types.js`). On app boot the loader reads any persisted session and compares its stored version.
+
+**On mismatch**:
+
+1. Show a **modal dialog**: *"Saved session is from an older version and can't be loaded. Reset?"*
+2. **Default action = Cancel** (non-destructive). Cancel leaves localStorage intact and boots with a blank session so the user can export/export-URL the old blob if they need it.
+3. Only on **explicit Confirm** does the app wipe the stale session.
+
+**Do not auto-wipe.** The user's training examples, weights, and preset customisations must never be silently destroyed on schema bumps. (Spec entry only — implementation lives downstream.)
+
+---
+
 ## Open questions (tracked as follow-ups)
 
-- `meml-7qnz` — clarify the enable-param registry (which Faust paths are the canonical bypass switches).
-- `meml-gqiv` — nail down matrix-cell muted semantics when a cell is muted *but* `fixedValue > 0` (is that a "pinned routing" or an error?).
-- `meml-4bin` — finalise the normalised `setParam` API on `ModularEngine` so the loader can speak in [0,1] regardless of engine.
+- `meml-7qnz` — **resolved in this doc**: bypass is now a first-class preset flag alongside mute.
+- `meml-gqiv` — **resolved in this doc**: muted matrix cell ⟹ raw 0 and not in paramMeta; curve formula anchored to `param-map.js`; mobile, mode-scoping, and localStorage-migration semantics specified.
+- `meml-4bin` — finalise the normalised `setParam` API on `ModularEngine` so the loader can speak in [0,1] regardless of engine. Must respect `bypassed` (don't route to param) vs `muted` (pin to `fixedValue`).
+- `meml-17mp` — `getSectionView` filters by `bypassed` (hide structurally absent) but shows muted params (visually distinct, toggle-able).

@@ -55,12 +55,22 @@
  * Destinations depend on the sub-engine (d00 = pitch, d08 = amp, d09 = pan
  * across all sub-engines).
  *
- * Muted semantics for matrix cells differ from regular params: omitted cells
- * are treated as deactivated (muted:true, fixedValue:0). See meml-gqiv.
+ * Matrix cells use `muted` only (no `bypassed`): the matrix is a fixed-shape
+ * routing grid, so cells are either zeroed-and-hidden-from-MLP (`muted:true`)
+ * or live. Per meml-gqiv:
+ *
+ * - `muted:true`  ⟹ raw routing value = 0 (hard zero, NOT frozen last value)
+ *                   AND the cell is NOT exposed to the MLP. `fixedValue` is
+ *                   ignored. Omitted cells default to this.
+ * - `muted:false` ⟹ MLP drives the cell within `[min, max]`, biased by `curve`.
+ *
+ * Destination labels (`d00`..`d09`) are sub-engine-aware. Only `d00` (pitch),
+ * `d08` (amp), `d09` (pan) are stable across subtractive/additive/fm. Loaders
+ * MUST consult `meta.subEngine` when resolving destination semantics.
  *
  * @typedef {Object} PresetMatrixCell
  * @property {boolean} muted
- * @property {number}  [fixedValue]
+ * @property {number}  [fixedValue]   Ignored when muted; use min==max for pinned routing.
  * @property {number}  [min]
  * @property {number}  [max]
  * @property {number}  [curve]

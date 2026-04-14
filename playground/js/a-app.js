@@ -55,9 +55,19 @@ let _rebuilding = false;
 
 // Dirty flag for session-memory saves. Outgoing save (engine/preset switch)
 // skips when false so fresh-init state doesn't evict useful older sessions.
+// The explicit flag tracks user intent (trained, randomised, tweaked);
+// `sessionWorthSaving()` combines it with a heuristic that treats any
+// captured examples as worth saving, so programmatic `iml.addExample` calls
+// (e.g. debug-probe driven tests) are still persisted.
 let _sessionDirty = false;
 function markSessionDirty() { _sessionDirty = true; }
 function clearSessionDirty() { _sessionDirty = false; }
+function sessionWorthSaving() {
+  if (_sessionDirty) return true;
+  if (imlJoy && imlJoy.dataset && imlJoy.dataset.features.length > 0) return true;
+  if (imlHand && imlHand.dataset && imlHand.dataset.features.length > 0) return true;
+  return false;
+}
 
 const VISUAL_PARAM_NAMES = [
   'Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb',
@@ -683,7 +693,7 @@ async function applyPreset(presetId) {
   // --- Step 1: capture outgoing session under its {engine, presetId} key ---
   const prevEngineId = activeEngine?.id ?? 'shaper-feedback';
   const prevPresetId = activeSynthPresetId;
-  if (prevPresetId && prevPresetId !== presetId && _sessionDirty) {
+  if (prevPresetId && prevPresetId !== presetId && sessionWorthSaving()) {
     try {
       saveSessionMem(prevEngineId, prevPresetId, capturePresetSession());
       clearSessionDirty();
@@ -1846,7 +1856,7 @@ async function init() {
       // per-engine __no_preset__ pseudo-key. Reuses the A3 payload shape.
       const prevEngineId = activeEngine?.id ?? null;
       const prevPresetKey = activeSynthPresetId || NO_PRESET_KEY;
-      if (prevEngineId && _sessionDirty) {
+      if (prevEngineId && sessionWorthSaving()) {
         try {
           saveSessionMem(prevEngineId, prevPresetKey, capturePresetSession());
           clearSessionDirty();

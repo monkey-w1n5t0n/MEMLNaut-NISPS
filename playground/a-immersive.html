@@ -52,6 +52,20 @@
         <option value="expert-2">4.2</option>
       </optgroup>
     </select>
+    <!-- meml-coh8: gear icon -> Patch Editor modal (synth mode only) -->
+    <button class="play-btn modal-gear" id="patch-editor-gear" title="Open Patch Editor (E)" aria-label="Open Patch Editor">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="8" cy="8" r="2.2"/>
+        <path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4M12.6 12.6l-1.4-1.4M4.8 4.8L3.4 3.4"/>
+      </svg>
+    </button>
+    <!-- meml-coh8: matrix icon -> Patch Bay modal (modular engine only) -->
+    <button class="play-btn modal-gear" id="patch-bay-gear" title="Open Patch Bay (M)" aria-label="Open Patch Bay" style="display:none">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="4" height="4"/><rect x="10" y="2" width="4" height="4"/>
+        <rect x="2" y="10" width="4" height="4"/><rect x="10" y="10" width="4" height="4"/>
+      </svg>
+    </button>
   </div>
 
   <!-- MIDI CC quick controls (shown in midi-cc mode, mirrors synth quick controls layout) -->

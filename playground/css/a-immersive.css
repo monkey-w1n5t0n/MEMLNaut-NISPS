@@ -1246,6 +1246,15 @@ html, body {
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* meml-coh8: gear-icon launchers sit next to the preset dropdown */
+.play-btn.modal-gear {
+  margin-left: 6px;
+}
+.play-btn.modal-gear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .play-btn.playing {
   border-color: rgba(255, 106, 0, 0.4);
   color: var(--accent);

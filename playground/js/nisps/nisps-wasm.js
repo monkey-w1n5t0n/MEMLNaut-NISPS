@@ -181,6 +181,7 @@ export class WasmIML {
 
   // ---- Inference (WASM, synchronous — fast) ----
   process() {
+    if (this._destroyed) return;
     if (!this.performInference || !this.inputUpdated) return;
     if (!this._mlp) return; // instance torn down / rebuilding
 
@@ -205,7 +206,7 @@ export class WasmIML {
 
   // ---- Batch inference (WASM) ----
   inferBatch(inputPoints) {
-    if (!this._mlp) return inputPoints.map(() => new Array(this.nOutputs).fill(0));
+    if (this._destroyed || !this._mlp) return inputPoints.map(() => new Array(this.nOutputs).fill(0));
     // inputPoints: array of [x,y,...] arrays (each length nInputs)
     // Returns: array of output arrays (each length nOutputs)
     const nPoints = inputPoints.length;
@@ -254,6 +255,7 @@ export class WasmIML {
 
   // ---- Training (WASM, synchronous) ----
   train(options = {}) {
+    if (this._destroyed || !this._mlp) return null;
     if (this.weightsRandomised && this.storedWeights) {
       this._setFlatWeights(this.storedWeights);
       this.weightsRandomised = false;
@@ -334,6 +336,7 @@ export class WasmIML {
 
   // ---- Loss evaluation (WASM, no weight update) ----
   evalLoss() {
+    if (this._destroyed || !this._mlp) return null;
     if (this.dataset.features.length === 0) return null;
 
     const features = this.dataset.features;
@@ -379,6 +382,7 @@ export class WasmIML {
 
   // ---- Weight manipulation ----
   randomiseWeights(spread = 0) {
+    if (this._destroyed || !this._mlp) return;
     this.storedWeights = this._getFlatWeights();
     this._w.drawWeightsSpread(this._mlp, spread);
     this.weightsRandomised = true;
@@ -390,6 +394,7 @@ export class WasmIML {
 
   // outputPinMask: optional Uint8Array[nOutputs], 1 = skip that output node.
   moveWeights(speed, spread = 0, outputPinMask = null) {
+    if (this._destroyed || !this._mlp) return;
     let pinMaskPtr = 0;
 
     if (outputPinMask && outputPinMask.some(v => v)) {
@@ -509,6 +514,7 @@ export class WasmIML {
   get isTraining() { return this._training; }
 
   trainAsync(onComplete) {
+    if (this._destroyed || !this._mlp) return Promise.resolve(null);
     if (this._training) {
       this.log('Training already in progress, skipping.');
       return Promise.resolve(null);
@@ -696,6 +702,9 @@ export class WasmIML {
 
   // ---- Cleanup ----
   destroy() {
+    // Mark destroyed first so concurrent callers short-circuit even if
+    // they race with the WASM teardown below.
+    this._destroyed = true;
     if (this._mlp) {
       this._w.free(this._inputPtr);
       this._w.free(this._outputPtr);

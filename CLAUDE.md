@@ -28,7 +28,7 @@ See `nisps-core/README.md` for complete documentation and examples.
 
 The `playground/` directory contains a browser-based interactive demo of the NISPS ML engine. No build step or dependencies — serve statically.
 
-- **2 inputs** (virtual joystick X/Y) mapped through a `[3, 32, 48, 64, 126]` MLP to **126 outputs**
+- **2 inputs** (virtual joystick X/Y) mapped through a flexible MLP (default `[3, 32, 48, 64, N]`) to **N outputs** where N = count of non-bypassed params from the active preset (4 for Blank Slate, up to 512+ for Full Modular). Internal hidden layers are independent, experimental knobs — resize freely via `?arch=` or `window.__nisps.rebuildArch([...])`.
 - **Four output modes**:
   - **Visual**: first 20 outputs control a Canvas2D flow-field particle system
   - **Synth (C15)**: all 126 outputs control the C15 WASM synthesizer
@@ -108,6 +108,8 @@ The immersive app exposes `window.__nisps` when loaded with `?debug=1`. Used by 
 | `evalLoss()` | Non-destructive loss query |
 | `inferBatch(points)` | Batch inference |
 | `getLayerStats()` | Per-layer weight health |
+| `getArch()` | Active IML's layer shape (e.g. `[3, 32, 48, 64, 126]`) |
+| `rebuildArch([...])` | Rebuild active IML with new layer topology (weights discarded) |
 
 ### URL Parameters
 
@@ -116,6 +118,11 @@ The immersive app exposes `window.__nisps` when loaded with `?debug=1`. Used by 
 | `tame` | 0–1 | 1 | Constrains synth output ranges toward safe limits |
 | `spread` | 0–1 | 0.6 | Controls weight initialization, RL noise scaling, and weight decay (see below) |
 | `preset` | preset id | _(none)_ | Auto-loads a synth parameter preset on first visit (e.g. `?preset=beginner-1`) |
+| `arch` | csv of ints | _(default `3,32,48,64,N`)_ | Overrides MLP topology. Format: `inputs+bias, hidden..., outputs`. The final slot overrides the preset-driven output count (use with care — downstream routing truncates/pads). Example: `?arch=3,16,32,64,126`. |
+
+#### MLP architecture is experimental
+
+The MLP's **output** layer size is **preset-driven** — it equals the count of non-bypassed params from the active preset. The **internal** hidden-layer count and widths are **independent tunable knobs** and are *not sacred* — resize freely. Both `WasmIML.create(nInputs, nOutputs, hiddenLayers, ...)` and `iml.rebuild([...layers])` support arbitrary topologies. See `?arch` URL param and `window.__nisps.rebuildArch([...])` debug probe.
 
 #### `spread` — sigmoid saturation control
 

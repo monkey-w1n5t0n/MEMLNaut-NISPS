@@ -94,3 +94,20 @@ Ongoing work to unify C15 and modular presets behind a single schema/loader. Dow
 - Matrix muted-cell semantics (`meml-gqiv`) and bypass-vs-mute (`meml-7qnz`)
 
 This map will be updated as each issue lands.
+
+## MLP architecture is experimental (`meml-gmus`)
+
+The MLP is intentionally flexible — resize freely:
+
+- **Output layer size** = count of non-bypassed params from the active preset. Ranges from 4 (Blank Slate) to 512+ (Full Modular). Preset apply rebuilds the MLP when the output count or param label order changes. Weights are not preserved across general rebuild (warm-start transfer for joystick IML is handled separately via `WasmIML.createWithWarmStart()`).
+- **Internal hidden layers** are independent tunable knobs. Current defaults `[32, 48, 64]` (joystick) / `[48, 48, 64]` (hands) are NOT sacred.
+- **Runtime mute** on individual outputs does NOT change MLP shape; muted outputs are computed but held at `fixedValue` downstream.
+
+Overrides:
+
+| Route | How |
+|-------|-----|
+| URL | `?arch=3,32,48,64,N` (inputs+bias, hidden..., outputs) |
+| Debug probe | `window.__nisps.rebuildArch([3, 64, 64, 126])` (requires `?debug=1`) |
+| Programmatic | `iml.rebuild([...layerSizes])` on any `WasmIML` |
+| Construction | `WasmIML.create(nInputs, nOutputs, hiddenLayers, ...)` |

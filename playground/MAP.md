@@ -111,3 +111,7 @@ Overrides:
 | Debug probe | `window.__nisps.rebuildArch([3, 64, 64, 126])` (requires `?debug=1`) |
 | Programmatic | `iml.rebuild([...layerSizes])` on any `WasmIML` |
 | Construction | `WasmIML.create(nInputs, nOutputs, hiddenLayers, ...)` |
+
+## Modular param metadata (`meml-kw1f`)
+
+`js/synth/modular-param-meta.js` — hand-curated metadata for the Modular engine (subtractive): `{ unit, rawMin, rawMax, safeMin, safeMax, defaultCurve, humanName, group }` for 679 labels (23 sound params + 16×5 ADSR + 32×3 LFO + 48×10 Matrix). Exports `MODULAR_PARAM_META`, `getMeta`, `normToRaw`, `rawToNorm`, `parseMatrixLabel`. Lets presets use [0,1] normalised bounds against the modular engine. Matrix destination names are subtractive-engine-specific (see `meml-gqiv`).

@@ -4237,6 +4237,8 @@ function wireKeyboard() {
       if (patchEditor.isOpen && patchEditor.isOpen()) {
         patchEditor.close();
       } else {
+        // Prevent modal stacking: close Patch Bay if it's open.
+        if (patchBay?.isOpen && patchBay.isOpen()) patchBay.close();
         patchEditor.setContext({
           engine: activeEngine,
           preset: (() => {
@@ -4261,6 +4263,8 @@ function wireKeyboard() {
       if (patchBay.isOpen && patchBay.isOpen()) {
         patchBay.close();
       } else {
+        // Prevent modal stacking: close Patch Editor if it's open.
+        if (patchEditor?.isOpen && patchEditor.isOpen()) patchEditor.close();
         patchBay.setEngine(activeEngine);
         patchBay.open();
       }

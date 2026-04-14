@@ -59,7 +59,7 @@ Living architecture map for the `playground/` web app. **Updated by every commit
 | `engine-interface.js` | Common interface all engines implement (`setParam`, `getState`, `paramMeta`, …). |
 | `c15-bridge.js`, `c15-adapter.js` | C15 WASM synth integration. |
 | `param-map.js` | Curated 126-param catalogue for C15 (see CLAUDE.md). |
-| `presets.js` | Current C15 synth presets (4 tiers, flat param names). |
+| `presets.js` | C15 synth presets, unified schema (`meml-pu12`): `engine:'c15'`, `complexity:1..4`, `params:{ [label]: { bypassed, muted, fixedValue?, min, max, curve } }`, `groupCurves`. Legacy `tier`/`active`/`overrides`/`mutedOverrides` still emitted as a shim until `meml-17mp` migrates the loader. |
 | `faust-engine-base.js`, `faust-param-meta.js` | Base class + metadata helpers for Faust-based engines. |
 | `modular-engine.js` | Modular synth engine (ADSR/LFO/matrix + sub-engine). |
 | `modular-presets.js` | Current modular presets (snapshot of `getState()` diffs, Faust paths). |
@@ -123,3 +123,5 @@ Overrides:
 ## Modular param metadata (`meml-kw1f`)
 
 `js/synth/modular-param-meta.js` — hand-curated metadata for the Modular engine (subtractive): `{ unit, rawMin, rawMax, safeMin, safeMax, defaultCurve, humanName, group }` for 679 labels (23 sound params + 16×5 ADSR + 32×3 LFO + 48×10 Matrix). Exports `MODULAR_PARAM_META`, `getMeta`, `normToRaw`, `rawToNorm`, `parseMatrixLabel`. Lets presets use [0,1] normalised bounds against the modular engine. Matrix destination names are subtractive-engine-specific (see `meml-gqiv`).
+
+`meml-4bin` landed: `ModularEngine.setParam(label|index, norm01)` is now normalised [0,1] via F2 helpers (`normToRaw`/`rawToNorm`); sibling `setMatrixCell(s, d, norm01)` and `getParam(label)` round-trip through the same metadata. `_setRawByLabel` remains the internal escape hatch for Patch Bay / default-patch writes.

@@ -33,6 +33,7 @@
  */
 
 import { SynthEngine } from './engine-interface.js';
+import { getMeta, normToRaw, rawToNorm } from './modular-param-meta.js';
 
 // -----------------------------------------------------------------------------
 // Sub-engine registry
@@ -416,18 +417,93 @@ export class ModularEngine extends SynthEngine {
   // Real-time control
   // ---------------------------------------------------------------------------
 
-  setParam(index, normalizedValue) {
-    const meta = this._paramMeta[index];
-    if (!meta) return;
-    const raw = meta.min + normalizedValue * (meta.max - meta.min);
-    // Record the write so getState() can see it even if no worklet yet.
-    if (meta.label) this._lastRawByLabel.set(meta.label, raw);
+  /**
+   * Canonical parameter setter. Accepts either a Faust label string (preferred)
+   * or a paramMeta index (legacy overload for inference hot-path callers).
+   * The `norm01` value is always in [0,1]; the raw DSP value is derived from
+   * the label's metadata in `modular-param-meta.js` (safe range + curve).
+   *
+   * Bypass/mute policy: callers should check preset bypass/mute status before
+   * calling setParam — bypassed params may not be present in `paramMeta` and
+   * muted params should be driven to their fixed/zero value via preset-loader
+   * logic rather than this hot-path entrypoint. See preset-types.js typedefs
+   * `PresetParamEntry` / `PresetMatrixCell`.
+   *
+   * @param {string|number} labelOrIndex  Faust label (e.g. '3_Filter/00_cutoff')
+   *                                      or paramMeta index.
+   * @param {number} norm01               Normalised [0,1] value.
+   */
+  setParam(labelOrIndex, norm01) {
+    let label = null;
+    let meta = null;
+    if (typeof labelOrIndex === 'string') {
+      label = labelOrIndex;
+      // Prefer paramMeta lookup (carries faustIndex); fall back to walk map.
+      meta = this._paramMeta.find(m => m.label === label)
+          || this._labelToWalk.get(label)
+          || null;
+    } else {
+      meta = this._paramMeta[labelOrIndex];
+      label = meta?.label ?? null;
+    }
+    if (!label) return;
+
+    const raw = normToRaw(label, norm01);
+    this._lastRawByLabel.set(label, raw);
     if (!this._workletNode) return;
-    this._workletNode.port.postMessage({
-      type:  'setParam',
-      index: meta.faustIndex,
-      value: raw,
-    });
+
+    // Prefer index-based message when we have a faustIndex (faster path on
+    // the worklet side); otherwise fall back to label-based addressing.
+    const faustIndex = meta?.faustIndex ?? meta?.nispsIndex;
+    if (typeof faustIndex === 'number') {
+      this._workletNode.port.postMessage({
+        type:  'setParam',
+        index: faustIndex,
+        value: raw,
+      });
+    } else {
+      this._workletNode.port.postMessage({
+        type:  'setByLabel',
+        label,
+        value: raw,
+      });
+    }
+  }
+
+  /**
+   * Set a matrix cell from a normalised [0,1] value. The DSP matrix amount is
+   * bipolar [-1,+1] (safe range ±0.9 per modular-param-meta.js); callers that
+   * already hold a signed value can either convert via `(v + 1) / 2` or call
+   * `_setRawByLabel` directly.
+   *
+   * @param {number} s        0..47 source index
+   * @param {number} d        0..9  destination index
+   * @param {number} norm01   Normalised [0,1] — 0.5 == no modulation
+   */
+  setMatrixCell(s, d, norm01) {
+    const cfg = this._subCfg;
+    const destName = cfg?.destNames?.[d];
+    if (!destName) return;
+    const label = `MM_Matrix/s${String(s).padStart(2, '0')}_d${String(d).padStart(2, '0')}_${destName}`;
+    if (!this._labelToWalk.has(label)) return;
+    this.setParam(label, norm01);
+  }
+
+  /**
+   * Read back the normalised [0,1] value most recently written for a label,
+   * using `rawToNorm` so the returned value round-trips with `setParam`.
+   * Returns `undefined` for unknown labels.
+   *
+   * @param {string} label
+   * @returns {number | undefined}
+   */
+  getParam(label) {
+    if (typeof label !== 'string') return undefined;
+    if (!this._labelToWalk.has(label)) return undefined;
+    const raw = this._lastRawByLabel.has(label)
+      ? this._lastRawByLabel.get(label)
+      : this._labelToWalk.get(label).init;
+    return rawToNorm(label, raw);
   }
 
   noteOn(note, vel = 0.7) {

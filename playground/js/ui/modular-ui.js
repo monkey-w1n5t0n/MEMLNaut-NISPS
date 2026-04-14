@@ -283,20 +283,14 @@ export function initModularUI({ getEngine, onStateChange } = {}) {
     const engine = getEngine?.();
     if (!engine || engine.id !== 'modular') return;
 
-    // Prefer routing through paramMeta (engine.setParam) so the write
-    // is visible to getDefaultNormalizedOutputs() and to the a-app's
-    // inference routing path. The cell exists in paramMeta by default
-    // now that matrix cells are MLP-driven. Fall back to _setRawByLabel
-    // if the index lookup fails (e.g. sub-engine swap in flight).
-    const idx = matrixIndexCache.get(`${s}|${d}`);
-    if (idx != null) {
-      const meta = engine.paramMeta[idx];
-      if (meta) {
-        const range = (meta.max - meta.min) || 1;
-        const norm = Math.max(0, Math.min(1, (v - meta.min) / range));
-        engine.setParam(idx, norm);
-        return;
-      }
+    // Prefer routing through the canonical normalised API (meml-4bin): map
+    // signed [-1,+1] cell amount to [0,1] and let setMatrixCell apply the
+    // safe range + curve via modular-param-meta.js. Falls back to the raw
+    // escape hatch for sub-engines whose destName isn't available yet.
+    if (typeof engine.setMatrixCell === 'function') {
+      const norm = Math.max(0, Math.min(1, (v + 1) / 2));
+      engine.setMatrixCell(s, d, norm);
+      return;
     }
     const destName = (engine.destNames || [])[d];
     if (!destName) return;

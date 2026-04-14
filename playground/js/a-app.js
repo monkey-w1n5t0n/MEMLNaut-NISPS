@@ -514,6 +514,11 @@ function isParamMuted(paramIndex) {
  */
 // ---- Per-preset session memory helpers (meml-4uye) ----
 
+// Pseudo-preset id used when the engine has no active preset at save time.
+// Scoped per engine via the session key (nisps.session.<engine>.__no_preset__).
+// Used by the cross-engine switch save/restore flow (meml-u78y).
+const NO_PRESET_KEY = '__no_preset__';
+
 /**
  * Capture a snapshot of the current preset's ML state.
  * Returned object is JSON-serializable.
@@ -1628,6 +1633,20 @@ async function init() {
       if (engineId === activeEngine?.id) return;
 
       EngineSwitcher.setLoading(engineId, true);
+
+      // meml-u78y: BEFORE the swap commits, save current state under the
+      // outgoing {engine, presetId} key. If no preset is active, use the
+      // per-engine __no_preset__ pseudo-key. Reuses the A3 payload shape.
+      const prevEngineId = activeEngine?.id ?? null;
+      const prevPresetKey = activeSynthPresetId || NO_PRESET_KEY;
+      if (prevEngineId) {
+        try {
+          saveSessionMem(prevEngineId, prevPresetKey, capturePresetSession());
+        } catch (e) {
+          console.warn('[NISPS] engine-switch session save (outgoing) failed:', e);
+        }
+      }
+
       try {
         let newEngine;
         if (engineId === 'shaper-feedback') {
@@ -1704,6 +1723,35 @@ async function init() {
           }
 
           await setActiveEngine(newEngine);
+
+          // meml-u78y: AFTER the new engine is ready, check for a prior
+          // session saved under {newEngine, __no_preset__}. We key by
+          // __no_preset__ because setActiveEngine() clears activeSynthPresetId;
+          // any prior preset-scoped restore will fire later via applyPreset().
+          try {
+            const saved = loadSessionMem(engineId, NO_PRESET_KEY);
+            if (saved && saved.payload) {
+              const exampleCount = (saved.payload.joy?.features?.length ?? 0)
+                                 + (saved.payload.hand?.features?.length ?? 0);
+              const choice = await showRestoreModal({
+                presetName: `${newEngine.displayName} (no preset)`,
+                timestamp: saved.timestamp,
+                exampleCount,
+              });
+              if (choice === 'restore') {
+                restorePresetSession(saved.payload);
+                saveState();
+                console.log(`[NISPS] Restored prior no-preset session for engine ${engineId}`);
+              } else if (choice === 'fresh') {
+                freshPresetSession();
+                saveState();
+                console.log(`[NISPS] Started fresh no-preset session for engine ${engineId}`);
+              }
+              // 'cancel' → leave state as-is (default engine init).
+            }
+          } catch (e) {
+            console.warn('[NISPS] engine-switch restore check failed:', e);
+          }
         }
       } catch (err) {
         console.error('[EngineSwitcher] Failed to switch engine:', err);

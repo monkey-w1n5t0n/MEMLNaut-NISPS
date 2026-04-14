@@ -25,7 +25,7 @@ Living architecture map for the `playground/` web app. **Updated by every commit
 | File | Role |
 |------|------|
 | `nisps-wasm.js` | Main-thread `WasmIML` wrapper around the WASM MLP. |
-| `session-memory.js` | Per-preset session memory (`meml-4uye`): save/load weights+dataset+overrides keyed by `{engine, presetId}` in `nisps.session.*` localStorage entries, quota-aware (4 MB budget, prunes oldest), includes the restore modal. |
+| `session-memory.js` | Per-preset session memory (`meml-4uye`): save/load weights+dataset+overrides keyed by `{engine, presetId}` in `nisps.session.*` localStorage entries, quota-aware (4 MB budget, prunes oldest), includes the restore modal. Also used by cross-engine switch (`meml-u78y`): save/restore under `{engine, presetId}` when a preset is active, or `{engine, '__no_preset__'}` pseudo-key when none is active at switch time. Engine-switch callsites live in `a-app.js` (EngineSwitcher `onSwitch` wrapper) — reuse A3 payload + modal; don't auto-restore. |
 | `nisps-wasm-worker.js` | Worker-side WASM instance for off-thread training. |
 | `dataset.js` | FIFO ring-buffer training set + recency/spatial weighting. |
 | `iml.js`, `mlp.js`, `layer.js`, `node.js` | Legacy JS MLP engine (used by old variants only). |

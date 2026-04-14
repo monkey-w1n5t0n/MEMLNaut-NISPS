@@ -135,6 +135,7 @@ export class WasmIML {
     // Worker for async training
     this._worker = null;
     this._training = false;
+    this._pendingTrainResolve = null;
   }
 
   _createMLP() {
@@ -181,6 +182,7 @@ export class WasmIML {
   // ---- Inference (WASM, synchronous — fast) ----
   process() {
     if (!this.performInference || !this.inputUpdated) return;
+    if (!this._mlp) return; // instance torn down / rebuilding
 
     // Write input + bias into persistent WASM buffer
     const heap = this._w.mod.HEAPF32;
@@ -203,6 +205,7 @@ export class WasmIML {
 
   // ---- Batch inference (WASM) ----
   inferBatch(inputPoints) {
+    if (!this._mlp) return inputPoints.map(() => new Array(this.nOutputs).fill(0));
     // inputPoints: array of [x,y,...] arrays (each length nInputs)
     // Returns: array of output arrays (each length nOutputs)
     const nPoints = inputPoints.length;
@@ -542,10 +545,12 @@ export class WasmIML {
     }
 
     return new Promise((resolve) => {
+      this._pendingTrainResolve = resolve;
       const handler = (e) => {
         if (e.data.type === 'trained') {
-          this._worker.removeEventListener('message', handler);
+          if (this._worker) this._worker.removeEventListener('message', handler);
           this._training = false;
+          this._pendingTrainResolve = null;
 
           const { weights, loss, lossHistory } = e.data.payload;
 
@@ -673,8 +678,14 @@ export class WasmIML {
       this.dataset.labels = keptL;
     }
 
-    // Terminate worker — it holds a stale WASM instance of the old shape
+    // Terminate worker — it holds a stale WASM instance of the old shape.
+    // Resolve any pending trainAsync promise so callers don't hang forever.
     if (this._worker) {
+      if (this._pendingTrainResolve) {
+        try { this._pendingTrainResolve({ cancelled: true, finalLoss: null, lossCurve: [] }); }
+        catch (_) { /* ignore */ }
+        this._pendingTrainResolve = null;
+      }
       this._worker.terminate();
       this._worker = null;
     }
@@ -692,8 +703,14 @@ export class WasmIML {
       this._mlp = null;
     }
     if (this._worker) {
+      if (this._pendingTrainResolve) {
+        try { this._pendingTrainResolve({ cancelled: true, finalLoss: null, lossCurve: [] }); }
+        catch (_) { /* ignore */ }
+        this._pendingTrainResolve = null;
+      }
       this._worker.terminate();
       this._worker = null;
     }
+    this._training = false;
   }
 }

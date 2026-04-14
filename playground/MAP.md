@@ -62,7 +62,7 @@ Living architecture map for the `playground/` web app. **Updated by every commit
 | `presets.js` | C15 synth presets, unified schema (`meml-pu12`): `engine:'c15'`, `complexity:1..4`, `params:{ [label]: { bypassed, muted, fixedValue?, min, max, curve } }`, `groupCurves`. Legacy `tier`/`active`/`overrides`/`mutedOverrides` still emitted as a shim until `meml-17mp` migrates the loader. |
 | `faust-engine-base.js`, `faust-param-meta.js` | Base class + metadata helpers for Faust-based engines. |
 | `modular-engine.js` | Modular synth engine (ADSR/LFO/matrix + sub-engine). |
-| `modular-presets.js` | Current modular presets (snapshot of `getState()` diffs, Faust paths). |
+| `modular-presets.js` | Modular presets, unified schema (`meml-2l83`): `engine:'modular'`, `complexity:1..5`, `meta:{subEngine,adsrCount,lfoCount}`, normalised `params` + `matrix` (cellKey `sNN_dNN`), `groupCurves`. Legacy `state` field still emitted as a shim (consumed by current `applyPreset` / `modular-ui.js`) until `meml-17mp` migrates the loader. 13 presets total (6 legacy ported + 7 new curated: Wide Timbre, Blank Slate, Filter Study, Rhythmic Motion, Envelope Sculptor, Routing Sketch, Full Modular). |
 | `additive-engine.js`, `additive-presets.js` | Additive engine + presets. |
 | `fm-engine.js`, `fm-presets.js` | FM engine + presets. |
 | `arpeggiator.js`, `arpeggiator-worker.js` | Arp clock / note generation. |

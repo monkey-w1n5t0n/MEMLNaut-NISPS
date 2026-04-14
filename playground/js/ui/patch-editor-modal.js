@@ -57,8 +57,9 @@ export function closePatchEditor() { _singleton?.close(); }
  * @param {Function}[opts.sectionView]   (sectionIndex) → section view (a-app.js:getSectionView)
  * @param {Function}[opts.sectionCount]  () → number of sections
  * @param {Function}[opts.onChange]      called after any mutation: () => void
+ * @param {Function}[opts.onLoadPreset]  called when user picks a preset in the picker: (presetId) => void
  */
-export function createPatchEditor({ engine, preset, sectionView, sectionCount, onChange } = {}) {
+export function createPatchEditor({ engine, preset, sectionView, sectionCount, onChange, onLoadPreset } = {}) {
   injectStyles();
 
   let _engine    = engine || null;
@@ -66,6 +67,12 @@ export function createPatchEditor({ engine, preset, sectionView, sectionCount, o
   let _viewFn    = typeof sectionView  === 'function' ? sectionView  : () => null;
   let _countFn   = typeof sectionCount === 'function' ? sectionCount : () => 0;
   let _onChange  = typeof onChange     === 'function' ? onChange     : () => {};
+  let _onLoad    = typeof onLoadPreset === 'function' ? onLoadPreset : () => {};
+
+  // Preset picker state
+  let _presets       = [];       // array of { id, name, description, complexity? }
+  let _activePresetId = null;
+  let _chipFilter     = 'all';   // 'all' | 1 | 2 | 3 | 4 | 5
 
   // Track expand-state per group name so re-renders preserve it.
   const _expanded = new Set();
@@ -78,11 +85,20 @@ export function createPatchEditor({ engine, preset, sectionView, sectionCount, o
     <div class="pe-backdrop"></div>
     <div class="pe-modal" role="dialog" aria-label="Patch Editor">
       <div class="pe-header">
+        <button class="pe-btn pe-presets-toggle" title="Presets (P)" aria-label="Presets">☰ Presets</button>
         <div class="pe-title">Patch Editor</div>
         <div class="pe-subtitle" data-pe-subtitle></div>
         <div class="pe-spacer"></div>
         <button class="pe-btn pe-close" title="Close (Esc)" aria-label="Close">×</button>
       </div>
+      <aside class="pe-presets-panel" data-pe-presets-panel aria-label="Preset picker">
+        <div class="pe-presets-head">
+          <div class="pe-presets-title">Presets</div>
+          <div class="pe-presets-engine" data-pe-presets-engine></div>
+        </div>
+        <div class="pe-presets-chips" data-pe-presets-chips></div>
+        <div class="pe-presets-list" data-pe-presets-list></div>
+      </aside>
       <div class="pe-columns">
         <div class="pe-col" data-col="Sound">
           <div class="pe-col-header">Sound</div>
@@ -110,8 +126,20 @@ export function createPatchEditor({ engine, preset, sectionView, sectionCount, o
     Routing:    root.querySelector('[data-col-body="Routing"]'),
   };
 
+  const presetsToggle = root.querySelector('.pe-presets-toggle');
+  const presetsPanel  = root.querySelector('[data-pe-presets-panel]');
+  const presetsEngine = root.querySelector('[data-pe-presets-engine]');
+  const presetsChips  = root.querySelector('[data-pe-presets-chips]');
+  const presetsList   = root.querySelector('[data-pe-presets-list]');
+
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', close);
+  presetsToggle.addEventListener('click', () => {
+    const open = !presetsPanel.classList.contains('open');
+    presetsPanel.classList.toggle('open', open);
+    root.querySelector('.pe-modal').classList.toggle('presets-open', open);
+    if (open) buildPresetPicker();
+  });
 
   const onKey = (e) => {
     if (root.classList.contains('hidden')) return;
@@ -164,6 +192,104 @@ export function createPatchEditor({ engine, preset, sectionView, sectionCount, o
         el.innerHTML = `<div class="pe-empty">No ${colName.toLowerCase()} groups.</div>`;
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Preset picker (side panel)
+  // ---------------------------------------------------------------------------
+
+  function _complexityOf(p) {
+    return p.complexity ?? p.tier ?? null;
+  }
+
+  function buildPresetPicker() {
+    if (!presetsChips || !presetsList) return;
+    presetsChips.innerHTML = '';
+    presetsList.innerHTML  = '';
+
+    if (presetsEngine) {
+      presetsEngine.textContent = _engine ? (_engine.displayName || _engine.id || '') : '';
+    }
+
+    if (!_presets.length) {
+      presetsList.innerHTML = '<div class="pe-empty">No presets for this engine.</div>';
+      return;
+    }
+
+    // Collect distinct complexities present
+    const cxSet = new Set();
+    for (const p of _presets) {
+      const c = _complexityOf(p);
+      if (c != null) cxSet.add(c);
+    }
+    const cxList = Array.from(cxSet).sort((a, b) => a - b);
+
+    // Chip row: All + each existing complexity
+    const makeChip = (val, label) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pe-chip';
+      b.textContent = label;
+      b.dataset.val = String(val);
+      if ((val === 'all' && _chipFilter === 'all') || val === _chipFilter) b.classList.add('on');
+      b.addEventListener('click', () => {
+        _chipFilter = val;
+        buildPresetPicker();
+      });
+      return b;
+    };
+    presetsChips.appendChild(makeChip('all', 'All'));
+    for (const c of cxList) presetsChips.appendChild(makeChip(c, String(c)));
+
+    // Filter + render list
+    const filtered = _chipFilter === 'all'
+      ? _presets.slice()
+      : _presets.filter(p => _complexityOf(p) === _chipFilter);
+
+    // Sort by complexity asc then name
+    filtered.sort((a, b) => {
+      const ca = _complexityOf(a) ?? 99;
+      const cb = _complexityOf(b) ?? 99;
+      if (ca !== cb) return ca - cb;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+
+    if (!filtered.length) {
+      presetsList.innerHTML = '<div class="pe-empty">No presets match this filter.</div>';
+      return;
+    }
+
+    for (const p of filtered) {
+      const row = document.createElement('div');
+      row.className = 'pe-preset-row';
+      if (p.id === _activePresetId) row.classList.add('active');
+      const cx = _complexityOf(p);
+      row.innerHTML = `
+        <div class="pe-preset-row-main">
+          <div class="pe-preset-name">${escapeHtml(p.name || p.id)}</div>
+          <div class="pe-preset-desc">${escapeHtml(p.description || '')}</div>
+        </div>
+        <div class="pe-preset-row-side">
+          ${cx != null ? `<span class="pe-badge">C${cx}</span>` : ''}
+          <button class="pe-btn pe-btn-small pe-preset-load">Load</button>
+        </div>
+      `;
+      const load = () => {
+        try { _onLoad(p.id); } catch (e) { console.warn('[patch-editor] onLoadPreset threw', e); }
+      };
+      row.querySelector('.pe-preset-load').addEventListener('click', (e) => {
+        e.stopPropagation();
+        load();
+      });
+      row.addEventListener('click', load);
+      presetsList.appendChild(row);
+    }
+  }
+
+  function setPresets(presets, activePresetId) {
+    _presets        = Array.isArray(presets) ? presets.slice() : [];
+    _activePresetId = activePresetId ?? null;
+    buildPresetPicker();
   }
 
   // ---------------------------------------------------------------------------
@@ -437,6 +563,7 @@ export function createPatchEditor({ engine, preset, sectionView, sectionCount, o
 
   function open() {
     build();
+    buildPresetPicker();
     root.classList.remove('hidden');
     root.setAttribute('aria-hidden', 'false');
   }
@@ -459,7 +586,7 @@ export function createPatchEditor({ engine, preset, sectionView, sectionCount, o
     if (_singleton && _singleton.root === root) _singleton = null;
   }
 
-  const api = { open, close, isOpen, refresh, setContext, teardown, root };
+  const api = { open, close, isOpen, refresh, setContext, setPresets, teardown, root };
   _singleton = api;
   return api;
 }
@@ -582,6 +709,65 @@ function injectStyles() {
 }
 .pe-mini { display: flex; flex-direction: column; gap: 1px; font-size: 9px; color: #888; }
 .pe-mini input { width: 100%; margin: 0; }
+
+.pe-presets-toggle { font-size: 11px; }
+
+.pe-presets-panel {
+  position: absolute; top: 44px; bottom: 0; left: 0; width: 320px;
+  background: #141416; border-right: 1px solid #2a2a2e;
+  transform: translateX(-100%);
+  transition: transform 180ms ease;
+  display: flex; flex-direction: column; overflow: hidden; z-index: 2;
+}
+.pe-presets-panel.open { transform: translateX(0); }
+.pe-modal.presets-open .pe-columns { margin-left: 320px; }
+.pe-columns { transition: margin-left 180ms ease; }
+
+.pe-presets-head {
+  padding: 10px 12px; border-bottom: 1px solid #2a2a2e; background: #1a1a1d;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.pe-presets-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.pe-presets-engine { font-size: 11px; color: #9aa; }
+
+.pe-presets-chips {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 8px 12px; border-bottom: 1px solid #2a2a2e;
+}
+.pe-chip {
+  background: #222; border: 1px solid #333; color: #bbb;
+  border-radius: 12px; padding: 3px 10px; font: inherit; font-size: 11px;
+  cursor: pointer;
+}
+.pe-chip:hover { background: #2d2d31; color: #eee; }
+.pe-chip.on { background: #ff6a00; border-color: #ff6a00; color: #fff; }
+
+.pe-presets-list { flex: 1; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.pe-preset-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid transparent;
+}
+.pe-preset-row:hover { background: rgba(255,255,255,0.05); }
+.pe-preset-row.active { border-color: #ff6a00; background: rgba(255,106,0,0.1); }
+.pe-preset-row-main { flex: 1; min-width: 0; }
+.pe-preset-name { font-size: 12px; font-weight: 600; color: #eee; }
+.pe-preset-desc {
+  font-size: 10px; color: #888; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.pe-preset-row-side { display: flex; align-items: center; gap: 6px; }
+.pe-badge {
+  background: #2a2a2e; color: #aaa; font-size: 10px; font-weight: 600;
+  padding: 2px 6px; border-radius: 10px; border: 1px solid #3a3a3e;
+}
+
+@media (max-width: 480px) {
+  .pe-presets-panel { width: 100%; top: 44px; }
+  .pe-modal.presets-open .pe-columns { margin-left: 0; display: none; }
+}
 
 @media (max-width: 480px) {
   .pe-modal { inset: 0; border-radius: 0; }

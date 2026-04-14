@@ -429,8 +429,20 @@ function getPresetsForEngine(engineId) {
     case 'shaper-feedback': return SYNTH_PRESETS;
     case 'additive':        return ADDITIVE_PRESETS;
     case 'fm':              return FM_PRESETS;
+    case 'modular':         return MODULAR_PRESETS;
     default:                return [];
   }
+}
+
+/**
+ * Sync the Patch Editor preset picker with the current engine + active preset.
+ * Safe to call before `patchEditor` is created.
+ */
+function syncPatchEditorPresets() {
+  if (!patchEditor) return;
+  const engineId = activeEngine?.id ?? 'shaper-feedback';
+  const presets = getPresetsForEngine(engineId);
+  try { patchEditor.setPresets(presets, activeSynthPresetId); } catch (e) { /* non-fatal */ }
 }
 
 /**
@@ -794,6 +806,13 @@ async function applyPreset(presetId) {
   // Update the preset dropdown
   const $presetSelect = document.getElementById('synth-preset-select');
   if ($presetSelect) $presetSelect.value = presetId;
+
+  // meml-coh8: propagate to Patch Editor + Patch Bay so open modals refresh.
+  if (patchEditor) patchEditor.setContext({ engine: activeEngine, preset });
+  if (patchBay && typeof patchBay.setPreset === 'function') patchBay.setPreset(preset);
+
+  // Sync Patch Editor preset picker (active highlight)
+  syncPatchEditorPresets();
 
   // Save to storage
   saveState();
@@ -1473,19 +1492,31 @@ async function setActiveEngine(engine) {
   // Clear active preset — it belongs to the previous engine
   activeSynthPresetId = null;
 
+  // Sync Patch Editor preset picker to the new engine's preset list
+  syncPatchEditorPresets();
+
   // Modular UI show/hide (Phase C). The UI is created once during init()
   // and stays in the DOM; we toggle its visibility via the dock icon.
   if (modularUI) {
     if (engine.id === 'modular') modularUI.show();
     else                         modularUI.hide();
   }
-  // meml-usd6: sync Patch Bay engine binding + temp launcher visibility
+  // meml-usd6: sync Patch Bay engine binding + launcher visibility
   if (patchBay) {
     patchBay.setEngine(engine.id === 'modular' ? engine : null);
     if (engine.id !== 'modular' && patchBay.isOpen()) patchBay.close();
   }
   const pbBtn = window.__patchBayLaunchBtn;
   if (pbBtn) pbBtn.style.display = engine.id === 'modular' ? '' : 'none';
+
+  // meml-coh8: Patch Editor follows the active engine + preset.
+  if (patchEditor) {
+    const engineId = engine.id ?? 'shaper-feedback';
+    const presets = getPresetsForEngine(engineId);
+    const curPreset = presets.find(p => p.id === activeSynthPresetId) || null;
+    patchEditor.setContext({ engine, preset: curPreset });
+    if (patchEditor.isOpen && patchEditor.isOpen()) patchEditor.close();
+  }
 }
 
 async function resizeMLP(newOutputCount) {
@@ -1786,53 +1817,39 @@ async function init() {
     console.error('[NISPS] Failed to init modular UI:', err);
   }
 
-  // meml-usd6: Patch Bay modal — full-viewport 48×10 matrix editor,
-  // replacing the cramped grid in modular-ui.js. meml-coh8 will wire a
-  // proper entry point (M keyboard shortcut + Routing column button);
-  // for now we expose a temporary visible button so it's reachable.
+  // meml-coh8: helper — resolve currently-active preset for the active engine.
+  const _currentPreset = () => {
+    const engineId = activeEngine?.id ?? 'shaper-feedback';
+    const presets = getPresetsForEngine(engineId);
+    return presets.find(p => p.id === activeSynthPresetId) || null;
+  };
+
+  // meml-usd6: Patch Bay modal — full-viewport 48×10 matrix editor.
+  // meml-coh8: entry point is the matrix-icon button in the groups bar
+  // (#patch-bay-gear) + the `M` keyboard shortcut.
   try {
     patchBay = createPatchBay({
       engine: activeEngine?.id === 'modular' ? activeEngine : null,
-      preset: null, // preset integration comes in meml-coh8
+      preset: _currentPreset(),
       onChange: () => saveState(),
     });
-    // Temporary launcher button (removed by meml-coh8). Visible only when
-    // modular engine is active.
-    const btn = document.createElement('button');
-    btn.id = 'patch-bay-temp-launch';
-    btn.textContent = 'Patch Bay';
-    btn.title = 'Open Patch Bay (48×10 modulation matrix)';
-    btn.style.cssText = [
-      'position:fixed', 'bottom:12px', 'right:12px', 'z-index:9000',
-      'background:#ff6a00', 'color:#fff', 'border:0', 'border-radius:6px',
-      'padding:8px 14px', 'font:inherit', 'font-size:12px', 'font-weight:600',
-      'cursor:pointer', 'box-shadow:0 4px 12px rgba(0,0,0,0.4)',
-    ].join(';');
-    btn.addEventListener('click', () => {
-      // Re-bind engine at click time in case it was swapped
-      if (patchBay) {
+    const pbGear = document.getElementById('patch-bay-gear');
+    if (pbGear) {
+      pbGear.addEventListener('click', () => {
+        if (!patchBay) return;
         patchBay.setEngine(activeEngine?.id === 'modular' ? activeEngine : null);
         patchBay.open();
-      }
-    });
-    btn.style.display = activeEngine?.id === 'modular' ? '' : 'none';
-    document.body.appendChild(btn);
-    // Update visibility when engine swaps (piggy-back on the modularUI
-    // show/hide site below — handled by existing engine-change flow).
-    window.__patchBayLaunchBtn = btn;
+      });
+      pbGear.style.display = activeEngine?.id === 'modular' ? '' : 'none';
+    }
+    window.__patchBayLaunchBtn = pbGear || null;
   } catch (err) {
     console.error('[NISPS] Failed to init Patch Bay:', err);
   }
 
   // meml-n3uh: Patch Editor modal — card-per-group three-column editor
-  // (Sound | Modulation | Routing). meml-coh8 will add a gear icon and
-  // keyboard shortcut; for now expose a temporary launcher button.
+  // (Sound | Modulation | Routing). meml-coh8: gear icon + `E` shortcut.
   try {
-    const _currentPreset = () => {
-      const engineId = activeEngine?.id ?? 'shaper-feedback';
-      const presets = getPresetsForEngine(engineId);
-      return presets.find(p => p.id === activeSynthPresetId) || null;
-    };
     patchEditor = createPatchEditor({
       engine: activeEngine,
       preset: _currentPreset(),
@@ -1846,34 +1863,47 @@ async function init() {
         try { routeOutputs(iml.getOutputs()); } catch (e) { /* non-fatal */ }
         saveState();
       },
+      onLoadPreset: async (presetId) => {
+        const engineId = activeEngine?.id ?? 'shaper-feedback';
+        try {
+          if (engineId === 'modular') {
+            const p = findModularPreset(presetId);
+            if (p) await applyModularPreset(activeEngine, p);
+            activeSynthPresetId = presetId;
+            saveState();
+          } else {
+            await applyPreset(presetId);
+          }
+        } catch (e) {
+          console.warn('[NISPS] preset load via picker failed:', e);
+        }
+        // Refresh picker to highlight new active preset + sync dropdown
+        syncPatchEditorPresets();
+        const $ps = document.getElementById('synth-preset-select');
+        if ($ps) $ps.value = presetId;
+        if (patchEditor?.isOpen()) patchEditor.refresh();
+      },
     });
-    const peBtn = document.createElement('button');
-    peBtn.id = 'patch-editor-temp-launch';
-    peBtn.textContent = 'Edit Patch';
-    peBtn.title = 'Open Patch Editor (card-per-group)';
-    peBtn.style.cssText = [
-      'position:fixed', 'bottom:12px', 'right:120px', 'z-index:9000',
-      'background:#2a2a2e', 'color:#eee', 'border:1px solid #3a3a3e',
-      'border-radius:6px', 'padding:8px 14px', 'font:inherit',
-      'font-size:12px', 'font-weight:600', 'cursor:pointer',
-      'box-shadow:0 4px 12px rgba(0,0,0,0.4)',
-    ].join(';');
-    peBtn.addEventListener('click', () => {
-      if (!patchEditor) return;
-      patchEditor.setContext({
-        engine: activeEngine,
-        preset: _currentPreset(),
-        sectionView: (si) => getSectionView(si),
-        sectionCount: () => {
-          const engineId = activeEngine?.id ?? 'shaper-feedback';
-          if (engineId === 'shaper-feedback') return SYNTH_SECTIONS.length;
-          return nonC15Sections.length;
-        },
+    // Populate picker now that editor exists
+    syncPatchEditorPresets();
+    const peGear = document.getElementById('patch-editor-gear');
+    if (peGear) {
+      peGear.addEventListener('click', () => {
+        if (!patchEditor) return;
+        patchEditor.setContext({
+          engine: activeEngine,
+          preset: _currentPreset(),
+          sectionView: (si) => getSectionView(si),
+          sectionCount: () => {
+            const engineId = activeEngine?.id ?? 'shaper-feedback';
+            if (engineId === 'shaper-feedback') return SYNTH_SECTIONS.length;
+            return nonC15Sections.length;
+          },
+        });
+        patchEditor.open();
       });
-      patchEditor.open();
-    });
-    document.body.appendChild(peBtn);
-    window.__patchEditorLaunchBtn = peBtn;
+    }
+    window.__patchEditorLaunchBtn = peGear || null;
   } catch (err) {
     console.error('[NISPS] Failed to init Patch Editor:', err);
   }
@@ -4143,6 +4173,41 @@ function wireKeyboard() {
     } else if (e.key === 'z' || e.key === 'Z') {
       e.preventDefault();
       onUndo();
+    } else if (e.key === 'e' || e.key === 'E') {
+      // meml-coh8: open Patch Editor (toggle). Only meaningful in synth mode.
+      if (outputMode !== 'synth') return;
+      if (!patchEditor) return;
+      e.preventDefault();
+      if (patchEditor.isOpen && patchEditor.isOpen()) {
+        patchEditor.close();
+      } else {
+        patchEditor.setContext({
+          engine: activeEngine,
+          preset: (() => {
+            const engineId = activeEngine?.id ?? 'shaper-feedback';
+            const presets = getPresetsForEngine(engineId);
+            return presets.find(p => p.id === activeSynthPresetId) || null;
+          })(),
+          sectionView: (si) => getSectionView(si),
+          sectionCount: () => {
+            const engineId = activeEngine?.id ?? 'shaper-feedback';
+            if (engineId === 'shaper-feedback') return SYNTH_SECTIONS.length;
+            return nonC15Sections.length;
+          },
+        });
+        patchEditor.open();
+      }
+    } else if (e.key === 'm' || e.key === 'M') {
+      // meml-coh8: open Patch Bay (toggle). Modular engine only.
+      if (activeEngine?.id !== 'modular') return;
+      if (!patchBay) return;
+      e.preventDefault();
+      if (patchBay.isOpen && patchBay.isOpen()) {
+        patchBay.close();
+      } else {
+        patchBay.setEngine(activeEngine);
+        patchBay.open();
+      }
     }
   });
 }

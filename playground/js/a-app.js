@@ -2204,6 +2204,27 @@ async function init() {
         await applyPreset(presetId);
         return true;
       },
+      /**
+       * Manually trigger a per-preset session-memory save for the active
+       * engine + preset. Returns true on success. Useful in tests to
+       * exercise the session-memory path without driving the modal DOM.
+       */
+      saveSessionMem: () => {
+        const engineId = activeEngine?.id ?? 'shaper-feedback';
+        const presetId = activeSynthPresetId;
+        if (!engineId || !presetId) return false;
+        return saveSessionMem(engineId, presetId, capturePresetSession());
+      },
+      /**
+       * Return the raw session-memory payload for {engine, presetId}, or
+       * null if absent. Test introspection hook.
+       */
+      loadSessionMem: (engineId, presetId) => {
+        const eid = engineId ?? (activeEngine?.id ?? 'shaper-feedback');
+        const pid = presetId ?? activeSynthPresetId;
+        if (!eid || !pid) return null;
+        return loadSessionMem(eid, pid);
+      },
     };
   }
 

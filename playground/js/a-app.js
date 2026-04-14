@@ -86,6 +86,52 @@ const PRESETS = {
   ],
 };
 
+// ---- MLP architecture (flexible / experimental) ----
+//
+// MLP architecture is NOT sacred. Output size is preset-driven (= count of
+// non-bypassed params); hidden layer widths are independent tunable knobs.
+// Override via `?arch=3,32,48,64,N` URL param (first slot = nInputs+bias,
+// last slot = nOutputs which auto-aligns to the active preset when omitted).
+// Examples:
+//   ?arch=3,16,32,126    — smaller net
+//   ?arch=3,64,64,64,64  — 4 hidden layers, output count from preset
+//
+// For the hand-tracking IML, hidden layers default to the pre-existing
+// [48,48,64]; the `?arch` override applies only to the joystick IML.
+const DEFAULT_JOY_HIDDEN = [32, 48, 64];
+const DEFAULT_HAND_HIDDEN = [48, 48, 64];
+
+/**
+ * Parse `?arch=a,b,c,...` into hidden-layer widths.
+ * The URL form is the FULL layer spec including inputs+bias and outputs;
+ * this helper strips the first slot (inputs+bias) and the last slot (outputs)
+ * if either matches the expected input/output count — otherwise those slots
+ * are trusted and the caller resizes to match.
+ *
+ * Returns `{ hiddenLayers, outputsOverride | null }` or null if no/invalid param.
+ */
+function parseArchURLParam() {
+  const raw = new URLSearchParams(window.location.search).get('arch');
+  if (!raw) return null;
+  const parts = raw.split(',').map(s => parseInt(s.trim(), 10));
+  if (parts.length < 2 || parts.some(n => !Number.isFinite(n) || n < 1)) {
+    console.warn(`[NISPS] Ignoring malformed ?arch=${raw}`);
+    return null;
+  }
+  if (parts.length === 2) {
+    // [inputs+bias, outputs] — no hidden layers
+    return { hiddenLayers: [], outputsOverride: parts[1] };
+  }
+  return {
+    hiddenLayers: parts.slice(1, -1),
+    outputsOverride: parts[parts.length - 1],
+  };
+}
+
+const _archOverride = parseArchURLParam();
+const JOY_HIDDEN_LAYERS = _archOverride ? _archOverride.hiddenLayers : DEFAULT_JOY_HIDDEN;
+const ARCH_OUTPUTS_OVERRIDE = _archOverride ? _archOverride.outputsOverride : null;
+
 // ---- ShapeSeq feature flag ----
 const shapeSeqEnabled = new URLSearchParams(location.search).get('shapeseq') === '1';
 
@@ -1237,13 +1283,13 @@ async function resizeMLP(newOutputCount) {
   if (joySnapshot) {
     imlJoy = await WasmIML.createWithWarmStart(joySnapshot, N_OUTPUTS, 1000, 1.0, 0.00001);
   } else {
-    imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+    imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, JOY_HIDDEN_LAYERS, 1000, 1.0, 0.00001);
     imlJoy.randomiseWeights(spreadLevel);
   }
   imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
 
   // Hand IML: fresh init (warm-start for 14-input networks is a future concern)
-  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, [48, 48, 64], 1000, 1.0, 0.00001);
+  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, DEFAULT_HAND_HIDDEN, 1000, 1.0, 0.00001);
   imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
   imlHand.randomiseWeights(spreadLevel);
 
@@ -1270,10 +1316,16 @@ async function init() {
   if (isNaN(spreadLevel)) spreadLevel = 0.6;
   spreadLevel = Math.max(0, Math.min(1, spreadLevel));
 
+  // Apply ?arch output-count override (if given & differs from preset default)
+  if (ARCH_OUTPUTS_OVERRIDE && ARCH_OUTPUTS_OVERRIDE !== N_OUTPUTS) {
+    console.log(`[NISPS] ?arch override: outputs ${N_OUTPUTS} -> ${ARCH_OUTPUTS_OVERRIDE}`);
+    N_OUTPUTS = ARCH_OUTPUTS_OVERRIDE;
+  }
+
   // Dual IML instances — joystick (2 inputs) and hand tracking (14 inputs)
-  imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, [32, 48, 64], 1000, 1.0, 0.00001);
+  imlJoy = await WasmIML.create(N_JOY_INPUTS, N_OUTPUTS, JOY_HIDDEN_LAYERS, 1000, 1.0, 0.00001);
   imlJoy.setLogger(msg => console.log('[NISPS:joy]', msg));
-  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, [48, 48, 64], 1000, 1.0, 0.00001);
+  imlHand = await WasmIML.create(N_HAND_INPUTS, N_OUTPUTS, DEFAULT_HAND_HIDDEN, 1000, 1.0, 0.00001);
   imlHand.setLogger(msg => console.log('[NISPS:hand]', msg));
   iml = imlJoy; // default to joystick
 
@@ -1639,6 +1691,31 @@ async function init() {
       evalLoss:     () => iml.evalLoss(),
       inferBatch:   (points) => iml.inferBatch(points),
       getLayerStats:() => iml.getLayerStats(),
+      /**
+       * Rebuild the active IML's MLP with a new architecture.
+       * Pass full layer spec including inputs+bias and outputs, e.g.
+       *   __nisps.rebuildArch([3, 64, 64, 126])
+       * Weights are discarded. Dataset examples with mismatched dims are dropped.
+       */
+      rebuildArch: (newLayers) => {
+        iml.rebuild(newLayers);
+        iml.randomiseWeights(spreadLevel);
+        // Keep module-level N_OUTPUTS in sync so downstream routing stays correct
+        const outs = newLayers[newLayers.length - 1];
+        if (outs !== N_OUTPUTS) {
+          N_OUTPUTS = outs;
+          rawParamValues = new Array(N_OUTPUTS).fill(0.5);
+          _lastSentParams = new Float32Array(N_OUTPUTS);
+        }
+        const outputs = iml.getOutputs();
+        routeOutputs(outputs);
+        updateHeatmap(outputs);
+        syncRawParamsFromOutputs(outputs);
+        updateStatus();
+        return [...iml.layerSizes];
+      },
+      /** Returns the active IML's current layer shape. */
+      getArch: () => [...iml.layerSizes],
       eocChain,
       // ---- Phase E — modular engine hooks ----
       get activeEngine() { return activeEngine; },

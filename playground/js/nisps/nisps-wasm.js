@@ -596,6 +596,93 @@ export class WasmIML {
     });
   }
 
+  // ---- Rebuild with a new architecture ----
+  /**
+   * Destroy and recreate the underlying WASM MLP with a new layer topology.
+   *
+   * MLP architecture is intentionally flexible and experimental:
+   *   - Output layer size = count of non-bypassed params (preset-driven).
+   *   - Internal hidden layers are independent knobs — tune freely.
+   *
+   * Weights are NOT preserved. Use extractWeights() / createWithWarmStart()
+   * for warm-started transfers. Dataset is preserved, but examples whose
+   * vector dimensions no longer match (wrong nInputs/nOutputs) are dropped.
+   *
+   * @param {number[]} newLayers — full layer spec: [nInputs+bias, ...hidden, nOutputs]
+   *   (i.e. the same shape as this.layerSizes). Pass raw inputs excluding bias
+   *   via `newHiddenAndOutput` overload is NOT supported — callers must include
+   *   the bias slot in the input size.
+   */
+  rebuild(newLayers) {
+    if (!Array.isArray(newLayers) || newLayers.length < 2) {
+      throw new Error('rebuild: newLayers must be [inputs+bias, ...hidden, outputs]');
+    }
+    const newInputs = newLayers[0] - 1; // strip bias
+    const newOutputs = newLayers[newLayers.length - 1];
+    if (newInputs < 1 || newOutputs < 1) {
+      throw new Error('rebuild: invalid layer sizes');
+    }
+
+    // Tear down old WASM instance + persistent buffers
+    const w = this._w;
+    if (this._mlp) {
+      w.free(this._inputPtr);
+      w.free(this._outputPtr);
+      w.destroy(this._mlp);
+      this._mlp = null;
+    }
+
+    // Update shape
+    this.nInputs = newInputs;
+    this.nOutputs = newOutputs;
+    const hiddenLayers = newLayers.slice(1, -1);
+    this.layerSizes = [...newLayers];
+    this.activationIds = [
+      ...hiddenLayers.map(() => ACTIVATION.RELU),
+      ACTIVATION.SIGMOID,
+    ];
+
+    // Recreate WASM instance
+    this._createMLP();
+
+    // Reallocate persistent inference buffers
+    this._inputDim = newInputs + 1;
+    this._inputPtr = w.alloc(this._inputDim);
+    this._outputPtr = w.alloc(newOutputs);
+
+    // Reset JS-side state that depends on shape
+    this.inputState = new Array(newInputs).fill(0.5);
+    this.outputState = new Array(newOutputs).fill(0);
+    this.performInference = true;
+    this.inputUpdated = true;
+    this.storedWeights = null;
+    this.weightsRandomised = false;
+
+    // Drop any examples whose dimensions no longer match
+    if (this.dataset && this.dataset.features) {
+      const keptF = [];
+      const keptL = [];
+      for (let i = 0; i < this.dataset.features.length; i++) {
+        if (this.dataset.features[i].length === newInputs &&
+            this.dataset.labels[i].length === newOutputs) {
+          keptF.push(this.dataset.features[i]);
+          keptL.push(this.dataset.labels[i]);
+        }
+      }
+      this.dataset.features = keptF;
+      this.dataset.labels = keptL;
+    }
+
+    // Terminate worker — it holds a stale WASM instance of the old shape
+    if (this._worker) {
+      this._worker.terminate();
+      this._worker = null;
+    }
+    this._training = false;
+
+    this.log(`MLP rebuilt with layers=[${this.layerSizes.join(', ')}]`);
+  }
+
   // ---- Cleanup ----
   destroy() {
     if (this._mlp) {

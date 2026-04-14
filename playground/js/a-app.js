@@ -53,6 +53,14 @@ let _pendingModularDspState = null;
 // writing to freed heap). Set true at start of resizeMLP, false at end.
 let _rebuilding = false;
 
+// In-flight guard for applyPreset. Set true at entry, cleared in finally.
+// The modular engine's `paramMeta:change` listener (which fires from within
+// `applyModularPreset`) checks this flag and skips `clearSessionMem()` so
+// that an async applyPreset can still read the saved session under the new
+// preset's key. Without this, the listener wipes the session before the
+// restore prompt can query it.
+let _applyPresetInFlight = false;
+
 // Dirty flag for session-memory saves. Outgoing save (engine/preset switch)
 // skips when false so fresh-init state doesn't evict useful older sessions.
 // The explicit flag tracks user intent (trained, randomised, tweaked);
@@ -702,6 +710,23 @@ async function applyPreset(presetId) {
     }
   }
 
+  // In-flight guard: prevents paramMeta:change listeners (fired during
+  // applyModularPreset below) from calling clearSessionMem() under the
+  // NEW preset's key before we've had a chance to read it for the
+  // restore prompt. Cleared in finally{}.
+  _applyPresetInFlight = true;
+
+  // Preload any saved session for the NEW preset *before* DSP-apply
+  // mutations can race with paramMeta:change invalidation. The length
+  // check in restorePresetSession handles shape mismatches safely
+  // (see commit 5c6a77d).
+  const _targetEngineId = activeEngine?.id ?? 'shaper-feedback';
+  const _savedSession = (prevPresetId !== presetId)
+    ? loadSessionMem(_targetEngineId, presetId)
+    : null;
+
+  try {
+
   // Snapshot preset-scoped state so we can revert on Cancel from the restore
   // modal. Deep-clones cover the mutations done below (groupOverrides params
   // array + engineParamOverrides entries).
@@ -922,8 +947,9 @@ async function applyPreset(presetId) {
   // --- Step 2: check localStorage for prior session under new preset key ---
   // Only prompt if we're actually switching to a different preset (avoid
   // re-prompting on init/same-preset re-apply) and we have a saved entry.
+  // We preloaded `_savedSession` above before any paramMeta:change race.
   if (prevPresetId !== presetId) {
-    const saved = loadSessionMem(engineId, presetId);
+    const saved = _savedSession;
     if (saved && saved.payload) {
       const exampleCount = (saved.payload.joy?.features?.length ?? 0)
                          + (saved.payload.hand?.features?.length ?? 0);
@@ -977,6 +1003,9 @@ async function applyPreset(presetId) {
         console.warn('[NISPS] restore modal failed:', e);
       }
     }
+  }
+  } finally {
+    _applyPresetInFlight = false;
   }
 
   // Persist the final resolved state — AFTER the restore modal has
@@ -1886,11 +1915,16 @@ async function init() {
             // Structural change: the {engine, presetId} session key's paramCount
             // no longer matches the saved payload. Invalidate rather than risk
             // a stale restore on next preset re-apply.
-            try {
-              const eid = newEngine.id;
-              const pid = activeSynthPresetId;
-              if (eid && pid) clearSessionMem(eid, pid);
-            } catch (_) { /* best-effort */ }
+            // Skip invalidation while applyPreset is in-flight: it already
+            // captured the saved session under this key before invoking
+            // applyModularPreset, and will race-condition if we wipe now.
+            if (!_applyPresetInFlight) {
+              try {
+                const eid = newEngine.id;
+                const pid = activeSynthPresetId;
+                if (eid && pid) clearSessionMem(eid, pid);
+              } catch (_) { /* best-effort */ }
+            }
             await resizeMLP(totalOutputCount());
             if (eocChain?.nispsMode === 'shared') {
               const combinedMeta = [...(newEngine.paramMeta ?? []), ...eocChain.paramMeta];

@@ -29,7 +29,7 @@ import { FMEngine } from './synth/fm-engine.js';
 import { ModularEngine } from './synth/modular-engine.js';
 import { MODULAR_PRESETS, applyPreset as applyModularPreset, findPreset as findModularPreset } from './synth/modular-presets.js';
 import { getColumn as getGroupColumn } from './synth/group-columns.js';
-import { saveSession as saveSessionMem, loadSession as loadSessionMem, showRestoreModal } from './nisps/session-memory.js';
+import { saveSession as saveSessionMem, loadSession as loadSessionMem, showRestoreModal, clearSession as clearSessionMem } from './nisps/session-memory.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -1870,6 +1870,14 @@ async function init() {
           // rebuild downstream state that depends on paramCount.
           newEngine.on('paramMeta:change', async () => {
             if (activeEngine !== newEngine) return;
+            // Structural change: the {engine, presetId} session key's paramCount
+            // no longer matches the saved payload. Invalidate rather than risk
+            // a stale restore on next preset re-apply.
+            try {
+              const eid = newEngine.id;
+              const pid = activeSynthPresetId;
+              if (eid && pid) clearSessionMem(eid, pid);
+            } catch (_) { /* best-effort */ }
             await resizeMLP(totalOutputCount());
             if (eocChain?.nispsMode === 'shared') {
               const combinedMeta = [...(newEngine.paramMeta ?? []), ...eocChain.paramMeta];

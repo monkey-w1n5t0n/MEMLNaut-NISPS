@@ -586,6 +586,10 @@ export function createPatchBay({ engine, preset, onChange } = {}) {
 
   function teardown() {
     document.removeEventListener('keydown', onKey);
+    if (_activeDismiss) {
+      document.removeEventListener('pointerdown', _activeDismiss, true);
+      _activeDismiss = null;
+    }
     root.remove();
     if (_singleton && _singleton.root === root) _singleton = null;
   }

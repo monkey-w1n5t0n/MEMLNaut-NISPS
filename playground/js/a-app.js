@@ -754,6 +754,21 @@ async function applyPreset(presetId) {
     }
   } else {
     // ---- Faust engine path: uses engineParamOverrides (flat array) ----
+
+    // meml-17mp: for modular engine, push DSP state to the worklet first.
+    // applyModularPreset handles sub-engine swap, mod source counts,
+    // expose flags for sound params AND matrix cells, plus raw value
+    // writes. It fires paramMeta:change (multiple times); the engine
+    // switcher callback already handles MLP resize + engineParamOverrides
+    // rebuild. We then layer min/max/curve on top from the unified entries.
+    if (engineId === 'modular' && activeEngine) {
+      try {
+        await applyModularPreset(activeEngine, preset);
+      } catch (err) {
+        console.warn('[NISPS] applyModularPreset failed:', err);
+      }
+    }
+
     const meta = activeEngine?.paramMeta ?? [];
 
     // Ensure engineParamOverrides exists with correct length
@@ -761,11 +776,37 @@ async function applyPreset(presetId) {
       buildEngineParamOverrides();
     }
 
+    // Build a helper to resolve matrix-cell entries keyed by sNN_dNN
+    // (unified schema). Modular paramMeta rows for matrix cells have
+    // id = 'MM_Matrix/sNN_dNN_<destName>' — we extract sNN/dNN and look
+    // up in preset.matrix.
+    const _matrixEntries = (engineId === 'modular' && preset.matrix) || null;
+    const _resolveMatrixEntry = (paramLabel, defFixed) => {
+      if (!_matrixEntries || typeof paramLabel !== 'string') return null;
+      const mm = /^MM_Matrix\/s(\d{2})_d(\d{2})_/.exec(paramLabel);
+      if (!mm) return null;
+      const key = `s${mm[1]}_d${mm[2]}`;
+      const mc = _matrixEntries[key];
+      if (!mc) {
+        // Cell not listed in preset.matrix → schema says muted/off.
+        return { bypassed: false, muted: true, min: 0, max: 1, curve: 0.5,
+                 fixedValue: defFixed };
+      }
+      return {
+        bypassed: !!mc.bypassed,
+        muted:    !!mc.muted,
+        min:      typeof mc.min   === 'number' ? mc.min   : 0,
+        max:      typeof mc.max   === 'number' ? mc.max   : 1,
+        curve:    typeof mc.curve === 'number' ? mc.curve : 0.5,
+        fixedValue: typeof mc.fixedValue === 'number' ? mc.fixedValue : defFixed,
+      };
+    };
+
     for (let i = 0; i < meta.length; i++) {
       const paramId = meta[i].id;
       const defFixed = meta[i].init ?? 0.5;
       const ep = engineParamOverrides[i];
-      const entry = resolveEntry(paramId, defFixed);
+      const entry = _resolveMatrixEntry(paramId, defFixed) || resolveEntry(paramId, defFixed);
 
       if (entry.bypassed || entry.muted) {
         ep.muted = true;
@@ -1931,7 +1972,7 @@ async function init() {
 
   // Check URL ?preset param (overrides localStorage) — search all engines
   const urlPreset = urlParams.get('preset');
-  const allPresets = [...SYNTH_PRESETS, ...ADDITIVE_PRESETS, ...FM_PRESETS];
+  const allPresets = [...SYNTH_PRESETS, ...ADDITIVE_PRESETS, ...FM_PRESETS, ...MODULAR_PRESETS];
   if (urlPreset && allPresets.some(p => p.id === urlPreset)) {
     applyPreset(urlPreset);
   } else if (activeSynthPresetId) {

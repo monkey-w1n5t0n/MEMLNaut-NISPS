@@ -742,21 +742,155 @@ export const MODULAR_PRESETS = [..._LEGACY_UNIFIED, ..._NEW_UNIFIED];
 // ---------------------------------------------------------------------------
 
 /**
- * Apply a preset to a ModularEngine. Uses the legacy `state` field (filled
- * above for both legacy and unified-authored presets). Once meml-17mp ships,
- * this becomes a thin wrapper that reads `params`/`matrix` instead.
+ * Apply a preset to a ModularEngine.
+ *
+ * Unified path (preferred, meml-17mp): reads `preset.params` and
+ * `preset.matrix` directly, calling setParam / setMatrixCell /
+ * setExposeEngineParam / setExposeMatrixCell as appropriate. Bypassed or
+ * muted sound-engine params and muted matrix cells are un-exposed so the
+ * MLP's output vector never tries to drive them; for sound params this
+ * means they do not appear in `engine.paramMeta`. Bypass is treated as
+ * a stronger mute (cell-is-muted AND un-exposed) to match the schema,
+ * but in the modular engine the observable behaviour is the same as mute
+ * today — downstream MLP rebuild filters happen via the
+ * `setExpose*` calls that already fire `paramMeta:change`.
+ *
+ * Legacy path (fallback): when the preset has no `params` field but does
+ * have a `state` snapshot (older unified-authored or hand-authored
+ * presets), we defer to `engine.setState()` which restores raw DSP values,
+ * sub-engine, and mod source counts.
  *
  * @param {import('./modular-engine.js').ModularEngine} engine
- * @param {{state?: object}} preset
+ * @param {object} preset
  */
 export async function applyPreset(engine, preset) {
   if (!engine || !preset) return;
-  const state = preset.state;
-  if (!state) return;
+
+  const hasUnifiedParams = preset.params && typeof preset.params === 'object'
+    && !Array.isArray(preset.params);
+  const hasUnifiedMatrix = preset.matrix && typeof preset.matrix === 'object'
+    && !Array.isArray(preset.matrix);
+
+  // Sub-engine swap + mod-source counts must happen first — they reshape
+  // paramMeta and the label space that param/matrix writes target.
+  const meta = preset.meta || {};
+  if (typeof meta.subEngine === 'string' &&
+      typeof engine.setSubEngine === 'function') {
+    try { await engine.setSubEngine(meta.subEngine); }
+    catch (err) { console.warn('[modular-presets] setSubEngine failed', err); }
+  }
+  if (typeof engine.setModSourceCount === 'function' &&
+      (typeof meta.adsrCount === 'number' || typeof meta.lfoCount === 'number')) {
+    const curAdsr = engine._adsrCount ?? 4;
+    const curLfo  = engine._lfoCount  ?? 8;
+    engine.setModSourceCount(
+      typeof meta.adsrCount === 'number' ? meta.adsrCount : curAdsr,
+      typeof meta.lfoCount  === 'number' ? meta.lfoCount  : curLfo,
+    );
+  }
+
+  // Legacy fallback: no unified fields → use the state shim (restores raw
+  // DSP + counts + sub-engine in one go).
+  if (!hasUnifiedParams && !hasUnifiedMatrix) {
+    const state = preset.state;
+    if (!state) return;
+    if (typeof engine.resetToDefaults === 'function') {
+      engine.resetToDefaults();
+    }
+    await engine.setState({ version: 1, ...state });
+    return;
+  }
+
   if (typeof engine.resetToDefaults === 'function') {
     engine.resetToDefaults();
   }
-  await engine.setState({ version: 1, ...state });
+
+  // --- Unified params (non-matrix labels) ---
+  // Sound-engine params need explicit expose calls so they enter paramMeta.
+  // Matrix labels in `params` are rare but we handle them by skipping (the
+  // `matrix` object is the canonical home for matrix cells).
+  if (hasUnifiedParams) {
+    for (const [label, entry] of Object.entries(preset.params)) {
+      if (!entry || typeof entry !== 'object') continue;
+
+      // Matrix cells belong in preset.matrix. If they appear in params,
+      // the matrix block below will override anyway; skip here.
+      if (label.startsWith('MM_Matrix/')) continue;
+
+      const bypassed = !!entry.bypassed;
+      const muted    = !!entry.muted;
+
+      // Sound-engine (non-mod-pool) params: expose <=> alive.
+      // Mod-pool (MM_ADSR/, MM_LFO/) params are always in paramMeta and
+      // can't be un-exposed; for those, expose calls are a no-op.
+      const isModPool = label.startsWith('MM_ADSR/') || label.startsWith('MM_LFO/');
+      if (!isModPool && typeof engine.setExposeEngineParam === 'function') {
+        engine.setExposeEngineParam(label, !(bypassed || muted));
+      }
+
+      // Value to write:
+      //   - bypassed/muted with fixedValue → pin to fixedValue
+      //   - otherwise → fixedValue if present, else midpoint of [min,max]
+      let norm;
+      if ((bypassed || muted) && typeof entry.fixedValue === 'number') {
+        norm = entry.fixedValue;
+      } else if (typeof entry.fixedValue === 'number') {
+        norm = entry.fixedValue;
+      } else {
+        const mn = typeof entry.min === 'number' ? entry.min : 0;
+        const mx = typeof entry.max === 'number' ? entry.max : 1;
+        norm = (mn + mx) / 2;
+      }
+      if (typeof engine.setParam === 'function') {
+        engine.setParam(label, norm);
+      }
+    }
+  }
+
+  // --- Unified matrix cells ---
+  // For matrix cells: expose iff not muted and not bypassed. Cells NOT
+  // present in preset.matrix are explicitly un-exposed (schema omission
+  // rule: absent matrix cells = muted/off).
+  if (hasUnifiedMatrix &&
+      typeof engine.setExposeMatrixCell === 'function' &&
+      typeof engine.setMatrixCell === 'function') {
+    const destNames = engine.destNames || engine._subCfg?.destNames || [];
+    const nDest = destNames.length || 10;
+    const nSrc  = 48;
+    const seen  = new Set();
+    for (const [key, cell] of Object.entries(preset.matrix)) {
+      if (!cell || typeof cell !== 'object') continue;
+      const m = /^s(\d+)_d(\d+)$/.exec(key);
+      if (!m) continue;
+      const s = +m[1];
+      const d = +m[2];
+      seen.add(`${s}|${d}`);
+
+      const bypassed = !!cell.bypassed;
+      const muted    = !!cell.muted;
+      const live     = !(bypassed || muted);
+      engine.setExposeMatrixCell(s, d, live);
+
+      if (live) {
+        const norm = typeof cell.fixedValue === 'number'
+          ? cell.fixedValue
+          : ((typeof cell.min === 'number' ? cell.min : 0) +
+             (typeof cell.max === 'number' ? cell.max : 1)) / 2;
+        engine.setMatrixCell(s, d, norm);
+      } else {
+        // Muted cell: raw 0 (norm01=0.5 under bipolar ±0.9 mapping)
+        engine.setMatrixCell(s, d, 0.5);
+      }
+    }
+    // Un-expose any cell the preset didn't mention.
+    for (let s = 0; s < nSrc; s++) {
+      for (let d = 0; d < nDest; d++) {
+        if (seen.has(`${s}|${d}`)) continue;
+        engine.setExposeMatrixCell(s, d, false);
+        engine.setMatrixCell(s, d, 0.5);
+      }
+    }
+  }
 }
 
 /** Look up a preset by id. */

@@ -54,12 +54,12 @@ if [[ ! -f "$uf2_path" ]]; then
 fi
 
 if [[ -z "$mountpoint" ]]; then
-  mountpoint="$(find_boot_mount || true)"
+  mountpoint="$(ensure_boot_mount || true)"
 fi
 
 if [[ -z "$mountpoint" ]]; then
-  echo "error: could not find a mounted UF2 bootloader volume" >&2
-  echo "put the board in bootloader mode or pass the mountpoint explicitly" >&2
+  echo "error: could not find or mount a UF2 bootloader volume" >&2
+  echo "put the board in bootloader mode, or pass the mountpoint explicitly" >&2
   exit 1
 fi
 

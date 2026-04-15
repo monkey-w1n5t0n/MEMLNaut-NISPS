@@ -11,6 +11,7 @@ UF2_PATH_DEFAULT="${MEMLNAUT_FIRMWARE_UF2:-$BUILD_DIR/${SKETCH_NAME}.uf2}"
 
 FQBN="${MEMLNAUT_FIRMWARE_FQBN:-rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3}"
 CXX20_BUILD_PROPERTY="${MEMLNAUT_FIRMWARE_CXX20_PROPERTY:-compiler.cpp.extra_flags=-std=gnu++20}"
+UF2_LABEL_CANDIDATES=("${MEMLNAUT_FIRMWARE_UF2_LABEL_1:-RP2350}" "${MEMLNAUT_FIRMWARE_UF2_LABEL_2:-RPI-RP2}" "${MEMLNAUT_FIRMWARE_UF2_LABEL_3:-RP2040}")
 
 FIRMWARE_VARIANTS=()
 ACTIVE_FIRMWARE_VARIANT=""
@@ -78,6 +79,98 @@ find_boot_mount() {
       return 0
     fi
   done
+
+  return 1
+}
+
+is_known_uf2_label() {
+  local label="$1"
+  local candidate
+
+  for candidate in "${UF2_LABEL_CANDIDATES[@]}"; do
+    if [[ -n "$candidate" && "$label" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+find_boot_block_device() {
+  local line
+  local dev_path=""
+  local dev_fstype=""
+  local dev_label=""
+  local dev_mountpoints=""
+
+  while IFS= read -r line; do
+    dev_path=""
+    dev_fstype=""
+    dev_label=""
+    dev_mountpoints=""
+    eval "$(
+      sed -E \
+        -e 's/(^|[[:space:]])PATH=/\1dev_path=/' \
+        -e 's/(^|[[:space:]])FSTYPE=/\1dev_fstype=/' \
+        -e 's/(^|[[:space:]])LABEL=/\1dev_label=/' \
+        -e 's/(^|[[:space:]])MOUNTPOINTS=/\1dev_mountpoints=/' \
+        <<<"$line"
+    )"
+
+    [[ -n "$dev_path" ]] || continue
+    [[ "$dev_fstype" == "vfat" || "$dev_fstype" == "msdos" || "$dev_fstype" == "fat" ]] || continue
+    is_known_uf2_label "$dev_label" || continue
+
+    printf '%s\n' "$dev_path"
+    return 0
+  done < <(lsblk -P -o PATH,FSTYPE,LABEL,MOUNTPOINTS 2>/dev/null || true)
+
+  return 1
+}
+
+mount_boot_block_device() {
+  local device_path="$1"
+  local mount_output=""
+  local mounted_path=""
+
+  if command -v udisksctl >/dev/null 2>&1; then
+    mount_output="$(udisksctl mount -b "$device_path" 2>/dev/null || true)"
+    mounted_path="$(sed -nE "s#.* at (.+)\.?#\1#p" <<<"$mount_output" | tail -n 1)"
+    if [[ -n "$mounted_path" && -d "$mounted_path" ]]; then
+      printf '%s\n' "$mounted_path"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+ensure_boot_mount() {
+  local mountpoint=""
+  local device_path=""
+
+  mountpoint="$(find_boot_mount || true)"
+  if [[ -n "$mountpoint" ]]; then
+    printf '%s\n' "$mountpoint"
+    return 0
+  fi
+
+  device_path="$(find_boot_block_device || true)"
+  if [[ -z "$device_path" ]]; then
+    return 1
+  fi
+
+  mountpoint="$(mount_boot_block_device "$device_path" || true)"
+  if [[ -n "$mountpoint" ]]; then
+    printf '%s\n' "$mountpoint"
+    return 0
+  fi
+
+  mountpoint="$(find_boot_mount || true)"
+  if [[ -n "$mountpoint" ]]; then
+    printf '%s\n' "$mountpoint"
+    return 0
+  fi
 
   return 1
 }

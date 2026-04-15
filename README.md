@@ -18,6 +18,7 @@ scripts/build-and-flash-firmware.sh
 Notes:
 - The scripts build for `rp2040:rp2040:solderparty_rp2350_stamp_xl` with `Optimize3`.
 - The build forces C++20 because the firmware uses `std::span` and concepts.
+- `build-firmware.sh` accepts an optional variant name such as `memlcelium` or `breakor`. If you omit it in an interactive shell, the script parses `MEMLNaut-NISPS.ino`, prompts for a variant, and rewrites the active `MEMLNAUT_MODE_TYPE` before building.
 - `flash-firmware.sh` accepts an optional mountpoint argument, or auto-detects common UF2 bootloader mounts such as `/run/media/$USER/RP2350` and `/run/media/$USER/RPI-RP2`.
 
 ## Web Playground

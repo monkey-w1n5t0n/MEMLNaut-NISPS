@@ -244,6 +244,9 @@ git submodule update --init --recursive
 # Build only
 scripts/build-firmware.sh
 
+# Build a specific variant
+scripts/build-firmware.sh memlcelium
+
 # Flash a previously-built UF2
 scripts/flash-firmware.sh
 
@@ -252,6 +255,7 @@ scripts/build-and-flash-firmware.sh
 ```
 
 The scripts build for `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20 via `compiler.cpp.extra_flags=-std=gnu++20`.
+If no variant is passed to `build-firmware.sh` in an interactive shell, it parses the available `MEMLNautMode*` options from `MEMLNaut-NISPS.ino`, prompts for one, and rewrites the active `MEMLNAUT_MODE_TYPE` before compiling.
 
 ## Architecture
 

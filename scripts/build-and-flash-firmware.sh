@@ -7,7 +7,8 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/build-and-flash-firmware.sh
-  scripts/build-and-flash-firmware.sh [mountpoint]
+  scripts/build-and-flash-firmware.sh [variant]
+  scripts/build-and-flash-firmware.sh --variant VARIANT [mountpoint]
 
 If no mountpoint is provided, the flash step auto-detects a standard UF2
 bootloader location such as /run/media/$USER/RP2350 or /run/media/$USER/RPI-RP2.
@@ -19,21 +20,48 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-case $# in
-  0)
-    ;;
-  1)
-    ;;
-  *)
-    usage >&2
-    exit 1
-    ;;
-esac
+source "$SCRIPT_DIR/firmware-common.sh"
+load_firmware_variants
 
-"$SCRIPT_DIR/build-firmware.sh"
+variant_arg="${MEMLNAUT_FIRMWARE_VARIANT:-}"
+mountpoint=""
 
-if [[ $# -eq 1 ]]; then
-  "$SCRIPT_DIR/flash-firmware.sh" "$1"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --variant)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --variant requires a value" >&2
+        exit 1
+      fi
+      variant_arg="$2"
+      shift 2
+      ;;
+    --variant=*)
+      variant_arg="${1#*=}"
+      shift
+      ;;
+    *)
+      if [[ -z "$variant_arg" ]] && resolve_firmware_variant "$1" >/dev/null 2>&1; then
+        variant_arg="$1"
+      elif [[ -z "$mountpoint" ]]; then
+        mountpoint="$1"
+      else
+        usage >&2
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+if [[ -n "$variant_arg" ]]; then
+  "$SCRIPT_DIR/build-firmware.sh" --variant "$variant_arg"
+else
+  "$SCRIPT_DIR/build-firmware.sh"
+fi
+
+if [[ -n "$mountpoint" ]]; then
+  "$SCRIPT_DIR/flash-firmware.sh" "$mountpoint"
 else
   "$SCRIPT_DIR/flash-firmware.sh"
 fi

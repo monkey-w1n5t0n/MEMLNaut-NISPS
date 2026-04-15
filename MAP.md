@@ -53,7 +53,7 @@ MEMLNaut-NISPS: Neural Interactive Shaping of Parameter Spaces. Two living artef
 - `README.md` — short quickstart.
 
 ## Entry points
-- **Firmware**: `scripts/build-firmware.sh`, `scripts/flash-firmware.sh`, or `scripts/build-and-flash-firmware.sh` (requires submodules initialised). The scripts target `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20. Execution = `setup()`/`loop()` on Core 0, `setup1()`/`loop1()` on Core 1, audio ISR on Core 1.
+- **Firmware**: `scripts/build-firmware.sh`, `scripts/flash-firmware.sh`, or `scripts/build-and-flash-firmware.sh` (requires submodules initialised). `build-firmware.sh` can take an explicit variant name like `memlcelium` or prompt interactively from the parsed `MEMLNautMode*` list and rewrite the active mode in `MEMLNaut-NISPS.ino`. The scripts target `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20. Execution = `setup()`/`loop()` on Core 0, `setup1()`/`loop1()` on Core 1, audio ISR on Core 1.
 - **Playground**: `cd playground && python3 -m http.server` (or `serve.sh` / `serve-coop.py`), open `a-immersive.html`. Append `?debug=1` to expose `window.__nisps`.
 - **WASM rebuild**: `cd playground/wasm && ./build.sh` (needs `emcc`).
 - **Tests**: `npx playwright test` (auto-spawns server on 7331).

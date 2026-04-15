@@ -141,6 +141,7 @@ choose_firmware_variant() {
   local resolved=""
   local variant
   local choice
+  local tty_fd=""
 
   load_firmware_variants
 
@@ -158,30 +159,33 @@ choose_firmware_variant() {
     exit 1
   fi
 
-  if [[ -t 0 && -t 1 ]]; then
-    echo "Select a firmware variant to build:"
+  if exec {tty_fd}<>/dev/tty 2>/dev/null; then
+    printf 'Select a firmware variant to build:\n' >&"$tty_fd"
     local idx=1
     for variant in "${FIRMWARE_VARIANTS[@]}"; do
       if [[ "$variant" == "$ACTIVE_FIRMWARE_VARIANT" ]]; then
-        echo "  $idx) $(variant_alias "$variant") ($variant, current)"
+        printf '  %d) %s (%s, current)\n' "$idx" "$(variant_alias "$variant")" "$variant" >&"$tty_fd"
       else
-        echo "  $idx) $(variant_alias "$variant") ($variant)"
+        printf '  %d) %s (%s)\n' "$idx" "$(variant_alias "$variant")" "$variant" >&"$tty_fd"
       fi
       idx=$((idx + 1))
     done
 
     while true; do
-      read -r -p "Variant number or name: " choice
+      printf 'Variant number or name: ' >&"$tty_fd"
+      IFS= read -r -u "$tty_fd" choice
       if [[ "$choice" =~ ^[0-9]+$ ]]; then
         if (( choice >= 1 && choice <= ${#FIRMWARE_VARIANTS[@]} )); then
+          exec {tty_fd}>&-
           printf '%s\n' "${FIRMWARE_VARIANTS[choice-1]}"
           return 0
         fi
       elif resolved="$(resolve_firmware_variant "$choice" 2>/dev/null)"; then
+        exec {tty_fd}>&-
         printf '%s\n' "$resolved"
         return 0
       fi
-      echo "Invalid selection. Enter a number from the list or a variant name."
+      printf 'Invalid selection. Enter a number from the list or a variant name.\n' >&"$tty_fd"
     done
   fi
 

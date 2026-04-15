@@ -16,7 +16,7 @@
 
 class MEMLNautModeElysiamorfs {
 public:
-    constexpr static size_t kN_InputParams = 4; // joystick x, y, rotate
+    constexpr static size_t kN_InputParams = MEMLNAUT_ANALOG_INPUTS;  
 
     USeqI2C i2cOut;
     inline static ElysiamorfAudioApp<> audioAppElysiamorfs;
@@ -32,6 +32,7 @@ public:
     void setupInterface() {
         interface.setup(kN_InputParams, ElysiamorfAudioApp<>::kN_Params);
         interface.bindInterface(InterfaceRL::INPUT_MODES::JOYSTICK, true);
+        interface.setModeInfo("elysia", "Elysiamorfs");
         interfacePtr = make_non_owning(interface);
 
         MEMLNaut::Instance()->setTogA2Callback([this](bool state) { // scr_ref no longer captured directly

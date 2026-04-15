@@ -11,6 +11,18 @@
 
 #include <span>
 #include "../../voicespaces/VoiceSpaces.hpp"
+#include "../../voicespaces/VerbFX/basic.hpp"
+#include "../../voicespaces/VerbFX/resonant.hpp"
+#include "../../voicespaces/VerbFX/soft.hpp"
+#include "../../voicespaces/VerbFX/cathedral.hpp"
+#include "../../voicespaces/VerbFX/shimmer.hpp"
+#include "../../voicespaces/VerbFX/chamber.hpp"
+#include "../../voicespaces/VerbFX/metallic.hpp"
+#include "../../voicespaces/VerbFX/granular.hpp"
+#include "../../voicespaces/VerbFX/diffuse.hpp"
+#include "../../voicespaces/VerbFX/dark.hpp"
+#include "../../voicespaces/VerbFX/bright.hpp"
+#include "../../voicespaces/VerbFX/harmonic.hpp"
 #include "../../src/memllib/synth/OnePoleSmoother.hpp"
 #include "../../src/memllib/synth/maximilian.h"
 #include "../../src/daisysp/Effects/pitchshifter.h"
@@ -19,17 +31,41 @@
 
 
 
-template<size_t NPARAMS=24> 
+template<size_t NPARAMS=47>
 class VerbFXAudioApp : public AudioAppBase<NPARAMS>
 {
 public:
     static constexpr size_t kN_Params = NPARAMS;
-    static constexpr size_t nVoiceSpaces=1;
+    static constexpr size_t nVoiceSpaces=12;
 
 
     std::array<VoiceSpace<NPARAMS>, nVoiceSpaces> voiceSpaces;
     
     VoiceSpaceFn<NPARAMS> currentVoiceSpace;
+
+    enum class controlMessages {
+        MSG_ENABLE_FILTERBANK=0,
+        MSG_ENABLE_REVERB,
+        MSG_ENABLE_SHORT_DELAY,
+        MSG_ENABLE_MEDIUM_DELAY,
+        MSG_ENABLE_LONG_DELAY,
+        MSG_ENABLE_DELAY_TO_REVERB,
+    };
+
+    queue_t controlMessageQueue;
+    queue_t wetdryQueue;
+
+    void setWetDryQueued(float value) {
+        queue_try_add(&wetdryQueue, &value);
+    }
+
+    bool enableFilterbank=true;
+    bool enableReverb=true;
+    bool enableShortDelay=true;
+    bool enableMediumDelay=true;
+    bool enableLongDelay=true;
+    bool enableDelayToReverb=true;
+
 
     std::array<String, nVoiceSpaces> getVoiceSpaceNames() {
         std::array<String, nVoiceSpaces> names;
@@ -46,70 +82,151 @@ public:
     }
 
     VerbFXAudioApp() : AudioAppBase<NPARAMS>() {
+        auto voiceSpaceDefault = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_DEFAULT_BODY
+        };
+        voiceSpaces[0] = {"Default", voiceSpaceDefault};
+        auto voiceSpaceResonant = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_RESONANT_BODY
+        };
+        voiceSpaces[1] = {"Resonant", voiceSpaceResonant};
+        auto voiceSpaceSoft = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_SOFT_BODY
+        };
+        voiceSpaces[2] = {"Soft", voiceSpaceSoft};
+        auto voiceSpaceCathedral = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_CATHEDRAL_BODY
+        };
+        voiceSpaces[3] = {"Cathedral", voiceSpaceCathedral};
+        auto voiceSpaceShimmer = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_SHIMMER_BODY
+        };
+        voiceSpaces[4] = {"Shimmer", voiceSpaceShimmer};
+        auto voiceSpaceChamber = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_CHAMBER_BODY
+        };
+        voiceSpaces[5] = {"Chamber", voiceSpaceChamber};
+        auto voiceSpaceMetallic = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_METALLIC_BODY
+        };
+        voiceSpaces[6] = {"Metallic", voiceSpaceMetallic};
+        auto voiceSpaceGranular = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_GRANULAR_BODY
+        };
+        voiceSpaces[7] = {"Granular", voiceSpaceGranular};
+        auto voiceSpaceDiffuse = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_DIFFUSE_BODY
+        };
+        voiceSpaces[8] = {"Diffuse", voiceSpaceDiffuse};
+        auto voiceSpaceDark = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_DARK_BODY
+        };
+        voiceSpaces[9] = {"Dark", voiceSpaceDark};
+        auto voiceSpaceBright = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_BRIGHT_BODY
+        };
+        voiceSpaces[10] = {"Bright", voiceSpaceBright};
+        auto voiceSpaceHarmonic = [this](const std::array<float, NPARAMS>& smoothParams) {
+            VOICE_SPACE_VERBFX_HARMONIC_BODY
+        };
+        voiceSpaces[11] = {"Harmonic", voiceSpaceHarmonic};
+        currentVoiceSpace = voiceSpaces[0].mappingFunction;
+        queue_init(&controlMessageQueue, sizeof(controlMessages), 1);
+        queue_init(&wetdryQueue, sizeof(float), 1);
     };
 
 
     __attribute__((hot)) stereosample_t __force_inline Process(const stereosample_t x) override
     {
+        static float verbFB = 0.f;
+        static float delaysFB = 0.f;
+
         float mix = x.L + x.R;
 
         smoother.Process(neuralNetOutputs.data(), smoothParams.data());
 
-        
-        // float allp1fb = smoothParams[4] * 0.99f;
-        // float allp2fb = smoothParams[5] * 0.99f;
-        // float allp3fb = smoothParams[14] * 0.99f;
+        //mapping
+        currentVoiceSpace(smoothParams);
 
-        wetdry_mix_ = (smoothParams[0] * 0.9f) + 0.1f;
-        const float lp0fb = smoothParams[1] * 0.98f;
-        const float lp0cutoff = (smoothParams[2] * 0.5f) + 0.05f;
+        //XFADE
 
-        const float lp1fb = smoothParams[3] * 0.98f;
-        const float lp1cutoff = (smoothParams[4] * 0.5f) + 0.05f;
+        const float filterBankDelayFBLevel = sqrtf(filterBankDelayXFade);
+        const float filterBankDelayFBLevelInv = sqrtf(1.f - filterBankDelayXFade);
 
-        const float lp2fb = smoothParams[5] * 0.98f;
-        const float lp2cutoff = (smoothParams[6] * 0.5f) + 0.05f;
+        /////////////////// FILTERBANK
 
-        const float lp3fb = smoothParams[7] * 0.98f;
-        const float lp3cutoff = (smoothParams[8] * 0.5f) + 0.05f;
+        float filterBankIn = mix + (filterBankDelayFBLevel * ddelayFeedback); 
+        float filterBankOut=mix;
 
-        const float lp4fb = smoothParams[9] * 0.98f;
-        const float lp4cutoff = (smoothParams[10] * 0.5f) + 0.05f;
+        if (enableFilterbank) {
+            filterBankOut = filterBank0.bandpassChamberlain(filterBankIn,  filterBankF0, filterBankRes0);
+            filterBankOut += filterBank1.bandpassChamberlain(filterBankIn, filterBankF1, filterBankRes1);
+            filterBankOut += filterBank2.bandpassChamberlain(filterBankIn, filterBankF2, filterBankRes2);
+            filterBankOut += filterBank3.bandpassChamberlain(filterBankIn, filterBankF3, filterBankRes3);
+            filterBankOut += filterBank4.bandpassChamberlain(filterBankIn, filterBankF4, filterBankRes4);
+            filterBankOut += filterBank5.bandpassChamberlain(filterBankIn, filterBankF5, filterBankRes5);
+            filterBankOut += filterBank6.bandpassChamberlain(filterBankIn, filterBankF6, filterBankRes6);
+            filterBankOut += filterBank7.bandpassChamberlain(filterBankIn, filterBankF7, filterBankRes7);
 
-        const float lp5fb = smoothParams[11] * 0.98f;
-        const float lp5cutoff = (smoothParams[12] * 0.5f) + 0.05f;
+            filterBankOut *= 0.125f;
+        }
 
-        const float lp6fb = smoothParams[13] * 0.98f;
-        const float lp6cutoff = (smoothParams[14] * 0.5f) + 0.05f;
+        ////////////// DELAYS
+        float delayIn = filterBankOut;
 
-        const float lp7fb = smoothParams[15] * 0.98f;
-        const float lp7cutoff = (smoothParams[16] * 0.5f) + 0.05f;
+        float delayed = enableLongDelay ? ddelay.read(ddelayTime) : 0.f;
+        ddelay.write((delayIn * filterBankDelayFBLevelInv) + ((ddelayFeedback + (delayIn * filterBankDelayFBLevel)) * delayed));
 
-        float lp0 = lpcomb0.lpcombfb(mix, SIZE_comb0, lp0fb, lp0cutoff);
-        float lp1 = lpcomb1.lpcombfb(mix, SIZE_comb1, lp1fb, lp1cutoff);
-        float lp2 = lpcomb2.lpcombfb(mix, SIZE_comb2, lp2fb, lp2cutoff);
-        float lp3 = lpcomb3.lpcombfb(mix, SIZE_comb3, lp3fb, lp3cutoff);
-        float lp4 = lpcomb4.lpcombfb(mix, SIZE_comb4, lp4fb, lp4cutoff);
-        float lp5 = lpcomb5.lpcombfb(mix, SIZE_comb5, lp5fb, lp5cutoff);
-        float lp6 = lpcomb6.lpcombfb(mix, SIZE_comb6, lp6fb, lp6cutoff);
-        float lp7 = lpcomb7.lpcombfb(mix, SIZE_comb7, lp7fb, lp7cutoff);
+        float delayed1 = enableMediumDelay ? ddelay1.read(ddelayTime1) : 0.f;
+        ddelay1.write(delayIn + (ddelayFeedback1 * delayed1));
 
-        float y = lp0 + lp1 + lp2 + lp3 + lp4 + lp5 + lp6 + lp7;
+        float delayed2 = enableShortDelay ? ddelay2.read(ddelayTime2) : 0.f;
+        ddelay2.write(delayIn + (ddelayFeedback2 * delayed2));
+
+        float a = fminf(delayMorph * 2.f, 1.f);
+        float b = fmaxf(delayMorph * 2.f - 1.f, 0.f);
+        constexpr float kEqualMix = 0.57735f; // 1/sqrt(3), constant-power equal mix
+        float w_short  = kEqualMix + delayBlend * (sqrtf(1.f - a)                    - kEqualMix);
+        float w_medium = kEqualMix + delayBlend * (sqrtf(a) * sqrtf(1.f - b)         - kEqualMix);
+        float w_long   = kEqualMix + delayBlend * (sqrtf(a) * sqrtf(b)               - kEqualMix);
+        float delaySum = (w_short * delayed2) + (w_medium * delayed1) + (w_long * delayed);
+
+        //////////////// VERB
+        float verbIn = enableReverb ? filterBankOut : 0.f;
+        if (enableDelayToReverb && enableReverb) {
+            verbIn += (delayToVerbLevel * delaySum);
+        }
+        float verbOut=0.f;
 
 
-        const float allp0fb = smoothParams[17] * 0.98f;
-        const float allp1fb = smoothParams[18] * 0.98f;
-        const float allp2fb = smoothParams[19] * 0.98f;
-        const float allp3fb = smoothParams[20] * 0.98f;
+        verbOut = lpcomb0.lpcombfb(filterBankOut, SIZE_comb0, lp0fb, lp0cutoff);
+        verbOut += lpcomb1.lpcombfb(filterBankOut, SIZE_comb1, lp1fb, lp1cutoff);
+        verbOut += lpcomb2.lpcombfb(filterBankOut, SIZE_comb2, lp2fb, lp2cutoff);
+        verbOut += lpcomb3.lpcombfb(filterBankOut, SIZE_comb3, lp3fb, lp3cutoff);
+        verbOut += lpcomb4.lpcombfb(filterBankOut, SIZE_comb4, lp4fb, lp4cutoff);
+        verbOut += lpcomb5.lpcombfb(filterBankOut, SIZE_comb5, lp5fb, lp5cutoff);
+        verbOut += lpcomb6.lpcombfb(filterBankOut, SIZE_comb6, lp6fb, lp6cutoff);
+        verbOut += lpcomb7.lpcombfb(filterBankOut, SIZE_comb7, lp7fb, lp7cutoff);
 
-        y = allp0.allpass(y, SIZE_allp0, allp0fb);
-        y = allp1.allpass(y, SIZE_allp1, allp1fb);
-        y = allp2.allpass(y, SIZE_allp2, allp2fb);
-        y = allp3.allpass(y, SIZE_allp3, allp3fb);
+
+
+
+        verbOut = allp0.allpass(verbOut, SIZE_allp0, allp0fb);
+        verbOut = allp1.allpass(verbOut, SIZE_allp1, allp1fb);
+        verbOut = allp2.allpass(verbOut, SIZE_allp2, allp2fb);
+        verbOut = allp3.allpass(verbOut, SIZE_allp3, allp3fb);
+
+        float y= (sqrtf(verbVsDelayLevel) * delaySum) + (sqrtf(1.f - verbVsDelayLevel) * verbOut);
+
+        //feedback 
+        delaysFB = delaySum;
+        verbFB = verbOut;
+
+
 
 
         // Mix dry
-        y = (y * wetdry_mix_) + (mix * (1.f - wetdry_mix_));
+        y = (y * sqrtf(wetdry_mix_)) + (mix * sqrtf(1.f - wetdry_mix_));
 
 
         stereosample_t ret { y, y };
@@ -124,7 +241,36 @@ public:
 
     __attribute__((always_inline)) void ProcessParams(const std::array<float, NPARAMS>& params)
     {
-        // currentVoiceSpace(params);
+        controlMessages msg;
+        while (queue_try_remove(&controlMessageQueue, &msg)) {
+            switch(msg) {
+                case controlMessages::MSG_ENABLE_FILTERBANK:
+                    enableFilterbank = !enableFilterbank;
+                    break;
+                case controlMessages::MSG_ENABLE_REVERB:
+                    enableReverb = !enableReverb;
+                    break;
+                case controlMessages::MSG_ENABLE_SHORT_DELAY:
+                    enableShortDelay = !enableShortDelay;
+                    break;
+                case controlMessages::MSG_ENABLE_MEDIUM_DELAY:
+                    enableMediumDelay = !enableMediumDelay;
+                    break;
+                case controlMessages::MSG_ENABLE_LONG_DELAY:
+                    enableLongDelay = !enableLongDelay;
+                    break;
+                case controlMessages::MSG_ENABLE_DELAY_TO_REVERB:
+                    enableDelayToReverb = !enableDelayToReverb;
+                    break;
+            }
+        }
+        {
+            float v;
+            if (queue_try_remove(&wetdryQueue, &v)) wetdryKnobValue = v;
+        }
+        if (wetdryKnobValue >= 0.f) {
+            wetdry_mix_ = wetdryKnobValue;
+        }
         neuralNetOutputs = params;
     }
     
@@ -162,11 +308,48 @@ protected:
     maxiReverbFilters<SIZE_comb6> lpcomb6;
     maxiReverbFilters<SIZE_comb7> lpcomb7;
 
+    maxiFilter filterBank0;
+    maxiFilter filterBank1;
+    maxiFilter filterBank2;
+    maxiFilter filterBank3;
+    maxiFilter filterBank4;
+    maxiFilter filterBank5;
+    maxiFilter filterBank6;
+    maxiFilter filterBank7;
+
+    DynamicDelay<16384> ddelay;
+    DynamicDelay<2048> ddelay1;
+    DynamicDelay<512> ddelay2;
+
     maxiDCBlocker dcb;
 
     float wetdry_mix_{0.5f};
+    float wetdryKnobValue{0.5f};
+
+    // mapping
+    float lp0fb{0}, lp0cutoff{0};
+    float lp1fb{0}, lp1cutoff{0};
+    float lp2fb{0}, lp2cutoff{0};
+    float lp3fb{0}, lp3cutoff{0};
+    float lp4fb{0}, lp4cutoff{0};
+    float lp5fb{0}, lp5cutoff{0};
+    float lp6fb{0}, lp6cutoff{0};
+    float lp7fb{0}, lp7cutoff{0};
+    float allp0fb{0}, allp1fb{0}, allp2fb{0}, allp3fb{0};
+    float filterBankF0{0}, filterBankF1{0}, filterBankF2{0}, filterBankF3{0};
+    float filterBankF4{0}, filterBankF5{0}, filterBankF6{0}, filterBankF7{0};
+    float filterBankRes0{0}, filterBankRes1{0}, filterBankRes2{0}, filterBankRes3{0};
+    float filterBankRes4{0}, filterBankRes5{0}, filterBankRes6{0}, filterBankRes7{0};
+    float ddelayTime{0}, ddelayFeedback{0};
+    float ddelayTime1{0}, ddelayFeedback1{0};
+    float ddelayTime2{0}, ddelayFeedback2{0};
+    float verbVsDelayLevel{0}, delayToVerbLevel{0}, filterBankDelayXFade{0};
+    float delayMorph{0.5f}, delayBlend{0.f};
 
     OnePoleSmoother<kN_Params> smoother{150.f, kSampleRate};
+    
+    // maxiDynamicsLite limiter;
+
 
 };
 

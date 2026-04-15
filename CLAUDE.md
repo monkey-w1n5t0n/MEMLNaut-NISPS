@@ -235,16 +235,23 @@ Tests use the `?debug=1` probe (`window.__nisps`) for programmatic access to the
 
 ## Build System
 
-This is an Arduino project targeting Raspberry Pi Pico. Build and upload using Arduino IDE or arduino-cli with the earlephilhower/pico board package.
+This is an Arduino project targeting the MEMLNaut RP2350 hardware. Build and flash it with the repo-local helper scripts, which wrap the correct board target and compiler settings.
 
 ```bash
 # Initialize submodules (required for memllib and memlp)
 git submodule update --init --recursive
 
-# Build (adjust port as needed)
-arduino-cli compile --fqbn rp2040:rp2040:rpipico -b 115200 MEMLNaut-NISPS.ino
-arduino-cli upload --fqbn rp2040:rp2040:rpipico -p /dev/ttyACM0 MEMLNaut-NISPS.ino
+# Build only
+scripts/build-firmware.sh
+
+# Flash a previously-built UF2
+scripts/flash-firmware.sh
+
+# Build then flash
+scripts/build-and-flash-firmware.sh
 ```
+
+The scripts build for `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20 via `compiler.cpp.extra_flags=-std=gnu++20`.
 
 ## Architecture
 

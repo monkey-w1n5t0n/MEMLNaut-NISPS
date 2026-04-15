@@ -245,7 +245,7 @@ git submodule update --init --recursive
 scripts/build-firmware.sh
 
 # Build a specific variant
-scripts/build-firmware.sh memlcelium
+scripts/build-firmware.sh MEMLCelium
 
 # Flash a previously-built UF2
 scripts/flash-firmware.sh

@@ -64,7 +64,7 @@ echo "Building firmware:"
 echo "  sketch: $SKETCH_PATH"
 echo "  fqbn:   $FQBN"
 echo "  out:    $BUILD_DIR"
-echo "  variant: $(variant_alias "$ACTIVE_FIRMWARE_VARIANT")"
+echo "  variant: $(variant_display_name "$ACTIVE_FIRMWARE_VARIANT")"
 
 compile_args=(
   compile

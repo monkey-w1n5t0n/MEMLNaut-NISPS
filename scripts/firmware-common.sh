@@ -114,10 +114,13 @@ load_firmware_variants() {
   )"
 }
 
-variant_alias() {
+variant_display_name() {
   local variant="$1"
-  variant="${variant#MEMLNautMode}"
-  printf '%s\n' "$variant" | tr '[:upper:]' '[:lower:]'
+  printf '%s\n' "${variant#MEMLNautMode}"
+}
+
+variant_alias() {
+  variant_display_name "$1" | tr '[:upper:]' '[:lower:]'
 }
 
 resolve_firmware_variant() {
@@ -154,7 +157,7 @@ choose_firmware_variant() {
     echo "error: unknown firmware variant: $requested" >&2
     echo "available variants:" >&2
     for variant in "${FIRMWARE_VARIANTS[@]}"; do
-      echo "  - $(variant_alias "$variant") ($variant)" >&2
+      echo "  - $(variant_display_name "$variant") ($variant)" >&2
     done
     exit 1
   fi
@@ -164,9 +167,9 @@ choose_firmware_variant() {
     local idx=1
     for variant in "${FIRMWARE_VARIANTS[@]}"; do
       if [[ "$variant" == "$ACTIVE_FIRMWARE_VARIANT" ]]; then
-        printf '  %d) %s (%s, current)\n' "$idx" "$(variant_alias "$variant")" "$variant" >&"$tty_fd"
+        printf '  %d) %s (%s, current)\n' "$idx" "$(variant_display_name "$variant")" "$variant" >&"$tty_fd"
       else
-        printf '  %d) %s (%s)\n' "$idx" "$(variant_alias "$variant")" "$variant" >&"$tty_fd"
+        printf '  %d) %s (%s)\n' "$idx" "$(variant_display_name "$variant")" "$variant" >&"$tty_fd"
       fi
       idx=$((idx + 1))
     done
@@ -190,7 +193,7 @@ choose_firmware_variant() {
   fi
 
   if [[ -n "$ACTIVE_FIRMWARE_VARIANT" ]]; then
-    echo "No variant specified and no interactive terminal available; using current variant: $(variant_alias "$ACTIVE_FIRMWARE_VARIANT")" >&2
+    echo "No variant specified and no interactive terminal available; using current variant: $(variant_display_name "$ACTIVE_FIRMWARE_VARIANT")" >&2
     printf '%s\n' "$ACTIVE_FIRMWARE_VARIANT"
     return 0
   fi
@@ -237,5 +240,5 @@ sketch_path.write_text("\n".join(updated) + "\n")
 PY
 
   ACTIVE_FIRMWARE_VARIANT="$selected"
-  echo "Selected firmware variant: $(variant_alias "$selected") ($selected)"
+  echo "Selected firmware variant: $(variant_display_name "$selected") ($selected)"
 }

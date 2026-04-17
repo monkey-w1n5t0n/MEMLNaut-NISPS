@@ -165,6 +165,7 @@ ctest --output-on-failure
 3. **No SIMD**: Portable code, relies on compiler auto-vectorization
 4. **RMSProp optimizer**: Fast convergence for interactive training
 5. **Gradient clipping**: Prevents numerical instability
+6. **MCU-friendly**: design brief in [docs/firmware-perf-patterns.md](../docs/firmware-perf-patterns.md) — no heap, no flash-read constants, strict `.f` suffixes. These are co-equal constraints for the planned rewrite (bd issue meml-cwpk).
 
 ## Examples
 

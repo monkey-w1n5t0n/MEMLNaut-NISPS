@@ -26,6 +26,7 @@ import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
 import { ModularEngine } from './synth/modular-engine.js';
 import { MODULAR_PRESETS, applyPreset as applyModularPreset, findPreset as findModularPreset } from './synth/modular-presets.js';
+import { UseqCeliumAdapter } from './useq-celium/adapter.js';
 
 // ---- Constants ----
 const N_JOY_INPUTS = 2;
@@ -117,6 +118,12 @@ let outputMode = 'visual';
 // EOC Effects Chain — module-scoped so audio-start and setActiveEngine can reference it
 let eocChain = null;
 let _eocInited = false; // guard: init once per AudioContext lifetime
+
+// uSEQ-Celium adapter — constructed once at init(); stays idle until the
+// user switches to useq-celium mode and clicks Connect.
+// USEQ_CELIUM_MODE_HOOK — later opus47 agents wire MLP/ratioSeq/routing
+// into this adapter via useqCelium.setSnapshotSource(...).
+let useqCelium = null;
 
 // EOC Linked/Independent mode — second IML driven by joystick(s), independent training
 let imlEoc = null;       // second IML for EOC params (Linked/Independent mode)
@@ -1012,6 +1019,10 @@ function outputCountForMode(mode) {
   if (mode === 'synth') return N_SYNTH_OUTPUTS;
   if (mode === 'midi-cc') return midiCCMap.length;
   if (mode === 'audio-canvas') return audioCanvas ? audioCanvas.getOutputCount() : 12;
+  // uSEQ-Celium is plumbing-only for now — no MLP outputs routed yet.
+  // USEQ_CELIUM_MODE_HOOK — later opus47 agents wire MLP/ratioSeq/routing here.
+  // Keep current count so resizeMLP() is a no-op on entry.
+  if (mode === 'useq-celium') return N_OUTPUTS;
   return N_SYNTH_OUTPUTS;
 }
 
@@ -1299,6 +1310,12 @@ async function init() {
   // MIDI Output
   midiOutput = new MIDIOutput();
   initMIDICCControls();
+
+  // uSEQ-Celium adapter (output mode peer). Constructed eagerly but idle
+  // — connect() is only called from the drawer Connect button.
+  useqCelium = new UseqCeliumAdapter();
+  await useqCelium.init(null);
+  wireUseqCeliumDrawer();
 
   // DOM refs
   $heatmapCells = document.getElementById('heatmap-cells');
@@ -2502,6 +2519,11 @@ function routeOutputs(outputs) {
     }
   } else if (outputMode === 'audio-canvas') {
     if (audioCanvas) audioCanvas.setOutputs(outputs);
+  } else if (outputMode === 'useq-celium') {
+    // USEQ_CELIUM_MODE_HOOK — later opus47 agents wire MLP/ratioSeq/routing
+    // into the uSEQ-Celium adapter here. Plumbing-only today: the adapter's
+    // StateProducer emits zeros on its own schedule until a source is
+    // registered via useqCeliumAdapter.setSnapshotSource(...).
   } else {
     const vis = new Array(N_VISUAL_OUTPUTS);
     for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
@@ -2634,6 +2656,60 @@ function syncInputToggle(mode) {
   document.querySelectorAll('#input-toggle .pill-opt').forEach(b =>
     b.classList.toggle('active', b.dataset.input === mode)
   );
+}
+
+// ---- uSEQ-Celium drawer wiring ----
+// Minimal: Connect/Disconnect button + status text. All later behaviour
+// (MLP routing, session presets, visualisation) hooks off useqCelium directly.
+// USEQ_CELIUM_MODE_HOOK — later opus47 agents extend this wiring.
+function wireUseqCeliumDrawer() {
+  const btn = document.getElementById('useq-connect-btn');
+  const status = document.getElementById('useq-status');
+  if (!btn || !status || !useqCelium) return;
+
+  const setStatus = (text) => { status.textContent = text; };
+
+  // Feature detect: if WebSerial isn't available, surface that up-front.
+  if (!UseqCeliumAdapter.isSupported()) {
+    btn.disabled = true;
+    btn.textContent = 'WebSerial unsupported';
+    setStatus('browser lacks WebSerial');
+    return;
+  }
+
+  setStatus('disconnected');
+
+  useqCelium.onConnectionChange((connected) => {
+    if (connected) {
+      btn.textContent = 'Disconnect';
+      setStatus('connected — streaming');
+    } else {
+      btn.textContent = 'Connect uSEQ';
+      setStatus('disconnected');
+    }
+  });
+
+  btn.addEventListener('click', async () => {
+    if (useqCelium.connected) {
+      try {
+        await useqCelium.disconnect();
+      } catch (err) {
+        console.error('[uSEQ] disconnect failed:', err);
+        setStatus('disconnect failed');
+      }
+      return;
+    }
+    btn.disabled = true;
+    setStatus('requesting port…');
+    try {
+      await useqCelium.connect();
+    } catch (err) {
+      console.error('[uSEQ] connect failed:', err);
+      setStatus(`connect failed: ${err.message ?? err}`);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 let _inputModeSwitching = false;
@@ -2839,6 +2915,13 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     shapeSeqContainer.style.display = (shapeSeqEnabled && mode === 'synth') ? 'block' : 'none';
   }
 
+  // Close the uSEQ-Celium drawer if we're switching away from that mode
+  // (it auto-opens when entering useq-celium — see branch below).
+  if (mode !== 'useq-celium') {
+    const useqDrawer = document.getElementById('drawer-useq-celium');
+    if (useqDrawer) useqDrawer.classList.add('hidden');
+  }
+
   if (mode === 'synth') {
     $canvas.classList.add('hidden-canvas');
     $synthVisCanvas.classList.add('active');
@@ -2862,6 +2945,18 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     synthQuickControls.classList.add('hidden');
     if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(false);
+  } else if (mode === 'useq-celium') {
+    // USEQ_CELIUM_MODE_HOOK — later opus47 agents wire MLP/ratioSeq/routing here.
+    // For now: hide everything that belongs to other modes, auto-open the
+    // uSEQ drawer so the Connect button is visible.
+    $canvas.classList.add('hidden-canvas');
+    $synthVisCanvas.classList.remove('active');
+    heatmapStrip.classList.add('hidden');
+    synthQuickControls.classList.add('hidden');
+    if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
+    synthVisualizer.enableInteraction(false);
+    const useqDrawer = document.getElementById('drawer-useq-celium');
+    if (useqDrawer) useqDrawer.classList.remove('hidden');
   } else {
     $canvas.classList.remove('hidden-canvas');
     $synthVisCanvas.classList.remove('active');

@@ -236,6 +236,7 @@
             <button class="pill-opt" data-mode="synth" id="synth-mode-btn">Synth</button>
             <button class="pill-opt" data-mode="midi-cc">MIDI CC</button>
             <button class="pill-opt" data-mode="audio-canvas">Audio Canvas</button>
+            <button class="pill-opt" data-mode="useq-celium">uSEQ-Celium</button>
           </div>
         </div>
         <div class="mode-group">
@@ -292,6 +293,20 @@
         </div>
         <div class="synth-row" id="midi-status-row" style="display:none">
           <span class="synth-status" id="midi-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- uSEQ-Celium drawer (serial connection + status) -->
+    <div class="drawer hidden" id="drawer-useq-celium" data-drawer="useq-celium">
+      <div class="drawer-header">
+        <span>uSEQ-Celium</span>
+        <button class="drawer-close" data-drawer="useq-celium">&times;</button>
+      </div>
+      <div class="drawer-body" id="useq-celium-panel">
+        <div class="synth-row">
+          <button class="action-btn accent" id="useq-connect-btn">Connect uSEQ</button>
+          <span class="synth-status" id="useq-status">disconnected</span>
         </div>
       </div>
     </div>

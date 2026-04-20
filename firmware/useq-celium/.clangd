@@ -1,0 +1,9 @@
+# clangd config for uSEQ-Celium firmware. Points the LSP at the PlatformIO-
+# generated compile_commands.json so we get real Arduino/RP2040 include paths
+# and our #define flags (DIGI_OUT_INVERTED, USEQHARDWARE_*).
+#
+# Generate with:  pio run -e main -t compiledb
+# (run again whenever build_flags / src layout changes)
+
+CompileFlags:
+  CompilationDatabase: .

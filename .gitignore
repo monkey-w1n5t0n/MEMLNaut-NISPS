@@ -50,3 +50,7 @@ node_modules/
 bun.lock
 playwright-report/
 test-results/
+
+# uSEQ-Celium firmware (opus47) — PlatformIO build cache + generated compiledb
+firmware/useq-celium/.pio/
+firmware/useq-celium/compile_commands.json

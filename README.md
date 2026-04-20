@@ -34,3 +34,5 @@ python3 -m http.server
 Train a neural network to map joystick positions to generative visuals through interactive machine learning. Two learning modes: direct example mapping and reinforcement learning with thumbs up/down feedback.
 
 The playground UI includes an **Expand** toggle on the visual surface so you can make the canvas nearly full-screen while compressing parameter/control panels into a minimal strip beneath it.
+
+- `uSEQ-Celium mode` — browser-based dual-MLP CV/gate generator over WebSerial to uSEQ v1.0 + expander. See [docs/useq-celium/README.md](docs/useq-celium/README.md).

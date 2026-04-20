@@ -25,6 +25,15 @@ const DEFAULT_RHYTHM_HIDDEN = [16, 24];
 const DEFAULT_CV_HIDDEN = [24, 32];
 const DEFAULT_CV_NOUTPUTS = 11;
 
+/** Safety: all-zero snapshot — gates low, every CV at 0. */
+function zeroSnapshot() {
+  return {
+    gates: [false, false, false],
+    cvMain: [0, 0, 0],
+    cvExp: [0, 0, 0, 0, 0, 0, 0, 0],
+  };
+}
+
 export class UseqCeliumAdapter {
   constructor() {
     this._bridge = null;
@@ -47,6 +56,13 @@ export class UseqCeliumAdapter {
     // Kept so activate() is idempotent w.r.t. the drawer.
     this._drawer = null;
     this._activated = false;
+
+    // Panic state (opus47 final round): when panicked, the snapshot source is
+    // replaced with zeros until resume() restores the composer source. Never
+    // persisted.
+    this._panicked = false;
+    this._panicCallbacks = new Set();
+    this._onKeyDown = null; // bound escape-to-panic handler, set in activate()
   }
 
   // ---------------------------------------------------------------------------
@@ -198,6 +214,19 @@ export class UseqCeliumAdapter {
     // 3. Start composer (subscribes to events + registers snapshot source).
     this._composer.start();
     this._activated = true;
+
+    // 4. Global Escape-to-panic while the mode is active. Stored so we can
+    //    detach in deactivate().
+    if (typeof document !== 'undefined') {
+      this._onKeyDown = (e) => {
+        if (e.key !== 'Escape') return;
+        const drawer = this._drawer;
+        // Only panic if the drawer is visible — keeps Escape free elsewhere.
+        if (drawer && drawer.classList && drawer.classList.contains('hidden')) return;
+        this.panic();
+      };
+      document.addEventListener('keydown', this._onKeyDown);
+    }
   }
 
   /**
@@ -208,6 +237,13 @@ export class UseqCeliumAdapter {
     if (!this._activated) return;
     this._activated = false;
 
+    // Unwire panic state + key listener.
+    this._panicked = false;
+    if (this._onKeyDown && typeof document !== 'undefined') {
+      document.removeEventListener('keydown', this._onKeyDown);
+      this._onKeyDown = null;
+    }
+
     if (this._composer) this._composer.stop();
 
     // Unmount UIs before tearing down state they reference.
@@ -215,6 +251,21 @@ export class UseqCeliumAdapter {
     if (this._trainingUI) { try { this._trainingUI.destroy(); } catch { /* no-op */ } this._trainingUI = null; }
     if (this._routingUI) { try { this._routingUI.destroy(); } catch { /* no-op */ } this._routingUI = null; }
     if (this._bpmUIDestroy) { try { this._bpmUIDestroy(); } catch { /* no-op */ } this._bpmUIDestroy = null; }
+
+    // Unwire panic buttons.
+    if (this._panicBtn && this._panicOnClick) {
+      try { this._panicBtn.removeEventListener('click', this._panicOnClick); } catch { /* no-op */ }
+    }
+    if (this._resumeBtn && this._resumeOnClick) {
+      try { this._resumeBtn.removeEventListener('click', this._resumeOnClick); } catch { /* no-op */ }
+    }
+    if (this._panicUnsub) { try { this._panicUnsub(); } catch { /* no-op */ } this._panicUnsub = null; }
+    if (this._resumeBtn) this._resumeBtn.style.display = 'none';
+    if (this._panicBtn) this._panicBtn.style.display = '';
+    this._panicBtn = null;
+    this._resumeBtn = null;
+    this._panicOnClick = null;
+    this._resumeOnClick = null;
 
     if (this._dualMlp) {
       try { this._dualMlp.dispose(); } catch { /* no-op */ }
@@ -237,6 +288,93 @@ export class UseqCeliumAdapter {
   setBPM(bpm) {
     if (!this._composer) return;
     this._composer.setBPM(bpm);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Panic / resume (safety)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Safety: override the snapshot source with a zero source, force-send one
+   * zero frame immediately, and leave the bridge connected. The composer is
+   * left running (its source is temporarily replaced) so resume() can restore
+   * it cheaply. Panic state is NOT persisted.
+   */
+  panic() {
+    if (!this._producer) {
+      // Even without a producer, flip the flag + notify so UI reflects state.
+      this._panicked = true;
+      this._notifyPanic(true);
+      return;
+    }
+    // Replace the producer's source directly so the composer remains untouched.
+    this._producer.setSource(zeroSnapshot);
+    // Force-send one zero frame immediately (not waiting for next tick). The
+    // producer's _tick is private; the public path is to call it via a fresh
+    // writePacket on the bridge. Easiest + safe: construct zeros, encode, write.
+    if (this._bridge && this._connected) {
+      try {
+        // Lazy-import encodeStateSnapshot without adding a top-level dep shuffle.
+        import('./protocol.js').then(({ encodeStateSnapshot }) => {
+          const z = zeroSnapshot();
+          const gates = z.gates.map((g) => (g ? 1 : 0));
+          const pkt = encodeStateSnapshot(0, gates, z.cvMain, z.cvExp);
+          // Fire-and-forget; if the port is gone the bridge will reject and
+          // we'll have done our best.
+          return this._bridge.writePacket(pkt);
+        }).catch((err) => {
+          console.warn('[UseqCeliumAdapter] panic immediate write failed:', err);
+        });
+      } catch (err) {
+        console.warn('[UseqCeliumAdapter] panic immediate write threw:', err);
+      }
+    }
+    this._panicked = true;
+    this._notifyPanic(true);
+  }
+
+  /**
+   * Resume normal output: re-register the composer's snapshot source (if the
+   * composer is running), clear the panic flag, notify subscribers.
+   */
+  resume() {
+    if (!this._panicked) return;
+    this._panicked = false;
+    if (this._composer && this._composer.running) {
+      // Bounce the composer to re-register its snapshot source. composer.stop()
+      // detaches dualMlp listeners + gamepad poll + calls setSnapshotSource(null);
+      // composer.start() re-attaches them. Cheap relative to a panic event.
+      try {
+        this._composer.stop();
+        this._composer.start();
+      } catch (err) {
+        console.warn('[UseqCeliumAdapter] composer bounce on resume failed:', err);
+        this._producer.setSource(null);
+      }
+    } else {
+      // No composer — revert to defaultSource (zeros).
+      this._producer.setSource(null);
+    }
+    this._notifyPanic(false);
+  }
+
+  get panicked() { return this._panicked; }
+
+  /**
+   * Subscribe to panic-state changes. Callback fires with `true` on panic,
+   * `false` on resume. Returns an unsubscribe fn.
+   */
+  onPanicChange(cb) {
+    if (typeof cb !== 'function') return () => {};
+    this._panicCallbacks.add(cb);
+    return () => this._panicCallbacks.delete(cb);
+  }
+
+  _notifyPanic(state) {
+    for (const cb of this._panicCallbacks) {
+      try { cb(!!state); }
+      catch (err) { console.warn('[UseqCeliumAdapter] panic cb threw:', err); }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -368,6 +506,35 @@ export class UseqCeliumAdapter {
     const trainingContainer = body.querySelector('#useq-training-container');
     const bpmContainer = body.querySelector('#useq-bpm-container');
     const routingContainer = body.querySelector('#useq-routing-container');
+
+    // Panic / resume buttons (safety).
+    const panicBtn = body.querySelector('#useq-panic-btn');
+    const resumeBtn = body.querySelector('#useq-resume-btn');
+    const statusEl = body.querySelector('#useq-status');
+    if (panicBtn && resumeBtn) {
+      this._panicBtn = panicBtn;
+      this._resumeBtn = resumeBtn;
+      this._prevStatusText = statusEl ? statusEl.textContent : '';
+      this._panicOnClick = () => this.panic();
+      this._resumeOnClick = () => this.resume();
+      panicBtn.addEventListener('click', this._panicOnClick);
+      resumeBtn.addEventListener('click', this._resumeOnClick);
+      this._panicUnsub = this.onPanicChange((state) => {
+        panicBtn.style.display = state ? 'none' : '';
+        resumeBtn.style.display = state ? '' : 'none';
+        if (statusEl) {
+          if (state) {
+            this._prevStatusText = statusEl.textContent;
+            statusEl.textContent = 'PANIC — outputs zeroed';
+          } else {
+            // Let the connection callback repaint if connected; otherwise clear.
+            statusEl.textContent = this._connected
+              ? 'connected — streaming'
+              : (this._prevStatusText || 'disconnected');
+          }
+        }
+      });
+    }
 
     if (archContainer) {
       this._archUI = mountArchUI(archContainer, {

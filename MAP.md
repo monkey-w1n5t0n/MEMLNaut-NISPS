@@ -39,11 +39,32 @@ MEMLNaut-NISPS: Neural Interactive Shaping of Parameter Spaces. Two living artef
 - `playground/c15/`, `playground/faust/`, `playground/osc-bridge/` — external synth/bridge assets.
 - `playground/SPEC-controls.md`, `SPEC-shapeseq.md`, `ARCHITECTURE.md`, `PLAN-solidjs-migration.md`, `TODOS.md`, `README.md`, `devlog/` — docs.
 
+### uSEQ-Celium (browser-driven CV/gate over WebSerial)
+- `firmware/useq-celium/` — PlatformIO project, two envs: `main` (uSEQ v1.0 RP2040 — USB CDC in → 3 CV + 3 gates + Wire1 I2C forward to expander) and `expander` (I2C slave → 8 PWM CVs). Dumb translator: no synthesis on-device.
+  - `include/protocol.h` — canonical wire-protocol definitions (StateSnapshot 28B, ExpanderFrame 19B, CRC8 poly 0x07). Mirrored by eye in JS.
+  - `src/main/main.cpp`, `src/expander/expander.cpp` — parser state machine + hardware output.
+  - `tools/send_state.py` — Python harness; sends packets to a real port. `tools/loopback_smoke.mjs` — no-hardware PASS/FAIL smoke (socat PTY or TCP fallback).
+  - Build: `pio run -e main -t checkprogsize --project-dir firmware/useq-celium` (or `-e expander`).
+- `playground/js/useq-celium/` — browser mode. All CV/gate shaping lives here; firmware is just a translator.
+  - `protocol.js` — JS mirror of `protocol.h`. `encodeStateSnapshot` + CRC8.
+  - `serial-bridge.js` — WebSerial open/close/writePacket. Feature-detects.
+  - `state-producer.js` — 500 Hz `setInterval` loop calling a snapshot source.
+  - `voice-engine.js` — bar-phasor + ratioSeq rhythm generator (4-voice max).
+  - `ratio-seq.js` — rhythmic ratio generator (ported from firmware reference).
+  - `mlp-manager.js`, `dual-mlp.js` — rhythm + CV MLP pair, driven by gamepad sticks.
+  - `arch-ui.js`, `training-ui.js` — DOM for network architecture + add/clear/randomise.
+  - `routing.js`, `routing-ui.js` — 14-channel router (3 gates + 3 main CV + 8 expander CV) with per-channel source + mode.
+  - `composer.js` — orchestrator: wires gamepad → dualMlp → voice-engine → router → producer snapshot source.
+  - `adapter.js` — SynthEngine-shaped lifecycle (`init`/`activate`/`deactivate`/`panic`/`resume`/`exportSession`/`importSession`). Owns drawer UI mount + Escape-to-panic.
+  - `__test__/*.mjs` — Node-only suites (protocol, scaffold, voice-engine, mlp-manager, dual-mlp, routing, composer, panic). `node __test__/<file>.mjs` to run.
+- `docs/useq-celium/protocol.md` — authoritative wire-protocol spec.
+- `docs/useq-celium/README.md` — user quickstart + UI overview + no-hardware testing workflow.
+
 ### Other consumers
 - `vcv/` — VCV Rack plugin using `nisps-core` (`src/MEMLNaut.cpp`, `SPEC.md`, `NISPS-FORMAT.md`).
 
 ### Tests
-- `tests/e2e/*.spec.js` — Playwright e2e against the immersive app via the `?debug=1` probe (`window.__nisps`). Covers ml-engine, wasm-api, ui-interactions, input-pipeline, persistence, engine-switching, modular-mode. Shared helpers in `tests/e2e/helpers.js`.
+- `tests/e2e/*.spec.js` — Playwright e2e against the immersive app via the `?debug=1` probe (`window.__nisps`). Covers ml-engine, wasm-api, ui-interactions, input-pipeline, persistence, engine-switching, modular-mode, useq-celium-mode. Shared helpers in `tests/e2e/helpers.js`.
 - `playwright.config.js`, `package.json` — auto-starts a static server on port 7331.
 
 ### Top-level docs / planning

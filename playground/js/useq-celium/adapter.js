@@ -6,15 +6,24 @@
 // same surface (init/stop/setParam/displayName/id) that other engines do,
 // so the rest of a-app.js doesn't need to special-case it.
 //
-// Scope at this stage is PLUMBING ONLY:
-//   - Connect/disconnect the serial port on demand.
-//   - When connected, poll at 500Hz and emit all-zero StateSnapshot packets
-//     (observable on the firmware side via pio device monitor).
-//   - Leave clearly-labelled extension points where later agents will plug
-//     in ratioSeq / phasor / MLP routing.
+// Round 3 composition: the adapter also owns the lifecycle of the
+// DualMLPManager + VoiceEngine + ChannelRouter + UseqCeliumComposer, and
+// mounts the mode UI (arch / training / bpm / routing) into the drawer when
+// the mode becomes active.
 
 import { UseqSerialBridge } from './serial-bridge.js';
 import { StateProducer } from './state-producer.js';
+import { DualMLPManager } from './dual-mlp.js';
+import { VoiceEngine, PARAMS_PER_VOICE } from './voice-engine.js';
+import { ChannelRouter } from './routing.js';
+import { UseqCeliumComposer } from './composer.js';
+import { mountArchUI } from './arch-ui.js';
+import { mountTrainingUI } from './training-ui.js';
+import { mountRoutingUI } from './routing-ui.js';
+
+const DEFAULT_RHYTHM_HIDDEN = [16, 24];
+const DEFAULT_CV_HIDDEN = [24, 32];
+const DEFAULT_CV_NOUTPUTS = 11;
 
 export class UseqCeliumAdapter {
   constructor() {
@@ -22,6 +31,22 @@ export class UseqCeliumAdapter {
     this._producer = null;
     this._connectionCallbacks = new Set();
     this._connected = false;
+
+    // Round-3 composition handles
+    this._dualMlp = null;
+    this._voiceEngine = null;
+    this._router = null;
+    this._composer = null;
+
+    // UI handles (set during activate())
+    this._archUI = null;
+    this._trainingUI = null;
+    this._routingUI = null;
+    this._bpmUIDestroy = null;
+
+    // Kept so activate() is idempotent w.r.t. the drawer.
+    this._drawer = null;
+    this._activated = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -32,10 +57,8 @@ export class UseqCeliumAdapter {
   get displayName() { return 'uSEQ-Celium'; }
 
   /**
-   * No MLP-driven params yet.
-   * TODO(opus47): populate in MLP-wiring step. Later agents will expose
-   * a param vector for routing (e.g. CV targets, gate triggers, ratioSeq
-   * controls) using the same shape as C15Adapter's C15_PARAM_META.
+   * No MLP-driven params are exposed through the SynthEngine interface —
+   * routing is handled internally by the composer.
    */
   get paramMeta() { return []; }
 
@@ -71,6 +94,12 @@ export class UseqCeliumAdapter {
     });
 
     this._producer = new StateProducer(this._bridge);
+
+    // If a snapshot source was registered before init(), apply it now.
+    if (this._pendingSource) {
+      this._producer.setSource(this._pendingSource);
+      this._pendingSource = null;
+    }
   }
 
   /**
@@ -110,19 +139,11 @@ export class UseqCeliumAdapter {
   }
 
   // ---------------------------------------------------------------------------
-  // Real-time control (stub)
+  // Real-time control (routed internally via composer)
   // ---------------------------------------------------------------------------
 
-  /**
-   * EXTENSION POINT (opus47): later agents will wire MLP outputs here. For
-   * now we warn loudly so an accidental pre-wire is visible in the console.
-   */
-  setParam(_index, _value) {
-    if (!this._warnedSetParam) {
-      console.warn('[UseqCeliumAdapter] setParam() called before routing is wired — ignoring.');
-      this._warnedSetParam = true;
-    }
-  }
+  /** Composer owns the state-snapshot pipeline; setParam is unused here. */
+  setParam(_index, _value) { /* no-op: routed via composer */ }
 
   noteOn(_note, _velocity = 0.7) { /* no-op: uSEQ-Celium is gate/CV */ }
   noteOff(_note) { /* no-op */ }
@@ -131,11 +152,170 @@ export class UseqCeliumAdapter {
   getOutputNode() { return null; }
 
   // ---------------------------------------------------------------------------
-  // Extension points (opus47)
+  // Round-3 composition — activate / deactivate mode UI + pipeline
   // ---------------------------------------------------------------------------
 
   /**
-   * EXTENSION POINT (opus47): subscribe to bridge connection state changes.
+   * Activate uSEQ-Celium mode: construct the dual-MLP, voice engine, router,
+   * composer; mount ArchUI + TrainingUI + BPM slider + RoutingUI into the
+   * drawer. Idempotent.
+   *
+   * @param {HTMLElement} drawerElement  the <div id="drawer-useq-celium"> (or its body)
+   */
+  async activate(drawerElement) {
+    if (this._activated) return;
+    if (!this._bridge) await this.init(null);
+
+    // 1. Construct pipeline pieces.
+    this._dualMlp = new DualMLPManager({
+      rhythmArch: {
+        nOutputs: 4 * PARAMS_PER_VOICE, // 4 voices × 7 params
+        hiddenLayers: [...DEFAULT_RHYTHM_HIDDEN],
+      },
+      cvArch: {
+        nOutputs: DEFAULT_CV_NOUTPUTS,
+        hiddenLayers: [...DEFAULT_CV_HIDDEN],
+      },
+    });
+    await this._dualMlp.init();
+
+    this._voiceEngine = new VoiceEngine({ bpm: 120, voiceCount: 4 });
+    this._router = new ChannelRouter(null);
+
+    this._composer = new UseqCeliumComposer({
+      adapter: this,
+      dualMlp: this._dualMlp,
+      voiceEngine: this._voiceEngine,
+      router: this._router,
+    });
+
+    // 2. Mount UI (only if we got a drawer — tests may skip this).
+    this._drawer = drawerElement || null;
+    if (drawerElement) {
+      this._mountUI(drawerElement);
+    }
+
+    // 3. Start composer (subscribes to events + registers snapshot source).
+    this._composer.start();
+    this._activated = true;
+  }
+
+  /**
+   * Deactivate: stop the composer, destroy UIs, dispose the dual-MLP. Leaves
+   * the serial bridge alone (user may reconnect). Idempotent.
+   */
+  async deactivate() {
+    if (!this._activated) return;
+    this._activated = false;
+
+    if (this._composer) this._composer.stop();
+
+    // Unmount UIs before tearing down state they reference.
+    if (this._archUI) { try { this._archUI.destroy(); } catch { /* no-op */ } this._archUI = null; }
+    if (this._trainingUI) { try { this._trainingUI.destroy(); } catch { /* no-op */ } this._trainingUI = null; }
+    if (this._routingUI) { try { this._routingUI.destroy(); } catch { /* no-op */ } this._routingUI = null; }
+    if (this._bpmUIDestroy) { try { this._bpmUIDestroy(); } catch { /* no-op */ } this._bpmUIDestroy = null; }
+
+    if (this._dualMlp) {
+      try { this._dualMlp.dispose(); } catch { /* no-op */ }
+    }
+    this._dualMlp = null;
+    this._voiceEngine = null;
+    this._router = null;
+    this._composer = null;
+    this._drawer = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Composer proxies
+  // ---------------------------------------------------------------------------
+
+  getBPM() {
+    return this._composer ? this._composer.getBPM() : 120;
+  }
+
+  setBPM(bpm) {
+    if (!this._composer) return;
+    this._composer.setBPM(bpm);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session state
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Serialise full session state: bpm, voiceCount, per-MLP hidden layers,
+   * routing configs, and MLP weights.
+   *
+   * Safe to call only after activate() (requires composer + dualMlp).
+   */
+  exportSession() {
+    if (!this._composer || !this._dualMlp) {
+      throw new Error('UseqCeliumAdapter.exportSession: activate() first');
+    }
+    return {
+      version: 1,
+      bpm: this._composer.getBPM(),
+      voiceCount: this._composer.getVoiceCount(),
+      rhythmHidden: this._composer.getCurrentRhythmHidden(),
+      cvHidden: this._composer.getCurrentCvHidden(),
+      routing: this._router.getAllConfigs(),
+      mlps: this._dualMlp.exportSession(),
+    };
+  }
+
+  /**
+   * Restore session state. Tolerant of missing fields — anything absent keeps
+   * the current value.
+   */
+  async importSession(state) {
+    if (!this._composer || !this._dualMlp) {
+      throw new Error('UseqCeliumAdapter.importSession: activate() first');
+    }
+    if (!state || typeof state !== 'object') return;
+
+    // MLPs first — architecture changes here rebuild, so routing validity for
+    // cv-mlp indices needs to follow.
+    if (state.mlps) {
+      try { await this._dualMlp.importSession(state.mlps); }
+      catch (err) { console.warn('[UseqCeliumAdapter] mlp import failed:', err); }
+    }
+
+    if (Number.isFinite(state.bpm)) {
+      try { this._composer.setBPM(state.bpm); } catch { /* no-op */ }
+    }
+
+    if (Number.isInteger(state.voiceCount)) {
+      try { await this._composer.setVoiceCount(state.voiceCount); } catch { /* no-op */ }
+    }
+
+    if (Array.isArray(state.routing)) {
+      try { this._router.importConfigs(state.routing); }
+      catch (err) { console.warn('[UseqCeliumAdapter] routing import failed:', err); }
+    }
+
+    // Refresh mounted UIs to reflect the loaded state.
+    if (this._routingUI) this._routingUI.refresh();
+    if (this._archUI && this._archUI.setDefaults) {
+      this._archUI.setDefaults({
+        rhythm: {
+          voiceCount: this._composer.getVoiceCount(),
+          hiddenLayers: this._composer.getCurrentRhythmHidden(),
+        },
+        cv: {
+          nOutputs: this._dualMlp.cv?.nOutputs ?? DEFAULT_CV_NOUTPUTS,
+          hiddenLayers: this._composer.getCurrentCvHidden() || DEFAULT_CV_HIDDEN,
+        },
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Extension points
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Subscribe to bridge connection state changes.
    * Callback fires with `true` on connect, `false` on disconnect.
    * Returns an unsubscribe fn.
    */
@@ -146,17 +326,12 @@ export class UseqCeliumAdapter {
   }
 
   /**
-   * EXTENSION POINT (opus47): register a frame source. Later agents call
-   * this with a function returning `{gates: number[3], cvMain: number[3],
-   * cvExp: number[8]}` on each tick. Before it's registered, the default
-   * source emits all zeros so the wire side of the pipeline is still
-   * observable.
-   *
-   * Passing `null` reverts to the zeros source.
+   * ESCAPE HATCH: manually register a frame source, overriding the composer's.
+   * Tests use this to inject a fake. Passing `null` reverts to zeros.
+   * When activate() is called later, the composer will overwrite this.
    */
   setSnapshotSource(sourceFn) {
     if (!this._producer) {
-      // init() hasn't run yet — stash it for when the producer exists.
       this._pendingSource = sourceFn;
       return;
     }
@@ -164,15 +339,133 @@ export class UseqCeliumAdapter {
   }
 
   // ---------------------------------------------------------------------------
-  // Introspection (useful for drawer + debug probes)
+  // Introspection
   // ---------------------------------------------------------------------------
 
   get bridge() { return this._bridge; }
   get producer() { return this._producer; }
   get connected() { return this._connected; }
+  get dualMlp() { return this._dualMlp; }
+  get voiceEngine() { return this._voiceEngine; }
+  get router() { return this._router; }
+  get composer() { return this._composer; }
 
   /** True iff WebSerial is available in the current browser. */
   static isSupported() {
     return UseqSerialBridge.isSupported();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: UI mounting
+  // ---------------------------------------------------------------------------
+
+  _mountUI(drawerElement) {
+    // Look for child containers. The drawer HTML may wrap these in an inner
+    // drawer-body; try the body first, fall back to the drawer itself.
+    const body = drawerElement.querySelector('#useq-celium-panel') || drawerElement;
+
+    const archContainer = body.querySelector('#useq-arch-container');
+    const trainingContainer = body.querySelector('#useq-training-container');
+    const bpmContainer = body.querySelector('#useq-bpm-container');
+    const routingContainer = body.querySelector('#useq-routing-container');
+
+    if (archContainer) {
+      this._archUI = mountArchUI(archContainer, {
+        initial: {
+          rhythm: {
+            voiceCount: this._composer.getVoiceCount(),
+            hiddenLayers: this._composer.getCurrentRhythmHidden(),
+          },
+          cv: {
+            nOutputs: this._dualMlp.cv.nOutputs,
+            hiddenLayers: this._composer.getCurrentCvHidden() || DEFAULT_CV_HIDDEN,
+          },
+        },
+      });
+      archContainer.addEventListener('archchange', async (e) => {
+        try { await this._composer.handleArchChange(e.detail); }
+        catch (err) { console.warn('[UseqCeliumAdapter] archchange handling failed:', err); }
+      });
+    }
+
+    if (trainingContainer) {
+      this._trainingUI = mountTrainingUI(trainingContainer, this._dualMlp);
+    }
+
+    if (bpmContainer) {
+      this._bpmUIDestroy = this._mountBPMSlider(bpmContainer);
+    }
+
+    if (routingContainer) {
+      this._routingUI = mountRoutingUI(routingContainer, this._router, {
+        voiceCount: this._composer.getVoiceCount(),
+        onChange: () => this._composer.notifyRoutingChange(),
+      });
+      // Keep routing-ui's voice lists in sync when voiceCount changes.
+      this._composer.addEventListener('archchange', (ev) => {
+        if (ev?.detail?.role === 'rhythm' && this._routingUI) {
+          this._routingUI.setVoiceCount(this._composer.getVoiceCount());
+        }
+      });
+    }
+  }
+
+  _mountBPMSlider(container) {
+    container.innerHTML = '';
+    container.classList.add('useq-bpm-ui');
+    const wrap = document.createElement('div');
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '8px';
+    wrap.style.fontSize = '12px';
+    wrap.style.fontFamily = 'sans-serif';
+    wrap.style.padding = '4px 0';
+
+    const label = document.createElement('label');
+    label.textContent = 'BPM';
+    label.style.minWidth = '32px';
+
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '30';
+    slider.max = '300';
+    slider.step = '1';
+    slider.value = String(Math.round(this._composer.getBPM()));
+    slider.style.flex = '1';
+
+    const readout = document.createElement('span');
+    readout.style.minWidth = '36px';
+    readout.style.fontFamily = 'monospace';
+    readout.textContent = slider.value;
+
+    wrap.appendChild(label);
+    wrap.appendChild(slider);
+    wrap.appendChild(readout);
+    container.appendChild(wrap);
+
+    const onInput = () => {
+      const v = parseInt(slider.value, 10);
+      if (Number.isFinite(v)) {
+        this._composer.setBPM(v);
+        readout.textContent = String(v);
+      }
+    };
+    slider.addEventListener('input', onInput);
+
+    const onBPMChange = (e) => {
+      const v = Math.round(e?.detail?.bpm ?? this._composer.getBPM());
+      if (String(v) !== slider.value) {
+        slider.value = String(v);
+        readout.textContent = String(v);
+      }
+    };
+    this._composer.addEventListener('bpmchange', onBPMChange);
+
+    return () => {
+      slider.removeEventListener('input', onInput);
+      if (this._composer) this._composer.removeEventListener('bpmchange', onBPMChange);
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      container.classList.remove('useq-bpm-ui');
+    };
   }
 }

@@ -2917,9 +2917,16 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
 
   // Close the uSEQ-Celium drawer if we're switching away from that mode
   // (it auto-opens when entering useq-celium — see branch below).
+  // USEQ_CELIUM_MODE_HOOK — opus47 round 3: deactivate composer + UIs.
+  // deactivate() is idempotent, so calling on every non-useq-celium mode
+  // switch is safe — it's a no-op if we weren't active.
   if (mode !== 'useq-celium') {
     const useqDrawer = document.getElementById('drawer-useq-celium');
     if (useqDrawer) useqDrawer.classList.add('hidden');
+    if (useqCelium && typeof useqCelium.deactivate === 'function') {
+      try { await useqCelium.deactivate(); }
+      catch (err) { console.warn('[uSEQ-Celium] deactivate failed:', err); }
+    }
   }
 
   if (mode === 'synth') {
@@ -2946,9 +2953,9 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(false);
   } else if (mode === 'useq-celium') {
-    // USEQ_CELIUM_MODE_HOOK — later opus47 agents wire MLP/ratioSeq/routing here.
-    // For now: hide everything that belongs to other modes, auto-open the
-    // uSEQ drawer so the Connect button is visible.
+    // USEQ_CELIUM_MODE_HOOK — opus47 round 3: activate adapter (builds
+    // dualMlp + voiceEngine + router + composer, mounts ArchUI/TrainingUI/BPM/
+    // RoutingUI into the drawer, registers the snapshot source).
     $canvas.classList.add('hidden-canvas');
     $synthVisCanvas.classList.remove('active');
     heatmapStrip.classList.add('hidden');
@@ -2957,6 +2964,10 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     synthVisualizer.enableInteraction(false);
     const useqDrawer = document.getElementById('drawer-useq-celium');
     if (useqDrawer) useqDrawer.classList.remove('hidden');
+    if (useqCelium && typeof useqCelium.activate === 'function') {
+      try { await useqCelium.activate(useqDrawer); }
+      catch (err) { console.error('[uSEQ-Celium] activate failed:', err); }
+    }
   } else {
     $canvas.classList.remove('hidden-canvas');
     $synthVisCanvas.classList.remove('active');

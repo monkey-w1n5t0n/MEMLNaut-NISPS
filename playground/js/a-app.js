@@ -22,6 +22,7 @@ import { EOCChainUI, moduleFactory } from './ui/eoc-chain-ui.js';
 import { EngineSwitcher } from './ui/engine-switcher.js';
 import { EOCJoystick } from './ui/eoc-joystick.js';
 import { initModularUI } from './ui/modular-ui.js';
+import { UseqCeliumMode } from './useq-celium/useq-celium-mode.js';
 import { AdditiveEngine } from './synth/additive-engine.js';
 import { FMEngine } from './synth/fm-engine.js';
 import { ModularEngine } from './synth/modular-engine.js';
@@ -175,6 +176,14 @@ let joyTrail = [];
 
 // Gamepad
 let gamepad;
+
+// uSEQ-Celium mode
+let useqCeliumMode = null;
+
+// uSEQ-Celium dual joystick state
+let useqJoyLeftX = 0.5, useqJoyLeftY = 0.5, useqJoyLeftDragging = false;
+let useqJoyRightX = 0.5, useqJoyRightY = 0.5, useqJoyRightDragging = false;
+let useqJoysticksInited = false;
 
 // Raw param slider values (for examples mode advanced editing)
 let rawParamValues = new Array(N_OUTPUTS).fill(0.5);
@@ -641,13 +650,16 @@ class SynthVisualizer {
 
     // Derive sections from paramMeta groups
     const sections = [];
+    const groupColors = new Map();
+    let colorIdx = 0;
     let currentGroup = null;
     let currentCount = 0;
     for (const pm of paramMeta) {
       const group = pm.group ?? 'Other';
       if (group !== currentGroup) {
         if (currentGroup !== null) {
-          sections.push({ name: currentGroup, count: currentCount, color: _colorFromGroup(currentGroup) });
+          if (!groupColors.has(currentGroup)) groupColors.set(currentGroup, colorIdx++);
+          sections.push({ name: currentGroup, count: currentCount, color: _colorFromGroup(currentGroup, groupColors.get(currentGroup)) });
         }
         currentGroup = group;
         currentCount = 0;
@@ -655,7 +667,8 @@ class SynthVisualizer {
       currentCount++;
     }
     if (currentGroup !== null) {
-      sections.push({ name: currentGroup, count: currentCount, color: _colorFromGroup(currentGroup) });
+      if (!groupColors.has(currentGroup)) groupColors.set(currentGroup, colorIdx++);
+      sections.push({ name: currentGroup, count: currentCount, color: _colorFromGroup(currentGroup, groupColors.get(currentGroup)) });
     }
 
     // Rebuild sectionMap
@@ -665,6 +678,9 @@ class SynthVisualizer {
         this.sectionMap.push(sec);
       }
     }
+
+    // Store paramMeta names for tooltip
+    this._paramNames = paramMeta.map((pm, i) => pm.name || pm.group || `p${i}`);
 
     // Resize param arrays
     this.params = new Array(paramMeta.length).fill(0.5);
@@ -679,7 +695,8 @@ class SynthVisualizer {
   }
 
   setParams(outputs) {
-    for (let i = 0; i < N_OUTPUTS && i < outputs.length; i++) {
+    const len = Math.min(this.params.length, outputs.length);
+    for (let i = 0; i < len; i++) {
       this.params[i] = outputs[i];
     }
   }
@@ -689,7 +706,7 @@ class SynthVisualizer {
     const W = this.canvas.width;
     const H = this.canvas.height;
     const dpr = window.devicePixelRatio || 1;
-    const n = N_OUTPUTS;
+    const n = this.params.length;
 
     // Lerp display values toward target
     for (let i = 0; i < n; i++) {
@@ -703,7 +720,7 @@ class SynthVisualizer {
     // Build list of visible (non-muted) param indices
     const visibleIndices = [];
     for (let i = 0; i < n; i++) {
-      if (!isParamMuted(i)) visibleIndices.push(i);
+      if (n !== N_OUTPUTS || !isParamMuted(i)) visibleIndices.push(i);
     }
     const nVisible = visibleIndices.length || 1;
 
@@ -711,9 +728,10 @@ class SynthVisualizer {
     const sectionGaps = new Set();
     let prevSi = -1;
     for (const vi of visibleIndices) {
-      const mapping = paramToSection[vi];
-      const curSi = mapping ? mapping.si : -1;
-      if (prevSi >= 0 && curSi !== prevSi) {
+      const mapping = (n === N_OUTPUTS) ? paramToSection[vi] : null;
+      const secForGap = this.sectionMap[vi];
+      const curSi = mapping ? mapping.si : (secForGap ? secForGap.name : vi);
+      if (prevSi !== -1 && curSi !== prevSi) {
         sectionGaps.add(vi);
       }
       prevSi = curSi;
@@ -744,8 +762,8 @@ class SynthVisualizer {
     for (let vi = 0; vi < visibleIndices.length; vi++) {
       const i = visibleIndices[vi];
       const sec = this.sectionMap[i] ?? { name: 'Other', count: 1, color: '#666666' };
-      const mapping = paramToSection[i];
-      const curSi = mapping ? mapping.si : -1;
+      const mapping = (n === N_OUTPUTS) ? paramToSection[i] : null;
+      const curSi = mapping ? mapping.si : (sec ? sec.name : -1);
 
       // Section divider gap
       if (sectionGaps.has(i)) {
@@ -773,20 +791,17 @@ class SynthVisualizer {
         sectionIndex = curSi;
       }
 
-      this._barXPositions[i] = x;
-      this._barWidths[i] = barWidth;
+      const bx = Math.round(x);
+      const bw = Math.max(Math.round(x + barWidth) - bx - 1, 1);
+      this._barXPositions[i] = bx;
+      this._barWidths[i] = bw;
 
       const val = this.displayParams[i];
       const barH = val * maxBarHeight;
       const barY = topPad + usableHeight - barH;
 
-      // Bar with slight transparency
-      ctx.fillStyle = sec.color + 'cc';
-      ctx.fillRect(x, barY, Math.max(barWidth - 0.5, 1), barH);
-
-      // Bright top edge
       ctx.fillStyle = sec.color;
-      ctx.fillRect(x, barY, Math.max(barWidth - 0.5, 1), Math.min(2 * dpr, barH));
+      ctx.fillRect(bx, barY, bw, barH);
 
       x += barWidth;
     }
@@ -925,7 +940,7 @@ class SynthVisualizer {
     if (i < 0 || !this._layout) return;
     if (this._barXPositions[i] < 0) return; // muted
 
-    const name = (activeEngine?.paramMeta?.[i]?.name) || SYNTH_PARAM_NAMES[i] || `p${i}`;
+    const name = this._paramNames?.[i] || (activeEngine?.paramMeta?.[i]?.name) || SYNTH_PARAM_NAMES[i] || `p${i}`;
     const val = this.displayParams[i];
     let rangeStr = '0.00 – 1.00';
     let curveStr = '0.50';
@@ -1012,6 +1027,7 @@ function outputCountForMode(mode) {
   if (mode === 'synth') return N_SYNTH_OUTPUTS;
   if (mode === 'midi-cc') return midiCCMap.length;
   if (mode === 'audio-canvas') return audioCanvas ? audioCanvas.getOutputCount() : 12;
+  if (mode === 'useq-celium') return N_VISUAL_OUTPUTS; // uSEQ uses its own MLPs; main MLP is dormant
   return N_SYNTH_OUTPUTS;
 }
 
@@ -1702,11 +1718,16 @@ async function init() {
  * Derive a stable HSL color string from a group name.
  * Uses a simple djb2-style hash to map any group string to a consistent hue.
  */
-function _colorFromGroup(group) {
+function _colorFromGroup(group, sequenceIndex) {
+  if (sequenceIndex !== undefined) {
+    const hues = [25, 160, 280, 45, 200, 330, 90, 240];
+    const hue = hues[sequenceIndex % hues.length];
+    return `hsl(${hue}, 70%, 55%)`;
+  }
   let hash = 5381;
   for (let i = 0; i < group.length; i++) {
     hash = ((hash << 5) + hash) + group.charCodeAt(i);
-    hash |= 0; // force 32-bit int
+    hash |= 0;
   }
   const hue = ((hash >>> 0) % 360);
   return `hsl(${hue}, 70%, 55%)`;
@@ -2377,6 +2398,10 @@ function updateFollowUI() {
 
 function onJoystickMove() {
   if (inputMode !== 'joystick') return;
+
+  // In uSEQ-Celium mode, the main joystick is hidden — dual joysticks handle input directly
+  if (outputMode === 'useq-celium') return;
+
   iml.setInput(0, joyX);
   iml.setInput(1, joyY);
   iml.process();
@@ -2412,6 +2437,151 @@ function onJoystickMove() {
   // Trail
   joyTrail.push({ x: joyX, y: joyY, t: Date.now() });
   if (joyTrail.length > 30) joyTrail.shift();
+}
+
+// ---- uSEQ-Celium Dual Joysticks ----
+
+function drawUseqJoy(canvas, x, y, accentColor) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const r = w / 2 - 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  // Background
+  ctx.fillStyle = 'rgba(13, 13, 13, 0.85)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.lineWidth = 0.5;
+  for (let frac = 0.25; frac < 1; frac += 0.25) {
+    ctx.beginPath();
+    ctx.moveTo(frac * w, 0); ctx.lineTo(frac * w, h);
+    ctx.moveTo(0, frac * h); ctx.lineTo(w, frac * h);
+    ctx.stroke();
+  }
+
+  // Ring border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Position dot with glow
+  const px = x * w;
+  const py = (1 - y) * h;
+
+  ctx.shadowColor = accentColor;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = accentColor;
+  ctx.beginPath();
+  ctx.arc(px, py, 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner bright dot
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.beginPath();
+  ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Crosshair
+  const crossColor = accentColor.replace(/[\d.]+\)$/, '0.2)');
+  ctx.strokeStyle = crossColor;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(px, 0); ctx.lineTo(px, h);
+  ctx.moveTo(0, py); ctx.lineTo(w, py);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function initUseqJoysticks() {
+  if (useqJoysticksInited) return;
+  const canvasLeft = document.getElementById('useq-joy-map-left');
+  const canvasRight = document.getElementById('useq-joy-map-right');
+  if (!canvasLeft || !canvasRight) return;
+
+  function wireJoy(canvas, getX, getY, setXY) {
+    let dragging = false;
+
+    canvas.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+      update(e);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (dragging) update(e);
+    });
+    canvas.addEventListener('pointerup', e => {
+      dragging = false;
+      canvas.releasePointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointercancel', () => {
+      dragging = false;
+    });
+
+    function update(e) {
+      const rect = canvas.getBoundingClientRect();
+      const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+      setXY(nx, ny, dragging);
+    }
+  }
+
+  // Left joystick: rhythm MLP
+  wireJoy(canvasLeft,
+    () => useqJoyLeftX, () => useqJoyLeftY,
+    (x, y, dragging) => {
+      useqJoyLeftX = x;
+      useqJoyLeftY = y;
+      useqJoyLeftDragging = dragging;
+      if (useqCeliumMode) useqCeliumMode.setRhythmInputs(x, y);
+    }
+  );
+
+  // Right joystick: CV MLP
+  wireJoy(canvasRight,
+    () => useqJoyRightX, () => useqJoyRightY,
+    (x, y, dragging) => {
+      useqJoyRightX = x;
+      useqJoyRightY = y;
+      useqJoyRightDragging = dragging;
+      if (useqCeliumMode) useqCeliumMode.setCvInputs(x, y);
+    }
+  );
+
+  // Initial draw
+  drawUseqJoy(canvasLeft, useqJoyLeftX, useqJoyLeftY, 'rgba(255, 106, 0, 0.9)');
+  drawUseqJoy(canvasRight, useqJoyRightX, useqJoyRightY, 'rgba(96, 165, 250, 0.9)');
+
+  useqJoysticksInited = true;
+}
+
+function showUseqJoysticks() {
+  const left = document.getElementById('useq-joy-left');
+  const right = document.getElementById('useq-joy-right');
+  if (left) left.classList.remove('hidden');
+  if (right) right.classList.remove('hidden');
+  $joystickContainer.style.display = 'none';
+  initUseqJoysticks();
+}
+
+function hideUseqJoysticks() {
+  const left = document.getElementById('useq-joy-left');
+  const right = document.getElementById('useq-joy-right');
+  if (left) left.classList.add('hidden');
+  if (right) right.classList.add('hidden');
 }
 
 // ---- Output routing ----
@@ -2502,6 +2672,8 @@ function routeOutputs(outputs) {
     }
   } else if (outputMode === 'audio-canvas') {
     if (audioCanvas) audioCanvas.setOutputs(outputs);
+  } else if (outputMode === 'useq-celium') {
+    // uSEQ-Celium drives its own MLPs — nothing to route from the main MLP
   } else {
     const vis = new Array(N_VISUAL_OUTPUTS);
     for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
@@ -2788,6 +2960,8 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
   const synthQuickControls = document.getElementById('synth-quick-controls');
   const midiCCQuickControls = document.getElementById('midi-cc-quick-controls');
   const audioCanvasWrap = document.getElementById('audio-canvas-wrap');
+  const useqQuickControls = document.getElementById('useq-quick-controls');
+  const useqRoutingDockIcon = document.getElementById('dock-useq-routing');
 
   // Lazily create AudioCanvas BEFORE computing targetOutputs so that
   // outputCountForMode returns the real count (not the 12-output fallback).
@@ -2839,6 +3013,31 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     shapeSeqContainer.style.display = (shapeSeqEnabled && mode === 'synth') ? 'block' : 'none';
   }
 
+  // Deactivate uSEQ-Celium if leaving that mode
+  if (mode !== 'useq-celium' && useqCeliumMode) {
+    useqCeliumMode.deactivate();
+  }
+
+  // Show/hide uSEQ dual joysticks + main joystick
+  if (mode === 'useq-celium') {
+    showUseqJoysticks();
+  } else {
+    hideUseqJoysticks();
+    $joystickContainer.style.display = '';
+  }
+
+  // Hide/show uSEQ-Celium panels
+  if (useqQuickControls) useqQuickControls.classList.toggle('hidden', mode !== 'useq-celium');
+  // Show/hide the uSEQ Routing dock icon; auto-close drawer when leaving mode
+  if (useqRoutingDockIcon) {
+    useqRoutingDockIcon.classList.toggle('hidden', mode !== 'useq-celium');
+    if (mode !== 'useq-celium') {
+      const routingDrawer = document.getElementById('drawer-useq-routing');
+      if (routingDrawer) routingDrawer.classList.add('hidden');
+      useqRoutingDockIcon.classList.remove('active');
+    }
+  }
+
   if (mode === 'synth') {
     $canvas.classList.add('hidden-canvas');
     $synthVisCanvas.classList.add('active');
@@ -2862,6 +3061,22 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
     synthQuickControls.classList.add('hidden');
     if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
     synthVisualizer.enableInteraction(false);
+  } else if (mode === 'useq-celium') {
+    $canvas.classList.add('hidden-canvas');
+    $synthVisCanvas.classList.add('active');
+    heatmapStrip.classList.add('hidden');
+    synthQuickControls.classList.add('hidden');
+    if (midiCCQuickControls) midiCCQuickControls.classList.add('hidden');
+    // Lazy-init and activate uSEQ-Celium mode
+    if (!useqCeliumMode) {
+      useqCeliumMode = new UseqCeliumMode();
+      await useqCeliumMode.init();
+      _buildUseqRoutingPanel();
+      _wireUseqControls();
+    }
+    synthVisualizer.rebuild(useqCeliumMode.getParamMeta());
+    synthVisualizer.enableInteraction(true);
+    useqCeliumMode.activate();
   } else {
     $canvas.classList.remove('hidden-canvas');
     $synthVisCanvas.classList.remove('active');
@@ -2874,6 +3089,76 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
   routeOutputs(iml.getOutputs());
   buildEngineParams();
   syncRawParamsFromOutputs(iml.getOutputs());
+}
+
+// ---- uSEQ-Celium helpers ----
+function _buildUseqRoutingPanel() {
+  const list = document.getElementById('useq-routing-list');
+  if (!list || !useqCeliumMode) return;
+  list.innerHTML = '';
+  const routing = useqCeliumMode.getRouting();
+  if (!routing) return;
+  for (const out of routing.outputs) {
+    const row = document.createElement('div');
+    row.className = 'useq-routing-row';
+    const label = document.createElement('span');
+    label.className = 'output-id';
+    label.textContent = out.id;
+    row.appendChild(label);
+
+    const btn = document.createElement('button');
+    btn.className = `mode-toggle ${out.mode}`;
+    btn.textContent = out.mode.toUpperCase();
+    btn.disabled = !out.cvCapable;
+    btn.dataset.outputId = out.id;
+    btn.addEventListener('click', () => {
+      const newMode = out.mode === 'cv' ? 'gate' : 'cv';
+      try {
+        useqCeliumMode.setOutputMode(out.id, newMode);
+        out.mode = newMode;
+        btn.textContent = newMode.toUpperCase();
+        btn.className = `mode-toggle ${newMode}`;
+        // Rebuild visualizer with updated param layout
+        synthVisualizer.rebuild(useqCeliumMode.getParamMeta());
+      } catch (e) {
+        console.warn('[uSEQ] Cannot toggle:', e.message);
+      }
+    });
+    row.appendChild(btn);
+    list.appendChild(row);
+  }
+}
+
+function _wireUseqControls() {
+  const connectBtn = document.getElementById('useq-connect-btn');
+  const statusEl = document.getElementById('useq-connection-status');
+  const bpmSlider = document.getElementById('useq-bpm');
+  const bpmVal = document.getElementById('useq-bpm-val');
+
+  if (connectBtn) {
+    connectBtn.addEventListener('click', async () => {
+      if (!useqCeliumMode) return;
+      if (useqCeliumMode.serialConnected) {
+        await useqCeliumMode.disconnectSerial();
+        connectBtn.classList.remove('connected');
+        if (statusEl) statusEl.textContent = 'Disconnected';
+      } else {
+        const ok = await useqCeliumMode.connectSerial();
+        if (ok) {
+          connectBtn.classList.add('connected');
+          if (statusEl) statusEl.textContent = 'Connected';
+        }
+      }
+    });
+  }
+
+  if (bpmSlider) {
+    bpmSlider.addEventListener('input', () => {
+      const bpm = parseInt(bpmSlider.value, 10);
+      if (bpmVal) bpmVal.textContent = bpm;
+      if (useqCeliumMode) useqCeliumMode.setBpm(bpm);
+    });
+  }
 }
 
 function updateNoiseRing() {
@@ -2986,6 +3271,11 @@ function _rlTarget() {
 }
 
 function onThumbsUp() {
+  if (outputMode === 'useq-celium' && useqCeliumMode) {
+    useqCeliumMode.thumbsUp();
+    flash('btn-thumbsup');
+    return;
+  }
   const target = _rlTarget();
   if (!target || target.isTraining) return;
 
@@ -3010,6 +3300,11 @@ function onThumbsUp() {
 }
 
 function onThumbsDown() {
+  if (outputMode === 'useq-celium' && useqCeliumMode) {
+    useqCeliumMode.thumbsDown();
+    flash('btn-thumbsdown');
+    return;
+  }
   const target = _rlTarget();
   if (!target) return;
 
@@ -4249,9 +4544,24 @@ function wireHelp() {
 
 // ---- Animation ----
 function animate() {
-  if (gamepad) gamepad.poll();
+  if (gamepad && outputMode !== 'useq-celium') gamepad.poll();
   if (outputMode === 'synth') {
     synthVisualizer.draw();
+  } else if (outputMode === 'useq-celium') {
+    if (useqCeliumMode) {
+      const combined = useqCeliumMode.getCombinedOutputs();
+      if (combined.length > 0) {
+        synthVisualizer.setParams(combined);
+      }
+    }
+    synthVisualizer.draw();
+    // Draw dual joysticks each frame
+    if (useqJoysticksInited) {
+      const canvasL = document.getElementById('useq-joy-map-left');
+      const canvasR = document.getElementById('useq-joy-map-right');
+      if (canvasL) drawUseqJoy(canvasL, useqJoyLeftX, useqJoyLeftY, 'rgba(255, 106, 0, 0.9)');
+      if (canvasR) drawUseqJoy(canvasR, useqJoyRightX, useqJoyRightY, 'rgba(96, 165, 250, 0.9)');
+    }
   } else if (outputMode === 'visual') {
     visualizer.draw();
   }

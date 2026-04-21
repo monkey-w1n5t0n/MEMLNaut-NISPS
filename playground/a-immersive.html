@@ -10,6 +10,96 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/a-immersive.css">
+  <style>
+    /* uSEQ-Celium mode styles */
+    .useq-quick-controls {
+      position: fixed;
+      top: 12px;
+      left: 56px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(20, 20, 20, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 6px 12px;
+      backdrop-filter: blur(8px);
+    }
+    .useq-quick-controls.hidden { display: none; }
+    .useq-quick-controls .play-btn.connected svg { stroke: #4ade80; }
+
+    /* useq-routing styles (rows/toggles used inside drawer-useq-routing) */
+    .useq-routing-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .useq-routing-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.7rem;
+      color: #ccc;
+    }
+    .useq-routing-row .output-id {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500;
+      min-width: 24px;
+    }
+    .useq-routing-row .mode-toggle {
+      font-size: 0.6rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.05);
+      color: #aaa;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .useq-routing-row .mode-toggle:hover { background: rgba(255,255,255,0.1); }
+    .useq-routing-row .mode-toggle.gate { color: #fb923c; border-color: rgba(251,146,60,0.4); }
+    .useq-routing-row .mode-toggle.cv { color: #60a5fa; border-color: rgba(96,165,250,0.4); }
+    .useq-routing-row .mode-toggle[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+    /* uSEQ-Celium dual joysticks */
+    .useq-joy-container {
+      position: fixed;
+      bottom: 100px;
+      width: 140px;
+      height: 140px;
+      z-index: 30;
+      touch-action: none;
+      border-radius: 50%;
+    }
+    .useq-joy-container.hidden { display: none; }
+    #useq-joy-left { left: 24px; }
+    #useq-joy-right { right: 24px; }
+    .useq-joy-map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      cursor: grab;
+      touch-action: none;
+    }
+    .useq-joy-map:active { cursor: grabbing; }
+    .useq-joy-label {
+      position: absolute;
+      bottom: -20px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 0.55rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      pointer-events: none;
+    }
+    #useq-joy-left .useq-joy-label { color: rgba(255, 106, 0, 0.6); }
+    #useq-joy-right .useq-joy-label { color: rgba(96, 165, 250, 0.6); }
+  </style>
 </head>
 <body>
   <!-- Back button -->
@@ -70,6 +160,22 @@
     <span class="synth-status" id="midi-cc-status" style="font-size:0.65rem;opacity:0.7"></span>
   </div>
 
+  <!-- uSEQ-Celium quick controls (shown in useq-celium mode) -->
+  <div class="useq-quick-controls hidden" id="useq-quick-controls">
+    <button class="play-btn" id="useq-connect-btn" title="Connect to uSEQ via WebSerial">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M8 2v4M8 10v4M2 8h4M10 8h4"/><circle cx="8" cy="8" r="2"/>
+      </svg>
+    </button>
+    <span class="synth-status" id="useq-connection-status" style="font-size:0.65rem;opacity:0.7">Disconnected</span>
+    <label style="display:flex;align-items:center;gap:4px;font-size:0.65rem;color:#aaa;">
+      BPM <input type="range" id="useq-bpm" min="60" max="240" step="1" value="120" style="width:60px">
+      <span id="useq-bpm-val">120</span>
+    </label>
+  </div>
+
+  <!-- uSEQ-Celium routing panel removed — now in drawer-stack as drawer-useq-routing -->
+
   <!-- Audio Canvas mode container -->
   <div id="audio-canvas-wrap" style="display:none;position:absolute;inset:0;z-index:1"></div>
 
@@ -104,6 +210,16 @@
   <div id="eoc-joy-container" class="eoc-joy-container hidden">
     <canvas id="eoc-joy-map" class="eoc-joy-map" width="120" height="120"></canvas>
     <div class="eoc-joy-label">FX</div>
+  </div>
+
+  <!-- uSEQ-Celium dual joysticks (shown only in useq-celium mode) -->
+  <div class="useq-joy-container hidden" id="useq-joy-left">
+    <canvas class="useq-joy-map" id="useq-joy-map-left" width="140" height="140"></canvas>
+    <div class="useq-joy-label">RHYTHM</div>
+  </div>
+  <div class="useq-joy-container hidden" id="useq-joy-right">
+    <canvas class="useq-joy-map" id="useq-joy-map-right" width="140" height="140"></canvas>
+    <div class="useq-joy-label">CV</div>
   </div>
 
   <!-- Hand tracking PIP (replaces joystick position when active) -->
@@ -176,6 +292,12 @@
       </svg>
       <span class="dock-label">FX</span>
     </button>
+    <button class="dock-icon hidden" data-drawer="useq-routing" id="dock-useq-routing" title="uSEQ Routing">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 4h5M9 4h5M2 8h3M7 8h7M2 12h7M11 12h3"/><circle cx="7" cy="4" r="1.5" fill="currentColor"/><circle cx="5" cy="8" r="1.5" fill="currentColor"/><circle cx="9" cy="12" r="1.5" fill="currentColor"/>
+      </svg>
+      <span class="dock-label">Route</span>
+    </button>
     <button class="dock-icon" data-drawer="help" title="Help">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="8" cy="8" r="6"/><path d="M6 6a2 2 0 0 1 4 0c0 1.5-2 1.5-2 3"/><circle cx="8" cy="12" r="0.5" fill="currentColor"/>
@@ -236,6 +358,7 @@
             <button class="pill-opt" data-mode="synth" id="synth-mode-btn">Synth</button>
             <button class="pill-opt" data-mode="midi-cc">MIDI CC</button>
             <button class="pill-opt" data-mode="audio-canvas">Audio Canvas</button>
+            <button class="pill-opt" data-mode="useq-celium">uSEQ</button>
           </div>
         </div>
         <div class="mode-group">
@@ -343,6 +466,17 @@
       </div>
       <div class="drawer-body" id="eoc-drawer-body">
         <!-- EOCChainUI renders here -->
+      </div>
+    </div>
+
+    <!-- uSEQ Routing drawer (visible only in useq-celium mode) -->
+    <div class="drawer hidden" id="drawer-useq-routing" data-drawer="useq-routing">
+      <div class="drawer-header">
+        <span>uSEQ Routing</span>
+        <button class="drawer-close" data-drawer="useq-routing">&times;</button>
+      </div>
+      <div class="drawer-body">
+        <div class="useq-routing-list" id="useq-routing-list"></div>
       </div>
     </div>
   </div>

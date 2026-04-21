@@ -2689,6 +2689,7 @@ function wireUseqCeliumDrawer() {
     }
   });
 
+  // Wired once per page lifetime; relies on adapter being a singleton.
   btn.addEventListener('click', async () => {
     if (useqCelium.connected) {
       try {

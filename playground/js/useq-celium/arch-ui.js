@@ -23,6 +23,8 @@ const RHYTHM_MAX_VOICES = 4;
 const CV_MIN_OUTPUTS = 1;
 const CV_MAX_OUTPUTS = 11;
 
+const HIDDEN_LAYER_MAX = 1024;
+
 function parseHiddenLayers(text) {
   const parts = String(text || '').split(',').map(s => s.trim()).filter(s => s.length > 0);
   if (parts.length === 0) return null;
@@ -30,7 +32,7 @@ function parseHiddenLayers(text) {
   for (const p of parts) {
     if (!/^\d+$/.test(p)) return null;
     const n = parseInt(p, 10);
-    if (!Number.isFinite(n) || n <= 0) return null;
+    if (!Number.isFinite(n) || n <= 0 || n > HIDDEN_LAYER_MAX) return null;
     nums.push(n);
   }
   return nums;

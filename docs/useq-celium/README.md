@@ -74,12 +74,28 @@ Exit 0 = `PASS`, exit 1 = `FAIL`. See
 Playwright mode-switch smoke: `npx playwright test tests/e2e/useq-celium-mode.spec.js`
 (doesn't touch real hardware; asserts the drawer wires up correctly).
 
-## Known limitations
+## Hardware bring-up
 
-- **ratioSeq phaseOffset semantics**: `ratio-seq.js` applies `phaseOffset`
-  once in JS; the C++ firmware reference (MEMLCelium mode in the main
-  firmware) may apply it twice (once in the generator, once in the phasor).
-  If you patch the generator against firmware behaviour, reconcile then.
+First-time bring-up checklist for new uSEQ-Celium hardware. Verify in this order:
+
+1. **Gate polarity (DIGI_OUT_INVERTED)**. The `main` env in
+   `firmware/useq-celium/platformio.ini` defines `-DDIGI_OUT_INVERTED`. This
+   is **unverified** on uSEQ v1.0 — the reference uSEQ firmware only sets it
+   for MUSICTHING. Scope a hard gate (CV channels 0–2) while triggering it
+   from the playground. If the gate sits HIGH at idle and pulses LOW, the
+   flag is correct. If the gate sits LOW at idle and pulses HIGH appear
+   inverted relative to your patch, **remove `-DDIGI_OUT_INVERTED`** from
+   `platformio.ini` and reflash. The firmware logs its polarity assumption
+   on boot — open the serial monitor (`pio device monitor -e main`) to
+   confirm before patching.
+2. **I2C bus to expander**. After flashing both sides, the main module logs
+   I2C activity only when CV values change. Patch an expander CV in the
+   routing UI — you should see the corresponding expander pin twitch.
+3. **PWM range**. Both firmwares write `analogWrite(pin, u16 >> 5)` into an
+   11-bit (0..2047) range. Verify a static CV value of 0xFFFF hits the
+   expected analog ceiling on your RC stage.
+
+## Known limitations
 - **MLP weight I/O**: import/export uses `nisps-wasm.js`'s `_getFlatWeights`
   / `_setFlatWeights` private-prefix accessors. If the WASM wrapper renames
   those (see `playground/js/nisps/nisps-wasm.js`), the adapter's session

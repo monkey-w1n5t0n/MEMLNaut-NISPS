@@ -15,6 +15,9 @@ export class UseqSerialBridge extends EventTarget {
     this._port = null;
     this._writer = null;
     this._connected = false;
+    // Tracks the most recent in-flight writePacket promise so callers (notably
+    // adapter.panic()) can await drain via flush().
+    this._currentWrite = null;
     // EXTENSION POINT (opus47): read-path is not wired yet. Later agents who
     // want FwHello / Ack / Reset need to add a reader loop here and emit
     // `packet` events with the parsed payload.
@@ -114,7 +117,28 @@ export class UseqSerialBridge extends EventTarget {
     if (!this._connected || !this._writer) {
       throw new Error('UseqSerialBridge: not connected');
     }
-    await this._writer.write(bytes);
+    const p = this._writer.write(bytes);
+    this._currentWrite = p;
+    try {
+      await p;
+    } finally {
+      // Only clear if we're still the latest write; otherwise a newer write
+      // already overwrote _currentWrite and we shouldn't stomp on it.
+      if (this._currentWrite === p) this._currentWrite = null;
+    }
+  }
+
+  /**
+   * Resolve when no writePacket is currently in flight. Used by the adapter's
+   * panic path to ensure no producer-issued packet lands AFTER a panic-issued
+   * zero packet. Resolves immediately when nothing is pending.
+   *
+   * @returns {Promise<void>}
+   */
+  async flush() {
+    const pending = this._currentWrite;
+    if (!pending) return;
+    try { await pending; } catch { /* swallow — caller cares about ordering, not result */ }
   }
 
   // ---------------------------------------------------------------------------

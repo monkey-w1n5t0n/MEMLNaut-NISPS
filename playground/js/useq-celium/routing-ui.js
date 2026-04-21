@@ -232,6 +232,16 @@ function buildRow(idx, router, state) {
       return;
     }
     refreshSourceOptions();
+    // Reflect clamped staticValue back into the input so the user sees what
+    // actually got stored (e.g. typing 1.5 → router clamps to 1 → input shows 1).
+    if (!isGate) {
+      const stored = router.getChannelConfig(idx);
+      if (stored.mode === 'continuous' && stored.source === 'static'
+          && Number.isFinite(stored.staticValue)
+          && String(stored.staticValue) !== staticEl.value) {
+        staticEl.value = String(stored.staticValue);
+      }
+    }
     state.onChange(router.getAllConfigs());
   }
 

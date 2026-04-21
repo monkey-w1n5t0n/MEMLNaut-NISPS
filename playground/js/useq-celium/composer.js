@@ -95,8 +95,11 @@ export class UseqCeliumComposer extends EventTarget {
     // Bridge gamepad → dualMlp. If a preconfigured GamepadInput was passed in,
     // use its onMove. Otherwise set up our own rAF-driven polling across both sticks.
     if (this._gamepad) {
-      // Respect any existing callback: wrap it so both fire.
+      // Respect any existing callback: wrap it so both fire. Stash the
+      // original so stop() can restore it (otherwise we'd permanently steal
+      // the gamepad after one start/stop cycle).
       const prev = this._gamepad.onMove;
+      this._prevGamepadOnMove = prev;
       this._gamepad.onMove = (x, y) => {
         try { if (typeof prev === 'function') prev(x, y); }
         catch (err) { console.warn('[UseqCeliumComposer] user onMove threw:', err); }
@@ -124,6 +127,13 @@ export class UseqCeliumComposer extends EventTarget {
     if (this._rafHandle !== null && typeof globalThis.cancelAnimationFrame === 'function') {
       globalThis.cancelAnimationFrame(this._rafHandle);
       this._rafHandle = null;
+    }
+
+    // Restore the gamepad's pre-existing onMove callback (if any) so we don't
+    // permanently shadow it after a start/stop cycle.
+    if (this._gamepad && this._prevGamepadOnMove !== undefined) {
+      this._gamepad.onMove = this._prevGamepadOnMove;
+      this._prevGamepadOnMove = undefined;
     }
 
     this._adapter.setSnapshotSource(null);

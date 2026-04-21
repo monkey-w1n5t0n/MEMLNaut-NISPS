@@ -230,9 +230,14 @@ export class VoiceEngine extends EventTarget {
     const velocities = new Array(n);
     for (let i = 0; i < n; i++) {
       const v = this._voices[i];
-      // voicePhase = (masterPhase * phasorMul) mod 1
-      let voicePhase = this._masterPhase * v.phasorMul;
-      voicePhase = voicePhase - Math.floor(voicePhase);
+      // Bug-for-bug parity with MEMLCelium firmware: phaseOffset is folded
+      // into voicePhase here (RatioSeqEngine.hpp:79-81), AND ratioSeq() then
+      // adds it again internally (RatioSeq.hpp:26). The double-application is
+      // intentional — see ALIGNMENT.md / docs/useq-celium/README.md. With
+      // phaseOffset=0 (the most common case) this collapses to the single-
+      // application form and existing tests still pass.
+      let voicePhase = this._masterPhase * v.phasorMul + v.phaseOffset;
+      voicePhase = voicePhase - Math.floor(voicePhase); // wrap to [0,1)
       const gateNow = ratioSeq(
         voicePhase, v.phaseOffset, v.ratioSum, v.ratios, DEFAULT_PULSE_WIDTH,
       );

@@ -20,6 +20,7 @@ import { UseqCeliumComposer } from './composer.js';
 import { mountArchUI } from './arch-ui.js';
 import { mountTrainingUI } from './training-ui.js';
 import { mountRoutingUI } from './routing-ui.js';
+import { encodeStateSnapshot } from './protocol.js';
 
 const DEFAULT_RHYTHM_HIDDEN = [16, 24];
 const DEFAULT_CV_HIDDEN = [24, 32];
@@ -63,6 +64,15 @@ export class UseqCeliumAdapter {
     this._panicked = false;
     this._panicCallbacks = new Set();
     this._onKeyDown = null; // bound escape-to-panic handler, set in activate()
+    this._panicSeq = 0;     // monotonic seq used by panic-issued packets
+
+    // Snapshot source registered before init() lands; consumed when init()
+    // constructs the producer.
+    this._pendingSource = null;
+
+    // AbortController for every DOM listener registered inside activate().
+    // Aborted in deactivate() so listeners come off cleanly across cycles.
+    this._activateAbort = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -182,6 +192,10 @@ export class UseqCeliumAdapter {
     if (this._activated) return;
     if (!this._bridge) await this.init(null);
 
+    // Single AbortController scopes every DOM listener we register inside
+    // activate(); deactivate() abort()s it so listeners drop in one shot.
+    this._activateAbort = new AbortController();
+
     // 1. Construct pipeline pieces.
     this._dualMlp = new DualMLPManager({
       rhythmArch: {
@@ -215,8 +229,8 @@ export class UseqCeliumAdapter {
     this._composer.start();
     this._activated = true;
 
-    // 4. Global Escape-to-panic while the mode is active. Stored so we can
-    //    detach in deactivate().
+    // 4. Global Escape-to-panic while the mode is active. Listener is scoped
+    //    to this._activateAbort so deactivate() removes it.
     if (typeof document !== 'undefined') {
       this._onKeyDown = (e) => {
         if (e.key !== 'Escape') return;
@@ -225,7 +239,7 @@ export class UseqCeliumAdapter {
         if (drawer && drawer.classList && drawer.classList.contains('hidden')) return;
         this.panic();
       };
-      document.addEventListener('keydown', this._onKeyDown);
+      document.addEventListener('keydown', this._onKeyDown, { signal: this._activateAbort.signal });
     }
   }
 
@@ -237,12 +251,14 @@ export class UseqCeliumAdapter {
     if (!this._activated) return;
     this._activated = false;
 
-    // Unwire panic state + key listener.
+    // Unwire panic state + every DOM listener registered inside activate().
+    // Aborting the controller is idempotent and removes listeners in one shot.
     this._panicked = false;
-    if (this._onKeyDown && typeof document !== 'undefined') {
-      document.removeEventListener('keydown', this._onKeyDown);
-      this._onKeyDown = null;
+    if (this._activateAbort) {
+      try { this._activateAbort.abort(); } catch { /* no-op */ }
+      this._activateAbort = null;
     }
+    this._onKeyDown = null;
 
     if (this._composer) this._composer.stop();
 
@@ -295,65 +311,89 @@ export class UseqCeliumAdapter {
   // ---------------------------------------------------------------------------
 
   /**
-   * Safety: override the snapshot source with a zero source, force-send one
-   * zero frame immediately, and leave the bridge connected. The composer is
-   * left running (its source is temporarily replaced) so resume() can restore
-   * it cheaply. Panic state is NOT persisted.
+   * Safety: stop the producer (no more producer-issued ticks), drain any
+   * in-flight write so the next packet on the wire is ours, swap the source to
+   * zeros, send one zero packet directly, then restart the producer so it
+   * keeps emitting zeros at 500Hz until resume() flips back. Panic state is
+   * NEVER persisted.
+   *
+   * Returns a Promise that resolves once the immediate zero packet has been
+   * written (or skipped, when not connected). Callers may ignore it; tests
+   * await it to check ordering.
    */
-  panic() {
-    if (!this._producer) {
-      // Even without a producer, flip the flag + notify so UI reflects state.
-      this._panicked = true;
-      this._notifyPanic(true);
-      return;
-    }
-    // Replace the producer's source directly so the composer remains untouched.
-    this._producer.setSource(zeroSnapshot);
-    // Force-send one zero frame immediately (not waiting for next tick). The
-    // producer's _tick is private; the public path is to call it via a fresh
-    // writePacket on the bridge. Easiest + safe: construct zeros, encode, write.
-    if (this._bridge && this._connected) {
-      try {
-        // Lazy-import encodeStateSnapshot without adding a top-level dep shuffle.
-        import('./protocol.js').then(({ encodeStateSnapshot }) => {
-          const z = zeroSnapshot();
-          const gates = z.gates.map((g) => (g ? 1 : 0));
-          const pkt = encodeStateSnapshot(0, gates, z.cvMain, z.cvExp);
-          // Fire-and-forget; if the port is gone the bridge will reject and
-          // we'll have done our best.
-          return this._bridge.writePacket(pkt);
-        }).catch((err) => {
-          console.warn('[UseqCeliumAdapter] panic immediate write failed:', err);
-        });
-      } catch (err) {
-        console.warn('[UseqCeliumAdapter] panic immediate write threw:', err);
-      }
-    }
+  async panic() {
     this._panicked = true;
     this._notifyPanic(true);
+
+    if (!this._producer) return;
+
+    // 1. Stop the producer synchronously — clears the interval timer so no
+    //    new ticks fire from this point on.
+    const wasRunning = this._producer.running;
+    this._producer.stop();
+
+    // 2. Drain any in-flight write so an old non-zero packet can't land AFTER
+    //    our zero packet on the wire.
+    if (this._bridge && typeof this._bridge.flush === 'function') {
+      try { await this._bridge.flush(); }
+      catch (err) { console.warn('[UseqCeliumAdapter] panic flush failed:', err); }
+    }
+
+    // 3. Swap the producer's source to zeros so when we restart it keeps
+    //    emitting safe frames.
+    this._producer.setSource(zeroSnapshot);
+
+    // 4. Send one zero packet directly through the bridge.
+    if (this._bridge && this._connected) {
+      try {
+        const z = zeroSnapshot();
+        const gates = z.gates.map((g) => (g ? 1 : 0));
+        const pkt = encodeStateSnapshot(this._panicSeq & 0xff, gates, z.cvMain, z.cvExp);
+        this._panicSeq = (this._panicSeq + 1) & 0xff;
+        await this._bridge.writePacket(pkt);
+      } catch (err) {
+        console.warn('[UseqCeliumAdapter] panic immediate write failed:', err);
+      }
+    }
+
+    // 5. Restart the producer with the zeros source so the heartbeat keeps
+    //    firing zeros until resume(). Only restart if it was running before
+    //    panic — don't surprise tests that expect an idle producer.
+    if (wasRunning) {
+      try { this._producer.start(); }
+      catch (err) { console.warn('[UseqCeliumAdapter] panic restart failed:', err); }
+    }
   }
 
   /**
-   * Resume normal output: re-register the composer's snapshot source (if the
-   * composer is running), clear the panic flag, notify subscribers.
+   * Resume normal output: stop the zeros heartbeat, restore the composer's
+   * snapshot source (or zeros if no composer), restart the producer.
    */
   resume() {
     if (!this._panicked) return;
     this._panicked = false;
-    if (this._composer && this._composer.running) {
-      // Bounce the composer to re-register its snapshot source. composer.stop()
-      // detaches dualMlp listeners + gamepad poll + calls setSnapshotSource(null);
-      // composer.start() re-attaches them. Cheap relative to a panic event.
-      try {
-        this._composer.stop();
-        this._composer.start();
-      } catch (err) {
-        console.warn('[UseqCeliumAdapter] composer bounce on resume failed:', err);
+
+    if (this._producer) {
+      const wasRunning = this._producer.running;
+      this._producer.stop();
+      if (this._composer && this._composer.running) {
+        // Re-register the composer's snapshot source. The composer's
+        // _snapshotSource is bound at construction; setSnapshotSource() routes
+        // it back through the producer.
+        try {
+          this._composer.stop();
+          this._composer.start();
+        } catch (err) {
+          console.warn('[UseqCeliumAdapter] composer bounce on resume failed:', err);
+          this._producer.setSource(null);
+        }
+      } else {
         this._producer.setSource(null);
       }
-    } else {
-      // No composer — revert to defaultSource (zeros).
-      this._producer.setSource(null);
+      if (wasRunning) {
+        try { this._producer.start(); }
+        catch (err) { console.warn('[UseqCeliumAdapter] resume restart failed:', err); }
+      }
     }
     this._notifyPanic(false);
   }
@@ -552,7 +592,7 @@ export class UseqCeliumAdapter {
       archContainer.addEventListener('archchange', async (e) => {
         try { await this._composer.handleArchChange(e.detail); }
         catch (err) { console.warn('[UseqCeliumAdapter] archchange handling failed:', err); }
-      });
+      }, { signal: this._activateAbort?.signal });
     }
 
     if (trainingContainer) {
@@ -573,7 +613,7 @@ export class UseqCeliumAdapter {
         if (ev?.detail?.role === 'rhythm' && this._routingUI) {
           this._routingUI.setVoiceCount(this._composer.getVoiceCount());
         }
-      });
+      }, { signal: this._activateAbort?.signal });
     }
   }
 

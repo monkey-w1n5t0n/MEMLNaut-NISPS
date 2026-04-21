@@ -3,7 +3,7 @@
 // Target: uSEQ v1.0 (RP2040) with DIGI_OUT_INVERTED. Reads StateSnapshot
 // packets from USB serial (see docs/useq-celium/protocol.md), applies the
 // 3 main-module CVs and 3 hard gates, and forwards the 8 expander CVs over
-// Wire1 to the expander at UC_EXP_I2C_ADDR.
+// Wire to the expander at UC_EXP_I2C_ADDR.
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -19,7 +19,7 @@ static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
 // useq_output_pins[]     = { 21, 20, 19, 18, 17, 16 }
 //   indices 0..2 -> CV outs (PIO-PWM on uSEQ, here we use Arduino PWM)
 //   indices 3..5 -> hard gates (binary GPIO). DIGI_OUT_INVERTED flips them.
-// I2C on Wire1: SDA = GPIO 0, SCL = GPIO 1.
+// I2C on Wire: SDA = GPIO 0, SCL = GPIO 1.
 static const uint8_t CV_PINS[UC_NUM_MAIN_CV]      = { 21, 20, 19 };
 static const uint8_t GATE_PINS[UC_NUM_HARD_GATES] = { 18, 17, 16 };
 static const uint8_t I2C_SDA_PIN = 0;
@@ -86,9 +86,9 @@ static inline void forward_to_expander(const uc_state_snapshot_t* s) {
     f.crc8 = uc_crc8(reinterpret_cast<const uint8_t*>(&f),
                      UC_EXPANDER_FRAME_LEN - 1);
 
-    Wire1.beginTransmission(UC_EXP_I2C_ADDR);
-    Wire1.write(reinterpret_cast<const uint8_t*>(&f), UC_EXPANDER_FRAME_LEN);
-    Wire1.endTransmission(); // blocking; ~190µs at 400 kHz for 19 bytes. Fine.
+    Wire.beginTransmission(UC_EXP_I2C_ADDR);
+    Wire.write(reinterpret_cast<const uint8_t*>(&f), UC_EXPANDER_FRAME_LEN);
+    Wire.endTransmission(); // blocking; ~190µs at 400 kHz for 19 bytes. Fine.
 
     g_last_i2c_us  = now;
     g_last_exp_seq = s->seq;
@@ -163,10 +163,16 @@ void setup() {
 #endif
     }
 
-    Wire1.setSDA(I2C_SDA_PIN);
-    Wire1.setSCL(I2C_SCL_PIN);
-    Wire1.setClock(400000);
-    Wire1.begin(); // master
+    Wire.setSDA(I2C_SDA_PIN);
+    Wire.setSCL(I2C_SCL_PIN);
+    Wire.setClock(400000);
+    Wire.begin(); // master
+
+#ifdef DIGI_OUT_INVERTED
+    Serial.println("[useq-celium] gate polarity: ACTIVE_LOW (DIGI_OUT_INVERTED)");
+#else
+    Serial.println("[useq-celium] gate polarity: ACTIVE_HIGH");
+#endif
 }
 
 void loop() {

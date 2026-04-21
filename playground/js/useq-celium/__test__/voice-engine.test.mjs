@@ -364,6 +364,74 @@ const approx = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 }
 
 // ---------------------------------------------------------------------------
+// VoiceEngine — phaseOffset double-application matches MEMLCelium firmware
+// ---------------------------------------------------------------------------
+// Per H3 in the opus47 review: voice-engine intentionally folds phaseOffset
+// into voicePhase AND lets ratioSeq() add it again (matches RatioSeqEngine.hpp
+// :79-81 + RatioSeq.hpp:26). This test compares the engine's gate edges over
+// one bar against a tiny inline reference that mirrors that double-offset
+// formula. Two voices with identical params except for phaseOffset slot
+// (params[4]).
+{
+  // Walk a deterministic phase trajectory and compare gate sequences.
+  // BPM=120, 4/4 → bar = 2s → 1000 ticks at dt=2ms.
+  // Voice A: params[4] = 0       → phaseOffset = 0/4 = 0
+  // Voice B: params[4] = 0.5     → phaseOffset = 2/4 = 0.5
+  // ratios all 1 → ratioSum=3, ampRatios all 1 → ampRatioSum=2.
+  // phasorMul slot = 0 → 1.
+
+  const eng = new VoiceEngine({ bpm: 120, voiceCount: 2, timeSigBeats: 4 });
+  eng.updateParams(new Float32Array([
+    0, 0, 0, 0, 0,   0, 0,   // voice 0: phaseOffset=0
+    0, 0, 0, 0, 0.5, 0, 0,   // voice 1: phaseOffset=0.5 (decodes to 2/4)
+  ]));
+
+  // Reference impl mirroring the C++ double-offset formula.
+  function refGate(masterPhase, phasorMul, phaseOffset, ratioSum, ratios, pw) {
+    let voicePhase = masterPhase * phasorMul + phaseOffset;
+    voicePhase -= Math.floor(voicePhase);
+    let off = phaseOffset + voicePhase;
+    if (off >= 1) off -= 1;
+    const phaseAdj = ratioSum * off;
+    let acc = 0, last = 0;
+    for (let i = 0; i < ratios.length; i++) {
+      acc += ratios[i];
+      if (phaseAdj <= acc) {
+        const span = acc - last;
+        if (span <= 0) return false;
+        return ((phaseAdj - last) / span) <= pw;
+      }
+      last = acc;
+    }
+    return false;
+  }
+
+  const phaseInc = (120 / 60) / 4 / 1000; // per-ms increment
+  let mp = 0;
+  let edgesA = 0, edgesB = 0;
+  let prevA = false, prevB = false;
+  for (let i = 0; i < 999; i++) {
+    mp += 2 * phaseInc;
+    if (mp >= 1) mp -= Math.floor(mp);
+    const expectA = refGate(mp, 1, 0,   3, [1,1,1], 0.5);
+    const expectB = refGate(mp, 1, 0.5, 3, [1,1,1], 0.5);
+    const { gates } = eng.tick(2);
+    assert(gates[0] === expectA,
+      `phaseOffset double-app: voice A tick ${i} gate matches ref (got ${gates[0]}, want ${expectA})`);
+    assert(gates[1] === expectB,
+      `phaseOffset double-app: voice B tick ${i} gate matches ref (got ${gates[1]}, want ${expectB})`);
+    if (gates[0] && !prevA) edgesA++;
+    if (gates[1] && !prevB) edgesB++;
+    prevA = gates[0]; prevB = gates[1];
+  }
+  // Sanity: with ratios [1,1,1] + phasorMul 1 we expect 3 rising edges per
+  // bar regardless of phaseOffset (offset shifts the pattern in time, doesn't
+  // change density). If the double-app was buggy w.r.t. wrapping we'd see 0/6.
+  assert(edgesA === 3, `voice A: 3 rising edges per bar (got ${edgesA})`);
+  assert(edgesB === 3, `voice B: 3 rising edges per bar (got ${edgesB})`);
+}
+
+// ---------------------------------------------------------------------------
 // VoiceEngine — multi-voice smoke test
 // ---------------------------------------------------------------------------
 {

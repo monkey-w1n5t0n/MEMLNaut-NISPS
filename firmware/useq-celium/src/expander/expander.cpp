@@ -1,6 +1,6 @@
 // uSEQ-Celium expander firmware — I2C slave, 8-channel PWM CV output.
 //
-// Listens on Wire1 at UC_EXP_I2C_ADDR for ExpanderFrame packets (19 bytes)
+// Listens on Wire at UC_EXP_I2C_ADDR for ExpanderFrame packets (19 bytes)
 // written by the uSEQ main module. Validates CRC8 and mirrors the 8 u16
 // CV values to 8 PWM pins (u16 >> 5 -> 11-bit PWM).
 
@@ -14,7 +14,7 @@ static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__,
 
 // --- Pin map (from uSEQ/src/uSEQ/pinmap.h, USEQHARDWARE_EXPANDER_OUT_0_1) ---
 // useq_output_pins[] = { 13, 14, 10, 11, 8, 7, 5, 3 }
-// Wire1 on this board: SDA = GPIO 4, SCL = GPIO 1.
+// Wire on this board: SDA = GPIO 4, SCL = GPIO 1.
 static const uint8_t CV_PINS[UC_NUM_EXP_CV] = { 13, 14, 10, 11, 8, 7, 5, 3 };
 static const uint8_t I2C_SDA_PIN = 4;
 static const uint8_t I2C_SCL_PIN = 1;
@@ -35,11 +35,11 @@ static uint8_t g_rx_scratch[UC_EXPANDER_FRAME_LEN];
 static void on_i2c_receive(int n_bytes) {
     if (n_bytes != (int)UC_EXPANDER_FRAME_LEN) {
         // Drain to clear the bus. Malformed frame.
-        while (Wire1.available()) Wire1.read();
+        while (Wire.available()) Wire.read();
         return;
     }
     for (int i = 0; i < n_bytes; i++) {
-        g_rx_scratch[i] = Wire1.read();
+        g_rx_scratch[i] = Wire.read();
     }
     // CRC8 over bytes [0..17], compared to byte 18.
     const uint8_t crc = uc_crc8(g_rx_scratch, UC_EXPANDER_FRAME_LEN - 1);
@@ -61,10 +61,10 @@ void setup() {
         analogWrite(CV_PINS[i], 0);
     }
 
-    Wire1.setSDA(I2C_SDA_PIN);
-    Wire1.setSCL(I2C_SCL_PIN);
-    Wire1.begin(UC_EXP_I2C_ADDR); // slave
-    Wire1.onReceive(on_i2c_receive);
+    Wire.setSDA(I2C_SDA_PIN);
+    Wire.setSCL(I2C_SCL_PIN);
+    Wire.begin(UC_EXP_I2C_ADDR); // slave
+    Wire.onReceive(on_i2c_receive);
 }
 
 void loop() {

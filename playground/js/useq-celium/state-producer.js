@@ -113,7 +113,26 @@ export class StateProducer {
     this._seq = (this._seq + 1) & 0xff;
 
     this._writeInFlight = true;
-    this._bridge.writePacket(pkt)
+    let writePromise;
+    try {
+      writePromise = this._bridge.writePacket(pkt);
+    } catch (err) {
+      // Synchronous throw before the promise was returned — make sure we
+      // don't strand _writeInFlight = true.
+      this._writeInFlight = false;
+      this._consecutiveFailures++;
+      console.warn(
+        `[StateProducer] writePacket sync threw (${this._consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}):`,
+        err,
+      );
+      if (this._consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        console.error('[StateProducer] too many consecutive failures — stopping and disconnecting');
+        this.stop();
+        Promise.resolve(this._bridge.disconnect()).catch(() => {});
+      }
+      return;
+    }
+    Promise.resolve(writePromise)
       .then(() => {
         this._writeInFlight = false;
         this._consecutiveFailures = 0;

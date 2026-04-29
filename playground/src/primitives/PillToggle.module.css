@@ -1,0 +1,34 @@
+.group {
+  display: inline-flex;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.pill {
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 6px 14px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-mute);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.pill:hover:not(:disabled):not(.active) {
+  color: var(--fg);
+}
+
+.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}

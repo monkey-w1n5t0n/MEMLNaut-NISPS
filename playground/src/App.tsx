@@ -1,12 +1,17 @@
-import { Component, createSignal, onCleanup, Show } from 'solid-js';
+import { Component, createSignal, lazy, onCleanup, Show } from 'solid-js';
 import styles from './App.module.css';
 
-type Route = 'home' | 'unknown';
+type Route = 'home' | 'primitives' | 'unknown';
 
 function parseRoute(path: string): Route {
   if (path === '' || path === '/' || path === '/index.html') return 'home';
+  if (path === '/dev/primitives' || path === '/dev/primitives/') return 'primitives';
   return 'unknown';
 }
+
+// Lazy-loaded so the home route doesn't pay the cost of loading every
+// primitive demo. Stream 9/10 can grow the showcase freely.
+const PrimitivesShowcase = lazy(() => import('./dev/PrimitivesShowcase'));
 
 const App: Component = () => {
   const [route, setRoute] = createSignal<Route>(parseRoute(window.location.pathname));
@@ -34,11 +39,21 @@ const App: Component = () => {
           >
             home
           </button>
+          <button
+            type="button"
+            class={route() === 'primitives' ? styles.active : ''}
+            onClick={() => navigate('/dev/primitives')}
+          >
+            /dev/primitives
+          </button>
         </nav>
       </header>
       <main class={styles.main}>
         <Show when={route() === 'home'}>
           <Home />
+        </Show>
+        <Show when={route() === 'primitives'}>
+          <PrimitivesShowcase />
         </Show>
         <Show when={route() === 'unknown'}>
           <div class={styles.notFound}>
@@ -61,8 +76,11 @@ const Home: Component = () => {
       <p class={styles.tagline}>
         Interactive ML control of audio. SolidJS scaffold — modes coming online in stream 9.
       </p>
+      <ul class={styles.linkList}>
+        <li><a href="/dev/primitives" onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/dev/primitives'); window.dispatchEvent(new PopStateEvent('popstate')); }}>Primitives showcase</a> — UI building blocks</li>
+      </ul>
       <p class={styles.note}>
-        This is a fresh scaffold. Primitives, stores, ML, WASM, and audio engines are added in subsequent commits.
+        This is a fresh scaffold. ML, WASM, and audio engines are not yet wired up.
       </p>
     </div>
   );

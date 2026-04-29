@@ -1,0 +1,85 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  padding: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.btn {
+  flex: 1;
+  height: 48px;
+  font-size: var(--fs-lg);
+  border-radius: var(--r-1);
+  font-weight: 600;
+}
+
+.thumbsUp {
+  background: rgba(107, 194, 107, 0.16);
+  border-color: rgba(107, 194, 107, 0.4);
+  color: var(--good);
+}
+.thumbsUp:hover:not(:disabled) {
+  background: rgba(107, 194, 107, 0.28);
+}
+
+.thumbsDown {
+  background: rgba(239, 91, 91, 0.16);
+  border-color: rgba(239, 91, 91, 0.4);
+  color: var(--bad);
+}
+.thumbsDown:hover:not(:disabled) {
+  background: rgba(239, 91, 91, 0.28);
+}
+
+.undo {
+  background: var(--bg-2);
+  color: var(--fg-mute);
+}
+
+.btnAlt {
+  flex: 1;
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.status {
+  display: flex;
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.statusItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-xs);
+}
+
+.statusLabel {
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.statusValue {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.busy {
+  color: var(--accent-2);
+  align-self: center;
+  font-style: italic;
+}

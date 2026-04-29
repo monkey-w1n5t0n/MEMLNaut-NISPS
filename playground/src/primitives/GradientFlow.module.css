@@ -1,0 +1,6 @@
+.canvas {
+  display: block;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+}

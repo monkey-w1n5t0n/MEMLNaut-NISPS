@@ -44,7 +44,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -53,7 +53,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -62,7 +62,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -71,7 +71,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -80,7 +80,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -89,7 +89,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -98,7 +98,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
     Param{
@@ -107,7 +107,7 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "midi",
     },
 }};

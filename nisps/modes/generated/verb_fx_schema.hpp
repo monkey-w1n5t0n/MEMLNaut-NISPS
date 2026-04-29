@@ -38,7 +38,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "routing",
     },
     Param{
@@ -47,7 +47,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -56,7 +56,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -65,7 +65,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -74,7 +74,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -83,7 +83,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -92,7 +92,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -101,7 +101,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -110,7 +110,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -119,7 +119,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -128,7 +128,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -137,7 +137,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -146,7 +146,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -155,7 +155,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -164,7 +164,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -173,7 +173,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -182,7 +182,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -191,7 +191,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -200,7 +200,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -209,7 +209,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -218,7 +218,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "verb",
     },
     Param{
@@ -227,7 +227,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -236,7 +236,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -245,7 +245,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -254,7 +254,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -263,7 +263,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -272,7 +272,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -281,7 +281,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -290,7 +290,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -299,7 +299,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -308,7 +308,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -317,7 +317,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -326,7 +326,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -335,7 +335,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -344,7 +344,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -353,7 +353,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -362,7 +362,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "filterbank",
     },
     Param{
@@ -371,7 +371,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -380,7 +380,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -389,7 +389,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -398,7 +398,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -407,7 +407,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -416,7 +416,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -425,7 +425,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "routing",
     },
     Param{
@@ -434,7 +434,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "routing",
     },
     Param{
@@ -443,7 +443,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
     Param{
@@ -452,7 +452,7 @@ inline constexpr std::array<Param, kVerbFxParamCount> kVerbFxParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "delays",
     },
 }};

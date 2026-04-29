@@ -38,7 +38,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm0",
     },
     Param{
@@ -47,7 +47,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm0",
     },
     Param{
@@ -56,7 +56,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm0",
     },
     Param{
@@ -65,7 +65,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm0",
     },
     Param{
@@ -74,7 +74,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm0",
     },
     Param{
@@ -83,7 +83,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm1",
     },
     Param{
@@ -92,7 +92,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm1",
     },
     Param{
@@ -101,7 +101,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm1",
     },
     Param{
@@ -110,7 +110,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm1",
     },
     Param{
@@ -119,7 +119,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm1",
     },
     Param{
@@ -128,7 +128,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm2",
     },
     Param{
@@ -137,7 +137,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm2",
     },
     Param{
@@ -146,7 +146,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm2",
     },
     Param{
@@ -155,7 +155,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm2",
     },
     Param{
@@ -164,7 +164,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm2",
     },
     Param{
@@ -173,7 +173,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm3",
     },
     Param{
@@ -182,7 +182,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm3",
     },
     Param{
@@ -191,7 +191,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm3",
     },
     Param{
@@ -200,7 +200,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm3",
     },
     Param{
@@ -209,7 +209,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm3",
     },
     Param{
@@ -218,7 +218,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm4",
     },
     Param{
@@ -227,7 +227,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm4",
     },
     Param{
@@ -236,7 +236,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm4",
     },
     Param{
@@ -245,7 +245,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm4",
     },
     Param{
@@ -254,7 +254,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm4",
     },
     Param{
@@ -263,7 +263,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm5",
     },
     Param{
@@ -272,7 +272,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm5",
     },
     Param{
@@ -281,7 +281,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm5",
     },
     Param{
@@ -290,7 +290,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm5",
     },
     Param{
@@ -299,7 +299,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm5",
     },
     Param{
@@ -308,7 +308,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm6",
     },
     Param{
@@ -317,7 +317,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm6",
     },
     Param{
@@ -326,7 +326,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm6",
     },
     Param{
@@ -335,7 +335,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm6",
     },
     Param{
@@ -344,7 +344,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm6",
     },
     Param{
@@ -353,7 +353,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm7",
     },
     Param{
@@ -362,7 +362,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "fm7",
     },
     Param{
@@ -371,7 +371,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm7",
     },
     Param{
@@ -380,7 +380,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm7",
     },
     Param{
@@ -389,7 +389,7 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "fm7",
     },
 }};

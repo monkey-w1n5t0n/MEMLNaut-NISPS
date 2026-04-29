@@ -38,7 +38,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -47,7 +47,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -56,7 +56,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "operators",
     },
     Param{
@@ -65,7 +65,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "operators",
     },
     Param{
@@ -74,7 +74,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -83,7 +83,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "operators",
     },
     Param{
@@ -92,7 +92,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "operators",
     },
     Param{
@@ -101,7 +101,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -110,7 +110,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "modulation",
     },
     Param{
@@ -119,7 +119,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "modulation",
     },
     Param{
@@ -128,7 +128,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -137,7 +137,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Square,
+        Curve::square,
         "modulation",
     },
     Param{
@@ -146,7 +146,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Square,
+        Curve::square,
         "modulation",
     },
     Param{
@@ -155,7 +155,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -164,7 +164,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "operators",
     },
     Param{
@@ -173,7 +173,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "operators",
     },
     Param{
@@ -182,7 +182,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -191,7 +191,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "delay",
     },
     Param{
@@ -200,7 +200,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -209,7 +209,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "delay",
     },
     Param{
@@ -218,7 +218,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "envelope",
     },
     Param{
@@ -227,7 +227,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -236,7 +236,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -245,7 +245,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -254,7 +254,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -263,7 +263,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -272,7 +272,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "shaper",
     },
     Param{
@@ -281,7 +281,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "shaper",
     },
     Param{
@@ -290,7 +290,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "shaper",
     },
     Param{
@@ -299,7 +299,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "shaper",
     },
     Param{
@@ -308,7 +308,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "envelope",
     },
     Param{
@@ -317,7 +317,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "envelope",
     },
     Param{
@@ -326,7 +326,7 @@ inline constexpr std::array<Param, kPafSynthParamCount> kPafSynthParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Linear,
+        Curve::linear,
         "envelope",
     },
 }};

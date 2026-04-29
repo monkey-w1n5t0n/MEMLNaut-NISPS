@@ -38,7 +38,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Square,
+        Curve::square,
         "gain",
     },
     Param{
@@ -47,7 +47,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "eq",
     },
     Param{
@@ -56,7 +56,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -65,7 +65,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -74,7 +74,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "eq",
     },
     Param{
@@ -83,7 +83,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Linear,
+        Curve::linear,
         "eq",
     },
     Param{
@@ -92,7 +92,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "eq",
     },
     Param{
@@ -101,7 +101,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.7f,
-        Curve::Square,
+        Curve::square,
         "filters",
     },
     Param{
@@ -110,7 +110,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.2f,
-        Curve::Square,
+        Curve::square,
         "filters",
     },
     Param{
@@ -119,7 +119,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -128,7 +128,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "comp",
     },
     Param{
@@ -137,7 +137,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "comp",
     },
     Param{
@@ -146,7 +146,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.1f,
-        Curve::Linear,
+        Curve::linear,
         "comp",
     },
     Param{
@@ -155,7 +155,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "comp",
     },
     Param{
@@ -164,7 +164,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "eq",
     },
     Param{
@@ -173,7 +173,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Linear,
+        Curve::linear,
         "eq",
     },
     Param{
@@ -182,7 +182,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "eq",
     },
     Param{
@@ -191,7 +191,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "eq",
     },
     Param{
@@ -200,7 +200,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.3f,
-        Curve::Linear,
+        Curve::linear,
         "eq",
     },
     Param{
@@ -209,7 +209,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "eq",
     },
     Param{
@@ -218,7 +218,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -227,7 +227,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -236,7 +236,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "general",
     },
     Param{
@@ -245,7 +245,7 @@ inline constexpr std::array<Param, kChannelStripParamCount> kChannelStripParams 
         0.0f,
         1.0f,
         0.5f,
-        Curve::Square,
+        Curve::square,
         "gain",
     },
 }};

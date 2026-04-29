@@ -38,7 +38,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -47,7 +47,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -56,7 +56,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -65,7 +65,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -74,7 +74,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -83,7 +83,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -92,7 +92,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -101,7 +101,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -110,7 +110,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -119,7 +119,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -128,7 +128,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -137,7 +137,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -146,7 +146,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -155,7 +155,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "sequencer",
     },
     Param{
@@ -164,7 +164,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -173,7 +173,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -182,7 +182,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -191,7 +191,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -200,7 +200,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -209,7 +209,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -218,7 +218,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -227,7 +227,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Square,
+        Curve::square,
         "v0_synth",
     },
     Param{
@@ -236,7 +236,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Square,
+        Curve::square,
         "v0_synth",
     },
     Param{
@@ -245,7 +245,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -254,7 +254,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -263,7 +263,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -272,7 +272,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_env",
     },
     Param{
@@ -281,7 +281,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "v0_env",
     },
     Param{
@@ -290,7 +290,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v0_env",
     },
     Param{
@@ -299,7 +299,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "v0_env",
     },
     Param{
@@ -308,7 +308,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_env",
     },
     Param{
@@ -317,7 +317,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "v0_env",
     },
     Param{
@@ -326,7 +326,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_env",
     },
     Param{
@@ -335,7 +335,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -344,7 +344,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -353,7 +353,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -362,7 +362,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v0_synth",
     },
     Param{
@@ -371,7 +371,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -380,7 +380,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -389,7 +389,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -398,7 +398,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -407,7 +407,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -416,7 +416,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -425,7 +425,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -434,7 +434,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -443,7 +443,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -452,7 +452,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -461,7 +461,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -470,7 +470,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_synth",
     },
     Param{
@@ -479,7 +479,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v1_env",
     },
     Param{
@@ -488,7 +488,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "v1_env",
     },
     Param{
@@ -497,7 +497,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.5f,
-        Curve::Linear,
+        Curve::linear,
         "v1_env",
     },
     Param{
@@ -506,7 +506,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "v1_env",
     },
     Param{
@@ -515,7 +515,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v1_env",
     },
     Param{
@@ -524,7 +524,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.3f,
-        Curve::Square,
+        Curve::square,
         "v1_env",
     },
     Param{
@@ -533,7 +533,7 @@ inline constexpr std::array<Param, kMemlceliumParamCount> kMemlceliumParams = {{
         0.0f,
         1.0f,
         0.0f,
-        Curve::Linear,
+        Curve::linear,
         "v1_env",
     },
 }};

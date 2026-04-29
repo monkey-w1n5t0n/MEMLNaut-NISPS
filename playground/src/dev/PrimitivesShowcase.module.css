@@ -1,0 +1,70 @@
+.root {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  color: var(--accent);
+}
+
+.lede {
+  color: var(--fg-mute);
+  margin: 0;
+  max-width: 720px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: var(--sp-4);
+}
+
+.card {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 280px;
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--sp-2);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: var(--fs-md);
+  color: var(--fg);
+}
+
+.cardDesc {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1;
+  justify-content: flex-start;
+}

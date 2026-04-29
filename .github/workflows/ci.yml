@@ -1,0 +1,125 @@
+name: CI
+
+# Stream 11 verification pipeline.
+#
+# Two parallel jobs:
+#   * cpp-tests       — builds nisps host C++ tests, builds nisps.wasm, runs
+#                       the parity check, runs the lint script.
+#   * playground-tests — typechecks the SolidJS playground, builds the
+#                        production bundle, runs Playwright e2e tests.
+#
+# Firmware compilation is NOT included in this workflow. Arduino-cli +
+# rp2040 board package add ~2 minutes per run, and the verification value
+# is low compared to the time cost; firmware build is documented as a
+# manual `scripts/build-firmware.sh` step in README.md / CLAUDE.md.
+
+on:
+  push:
+    branches: [main, port-solidjs]
+  pull_request:
+    branches: [main, port-solidjs]
+  workflow_dispatch:
+
+jobs:
+  cpp-tests:
+    name: C++ tests + WASM + parity + lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build build-essential perl
+
+      - name: Setup Emscripten
+        # mymindstorm/setup-emsdk caches the SDK between runs. Pin to a
+        # known-working version; bump deliberately.
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.69'
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Verify emcc
+        run: emcc --version
+
+      - name: Setup Node (for parity_wasm.mjs)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build C++ tests + run ctest
+        env:
+          # CI is non-interactive — turn off colour for log readability.
+          CMAKE_BUILD_PARALLEL_LEVEL: '4'
+        run: bash scripts/build-cpp-tests.sh
+
+      - name: Build WASM
+        env:
+          # The script defaults to /usr/lib/emscripten/emcc; the runner gets
+          # emcc on PATH via setup-emsdk. Override.
+          EMCC: emcc
+        run: bash scripts/build-wasm.sh
+
+      - name: Parity check (native vs WASM)
+        env:
+          NISPS_PARITY_NO_BUILD: '1'  # we just built; don't re-build
+        run: bash scripts/parity-check.sh
+
+      - name: Lint
+        run: bash scripts/lint-cpp.sh
+
+      - name: Upload parity blobs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-blobs
+          path: |
+            tests/cpp/parity_native.bin
+            tests/cpp/parity_wasm.bin
+          if-no-files-found: ignore
+          retention-days: 7
+
+  playground-tests:
+    name: Playground typecheck + e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install playground deps
+        working-directory: playground
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: playground
+        run: bun run typecheck
+
+      - name: Build playground bundle
+        working-directory: playground
+        run: bun run build
+
+      - name: Install Playwright browsers
+        working-directory: playground
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: playground
+        run: bunx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playground/playwright-report/
+          retention-days: 7

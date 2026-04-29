@@ -126,4 +126,46 @@ if(NOT EMSCRIPTEN)
     endif()
 
     add_test(NAME nisps_modes_tests COMMAND nisps_modes_tests)
+
+    # ---------------------------------------------------------------------
+    # Stream 11 verification suite (golden vectors + engine impulse).
+    # Lives in tests/cpp/, registered separately so a regression here can
+    # be diagnosed without rebuilding the world.
+    # ---------------------------------------------------------------------
+    add_executable(nisps_golden_tests
+        ${NISPS_TEST_DIR}/test_main.cpp
+        ${NISPS_TEST_DIR}/ml_golden_vectors.cpp
+        ${NISPS_TEST_DIR}/engine_impulse.cpp
+    )
+    target_link_libraries(nisps_golden_tests PRIVATE nisps_core)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(nisps_golden_tests PRIVATE
+            -Wall -Wextra -Werror -Wpedantic
+        )
+    elseif(MSVC)
+        target_compile_options(nisps_golden_tests PRIVATE /W4 /WX)
+    endif()
+
+    add_test(NAME nisps_golden_tests COMMAND nisps_golden_tests)
+    # Run the impulse test from the repo root so the relative baseline path
+    # in `engine_impulse.cpp` resolves to tests/cpp/engine_impulse_baseline.bin.
+    set_tests_properties(nisps_golden_tests PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+    )
+
+    # Standalone parity-check runner. NOT registered with ctest — it's
+    # invoked from scripts/parity-check.sh which orchestrates native+WASM
+    # together.
+    add_executable(nisps_parity_check
+        ${NISPS_TEST_DIR}/parity_check.cpp
+    )
+    target_link_libraries(nisps_parity_check PRIVATE nisps_core)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(nisps_parity_check PRIVATE
+            -Wall -Wextra -Werror -Wpedantic
+        )
+    elseif(MSVC)
+        target_compile_options(nisps_parity_check PRIVATE /W4 /WX)
+    endif()
 endif()

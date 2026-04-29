@@ -1,0 +1,19 @@
+{
+  "name": "memlnaut-codegen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Codegen for MEMLNaut mode schemas (JSON -> C++ + TypeScript).",
+  "type": "module",
+  "scripts": {
+    "generate": "bun run generate.ts",
+    "test": "bun run tests/golden_test.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0"
+  }
+}

@@ -1,9 +1,16 @@
 /**
  * Session store — snapshot stack, A/B compare, region pins, named session presets.
  *
- * Stream 8 (this stream) provides the API and a working in-memory
- * implementation with stub data shapes. Stream 10 wires the snapshots to
- * real ML weights and surfaces the data through UI.
+ * Stream 10 wires real ML weights into the snapshot stack and A/B state.
+ * Snapshots store a Float32Array copy of the weights at the moment they
+ * were pushed; restoring pops + writes back via mlStore.setWeights.
+ *
+ * Snapshot stack capacity is bounded (MAX_SNAPSHOTS); the oldest is dropped
+ * when full. The stack is in-memory only — losing it across reloads is
+ * acceptable (matches the legacy playground).
+ *
+ * Region pins, param pins, and named session presets ARE persisted because
+ * they're explicit user intent.
  */
 
 import { createStore, produce } from 'solid-js/store';
@@ -13,15 +20,15 @@ import { schedulePersist, loadPersisted } from './persistence';
 const STORAGE_KEY = 'nisps:session';
 const MAX_SNAPSHOTS = 20;
 
-/** A single weights snapshot (placeholder until ML stream is live). */
+/** A single weights snapshot. */
 export interface Snapshot {
   id: string;
   tag: string;
   timestamp: number;
   noiseLevel: number;
   zoomLevel: number | null;
-  /** Stream 7+ stores actual weights here (Float32Array via ArrayBuffer in JSON). */
-  weightsRef: string | null;
+  /** Float32Array weight copy. Null if not captured (e.g. before WASM ready). */
+  weights: Float32Array | null;
 }
 
 export interface RegionPin {
@@ -106,14 +113,17 @@ export const sessionStore = {
 
   // ----- Snapshots -----
 
-  pushSnapshot(tag: string, opts: { noiseLevel?: number; zoomLevel?: number | null; weightsRef?: string | null } = {}): Snapshot {
+  pushSnapshot(
+    tag: string,
+    opts: { noiseLevel?: number; zoomLevel?: number | null; weights?: Float32Array | null } = {},
+  ): Snapshot {
     const snap: Snapshot = {
       id: nextSnapshotId(),
       tag,
       timestamp: Date.now(),
       noiseLevel: opts.noiseLevel ?? 0,
       zoomLevel: opts.zoomLevel ?? null,
-      weightsRef: opts.weightsRef ?? null,
+      weights: opts.weights ? new Float32Array(opts.weights) : null,
     };
     setState(produce((s) => {
       s.snapshots.push(snap);
@@ -123,6 +133,18 @@ export const sessionStore = {
     }));
     coreBus.emit('snap.push', { tag });
     return snap;
+  },
+
+  /** Convenience peek at the most recent snapshot. */
+  peekSnapshot(): Snapshot | null {
+    return state.snapshots.length > 0
+      ? state.snapshots[state.snapshots.length - 1]!
+      : null;
+  },
+
+  /** Get a copy of all snapshots (for UI rendering). */
+  listSnapshots(): ReadonlyArray<Snapshot> {
+    return state.snapshots;
   },
 
   popSnapshot(): Snapshot | null {

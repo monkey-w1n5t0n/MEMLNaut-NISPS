@@ -6,23 +6,30 @@
  *   1. Hold a primary 2D input position (joystick / xy-pad / external feed).
  *   2. Push it through the input pipeline.
  *   3. Forward the processed (x, y) to the WASM MLP as input channels [0..N].
- *      Modes with input_size > 2 zero-pad the unused channels.
+ *      Modes with input_size > 2 zero-pad the unused channels (or the mic
+ *      analyser fills 0..3 if active).
  *   4. Pull the WASM outputs (Float32Array of 126), slice to the schema's
  *      `output_size`, and run them through the output pipeline.
- *   5. Throttle + ship the processed slice to the AudioWorklet engine.
+ *   5. Apply per-param overrides (modeStore.activeOverrides).
+ *   6. Throttle + ship the processed slice to the AudioWorklet engine.
  *
- * To keep mode TSX files small and consistent, this module exposes a hook
- * `useModeRuntime(schema)` that owns the lifecycle and exposes reactive
- * accessors plus the `setInput(x, y)` driver. Modes only have to render a
- * primary input that calls `runtime.setInput(x, y)` and the runtime takes
- * care of everything downstream.
+ * Stream 10 wires:
+ *   - Compound axes → underlying stores (input/output/exploration).
+ *   - Per-param overrides between MLP outputs and engine.
+ *   - Snapshot + undo + A/B compare on RL events.
+ *   - Pin mask passed to moveWeights.
+ *   - Auto-explore interval timer.
+ *   - Trail tracking for JoyMap.
+ *   - Heatmap sampler invalidated on weight-change events.
+ *   - Mic features pushed into MLP for audio-input modes.
  */
 
-import { createEffect, createSignal, onCleanup, onMount } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from 'solid-js';
 
-import { mlStore, modeStore, controlStore } from '../stores';
+import { mlStore, modeStore, controlStore, sessionStore, explorationStore } from '../stores';
 import { inputStore } from '../stores/input-store';
 import { outputStore } from '../stores/output-store';
+import { coreBus } from '../stores/bus';
 import { processInput, defaultInputState, type InputState } from '../input/pipeline';
 import {
   processOutput,
@@ -32,6 +39,13 @@ import {
 import { EngineHost } from '../audio/engine-host';
 import type { EngineId } from '../ml/types';
 import type { ModeSchema } from './generated';
+
+import { applyOverrides, buildPinMask } from '../features/overrides';
+import { applyControlRouting } from '../features/control-routing';
+import { createTrailRing, type TrailPoint } from '../features/trail';
+import { autoSnapshot, undoLastSnapshot } from '../features/snapshots';
+import { HeatmapSampler, type HeatmapColorMode } from '../features/heatmap-sampler';
+import { MicInput } from '../features/mic-input';
 
 /**
  * Throttle interval for engine param updates (ms). 50ms ≈ 20fps which
@@ -62,6 +76,12 @@ export interface ModeRuntime {
   /** Output-sliced + pipeline-processed vector (length = schema.output_size). */
   processedOutputs: () => Float32Array;
 
+  /**
+   * Final per-param values after override application (length = params.length).
+   * These are what get shipped to the engine and visualised in sliders.
+   */
+  paramOutputs: () => Float32Array;
+
   /** True iff WASM has loaded and the MLP is ready. */
   ready: () => boolean;
 
@@ -71,6 +91,13 @@ export interface ModeRuntime {
     start: () => Promise<void>;
     stop: () => Promise<void>;
     setMuted: (muted: boolean) => void;
+  };
+
+  /** Mic input control (for audio_in modes; safe to call on others — no-op). */
+  mic: {
+    started: () => boolean;
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
   };
 
   /** Loss / training plumbing surfaced from mlStore. */
@@ -88,6 +115,28 @@ export interface ModeRuntime {
   thumbsUp: () => void;
   thumbsDown: () => void;
   randomize: () => void;
+  /** Pop snapshot stack and restore weights. Returns true on success. */
+  undo: () => boolean;
+
+  /** Whether the snapshot stack has anything to undo. */
+  canUndo: () => boolean;
+
+  /** Trail ring for JoyMap binding. */
+  trail: () => ReadonlyArray<TrailPoint>;
+  /** Snap input back to a trail point. */
+  snapToTrail: (p: { x: number; y: number }) => void;
+
+  /** Heatmap sampler. Returns the underlying cells; modes pass to <Heatmap>. */
+  heatmap: {
+    cells: () => Float32Array;
+    setColorMode: (m: HeatmapColorMode) => void;
+    colorMode: () => HeatmapColorMode;
+    refresh: (force?: boolean) => void;
+    resolution: () => number;
+  };
+
+  /** Region pin: pin the current zoom window (long-press handler). */
+  pinCurrentRegion: () => void;
 }
 
 interface RuntimeOptions {
@@ -124,11 +173,32 @@ export function useModeRuntime(
     modeStore.switchMode(schema.mode_id);
   }
 
+  // ----- Compound axis routing -------------------------------------------
+  // Whenever any axis or offset changes, re-derive the underlying store
+  // values. Track axis reads explicitly; do the writes inside untrack so
+  // we don't pick up stale dependencies on write-targets (input/output/
+  // exploration stores).
+  createEffect(() => {
+    void controlStore.state.boldness;
+    void controlStore.state.memory;
+    void controlStore.state.precision;
+    void controlStore.state.offsets.boldness;
+    void controlStore.state.offsets.memory;
+    void controlStore.state.offsets.precision;
+    untrack(() => applyControlRouting());
+  });
+
   // ----- Input pipeline state --------------------------------------------
   const [pipedInput, setPipedInput] = createSignal<readonly [number, number]>([0.5, 0.5]);
   const [frozen, setFrozen] = createSignal(false);
   let inputState: InputState = defaultInputState();
   let lastFrameMs = performance.now();
+
+  // Trail ring
+  const trailRing = createTrailRing();
+
+  // Pressure tracking (set externally via setPressure on touch).
+  let pressDownAt: number | null = null;
 
   const setInput = (rawX: number, rawY: number): void => {
     const now = performance.now();
@@ -140,24 +210,47 @@ export function useModeRuntime(
     inputStore.__setLiveState(result.state);
     setPipedInput([result.x, result.y]);
     setFrozen(result.frozen);
+    trailRing.push(result.x, result.y);
 
     if (!ready()) return;
-    // Push input to the MLP. Channels beyond [x,y] are zeroed out — modes
-    // with input_size > 2 currently aren't fed extra inputs (audio analysis
-    // wiring is a stream-10 task).
+    // Push input to the MLP. Channels beyond [x,y] are zeroed out (or
+    // overridden with mic features in audio-input modes).
     const inSz = schema.ml.input_size;
     mlStore.setInput(0, result.x);
     if (inSz > 1) mlStore.setInput(1, result.y);
-    for (let i = 2; i < inSz; ++i) mlStore.setInput(i, 0);
+    // Mic features (if active) take channels 2..5.
+    if (mic.isRunning() && inSz > 2) {
+      const f = mic.getFeatures();
+      const fv = [f.energy, f.brightness, f.pitch, f.aperiodicity];
+      for (let i = 2; i < inSz; ++i) {
+        mlStore.setInput(i, fv[i - 2] ?? 0);
+      }
+    } else {
+      for (let i = 2; i < inSz; ++i) mlStore.setInput(i, 0);
+    }
     mlStore.process();
+
+    // Update pressure-feedback hold timer.
+    if (pressDownAt !== null) {
+      explorationStore.setPressure(
+        explorationStore.state.pressureForce,
+        now - pressDownAt,
+      );
+    }
   };
 
-  // ----- Output pipeline state -------------------------------------------
+  // ----- Output pipeline + override application --------------------------
   let outputState: OutputState = defaultOutputState();
   const sliceLen = schema.ml.output_size;
   const [processedOutputs, setProcessedOutputs] = createSignal<Float32Array>(
     new Float32Array(sliceLen),
-    { equals: false }, // always notify even when buffer is reused in-place
+    { equals: false },
+  );
+  const paramCount = schema.params.length;
+  let prevParamOutputs: Float32Array | null = null;
+  const [paramOutputs, setParamOutputs] = createSignal<Float32Array>(
+    new Float32Array(paramCount),
+    { equals: false },
   );
 
   // Run the output pipeline whenever raw outputs change.
@@ -175,12 +268,52 @@ export function useModeRuntime(
     const result = processOutput(slice as Float32Array, outputStore.config, outputState, dtMs);
     outputState = result.state;
     setProcessedOutputs(result.processed);
+
+    // Apply per-param overrides for the per-param consumer (engine, sliders).
+    // Only the first `params.length` outputs are user-visible parameters; the
+    // remainder is reserved for engine internals (none right now).
+    const paramSlice = result.processed.length === paramCount
+      ? result.processed
+      : result.processed.subarray(0, paramCount);
+    const overrides = modeStore.state.overrides[schema.mode_id] ?? {};
+    const applied = applyOverrides(
+      paramSlice as Float32Array,
+      prevParamOutputs,
+      schema.params,
+      overrides,
+    );
+    prevParamOutputs = applied.values;
+    setParamOutputs(applied.values);
   };
 
-  // Trigger recompute on any raw-output change.
+  // Trigger recompute on any raw-output change. Wrap in untrack so reading
+  // outputStore.config inside processOutput doesn't add a tracked dep here.
   createEffect(() => {
     rawOutputsAccessor();
-    recomputeOutputs();
+    untrack(recomputeOutputs);
+  });
+
+  // Re-run override application when overrides change (no new ML output).
+  createEffect(() => {
+    void modeStore.state.overrides[schema.mode_id];
+    untrack(() => {
+      const raw = rawOutputsAccessor();
+      if (raw.length > 0) recomputeOutputs();
+    });
+  });
+
+  // Push the freeze mask into outputStore whenever overrides change.
+  createEffect(() => {
+    const ovs = modeStore.state.overrides[schema.mode_id] ?? {};
+    let mask: Uint8Array | null = null;
+    for (let i = 0; i < schema.params.length; ++i) {
+      const ov = ovs[schema.params[i]!.name];
+      if (ov && ov.frozen) {
+        if (!mask) mask = new Uint8Array(schema.params.length);
+        mask[i] = 1;
+      }
+    }
+    untrack(() => outputStore.setFreezeMask(mask));
   });
 
   // ----- Engine wiring (audio) -------------------------------------------
@@ -195,7 +328,6 @@ export function useModeRuntime(
       pendingParams = null;
       return;
     }
-    // Copy because EngineHost transfers the buffer.
     const copy = new Float32Array(pendingParams);
     pendingParams = null;
     try {
@@ -213,9 +345,9 @@ export function useModeRuntime(
     }
   };
 
-  // Pipe processedOutputs into the engine host whenever they change.
+  // Pipe paramOutputs into the engine host whenever they change.
   createEffect(() => {
-    const out = processedOutputs();
+    const out = paramOutputs();
     if (out.length === 0) return;
     if (!host.isStarted) return;
     scheduleParamFlush(out);
@@ -228,8 +360,7 @@ export function useModeRuntime(
     try {
       await host.start(engineId);
       setAudioStarted(true);
-      // Push the current outputs immediately on start.
-      const out = processedOutputs();
+      const out = paramOutputs();
       if (out.length > 0) host.setParams(new Float32Array(out));
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -258,48 +389,219 @@ export function useModeRuntime(
     pendingParams = null;
   });
 
+  // ----- Mic input -------------------------------------------------------
+  const mic = new MicInput();
+  const [micStarted, setMicStarted] = createSignal(false);
+  const startMic = async () => {
+    try {
+      await mic.start();
+      setMicStarted(true);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[mode-runtime] mic start failed:', err);
+    }
+  };
+  const stopMic = async () => {
+    try {
+      await mic.stop();
+    } finally {
+      setMicStarted(false);
+    }
+  };
+  onCleanup(() => { void stopMic(); });
+
+  // ----- Snapshot stack helpers ------------------------------------------
+  const canUndoMemo = createMemo(() => sessionStore.state.snapshots.length > 0);
+
+  // ----- Heatmap sampler -------------------------------------------------
+  const sampler = new HeatmapSampler({ resolution: 16 });
+  const [heatmapColorMode, setHeatmapColorMode] = createSignal<HeatmapColorMode>('luminance');
+  const [heatmapCells, setHeatmapCells] = createSignal<Float32Array>(sampler.getCells(), { equals: false });
+  const refreshHeatmap = (force = false): void => {
+    untrack(() => {
+      if (!ready()) return;
+      const cfg = inputStore.config;
+      const z = cfg.zoom;
+      const cx = cfg.anchorMode === 'center' ? 0.5 : cfg.anchorX;
+      const cy = cfg.anchorMode === 'center' ? 0.5 : cfg.anchorY;
+      const took = sampler.update({ cx, cy, zoom: z }, force);
+      if (took) {
+        setHeatmapCells(new Float32Array(sampler.getCells()));
+      }
+    });
+  };
+
+  // Refresh heatmap on weight changes (training, RL feedback, randomize).
+  const offTrained = coreBus.on('ml.trained', () => refreshHeatmap());
+  const offDelta = coreBus.on('ml.delta_update', () => refreshHeatmap());
+  onCleanup(() => { offTrained(); offDelta(); });
+
+  // Initial heatmap refresh once WASM is ready.
+  createEffect(() => {
+    if (ready()) refreshHeatmap(true);
+  });
+
+  // ----- Auto-explore loop -----------------------------------------------
+  let autoExploreTimer: number | null = null;
+  const tickAutoExplore = () => {
+    untrack(() => {
+      if (!ready()) return;
+      if (!explorationStore.state.autoExploreEnabled) return;
+      const intensity = explorationStore.state.autoExploreIntensity;
+      // Zoom-scaled intensity: smaller zoom = gentler.
+      const zoom = inputStore.config.zoom;
+      const scaledIntensity = intensity * (0.3 + 0.7 * zoom);
+      const cap = explorationStore.state.noiseCap * scaledIntensity;
+      autoSnapshot('before auto-explore');
+      const spread = explorationStore.state.spread;
+      const overrides = modeStore.state.overrides[schema.mode_id] ?? {};
+      const pinMask = buildPinMask(
+        mlStore.state.outputSize,
+        schema.mode_id,
+        schema.params,
+        overrides,
+        sessionStore.state.paramPins,
+      );
+      mlStore.moveWeights(cap, spread, pinMask);
+      explorationStore.growNoise(0.5);
+      // Re-run inference to update the heatmap and visuals.
+      const [x, y] = pipedInput();
+      setInput(x, y);
+    });
+  };
+  createEffect(() => {
+    const enabled = explorationStore.state.autoExploreEnabled;
+    const interval = explorationStore.state.autoExploreIntervalMs;
+    if (autoExploreTimer !== null) {
+      window.clearInterval(autoExploreTimer);
+      autoExploreTimer = null;
+    }
+    if (enabled) {
+      autoExploreTimer = window.setInterval(tickAutoExplore, interval);
+    }
+  });
+  onCleanup(() => {
+    if (autoExploreTimer !== null) {
+      window.clearInterval(autoExploreTimer);
+      autoExploreTimer = null;
+    }
+  });
+
+  // ----- Touch / pressure feedback ---------------------------------------
+  const onPointerDown = (e: PointerEvent) => {
+    pressDownAt = performance.now();
+    explorationStore.setPressure(
+      // Force is 0..1 on supported devices; default 0.5 elsewhere.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (e as any).pressure ?? 0.5,
+      0,
+    );
+  };
+  const onPointerUp = () => {
+    pressDownAt = null;
+    explorationStore.setPressure(0, 0);
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pointerdown', onPointerDown, { passive: true });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    onCleanup(() => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    });
+  }
+
   // ----- Training helpers -------------------------------------------------
   const trainOnCurrent = () => {
     if (!ready()) return;
-    const lr = controlStore.resolveParams()['learningRate'];
-    const lrNum = typeof lr === 'number' ? lr : schema.ml.default_learning_rate;
-    mlStore.train(lrNum, schema.ml.default_max_iterations, 0.001);
+    autoSnapshot('before train');
+    const lr = explorationStore.state.learningRate;
+    mlStore.train(lr, schema.ml.default_max_iterations, 0.001);
   };
 
   const thumbsUp = () => {
     if (!ready()) return;
-    // Push a label = current pipeline-processed slice as the target at the
-    // current input. This matches the legacy "thumbs up = remember the
-    // current sound at this position" semantics.
     const [x, y] = pipedInput();
-    const out = processedOutputs();
+    const out = paramOutputs();
     if (out.length === 0) return;
     const features = new Array(schema.ml.input_size).fill(0);
     features[0] = x;
     if (features.length > 1) features[1] = y;
-    const labels = Array.from(out);
+    // Mic features into the example too, if active.
+    if (mic.isRunning() && schema.ml.input_size > 2) {
+      const f = mic.getFeatures();
+      const fv = [f.energy, f.brightness, f.pitch, f.aperiodicity];
+      for (let i = 2; i < schema.ml.input_size; ++i) {
+        features[i] = fv[i - 2] ?? 0;
+      }
+    }
+    // Labels: the raw 126-vector targets (not the override-applied; the MLP
+    // doesn't know about overrides).
+    const labels = Array.from(processedOutputs());
+    autoSnapshot('before thumbs-up');
     mlStore.addExample(features, labels);
+    explorationStore.decayNoise(explorationStore.state.pressureForce);
     trainOnCurrent();
   };
 
   const thumbsDown = () => {
     if (!ready()) return;
-    const params = controlStore.resolveParams();
-    const cap = typeof params['noiseCap'] === 'number'
-      ? (params['noiseCap'] as number)
-      : 0.12;
-    const spread = schema.ml.default_spread;
-    mlStore.moveWeights(cap, spread);
-    // Re-run inference at current input so the visual updates.
+    autoSnapshot('before thumbs-down');
+    const cap = explorationStore.state.noiseCap;
+    const spread = explorationStore.state.spread;
+    const overrides = modeStore.state.overrides[schema.mode_id] ?? {};
+    const pinMask = buildPinMask(
+      mlStore.state.outputSize,
+      schema.mode_id,
+      schema.params,
+      overrides,
+      sessionStore.state.paramPins,
+    );
+    mlStore.moveWeights(cap, spread, pinMask);
+    explorationStore.growNoise(explorationStore.state.pressureForce);
     const [x, y] = pipedInput();
     setInput(x, y);
   };
 
   const randomize = () => {
     if (!ready()) return;
-    mlStore.drawWeights(schema.ml.default_spread);
+    autoSnapshot('before randomize');
+    mlStore.drawWeights(explorationStore.state.spread);
     const [x, y] = pipedInput();
     setInput(x, y);
+  };
+
+  const undo = (): boolean => {
+    const ok = undoLastSnapshot();
+    if (ok) {
+      const [x, y] = pipedInput();
+      setInput(x, y);
+    }
+    return ok;
+  };
+
+  // ----- Region pins ------------------------------------------------------
+  const pinCurrentRegion = () => {
+    const cfg = inputStore.config;
+    const z = cfg.zoom;
+    const cx = cfg.anchorMode === 'center' ? 0.5 : cfg.anchorX;
+    const cy = cfg.anchorMode === 'center' ? 0.5 : cfg.anchorY;
+    const halfZ = z * 0.5;
+    sessionStore.addRegionPin({
+      x: Math.max(0, cx - halfZ),
+      y: Math.max(0, cy - halfZ),
+      width: Math.min(z, 1),
+      height: Math.min(z, 1),
+    });
+    autoSnapshot('pinned baseline');
+  };
+
+  // Snap-to-trail
+  const snapToTrail = (p: { x: number; y: number }) => {
+    batch(() => {
+      setInput(p.x, p.y);
+    });
   };
 
   return {
@@ -308,12 +610,18 @@ export function useModeRuntime(
     frozen,
     rawOutputs: rawOutputsAccessor,
     processedOutputs,
+    paramOutputs,
     ready,
     audio: {
       started: audioStarted,
       start: startAudio,
       stop: stopAudio,
       setMuted: (muted) => host.setMuted(muted),
+    },
+    mic: {
+      started: micStarted,
+      start: startMic,
+      stop: stopMic,
     },
     training: {
       busy: () => mlStore.state.training,
@@ -325,6 +633,22 @@ export function useModeRuntime(
     thumbsUp,
     thumbsDown,
     randomize,
+    undo,
+    canUndo: () => canUndoMemo(),
+    trail: trailRing.points,
+    snapToTrail,
+    heatmap: {
+      cells: heatmapCells,
+      setColorMode: (m) => {
+        sampler.setColorMode(m);
+        setHeatmapColorMode(m);
+        refreshHeatmap(true);
+      },
+      colorMode: heatmapColorMode,
+      refresh: refreshHeatmap,
+      resolution: () => sampler.resolution,
+    },
+    pinCurrentRegion,
   };
 }
 

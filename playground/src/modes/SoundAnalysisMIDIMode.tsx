@@ -2,10 +2,15 @@
  * SoundAnalysisMIDIMode — sound analysis → MIDI CC output (audio_in input).
  *
  * Schema declares `primary_input: 'audio_in'` and `engine_id: 'thru'` (no
- * synthesis). The full firmware pipeline feeds audio analysis features
- * (pitch / aperiodicity / energy / brightness / etc.) into the first 6
- * input channels and joystick coords into the last 4. Stream 9 ships a
- * scaffold UI; mic capture + analysis wiring is a stream-10 task.
+ * synthesis). Stream 10 wires the mic into channels 2..5 via ModeShell's
+ * Mic button + the runtime's MicInput. The joystick is used as a fallback
+ * for channels 0..1 and during testing without mic permissions.
+ *
+ * MIDI output routing is read-only here — the SettingsDrawer's per-param
+ * override editor lets users tighten the active range / mute params; the
+ * actual MIDI device wiring is left for the engine host to handle (or for
+ * a future stream that adds WebMIDI sender). For now CC values are
+ * visible in the live OutputDisplay.
  */
 
 import { Component, Show } from 'solid-js';
@@ -13,44 +18,18 @@ import { ModeShell } from './ModeShell';
 import { useModeRuntime } from './mode-runtime';
 import { VirtualJoystick } from '../primitives/VirtualJoystick';
 import { OutputDisplay } from '../primitives/OutputDisplay';
-import { SliderBank } from '../primitives/SliderBank';
 import { LossPlot } from '../primitives/LossPlot';
-import { paramsToSliderConfig, outputsToSliderValues } from './mode-helpers';
 import { SoundAnalysisMidiSchema } from './generated/sound_analysis_midi_schema';
 
 export const SoundAnalysisMIDIMode: Component = () => {
   const schema = SoundAnalysisMidiSchema;
   const runtime = useModeRuntime(schema);
-  const sliderConfig = paramsToSliderConfig(schema.params);
-  const sliderValues = () => outputsToSliderValues(runtime.processedOutputs(), schema.params);
 
   return (
     <ModeShell
       schema={schema}
       runtime={runtime}
-      drawerTitle="MIDI CC routing"
-      drawerContent={() => (
-        <div>
-          <SliderBank
-            title="MIDI CC values"
-            sliders={sliderConfig}
-            values={sliderValues}
-            onChange={() => {
-              /* read-only */
-            }}
-          />
-          <p
-            style={{
-              'font-size': 'var(--fs-xs)',
-              color: 'var(--fg-mute)',
-              'margin-top': 'var(--sp-3)',
-            }}
-          >
-            WebMIDI routing is wired up in stream 10. For now CC values are
-            visible in the live readout.
-          </p>
-        </div>
-      )}
+      drawerTitle="Sound analysis → MIDI settings"
       primaryInput={() => (
         <>
           <Show
@@ -72,7 +51,7 @@ export const SoundAnalysisMIDIMode: Component = () => {
                 gap: 'var(--sp-3)',
                 padding: 'var(--sp-4)',
                 background: 'var(--bg-2)',
-                border: '1px dashed var(--line-strong)',
+                border: `1px ${runtime.mic.started() ? 'solid var(--accent-2)' : 'dashed var(--line-strong)'}`,
                 'border-radius': 'var(--r-2)',
                 'min-width': '260px',
                 'min-height': '200px',
@@ -81,11 +60,13 @@ export const SoundAnalysisMIDIMode: Component = () => {
                 'text-align': 'center',
               }}
             >
-              <strong style={{ color: 'var(--accent-2)' }}>Mic input — TODO</strong>
+              <strong style={{ color: runtime.mic.started() ? 'var(--accent-2)' : 'var(--fg-mute)' }}>
+                {runtime.mic.started() ? '🎤 Mic active' : 'Mic input'}
+              </strong>
               <span style={{ 'font-size': 'var(--fs-xs)' }}>
-                Stream 10 will request `getUserMedia` and feed audio analysis
-                features into the MLP. For now you can still drive the model
-                manually with the joystick below.
+                {runtime.mic.started()
+                  ? 'Audio features → channels 2..5. Joystick below drives channels 0..1.'
+                  : 'Tap "Mic" in the header to feed mic features into the model.'}
               </span>
               <VirtualJoystick
                 size={200}
@@ -100,7 +81,7 @@ export const SoundAnalysisMIDIMode: Component = () => {
       outputArea={() => (
         <>
           <OutputDisplay
-            values={runtime.processedOutputs}
+            values={runtime.paramOutputs}
             width={360}
             height={120}
             color="var(--info)"

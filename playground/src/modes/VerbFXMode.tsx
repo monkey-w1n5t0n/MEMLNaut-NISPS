@@ -7,17 +7,13 @@ import { ModeShell } from './ModeShell';
 import { useModeRuntime } from './mode-runtime';
 import { VirtualJoystick } from '../primitives/VirtualJoystick';
 import { OutputDisplay } from '../primitives/OutputDisplay';
-import { SliderBank } from '../primitives/SliderBank';
 import { LossPlot } from '../primitives/LossPlot';
-import { paramsToSliderConfig, outputsToSliderValues } from './mode-helpers';
 import { VerbFxSchema } from './generated/verb_fx_schema';
 
 export const VerbFXMode: Component = () => {
   const schema = VerbFxSchema;
   const runtime = useModeRuntime(schema);
   const [voiceSpace, setVoiceSpace] = createSignal(0);
-  const sliderConfig = paramsToSliderConfig(schema.params);
-  const sliderValues = () => outputsToSliderValues(runtime.processedOutputs(), schema.params);
 
   return (
     <ModeShell
@@ -25,17 +21,7 @@ export const VerbFXMode: Component = () => {
       runtime={runtime}
       activeVoiceSpace={voiceSpace}
       onVoiceSpaceChange={setVoiceSpace}
-      drawerTitle="Verb / FX params"
-      drawerContent={() => (
-        <SliderBank
-          title="Live FX params"
-          sliders={sliderConfig}
-          values={sliderValues}
-          onChange={() => {
-            /* read-only */
-          }}
-        />
-      )}
+      drawerTitle="Verb / FX settings"
       primaryInput={() => (
         <>
           <VirtualJoystick
@@ -53,7 +39,7 @@ export const VerbFXMode: Component = () => {
       outputArea={() => (
         <>
           <OutputDisplay
-            values={runtime.processedOutputs}
+            values={runtime.paramOutputs}
             width={360}
             height={120}
             color="#b464ff"

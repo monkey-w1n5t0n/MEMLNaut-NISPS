@@ -71,4 +71,36 @@ if(NOT EMSCRIPTEN)
 
     enable_testing()
     add_test(NAME nisps_core_tests COMMAND nisps_core_tests)
+
+    # ---------------------------------------------------------------------
+    # DSP + engines tests (stream 3). Built as a separate executable so
+    # failures here don't take core/ML tests with them.
+    # ---------------------------------------------------------------------
+    add_executable(nisps_dsp_engine_tests
+        ${NISPS_TEST_DIR}/test_main.cpp
+        ${NISPS_TEST_DIR}/test_dsp_biquad.cpp
+        ${NISPS_TEST_DIR}/test_dsp_delay.cpp
+        ${NISPS_TEST_DIR}/test_dsp_reverb.cpp
+        ${NISPS_TEST_DIR}/test_dsp_pitch_shift.cpp
+        ${NISPS_TEST_DIR}/test_engine_no_op.cpp
+        ${NISPS_TEST_DIR}/test_engine_paf_synth.cpp
+        ${NISPS_TEST_DIR}/test_engine_channel_strip.cpp
+        ${NISPS_TEST_DIR}/test_engine_xiasri.cpp
+        ${NISPS_TEST_DIR}/test_engine_verb_fx.cpp
+        ${NISPS_TEST_DIR}/test_engine_memlcelium.cpp
+        ${NISPS_TEST_DIR}/test_engine_breakor.cpp
+        ${NISPS_TEST_DIR}/test_engine_elysiamorf.cpp
+        ${NISPS_TEST_DIR}/test_engine_analysis.cpp
+    )
+    target_link_libraries(nisps_dsp_engine_tests PRIVATE nisps_core)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(nisps_dsp_engine_tests PRIVATE
+            -Wall -Wextra -Werror -Wpedantic
+        )
+    elseif(MSVC)
+        target_compile_options(nisps_dsp_engine_tests PRIVATE /W4 /WX)
+    endif()
+
+    add_test(NAME nisps_dsp_engine_tests COMMAND nisps_dsp_engine_tests)
 endif()

@@ -103,4 +103,27 @@ if(NOT EMSCRIPTEN)
     endif()
 
     add_test(NAME nisps_dsp_engine_tests COMMAND nisps_dsp_engine_tests)
+
+    # ---------------------------------------------------------------------
+    # Mode tests (stream 4). Cover concept satisfaction, voice space
+    # dispatch, control-event pumping, and end-to-end inference→audio.
+    # ---------------------------------------------------------------------
+    add_executable(nisps_modes_tests
+        ${NISPS_TEST_DIR}/test_main.cpp
+        ${NISPS_TEST_DIR}/test_mode_concepts.cpp
+        ${NISPS_TEST_DIR}/test_mode_paf_synth.cpp
+        ${NISPS_TEST_DIR}/test_mode_voice_space.cpp
+        ${NISPS_TEST_DIR}/test_mode_breakor_events.cpp
+    )
+    target_link_libraries(nisps_modes_tests PRIVATE nisps_core)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(nisps_modes_tests PRIVATE
+            -Wall -Wextra -Werror -Wpedantic
+        )
+    elseif(MSVC)
+        target_compile_options(nisps_modes_tests PRIVATE /W4 /WX)
+    endif()
+
+    add_test(NAME nisps_modes_tests COMMAND nisps_modes_tests)
 endif()

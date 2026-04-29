@@ -2,10 +2,12 @@
 // implementations.
 //
 // Includes:
-//   - NoOpEngine: a silent passthrough used by sequencer-only modes
-//     (BreakOr, Elysiamorf). Their actual behaviour (MIDI/I2C event emission)
-//     lives in the engine wrapper outside the audio path; `process()` returns
-//     zeros so the audio driver has something to consume.
+//   - NoOpEngine: silent passthrough. Two uses:
+//     (1) the standalone "thru" engine for the SoundAnalysisMIDI mode (audio
+//         is analysed but not synthesised), exposed via engine_id()=="thru";
+//     (2) composed inside sequencer-only engines (BreakOr, Elysiamorf) whose
+//         MIDI/I2C event emission lives outside the audio path. Internal
+//         composition uses the type directly, not the engine_id lookup.
 //   - Helper macros / static_asserts to verify each concrete engine satisfies
 //     `nisps::AudioEngine` at compile time.
 
@@ -24,7 +26,7 @@ namespace nisps {
 class NoOpEngine {
    public:
     static constexpr std::size_t param_count() noexcept { return 0u; }
-    static constexpr std::string_view engine_id() noexcept { return "noop"; }
+    static constexpr std::string_view engine_id() noexcept { return "thru"; }
 
     void setup(float /*sample_rate*/) noexcept {}
     void set_params(std::span<const float> /*params*/) noexcept {}

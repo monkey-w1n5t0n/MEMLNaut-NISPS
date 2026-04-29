@@ -51,6 +51,12 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_ring_buffer.cpp
         ${NISPS_TEST_DIR}/test_rng.cpp
         ${NISPS_TEST_DIR}/test_math.cpp
+        ${NISPS_TEST_DIR}/test_mlp_init.cpp
+        ${NISPS_TEST_DIR}/test_mlp_inference.cpp
+        ${NISPS_TEST_DIR}/test_mlp_training.cpp
+        ${NISPS_TEST_DIR}/test_mlp_loss.cpp
+        ${NISPS_TEST_DIR}/test_mlp_rl.cpp
+        ${NISPS_TEST_DIR}/test_mlp_serialize.cpp
     )
     target_link_libraries(nisps_core_tests PRIVATE nisps_core)
 

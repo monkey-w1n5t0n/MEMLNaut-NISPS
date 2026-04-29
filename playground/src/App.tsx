@@ -1,11 +1,16 @@
-import { Component, createSignal, lazy, onCleanup, Show } from 'solid-js';
+import { Component, createMemo, createSignal, lazy, onCleanup, Show } from 'solid-js';
+import { Dynamic } from 'solid-js/web';
+import { modeStore } from './stores/mode-store';
+import { MODE_REGISTRY, getModeById } from './modes';
+import { ModeSwitcher } from './modes/ModeSwitcher';
 import styles from './App.module.css';
 
-type Route = 'home' | 'primitives' | 'unknown';
+type Route = 'home' | 'primitives' | 'modes' | 'unknown';
 
 function parseRoute(path: string): Route {
   if (path === '' || path === '/' || path === '/index.html') return 'home';
   if (path === '/dev/primitives' || path === '/dev/primitives/') return 'primitives';
+  if (path === '/modes' || path === '/modes/' || path.startsWith('/modes/')) return 'modes';
   return 'unknown';
 }
 
@@ -41,6 +46,13 @@ const App: Component = () => {
           </button>
           <button
             type="button"
+            class={route() === 'modes' ? styles.active : ''}
+            onClick={() => navigate('/modes')}
+          >
+            /modes
+          </button>
+          <button
+            type="button"
             class={route() === 'primitives' ? styles.active : ''}
             onClick={() => navigate('/dev/primitives')}
           >
@@ -50,7 +62,10 @@ const App: Component = () => {
       </header>
       <main class={styles.main}>
         <Show when={route() === 'home'}>
-          <Home />
+          <Home navigate={navigate} />
+        </Show>
+        <Show when={route() === 'modes'}>
+          <ModesPage />
         </Show>
         <Show when={route() === 'primitives'}>
           <PrimitivesShowcase />
@@ -69,18 +84,59 @@ const App: Component = () => {
   );
 };
 
-const Home: Component = () => {
+const ModesPage: Component = () => {
+  const activeId = () => modeStore.state.activeModeId ?? MODE_REGISTRY[0]!.id;
+  const ActiveComponent = createMemo(() => getModeById(activeId()).Component);
+
+  return (
+    <div>
+      <ModeSwitcher />
+      <Dynamic component={ActiveComponent()} />
+    </div>
+  );
+};
+
+interface HomeProps {
+  navigate: (path: string) => void;
+}
+
+const Home: Component<HomeProps> = (props) => {
   return (
     <div class={styles.home}>
       <h1 class={styles.title}>MEMLNaut Playground</h1>
       <p class={styles.tagline}>
-        Interactive ML control of audio. SolidJS scaffold — modes coming online in stream 9.
+        Interactive ML control of audio. Stream 9: nine modes, one shell.
       </p>
       <ul class={styles.linkList}>
-        <li><a href="/dev/primitives" onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/dev/primitives'); window.dispatchEvent(new PopStateEvent('popstate')); }}>Primitives showcase</a> — UI building blocks</li>
+        <li>
+          <a
+            href="/modes"
+            onClick={(e) => {
+              e.preventDefault();
+              props.navigate('/modes');
+            }}
+          >
+            Modes
+          </a>{' '}
+          — pick a mode and start playing
+        </li>
+        <li>
+          <a
+            href="/dev/primitives"
+            onClick={(e) => {
+              e.preventDefault();
+              props.navigate('/dev/primitives');
+            }}
+          >
+            Primitives showcase
+          </a>{' '}
+          — UI building blocks
+        </li>
       </ul>
       <p class={styles.note}>
-        This is a fresh scaffold. ML, WASM, and audio engines are not yet wired up.
+        ML inference runs on the main thread via WASM. Audio synthesis runs
+        in an AudioWorklet — start it from inside any mode using the "Start
+        audio" button. Audio cannot autoplay (browser policy).
       </p>
     </div>
   );

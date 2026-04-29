@@ -1,0 +1,49 @@
+{
+  "$schema": "../schema.json",
+  "_note": "24-param reverb/delay/pitch processor. XIASRI bypasses the voice-space layer — neural-net outputs feed directly into the engine. Indices 3, 22, 23 are not currently consumed (kept as raw slots so the schema stays in lockstep with NPARAMS=24). Per-param ranges and curves taken from XIASRIAudioApp::Process().",
+  "mode_id": "xiasri",
+  "engine_id": "xiasri",
+  "ml": {
+    "input_channels": ["joy_x", "joy_y", "joy_z", "joy_w"],
+    "input_size": 4,
+    "hidden_layers": [10, 10, 14],
+    "output_size": 24,
+    "default_spread": 0.6,
+    "default_learning_rate": 1.0,
+    "default_max_iterations": 1000
+  },
+  "params": [
+    { "name": "dl1_mix",     "label": "Delay 1 Mix",        "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" },
+    { "name": "dl2_mix",     "label": "Delay 2 Mix",        "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" },
+    { "name": "dl3_mix",     "label": "Delay 3 Mix",        "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" },
+    { "name": "p03",         "label": "Param 03",            "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "allp1_fb",    "label": "Allpass 1 Feedback", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp2_fb",    "label": "Allpass 2 Feedback", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "comb1_fb",    "label": "Comb 1 Feedback",    "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "comb2_fb",    "label": "Comb 2 Feedback",    "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "dl1_fb",      "label": "Delay 1 Feedback",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" },
+    { "name": "dl2_fb",      "label": "Delay 2 Feedback",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" },
+    { "name": "dl3_fb",      "label": "Delay 3 Feedback",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" },
+    { "name": "wetdry_mix",  "label": "Wet/Dry Mix",        "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "mix" },
+    { "name": "pitch_transp","label": "Pitch Transpose",    "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "pitch" },
+    { "name": "pitch_mix",   "label": "Pitch Mix",          "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "pitch" },
+    { "name": "allp3_fb",    "label": "Allpass 3 Feedback", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp4_fb",    "label": "Allpass 4 Feedback", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp5_fb",    "label": "Allpass 5 Feedback", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp6_fb",    "label": "Allpass 6 Feedback", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp3_mix",   "label": "Allpass 3 Mix",      "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp4_mix",   "label": "Allpass 4 Mix",      "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp5_mix",   "label": "Allpass 5 Mix",      "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "allp6_mix",   "label": "Allpass 6 Mix",      "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "verb" },
+    { "name": "dl4_mix",     "label": "Delay 4 Mix",        "min": 0.0, "max": 1.0, "default": 0.0, "curve": "square", "group": "delays" },
+    { "name": "dl4_fb",      "label": "Delay 4 Feedback",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "delays" }
+  ],
+  "voice_spaces": [
+    "Direct"
+  ],
+  "ui": {
+    "primary_input": "joystick",
+    "show_voice_space_selector": false,
+    "show_synth_visualizer": false
+  }
+}

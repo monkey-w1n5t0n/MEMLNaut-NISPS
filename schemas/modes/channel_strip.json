@@ -1,0 +1,54 @@
+{
+  "$schema": "../schema.json",
+  "_note": "24-param channel strip (EQ + comp). Param indices 2, 3, 9, 20, 21, 22 are unused by the curated voice spaces (Neve66, SSL4K, SSL9K, MaleVox, FemaleVox, Neve80) — exposed as raw normalised slots for future voice-space designs. Engine-side ranges live in voicespaces/ChannelStrip/basic.hpp; this schema describes the [0,1] NN-output space the voice space consumes.",
+  "mode_id": "channel_strip",
+  "engine_id": "channel_strip",
+  "ml": {
+    "input_channels": ["joy_x", "joy_y", "joy_z", "joy_w"],
+    "input_size": 4,
+    "hidden_layers": [10, 10, 14],
+    "output_size": 24,
+    "default_spread": 0.6,
+    "default_learning_rate": 1.0,
+    "default_max_iterations": 1000
+  },
+  "params": [
+    { "name": "pre_gain",      "label": "Pre Gain",       "min": 0.0, "max": 1.0, "default": 0.5, "curve": "square", "group": "gain" },
+    { "name": "peak0_freq",    "label": "Peak0 Freq",     "min": 0.0, "max": 1.0, "default": 0.3, "curve": "square", "group": "eq" },
+    { "name": "p02", "label": "Param 02", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "p03", "label": "Param 03", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "peak1_freq",    "label": "Peak1 Freq",     "min": 0.0, "max": 1.0, "default": 0.3, "curve": "square", "group": "eq" },
+    { "name": "peak_q",        "label": "Peak Q",         "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear", "group": "eq" },
+    { "name": "peak_gain",     "label": "Peak Gain",      "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "eq" },
+    { "name": "in_lpf_cutoff", "label": "Input LPF",      "min": 0.0, "max": 1.0, "default": 0.7, "curve": "square", "group": "filters" },
+    { "name": "in_hpf_cutoff", "label": "Input HPF",      "min": 0.0, "max": 1.0, "default": 0.2, "curve": "square", "group": "filters" },
+    { "name": "p09", "label": "Param 09", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "comp_threshold","label": "Comp Threshold", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "comp" },
+    { "name": "comp_ratio",    "label": "Comp Ratio",     "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear", "group": "comp" },
+    { "name": "comp_attack",   "label": "Comp Attack",    "min": 0.0, "max": 1.0, "default": 0.1, "curve": "linear", "group": "comp" },
+    { "name": "comp_release",  "label": "Comp Release",   "min": 0.0, "max": 1.0, "default": 0.3, "curve": "square", "group": "comp" },
+    { "name": "lowshelf_freq", "label": "Lowshelf Freq",  "min": 0.0, "max": 1.0, "default": 0.3, "curve": "square", "group": "eq" },
+    { "name": "lowshelf_q",    "label": "Lowshelf Q",     "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear", "group": "eq" },
+    { "name": "lowshelf_gain", "label": "Lowshelf Gain",  "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "eq" },
+    { "name": "highshelf_freq","label": "Highshelf Freq", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "square", "group": "eq" },
+    { "name": "highshelf_q",   "label": "Highshelf Q",    "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear", "group": "eq" },
+    { "name": "highshelf_gain","label": "Highshelf Gain", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "eq" },
+    { "name": "p20", "label": "Param 20", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "p21", "label": "Param 21", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "p22", "label": "Param 22", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "general" },
+    { "name": "post_gain",     "label": "Post Gain",      "min": 0.0, "max": 1.0, "default": 0.5, "curve": "square", "group": "gain" }
+  ],
+  "voice_spaces": [
+    "WannabeNeve66",
+    "SSL 4K G-ist",
+    "SSL 9K-inda",
+    "MaleVox",
+    "FemaleVox",
+    "Neve 80"
+  ],
+  "ui": {
+    "primary_input": "joystick",
+    "show_voice_space_selector": true,
+    "show_synth_visualizer": false
+  }
+}

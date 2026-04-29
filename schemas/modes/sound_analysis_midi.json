@@ -1,0 +1,42 @@
+{
+  "$schema": "../schema.json",
+  "_note": "Audio-input → MIDI-CC mapping. Inputs are XiasriAnalysis features (pitch, aperiodicity, energy, attack, brightness, energy_crude) plus 4 joystick analog channels. Output 8 MIDI CCs. Audio engine is Thru (passthrough). No voice spaces.",
+  "mode_id": "sound_analysis_midi",
+  "engine_id": "thru",
+  "ml": {
+    "input_channels": [
+      "audio_pitch",
+      "audio_aperiodicity",
+      "audio_energy",
+      "audio_attack",
+      "audio_brightness",
+      "audio_energy_crude",
+      "joy_x",
+      "joy_y",
+      "joy_z",
+      "joy_w"
+    ],
+    "input_size": 10,
+    "hidden_layers": [10, 10, 14],
+    "output_size": 8,
+    "default_spread": 0.6,
+    "default_learning_rate": 1.0,
+    "default_max_iterations": 1000
+  },
+  "params": [
+    { "name": "midi_cc0", "label": "MIDI CC 0", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc1", "label": "MIDI CC 1", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc2", "label": "MIDI CC 2", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc3", "label": "MIDI CC 3", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc4", "label": "MIDI CC 4", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc5", "label": "MIDI CC 5", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc6", "label": "MIDI CC 6", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },
+    { "name": "midi_cc7", "label": "MIDI CC 7", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" }
+  ],
+  "voice_spaces": [],
+  "ui": {
+    "primary_input": "audio_in",
+    "show_voice_space_selector": false,
+    "show_synth_visualizer": false
+  }
+}

@@ -1,19 +1,27 @@
 /**
- * ML store — placeholder shape for the ML engine state.
+ * ML store — Solid-side state for the WASM-backed ML engine.
  *
- * Stream 7 wires WASM under this. For now the methods that mutate the engine
- * throw `not implemented`. The shape of the store and the signal types are
- * final — modes and primitives can read them.
+ * Stream 7 wires this to a `WasmIML` instance. The store still owns the
+ * Solid-reactive state (sizes, loss, training flag, ready flag) and a
+ * Float32Array signal for outputs. The WasmIML class drives the values
+ * via `__set*` setters — kept exported so the WasmIML implementation can
+ * write through without going through reactive accessors.
  *
- * Why a Solid store + a separate Float32Array signal:
- *   - `createStore` is great for object-like state with fine reactivity.
- *   - Float32Array outputs are large and frequently updated; `createSignal`
- *     with explicit reference replacement is cheaper.
+ * Why two layers (store + class)?
+ *   - The class encapsulates the WASM heap, buffers, and worker.
+ *   - The store is the consumer-facing surface for Solid components and
+ *     the debug probe. Components shouldn't reach into the WASM directly.
+ *
+ * Singleton model: there is exactly one `WasmIML` per browser tab, owned
+ * by the store. `initialize()` creates it; subsequent calls return the
+ * existing one. This matches the legacy playground.
  */
 
 import { createSignal, type Accessor } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import { coreBus } from './bus';
+import type { WasmIML } from '../ml/wasm-iml';
+import type { LayerStats } from '../ml/types';
 
 export interface MLStoreState {
   exampleCount: number;
@@ -32,11 +40,6 @@ export interface MLStoreState {
 }
 
 const EMPTY_OUTPUTS = new Float32Array(0);
-const NOT_IMPLEMENTED = (op: string): never => {
-  throw new Error(
-    `[ml-store] ${op} not implemented in stream-8 scaffold; awaits stream 7 (WASM bindings)`
-  );
-};
 
 const [state, setState] = createStore<MLStoreState>({
   exampleCount: 0,
@@ -56,60 +59,162 @@ const [weights, setWeights] = createSignal<Float32Array>(EMPTY_OUTPUTS, {
   equals: false,
 });
 
+// Singleton WasmIML, lazily created by initialize().
+let imlInstance: WasmIML | null = null;
+let initPromise: Promise<WasmIML> | null = null;
+
+function requireIML(op: string): WasmIML {
+  if (!imlInstance) {
+    throw new Error(
+      `[ml-store] ${op} called before initialize() — call mlStore.initialize() first`,
+    );
+  }
+  return imlInstance;
+}
+
 export const mlStore = {
   // ---- read ----
   state,
   outputs: outputs as Accessor<Float32Array>,
   weights: weights as Accessor<Float32Array>,
 
-  // ---- internal setters (used by future WASM wiring; exposed for stub
-  // wiring during this stream so primitive demos can drive values) ----
+  /** Direct access to the WasmIML instance (null until initialize() resolves). */
+  get iml(): WasmIML | null {
+    return imlInstance;
+  },
+
+  // ---- internal setters (used by WasmIML to push state into the store) ----
   __setOutputs: setOutputs,
   __setState: setState,
   __setWeights: setWeights,
 
-  // ---- ML lifecycle (stubbed) ----
-  initialize(_inputSize: number, _outputSize: number): Promise<void> {
-    return NOT_IMPLEMENTED('initialize');
+  // ---- ML lifecycle ----
+
+  /**
+   * Load the WASM and create the singleton WasmIML. Idempotent: returns
+   * the cached instance on subsequent calls.
+   *
+   * `inputSize` / `outputSize` are accepted for forward compatibility but
+   * ignored if they don't match the WASM build's compile-time architecture.
+   */
+  async initialize(inputSize?: number, outputSize?: number): Promise<WasmIML> {
+    if (imlInstance) return imlInstance;
+    if (initPromise) return initPromise;
+    // Lazy-import to keep the WASM glue out of the bundle until needed.
+    initPromise = (async () => {
+      const { WasmIML: WasmIMLCtor } = await import('../ml/wasm-iml');
+      const inst = await WasmIMLCtor.create({
+        inputSize,
+        outputSize,
+      });
+      imlInstance = inst;
+      return inst;
+    })();
+    return initPromise;
   },
-  setInput(_idx: number, _value: number): void {
-    NOT_IMPLEMENTED('setInput');
+
+  setInput(idx: number, value: number): void {
+    requireIML('setInput').setInput(idx, value);
   },
+
   process(): void {
-    NOT_IMPLEMENTED('process');
+    requireIML('process').process();
   },
-  addExample(_features: ReadonlyArray<number>, _labels: ReadonlyArray<number>): void {
-    NOT_IMPLEMENTED('addExample');
+
+  inferXY(x: number, y: number): Float32Array {
+    return requireIML('inferXY').inferXY(x, y);
   },
-  train(_lr?: number, _maxIter?: number): number {
-    return NOT_IMPLEMENTED('train');
+
+  addExample(features: ReadonlyArray<number>, labels: ReadonlyArray<number>): boolean {
+    return requireIML('addExample').addExample(features, labels);
   },
-  trainAsync(_lr?: number, _maxIter?: number): Promise<number> {
-    return NOT_IMPLEMENTED('trainAsync');
+
+  train(lr?: number, maxIter?: number, minErr?: number, sampleWeights?: Float32Array): number {
+    return requireIML('train').train(lr, maxIter, minErr, sampleWeights);
   },
-  drawWeights(_spread: number): void {
-    NOT_IMPLEMENTED('drawWeights');
+
+  trainAsync(lr?: number, maxIter?: number, minErr?: number, sampleWeights?: Float32Array): Promise<number> {
+    return requireIML('trainAsync').trainAsync(lr, maxIter, minErr, sampleWeights);
   },
-  moveWeights(_speed: number, _spread: number, _pinMask?: Uint8Array): void {
-    NOT_IMPLEMENTED('moveWeights');
+
+  drawWeights(spread: number): void {
+    requireIML('drawWeights').randomiseWeights(spread);
   },
+
+  moveWeights(speed: number, spread: number, pinMask?: Uint8Array): void {
+    requireIML('moveWeights').moveWeights(speed, spread, pinMask);
+  },
+
   evalLoss(): number | null {
-    return null;
+    if (!imlInstance) return null;
+    return imlInstance.evalLoss();
   },
-  inferBatch(_points: ReadonlyArray<readonly [number, number]>): Float32Array {
-    return NOT_IMPLEMENTED('inferBatch');
+
+  inferBatch(points: ReadonlyArray<readonly [number, number]>): Float32Array {
+    if (!imlInstance) {
+      // Until the WASM is up the probe gets a zero array of the expected
+      // total size. Matches the stub behaviour expected by tests.
+      return new Float32Array(points.length * state.outputSize);
+    }
+    return imlInstance.inferBatch(points);
   },
+
   getLayerStats(): Float32Array {
-    return EMPTY_OUTPUTS;
+    if (!imlInstance) return EMPTY_OUTPUTS;
+    return imlInstance.getLayerStatsFlat();
   },
+
+  getLayerStatsRecords(): LayerStats[] {
+    if (!imlInstance) return [];
+    return imlInstance.getLayerStats();
+  },
+
+  getWeights(): Float32Array {
+    if (!imlInstance) return EMPTY_OUTPUTS;
+    return imlInstance.getWeights();
+  },
+
+  setWeights(w: Float32Array): void {
+    requireIML('setWeights').setWeights(w);
+  },
+
   reset(): void {
-    NOT_IMPLEMENTED('reset');
+    requireIML('reset').reset();
   },
+
   clearExamples(): void {
+    if (imlInstance) {
+      imlInstance.clearExamples();
+      return;
+    }
     setState(produce((s) => {
       s.exampleCount = 0;
     }));
     coreBus.emit('ml.examples_cleared', undefined);
+  },
+
+  saveNow(): void {
+    imlInstance?.saveNow();
+  },
+
+  /** Disposes the singleton. Used by tests and on hot-reload. */
+  __dispose(): void {
+    if (imlInstance) {
+      imlInstance.dispose();
+      imlInstance = null;
+    }
+    initPromise = null;
+    setState({
+      exampleCount: 0,
+      lastLoss: null,
+      lossHistory: [],
+      inputSize: 2,
+      outputSize: 126,
+      training: false,
+      ready: false,
+    });
+    setOutputs(EMPTY_OUTPUTS);
+    setWeights(EMPTY_OUTPUTS);
   },
 };
 

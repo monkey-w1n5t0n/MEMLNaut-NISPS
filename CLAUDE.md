@@ -238,7 +238,7 @@ Tests use the `?debug=1` probe (`window.__nisps`) for programmatic access to the
 This is an Arduino project targeting the MEMLNaut RP2350 hardware. Build and flash it with the repo-local helper scripts, which wrap the correct board target and compiler settings.
 
 ```bash
-# Initialize submodules (required for memllib and memlp)
+# Initialize submodules (required for memllib)
 git submodule update --init --recursive
 
 # Build only
@@ -254,8 +254,8 @@ scripts/flash-firmware.sh
 scripts/build-and-flash-firmware.sh
 ```
 
-The scripts build for `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20 via `compiler.cpp.extra_flags=-std=gnu++20`.
-If no variant is passed to `build-firmware.sh` in an interactive shell, it parses the available `MEMLNautMode*` options from `MEMLNaut-NISPS.ino`, prompts for one, and rewrites the active `MEMLNAUT_MODE_TYPE` before compiling.
+The scripts build for `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20 via `compiler.cpp.extra_flags=-std=gnu++20`. The sketch lives at `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino`; everything platform-agnostic (ML, DSP, engines, modes) is under `nisps/` and reached via in-sketch `src/` symlinks.
+If no variant is passed to `build-firmware.sh` in an interactive shell, it parses the available `MEMLNautMode*` options from the sketch, prompts for one, and rewrites the active `MEMLNAUT_MODE_TYPE` before compiling.
 
 ## Architecture
 
@@ -269,7 +269,7 @@ Inter-core synchronization uses memory barriers (`MEMORY_BARRIER()`, `WRITE_VOLA
 
 ### Mode System
 
-The active mode is selected at compile-time via `#define MEMLNAUT_MODE_TYPE` in `MEMLNaut-NISPS.ino`. Modes implement the `MEMLNautMode` concept (see `modes/MEMLNautMode.hpp`):
+The active mode is selected at compile-time via `#define MEMLNAUT_MODE_TYPE` in `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino`. The macro expands to a type alias defined in `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` that maps each `MEMLNautMode<Name>` identifier to a concrete `nisps::modes::*Mode` type. Each mode satisfies the C++20 `nisps::Mode` concept (`nisps/core/concepts.hpp`):
 
 | Mode | Purpose |
 |------|---------|
@@ -277,25 +277,27 @@ The active mode is selected at compile-time via `#define MEMLNAUT_MODE_TYPE` in 
 | `MEMLNautModePAFSynth` | PAF (Phase Aligned Formant) synthesis with MIDI |
 | `MEMLNautModeXIASRI` | Audio-reactive mode using machine listening analysis |
 | `MEMLNautModeSoundAnalysisMIDI` | Sound analysis with MIDI output |
+| `MEMLNautModeBreakOr` | Break\|\| 8-track ratio sequencer |
+| `MEMLNautModeVerbFX` | Reverb/effects engine |
+| `MEMLNautModeElysiamorfs` | Elysiamorf granular sequencer |
+| `MEMLNautModeMEMLCelium` | MEMLCelium dual-voice synth + sequencer |
 
 ### Voice Spaces
 
-Voice spaces map ML output parameters to audio engine parameters. They are defined as lambda functions that translate a normalized parameter array into synthesizer/processor settings. See `voicespaces/` for examples:
-- PAF synth presets: `VoiceSpace1.hpp`, `VoiceSpaceQuadDetune.hpp`, etc.
-- Channel strip presets: `voicespaces/ChannelStrip/basic.hpp` (Neve, SSL emulations)
+Voice spaces map ML output vectors → engine parameters. They live as static lambdas inside each engine in `nisps/engines/*.hpp` (no longer in a separate `voicespaces/` directory). The mode picks a voice space at runtime via `engine().set_voice_space(idx)`.
 
 ### Key Components
 
-- **IMLInterface** (`IMLInterface.hpp`): Interactive ML interface using an MLP for inference/training
-- **InterfaceRL**: Reinforcement learning interface from memllib that handles joystick input and learning
-- **AudioAppBase**: Template base class for audio applications
-- **XiasriAnalysis**: Real-time audio feature extraction (pitch, aperiodicity, energy, brightness)
+- **`nisps::ModeBase`** (`nisps/modes/base.hpp`): CRTP scaffold; absorbs input forwarding, ML inference, voice-space dispatch, control-event ring buffer.
+- **`nisps::ml::MLP<NIn, NHidden..., NOut>`** (`nisps/ml/mlp.hpp`): Templated MLP with SGD/RMSProp, RL primitives (`move_weights`, `draw_weights`).
+- **`firmware/glue/audio_driver.hpp`**: Bridge from memllib `AudioDriver` per-block callback to `Mode::process(stereosample_t)` per-sample.
+- **`firmware/glue/peripherals.hpp`**: Joystick / pots / buttons → `Mode::set_input` and ML primitives.
+- **`nisps::AnalysisEngine`** (`nisps/engines/analysis.hpp`): Real-time audio feature extraction (pitch, aperiodicity, energy, brightness).
 
 ### Submodules (in `src/`)
 
-- **memllib**: Hardware abstraction, audio drivers, synth components, RL interfaces
-- **memlp**: MLP (Multi-Layer Perceptron) implementation for embedded ML
-- **daisysp**: DSP library (filters, drums, effects, synthesis)
+- **memllib**: Hardware abstraction, audio drivers, MIDI, display.
+- **daisysp**: DSP library (filters, drums, effects, synthesis).
 
 ## Memory Sections
 

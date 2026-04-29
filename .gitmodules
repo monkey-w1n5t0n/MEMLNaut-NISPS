@@ -1,6 +1,3 @@
-[submodule "src/memlp"]
-	path = src/memlp
-	url = https://github.com/MusicallyEmbodiedML/memlp.git
 [submodule "src/memllib"]
 	path = src/memllib
 	url = https://github.com/MusicallyEmbodiedML/memllib.git

@@ -4,22 +4,32 @@ MEMLNaut-NISPS: Neural Interactive Shaping of Parameter Spaces. Two living artef
 
 ## Layout
 
-### Firmware (Arduino, RP2040)
-- `MEMLNaut-NISPS.ino` — top-level sketch; dual-core setup, mode selected at compile-time via `#define MEMLNAUT_MODE_TYPE`.
-- `IMLInterface.hpp` — interactive ML controller; wraps MLP + RL with STORE_VALUE / STORE_POSITION modes.
-- `modes/MEMLNautMode.hpp` — concept/contract satisfied by each mode class.
-- `modes/MEMLNautMode*.hpp` — mode implementations (PAFSynth, ChannelStrip, XIASRI, SoundAnalysisMIDI, VerbFX, BreakOr, Elysiamorfs).
-- `modes/AudioApps/` — audio engines used by the newer modes (VerbFX, BreakOr, Elysiamorf, RatioSeq).
-- `PAFSynthAudioApp.hpp`, `ChannelStripAudioApp.hpp`, `ThruAudioApp.hpp`, `XIASRIAudioApp.hpp` — older audio engines at the repo root.
-- `XiasriAnalysis.{hpp,cpp}` — real-time audio feature extraction (pitch, aperiodicity, brightness, etc.).
-- `voicespaces/` — lambdas mapping MLP output vectors to synth parameters. Subdir `ChannelStrip/` for EQ/comp presets.
-- `src/memllib/`, `src/memlp/` — git submodules (hardware abstraction + MLP). **Not auto-initialized** — build breaks without `git submodule update --init --recursive`.
+### Firmware (Arduino, RP2350)
+- `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` — sketch entry point; dual-core orchestration, mode selected at compile-time via `#define MEMLNAUT_MODE_TYPE`.
+- `firmware/MEMLNaut-NISPS/glue/` — hardware bindings:
+  - `audio_driver.hpp` — bridges memllib `AudioDriver` block callback → `Mode::process(stereosample_t)` per-sample loop.
+  - `peripherals.hpp` — wires joystick / pots / buttons → `Mode::set_input` and ML primitives (`draw_weights`, `move_weights`, `train`, `reset`).
+  - `midi_io.hpp` — incoming MIDI → mode `note_on/update_bpm/set_playing`; drains mode `ControlEvent` ring → MIDI UART.
+  - `mode_select.hpp` — type aliases mapping `MEMLNautMode<Name>` identifiers to `nisps::modes::*Mode` C++ types. Build script rewrites the active line.
+  - `input_router.hpp`, `output_router.hpp` — top-level `wire_inputs()` / `drain_outputs()` entry points.
+- `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks into the repo's submodules and `nisps/` library. Required by Arduino-CLI's sketch tree convention.
+- `firmware/README.md` — structure, build, and verification notes.
+- `nisps/` — platform-agnostic C++20 ML / DSP / engines / modes (see "nisps library" below). The firmware glue layer composes these.
+- `src/memllib/` — git submodule (hardware abstraction). **Not auto-initialized** — build breaks without `git submodule update --init --recursive`.
 - `src/daisysp/` — vendored DSP library (filters, drums, effects).
 - `data/` — preset/asset CSVs.
 
-### nisps-core (platform-agnostic C++20 header-only)
-- `nisps-core/include/nisps/` — `iml.hpp`, `mlp.hpp`, `layer.hpp`, `node.hpp`, `dataset.hpp`, `loss.hpp`, `utils.hpp`.
-- `nisps-core/test/`, `nisps-core/examples/`, `nisps-core/README.md`, `CHANGELOG.md`.
+### nisps library (platform-agnostic C++20)
+- `nisps/core/` — foundational types, perf attrs, concepts (`AudioEngine`, `Mode`, `MLEngine`), fixed buffers, RNG, math.
+- `nisps/ml/mlp.hpp` + `activations.hpp`, `loss.hpp`, `training.hpp`, `init.hpp`, `rl.hpp`, `stats.hpp` — MLP class template with SGD, RMSProp, RL primitives.
+- `nisps/dsp/` — biquad, delay, reverb, filter, env, osc, pitch_shift, dc_blocker — extracted DSP primitives.
+- `nisps/engines/` — `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp`, `elysiamorf.hpp`, `analysis.hpp`, plus `base.hpp` with `NoOpEngine`. Each satisfies `AudioEngine`.
+- `nisps/modes/` — one mode per engine, all derive from `ModeBase` CRTP scaffold. Schemas in `nisps/modes/generated/` (codegen output).
+- `nisps/wasm/` — Emscripten bindings (used by the playground build, not the firmware).
+- `nisps/CMakeLists.txt` + `nisps/build/` — host-target tests.
+
+### nisps-core (legacy; superseded by `nisps/`)
+- `nisps-core/` — earlier header-only extraction. Kept until cleanup stream.
 
 ### Playground (browser ML demo)
 - `playground/index.html` — hub linking to the three variants.
@@ -75,10 +85,11 @@ MEMLNaut-NISPS: Neural Interactive Shaping of Parameter Spaces. Two living artef
   - `playground/RECONCILIATION.md` is supposed to track features landed in a-app but not yet in b/c. File does not currently exist — if you add a-only features, either create it or explicitly accept the drift.
 
 ## Gotchas
-- `memllib` and `memlp` submodules are **not auto-checked-out** — a fresh clone will fail to compile the firmware silently.
+- `memllib` submodule is **not auto-checked-out** — a fresh clone will fail to compile the firmware silently. (`src/memlp` was deleted; `nisps/ml/mlp.hpp` replaces it.)
+- The Arduino sketch lives at `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` (Arduino-CLI requires sketch dir name == sketch file name). It reaches `nisps/`, `src/memllib/`, `src/daisysp/` via symlinks under `firmware/MEMLNaut-NISPS/src/` because Arduino's preprocessor refuses `..` in includes from sketch headers.
+- `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` `#undef`s Arduino's `sq`/`min`/`max`/`abs`/`round` macros before pulling nisps headers — the nisps engines use those identifiers as method names.
+- The audio bridge struct `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in the .ino; combining `inline` with the `__not_in_flash` section attribute creates a comdat / section conflict at link time.
 - Double-scaled loss: C++ `Train()` and WASM `train_ex` both divide by `n` when no sample weights are supplied (known, backward-compat, tracked as `meml-ues`).
-- `VerbFXAudioApp` / `MEMLNautModeVerbFX` have **entire analysis blocks commented out** — the mode was migrated from analysis-driven to joystick-driven and cleanup is unfinished. Don't assume XiasriAnalysis wiring is live there.
-- `XiasriAnalysis` output struct is union-cast to a float array inside XIASRI mode — fragile if the struct layout changes.
 - Recent fixes cluster around the modular voice: matrix rebuild, `mod_amp` positive-only floor, MLP bypass when untrained, worklet blob-url registration — modular mode is under active churn, so expect rough edges.
 - `a-app.js` is the single source of truth. **Do not** reflexively mirror changes to `b-app.js` / `c-app.js` — they are frozen legacy variants.
 - `window.__nisps` only exists with `?debug=1`; Playwright helpers expect this.

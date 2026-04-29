@@ -11,9 +11,7 @@ import { ModeShell } from './ModeShell';
 import { useModeRuntime } from './mode-runtime';
 import { XYPad } from '../primitives/XYPad';
 import { OutputDisplay } from '../primitives/OutputDisplay';
-import { SliderBank } from '../primitives/SliderBank';
 import { LossPlot } from '../primitives/LossPlot';
-import { paramsToSliderConfig, outputsToSliderValues } from './mode-helpers';
 import { PafSynthSchema } from './generated/paf_synth_schema';
 
 export const PAFSynthMode: Component = () => {
@@ -21,8 +19,6 @@ export const PAFSynthMode: Component = () => {
   const runtime = useModeRuntime(schema);
 
   const [voiceSpace, setVoiceSpace] = createSignal(0);
-  const sliderConfig = paramsToSliderConfig(schema.params);
-  const sliderValues = () => outputsToSliderValues(runtime.processedOutputs(), schema.params);
 
   return (
     <ModeShell
@@ -30,18 +26,7 @@ export const PAFSynthMode: Component = () => {
       runtime={runtime}
       activeVoiceSpace={voiceSpace}
       onVoiceSpaceChange={setVoiceSpace}
-      drawerTitle="PAF synth params"
-      drawerContent={() => (
-        <SliderBank
-          title="Live parameter values"
-          sliders={sliderConfig}
-          values={sliderValues}
-          onChange={() => {
-            // Sliders are display-only here. Stream 10 wires the per-param
-            // override editor which writes through modeStore.setOverride.
-          }}
-        />
-      )}
+      drawerTitle="PAF synth settings"
       primaryInput={() => (
         <>
           <XYPad
@@ -59,7 +44,7 @@ export const PAFSynthMode: Component = () => {
       outputArea={() => (
         <>
           <OutputDisplay
-            values={runtime.processedOutputs}
+            values={runtime.paramOutputs}
             width={360}
             height={120}
             color="var(--accent)"

@@ -31,16 +31,28 @@ export function paramsToSliderConfig(params: ReadonlyArray<Param>): SliderConfig
 /**
  * Map a Float32Array (length = N) of normalized values [0,1] to a flat
  * array sized to match the slider config (already in min/max range).
+ *
+ * If `overrides` is supplied, per-param min/max overrides are honoured
+ * instead of the schema defaults — this is what the mode UI sliders
+ * display when the user has tightened the active range.
  */
 export function outputsToSliderValues(
   outputs: Float32Array,
   params: ReadonlyArray<Param>,
+  overrides?: Record<string, { min: number; max: number; muted?: boolean; fixedValue?: number }>,
 ): number[] {
   const out: number[] = [];
   for (let i = 0; i < params.length; ++i) {
     const v = outputs[i] ?? 0;
     const p = params[i]!;
-    out.push(p.min + v * (p.max - p.min));
+    const ov = overrides?.[p.name];
+    if (ov && ov.muted && ov.fixedValue !== undefined) {
+      out.push(ov.fixedValue);
+      continue;
+    }
+    const min = ov?.min ?? p.min;
+    const max = ov?.max ?? p.max;
+    out.push(min + v * (max - min));
   }
   return out;
 }

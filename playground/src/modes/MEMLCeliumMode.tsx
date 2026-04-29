@@ -7,17 +7,13 @@ import { ModeShell } from './ModeShell';
 import { useModeRuntime } from './mode-runtime';
 import { XYPad } from '../primitives/XYPad';
 import { OutputDisplay } from '../primitives/OutputDisplay';
-import { SliderBank } from '../primitives/SliderBank';
 import { LossPlot } from '../primitives/LossPlot';
-import { paramsToSliderConfig, outputsToSliderValues } from './mode-helpers';
 import { MemlceliumSchema } from './generated/memlcelium_schema';
 
 export const MEMLCeliumMode: Component = () => {
   const schema = MemlceliumSchema;
   const runtime = useModeRuntime(schema);
   const [voiceSpace, setVoiceSpace] = createSignal(0);
-  const sliderConfig = paramsToSliderConfig(schema.params);
-  const sliderValues = () => outputsToSliderValues(runtime.processedOutputs(), schema.params);
 
   return (
     <ModeShell
@@ -25,17 +21,7 @@ export const MEMLCeliumMode: Component = () => {
       runtime={runtime}
       activeVoiceSpace={voiceSpace}
       onVoiceSpaceChange={setVoiceSpace}
-      drawerTitle="MEMLCelium voice + CV"
-      drawerContent={() => (
-        <SliderBank
-          title="Live voice + CV params"
-          sliders={sliderConfig}
-          values={sliderValues}
-          onChange={() => {
-            /* read-only */
-          }}
-        />
-      )}
+      drawerTitle="MEMLCelium settings"
       primaryInput={() => (
         <>
           <XYPad
@@ -53,7 +39,7 @@ export const MEMLCeliumMode: Component = () => {
       outputArea={() => (
         <>
           <OutputDisplay
-            values={runtime.processedOutputs}
+            values={runtime.paramOutputs}
             width={360}
             height={120}
             color="#5b9eef"

@@ -1,8 +1,8 @@
 /**
  * ChannelStripMode — channel-strip processor controlled by joystick.
  *
- * 24 outputs feed EQ / dynamics / gain. Schema has no voice spaces so the
- * shell omits the selector. Drawer shows the live param sliders.
+ * 24 outputs feed EQ / dynamics / gain. Settings drawer is the default
+ * SettingsDrawer (input/training/exploration/output/overrides/advanced).
  */
 
 import { Component } from 'solid-js';
@@ -10,33 +10,18 @@ import { ModeShell } from './ModeShell';
 import { useModeRuntime } from './mode-runtime';
 import { VirtualJoystick } from '../primitives/VirtualJoystick';
 import { OutputDisplay } from '../primitives/OutputDisplay';
-import { SliderBank } from '../primitives/SliderBank';
 import { LossPlot } from '../primitives/LossPlot';
-import { paramsToSliderConfig, outputsToSliderValues } from './mode-helpers';
 import { ChannelStripSchema } from './generated/channel_strip_schema';
 
 export const ChannelStripMode: Component = () => {
   const schema = ChannelStripSchema;
   const runtime = useModeRuntime(schema);
 
-  const sliderConfig = paramsToSliderConfig(schema.params);
-  const sliderValues = () => outputsToSliderValues(runtime.processedOutputs(), schema.params);
-
   return (
     <ModeShell
       schema={schema}
       runtime={runtime}
-      drawerTitle="Channel strip params"
-      drawerContent={() => (
-        <SliderBank
-          title="Live parameter values"
-          sliders={sliderConfig}
-          values={sliderValues}
-          onChange={() => {
-            /* read-only for now */
-          }}
-        />
-      )}
+      drawerTitle="Channel strip settings"
       primaryInput={() => (
         <>
           <VirtualJoystick
@@ -53,7 +38,7 @@ export const ChannelStripMode: Component = () => {
       outputArea={() => (
         <>
           <OutputDisplay
-            values={runtime.processedOutputs}
+            values={runtime.paramOutputs}
             width={360}
             height={120}
             color="var(--accent-3)"

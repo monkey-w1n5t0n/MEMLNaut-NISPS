@@ -30,4 +30,9 @@ export {
   type ABState,
   type SessionPreset,
 } from './session-store';
+export {
+  explorationStore,
+  type ExplorationStore,
+  type ExplorationState,
+} from './exploration-store';
 export { schedulePersist, flushPersist, loadPersisted, clearPersisted } from './persistence';

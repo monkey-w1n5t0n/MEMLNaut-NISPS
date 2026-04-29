@@ -1,106 +1,110 @@
 # MAP
 
-MEMLNaut-NISPS: Neural Interactive Shaping of Parameter Spaces. Two living artefacts share one ML core: (1) Arduino/RP2040 firmware for the MEMLNaut hardware, and (2) a browser playground that uses a WASM build of the same MLP to drive a C15 synth + other outputs. A header-only `nisps-core/` extraction is reused by the playground (via WASM bindings) and a VCV Rack module. See `CLAUDE.md` for the long-form architecture narrative.
+MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 codebase (`nisps/`) compiles to two targets: (1) Arduino/RP2350 firmware for the MEMLNaut hardware, (2) WASM in a SolidJS browser playground that runs the same engines + ML through an AudioWorklet. Browser audio engines are a superset of firmware engines (C15 is browser-only). See `CLAUDE.md` for the long-form architecture narrative and `ALIGNMENT.md` for current strategic gaps.
 
 ## Layout
 
-### Firmware (Arduino, RP2350)
-- `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` — sketch entry point; dual-core orchestration, mode selected at compile-time via `#define MEMLNAUT_MODE_TYPE`.
+### `nisps/` — platform-agnostic C++20 library (the only ML/DSP/engine code)
+- `nisps/core/` — `perf.hpp` (memory section attrs), `types.hpp`, `concepts.hpp` (`MLEngine`, `AudioEngine`, `Mode`), `fixed_buffer.hpp`, `ring_buffer.hpp` (SPSC lock-free, replaces pico/util/queue), `rng.hpp` (xoshiro256+ deterministic), `math.hpp` (fast_sigmoid, `Curve` enum + `apply_curve`).
+- `nisps/ml/` — MLP class template `MLP<NIn, NH1, NH2, NH3, NOut>`. Files: `mlp.hpp`, `activations.hpp`, `loss.hpp` (MSE, no double-scaling), `training.hpp` (SGD + grad clipping), `init.hpp` (spread-aware uniform↔Xavier), `rl.hpp` (`move_weights` with output pin mask + per-layer scaling + weight decay), `stats.hpp`.
+- `nisps/dsp/` — `biquad.hpp`, `delay.hpp`, `reverb.hpp`, `filter.hpp`, `env.hpp`, `osc.hpp`, `pitch_shift.hpp`, `dc_blocker.hpp`. Lean primitives extracted from maximilian; daisysp PitchShifter replaced with custom granular impl.
+- `nisps/engines/` — eight audio engines, each satisfying `AudioEngine`: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp` (sequencer, NoOp audio), `elysiamorf.hpp` (sequencer, NoOp audio), `analysis.hpp` (input-side spectral features). Plus `base.hpp` (`NoOpEngine`, engine_id "thru").
+- `nisps/modes/` — eight platform-agnostic modes binding `{ML config, engine, voice space lambdas, abstract I/O channels}`. Files: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp`, `elysiamorf.hpp`, `sound_analysis_midi.hpp`. `base.hpp` provides a CRTP scaffold eliminating the duplication that previously plagued firmware modes. `voice_space.hpp` holds engine-side voice space dispatch helpers. `generated/` contains codegen output (do not edit by hand).
+- `nisps/wasm/bindings.cpp` — flat C API exported to WASM (Emscripten target only).
+- `nisps/CMakeLists.txt` + `nisps/build/` — host-target builds + ctest.
+
+### `firmware/` — Arduino sketch + hardware glue
+- `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` — entry point. Selects active mode at compile time via `#define MEMLNAUT_MODE_TYPE`.
 - `firmware/MEMLNaut-NISPS/glue/` — hardware bindings:
-  - `audio_driver.hpp` — bridges memllib `AudioDriver` block callback → `Mode::process(stereosample_t)` per-sample loop.
-  - `peripherals.hpp` — wires joystick / pots / buttons → `Mode::set_input` and ML primitives (`draw_weights`, `move_weights`, `train`, `reset`).
-  - `midi_io.hpp` — incoming MIDI → mode `note_on/update_bpm/set_playing`; drains mode `ControlEvent` ring → MIDI UART.
-  - `mode_select.hpp` — type aliases mapping `MEMLNautMode<Name>` identifiers to `nisps::modes::*Mode` C++ types. Build script rewrites the active line.
+  - `audio_driver.hpp` — bridges memllib `AudioDriver` callback → `Mode::process(stereosample_t)`.
+  - `peripherals.hpp` — joystick / pots / buttons → `Mode::set_input` and ML primitives.
+  - `midi_io.hpp` — MIDI in → mode `note_on`/`update_bpm`/`set_playing`; drains `ControlEvent` ring → MIDI UART.
+  - `mode_select.hpp` — type aliases mapping firmware mode identifiers to `nisps::modes::*Mode` C++ types. Build script rewrites the active line.
   - `input_router.hpp`, `output_router.hpp` — top-level `wire_inputs()` / `drain_outputs()` entry points.
-- `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks into the repo's submodules and `nisps/` library. Required by Arduino-CLI's sketch tree convention.
-- `firmware/README.md` — structure, build, and verification notes.
-- `nisps/` — platform-agnostic C++20 ML / DSP / engines / modes (see "nisps library" below). The firmware glue layer composes these.
-- `src/memllib/` — git submodule (hardware abstraction). **Not auto-initialized** — build breaks without `git submodule update --init --recursive`.
-- `src/daisysp/` — vendored DSP library (filters, drums, effects).
-- `data/` — preset/asset CSVs.
+- `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks (Arduino-CLI requires sketch-tree includes; preprocessor refuses `..` in headers).
+- `firmware/README.md` — structure + build instructions.
 
-### nisps library (platform-agnostic C++20)
-- `nisps/core/` — foundational types, perf attrs, concepts (`AudioEngine`, `Mode`, `MLEngine`), fixed buffers, RNG, math.
-- `nisps/ml/mlp.hpp` + `activations.hpp`, `loss.hpp`, `training.hpp`, `init.hpp`, `rl.hpp`, `stats.hpp` — MLP class template with SGD, RMSProp, RL primitives.
-- `nisps/dsp/` — biquad, delay, reverb, filter, env, osc, pitch_shift, dc_blocker — extracted DSP primitives.
-- `nisps/engines/` — `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp`, `elysiamorf.hpp`, `analysis.hpp`, plus `base.hpp` with `NoOpEngine`. Each satisfies `AudioEngine`.
-- `nisps/modes/` — one mode per engine, all derive from `ModeBase` CRTP scaffold. Schemas in `nisps/modes/generated/` (codegen output).
-- `nisps/wasm/` — Emscripten bindings (used by the playground build, not the firmware).
-- `nisps/CMakeLists.txt` + `nisps/build/` — host-target tests.
+### `playground/` — SolidJS + Vite + TypeScript app
+- `playground/index.html`, `vite.config.ts`, `tsconfig.json`, `package.json` — scaffold. COOP/COEP headers configured.
+- `playground/src/main.tsx`, `App.tsx` — entry + router (`/`, `/dev/primitives`, `/modes`).
+- `playground/src/primitives/` — 16 UI building blocks: `Slider`, `SliderBank`, `VirtualJoystick`, `XYPad`, `Heatmap`, `OutputDisplay`, `TrainingControls`, `Drawer`, `ControlAxis`, `ProgressRing`, `PillToggle`, `ParamEditor`, `JoyMap`, `WeightHealth`, `GradientFlow`, `LossPlot`. Each has a `.demo.tsx` showcased on `/dev/primitives`.
+- `playground/src/modes/` — one TSX per firmware mode (+ `C15Mode` browser-only). `ModeShell.tsx` is the shared scaffold; `ModeSwitcher.tsx` picks the active mode; `mode-runtime.ts` is the schema → ML → audio wiring hook; `mode-helpers.ts` for SliderBank configs. `generated/` holds codegen-produced TS schemas (do not edit).
+- `playground/src/stores/` — Solid stores: `ml-store`, `input-store`, `output-store`, `mode-store`, `control-store` (compound axes Boldness/Memory/Precision), `session-store` (snapshots, A/B, presets), `exploration-store`, `bus` (typed signal bus). `persistence.ts` debounces localStorage writes.
+- `playground/src/audio/engine-host.ts`, `worklet/nisps-processor.ts` — main-thread engine host + AudioWorklet processor. WASM loaded twice (main thread for ML, worklet for engines).
+- `playground/src/ml/wasm-iml.ts`, `wasm-worker.ts`, `dataset.ts`, `types.ts` — main-thread WasmIML class + disposable async-training worker + FIFO dataset.
+- `playground/src/input/pipeline.ts`, `playground/src/output/pipeline.ts`, `playground/src/output/curves.ts` — pure-fn pipelines (deadzone→zoom→curve→smoothing→momentum, then global curve→smoothing→slew→freeze).
+- `playground/src/features/` — additional feature modules (heatmap sampling, snapshot stack, A/B compare, region pin, param pin, trail, weight health, etc.).
+- `playground/src/debug/probe.ts` — synchronous `window.__nisps` debug probe for Playwright.
+- `playground/public/nisps.{wasm,js}`, `c15.wasm`, `c15-glue.js` — compiled WASM artifacts (built by `scripts/build-wasm.sh`).
+- `playground/tests/e2e/` — Playwright specs (`ml-engine`, `modes`, `persistence`, `ui-interactions`) + `helpers.ts`.
+- `playground/playwright.config.ts` — Vite preview server setup.
 
-### nisps-core (legacy; superseded by `nisps/`)
-- `nisps-core/` — earlier header-only extraction. Kept until cleanup stream.
+### `schemas/` — JSON parameter contracts (firmware/browser source of truth)
+- `schemas/schema.json` — Draft 2020-12 meta-schema validating mode files.
+- `schemas/modes/<mode>.json` (×8) — each mode's params, ranges, defaults, curves, voice spaces, ML config.
+- `schemas/modes/params_notes.md` — provenance notes and judgement calls per mode.
 
-### Playground (browser ML demo)
-- `playground/index.html` — hub linking to the three variants.
-- `playground/a-immersive.html` + `js/a-app.js` — **primary** app. WASM engine, full control surface, modular/engine-switcher, C15 + MIDI + audio-canvas outputs.
-- `playground/b-workbench.html` + `js/b-app.js`, `c-journey.html` + `js/c-app.js` — older variants on the legacy JS engine. Feature-frozen; drift vs. a-app is intentional (see `CLAUDE.md` memory on `playground/RECONCILIATION.md` — note: file does **not** currently exist).
-- `playground/designs.html`, `js/app.js` — oldest experimental app. Kept for reference.
-- `playground/wasm/` — Emscripten build: `nisps_bindings.cpp` (C API, float32), `build.sh`, compiled `nisps.wasm`/`nisps.js`.
-- `playground/js/nisps/` — `nisps-wasm.js` (WasmIML wrapper), `nisps-wasm-worker.js` (off-thread train), `dataset.js` (FIFO ring buffer, max 100), legacy pure-JS engine (`iml.js`, `mlp.js`, `layer.js`, `node.js`) used by b/c apps.
-- `playground/js/synth/` — `c15-bridge.js`, `param-map.js` (126 curated C15 params), `presets.js` (4 tiers), `arpeggiator.js`.
-- `playground/js/ui/` — UI modules. Categories:
-  - Input: `input-pipeline.js`, `joystick.js`, `joy-map-enhanced.js`, `gamepad.js`, `hand-tracker.js`, `eoc-*.js`.
-  - Control surface: `control-surface.js`, `control-surface-ui.js` (3 compound axes: Boldness / Memory / Precision).
-  - Training/exploration: `snapshot-stack.js`, `ab-compare.js`, `region-pin.js`, `param-pin.js`, `auto-explore.js`, `pressure-feedback.js`, `input-heatmap.js`.
-  - Output/debug: `output-pipeline.js`, `weight-health.js`, `gradient-flow.js`, `session-presets.js`, `visualizer.js`, `param-display.js`, `dev-panel.js`.
-  - Phase wiring: `phase2-ui.js`, `phase3-ui.js`, `phase4-ui.js`.
-  - Modular mode: `modular-ui.js` (~52k, large), `engine-switcher.js` — newer; not yet documented in `CLAUDE.md`.
-- `playground/c15/`, `playground/faust/`, `playground/osc-bridge/` — external synth/bridge assets.
-- `playground/SPEC-controls.md`, `SPEC-shapeseq.md`, `ARCHITECTURE.md`, `PLAN-solidjs-migration.md`, `TODOS.md`, `README.md`, `devlog/` — docs.
+### `codegen/` — schema → C++/TS code
+- `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`) and `playground/src/modes/generated/<mode>_schema.ts`. Idempotent.
+- `codegen/templates/`, `codegen/tests/golden/` — reference templates + golden snapshot for paf_synth.
 
-### Other consumers
-- `vcv/` — VCV Rack plugin using `nisps-core` (`src/MEMLNaut.cpp`, `SPEC.md`, `NISPS-FORMAT.md`).
+### `tests/cpp/` — host C++ tests
+- Per-component tests: `test_dsp_*.cpp`, `test_engine_*.cpp`, `test_mlp_*.cpp`, `test_mode_*.cpp`, `test_fixed_buffer.cpp`, `test_ring_buffer.cpp`, `test_rng.cpp`, `test_math.cpp`. Helpers in `test_helpers.hpp`.
+- Verification: `ml_golden_vectors.cpp`, `engine_impulse.cpp` (+ `engine_impulse_baseline.bin`), `parity_check.cpp` + `parity_wasm.mjs` + `parity_diff.mjs` — native-vs-WASM bit-equivalence within 1e-5.
 
-### Tests
-- `tests/e2e/*.spec.js` — Playwright e2e against the immersive app via the `?debug=1` probe (`window.__nisps`). Covers ml-engine, wasm-api, ui-interactions, input-pipeline, persistence, engine-switching, modular-mode. Shared helpers in `tests/e2e/helpers.js`.
-- `playwright.config.js`, `package.json` — auto-starts a static server on port 7331.
+### `scripts/` — build + verify entry points
+- `build-firmware.sh`, `flash-firmware.sh`, `build-and-flash-firmware.sh`, `firmware-common.sh` — Arduino-CLI wrapper for RP2350 target with C++20 flag.
+- `build-wasm.sh` — Emscripten compile producing `playground/public/nisps.{wasm,js}`.
+- `build-cpp-tests.sh` — CMake configure + build + ctest (Ninja).
+- `parity-check.sh` — runs native + WASM and diffs binary outputs.
+- `lint-cpp.sh` — `.f` literal warn + heap/`Arduino.h` violation fail.
+- `run-all-tests.sh` — master verification script.
 
-### Top-level docs / planning
-- `CLAUDE.md` — architecture narrative for both firmware and playground.
-- `AGENTS.md` — beads/bd conventions.
-- `NISPS_CORE_EXTRACTION_PLAN.md`, `NISPS_CORE_TASKS.md` — extraction task list; status unclear, likely stale now that `nisps-core/` exists.
+### `.github/workflows/`
+- `ci.yml` — GitHub Actions: cmake build + ctest + WASM build + parity check + lint + Playwright (cpp-tests + playground-tests jobs). Firmware compile is documented as manual.
+
+### Submodules (in `src/`)
+- `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI). **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`.
+- `src/daisysp/` — vendored DSP library. Used by some firmware glue; nisps replaced its PitchShifter with a custom granular impl.
+
+### Top-level docs
+- `CLAUDE.md` — long-form architecture narrative.
+- `MAP.md` — this file.
+- `ALIGNMENT.md` — strategic gaps + open mission questions, dated, opinionated.
 - `README.md` — short quickstart.
+- `AGENTS.md` — beads/bd conventions.
 
 ## Entry points
-- **Firmware**: `scripts/build-firmware.sh`, `scripts/flash-firmware.sh`, or `scripts/build-and-flash-firmware.sh` (requires submodules initialised). `build-firmware.sh` can take an explicit variant name like `MEMLCelium` or prompt interactively from the parsed `MEMLNautMode*` list and rewrite the active mode in `MEMLNaut-NISPS.ino`. Matching is case-insensitive, but user-facing prompts preserve the canonical mode capitalization. The scripts target `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20. Execution = `setup()`/`loop()` on Core 0, `setup1()`/`loop1()` on Core 1, audio ISR on Core 1.
-- **Playground**: `cd playground && python3 -m http.server` (or `serve.sh` / `serve-coop.py`), open `a-immersive.html`. Append `?debug=1` to expose `window.__nisps`.
-- **WASM rebuild**: `cd playground/wasm && ./build.sh` (needs `emcc`).
-- **Tests**: `npx playwright test` (auto-spawns server on 7331).
-- **VCV module**: built inside `vcv/` with the VCV Rack SDK.
+
+- **Firmware**: `scripts/build-firmware.sh [VARIANT]` (interactive prompt if omitted), `scripts/flash-firmware.sh`, `scripts/build-and-flash-firmware.sh`. Target: `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3`, `-std=gnu++20`.
+- **Playground dev**: `cd playground && bun install && bun run dev` (Vite, port 5173, COOP/COEP headers).
+- **Playground build**: `cd playground && bun run build`.
+- **WASM rebuild**: `bash scripts/build-wasm.sh` (needs `emcc`).
+- **Host C++ tests**: `bash scripts/build-cpp-tests.sh`.
+- **Parity check**: `bash scripts/parity-check.sh`.
+- **All tests**: `bash scripts/run-all-tests.sh`.
+- **Playwright**: `cd playground && bunx playwright test`.
+- **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/` and `playground/src/modes/generated/`).
 
 ## Conventions
-- Firmware mode selection is compile-time only; only one `MEMLNAUT_MODE_TYPE` uncommented at a time in `MEMLNaut-NISPS.ino`.
-- RP2040 memory placement via `APP_SRAM`, `AUDIO_MEM`, `AUDIO_FUNC`, `__not_in_flash("app")`. Audio hot paths use `__force_inline` / `__hot` / `__flatten`.
-- Cross-core sync: `MEMORY_BARRIER()`, `WRITE_VOLATILE`/`READ_VOLATILE`, RP2040 `queue_t`.
-- Voice spaces are header-only structs whose mappings are lambdas capturing synth state — **implicit coupling** to synth members.
-- Playground ML engines (`IML`, `WasmIML`) share a duck-typed interface (`inference`, `train`, `getWeights`/`setWeights`, …); WASM uses **float32**, JS engine uses float64.
-- `Dataset` is a **FIFO ring buffer**, default max 100 examples; recency/spatial sample weighting is computed JS-side.
-- Spread-aware weight init / RL noise (`drawWeightsSpread`, `moveWeightsEx`) live in `playground/wasm/nisps_bindings.cpp`, **not** in `nisps-core` proper — they are playground-specific.
-- Playground UI modules dispatch `controlsurface:change` CustomEvents; `a-app.js` listens and reconfigures the input pipeline, spread, and RL params.
-- URL params: `?tame`, `?spread`, `?preset`, `?debug=1`, `?shapeseq=1`.
-- Persistent memory (`bd remember`) notes:
-  - ShapeSeq is gated behind `?shapeseq=1` until solid — arp remains default.
-  - ShapeSeq MLP plan is **switchable mode** (unified single-MLP first, then dual-MLP option).
-  - `playground/RECONCILIATION.md` is supposed to track features landed in a-app but not yet in b/c. File does not currently exist — if you add a-only features, either create it or explicitly accept the drift.
+
+- Firmware mode selection is compile-time only — `#define MEMLNAUT_MODE_TYPE` in the `.ino`.
+- `nisps/` follows Chris's RP2350 perf rules globally: no heap, `static const float` for non-trivial constants, strict `.f` suffix, memory section attrs (`NISPS_AUDIO_MEM`, `NISPS_AUDIO_FUNC`, `NISPS_APP_SRAM`, `NISPS_HOT`, `NISPS_FORCE_INLINE`).
+- C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
+- `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`); generated mode headers re-export via `using Curve = ::nisps::Curve;`. TS mirror at `playground/src/output/curves.ts` with same names.
+- Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++/TS types. **No declarative JSON UI.**
+- WASM and firmware share the same C++; WASM is fixed at `MLP<2, 10, 14, 18, 126>` and modes use a slice of outputs based on schema's `output_size`.
+- Cross-platform parity: `scripts/parity-check.sh` enforces native vs WASM agreement within 1e-5.
 
 ## Gotchas
-- `memllib` submodule is **not auto-checked-out** — a fresh clone will fail to compile the firmware silently. (`src/memlp` was deleted; `nisps/ml/mlp.hpp` replaces it.)
-- The Arduino sketch lives at `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` (Arduino-CLI requires sketch dir name == sketch file name). It reaches `nisps/`, `src/memllib/`, `src/daisysp/` via symlinks under `firmware/MEMLNaut-NISPS/src/` because Arduino's preprocessor refuses `..` in includes from sketch headers.
-- `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` `#undef`s Arduino's `sq`/`min`/`max`/`abs`/`round` macros before pulling nisps headers — the nisps engines use those identifiers as method names.
-- The audio bridge struct `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in the .ino; combining `inline` with the `__not_in_flash` section attribute creates a comdat / section conflict at link time.
-- Double-scaled loss: C++ `Train()` and WASM `train_ex` both divide by `n` when no sample weights are supplied (known, backward-compat, tracked as `meml-ues`).
-- Recent fixes cluster around the modular voice: matrix rebuild, `mod_amp` positive-only floor, MLP bypass when untrained, worklet blob-url registration — modular mode is under active churn, so expect rough edges.
-- `a-app.js` is the single source of truth. **Do not** reflexively mirror changes to `b-app.js` / `c-app.js` — they are frozen legacy variants.
-- `window.__nisps` only exists with `?debug=1`; Playwright helpers expect this.
 
-## Open questions / smells
-- `modular-ui.js` is ~52k and undocumented in `CLAUDE.md`; needs a `docs/modular.md` stub, especially given recent bug cluster.
-- `engine-switcher.js` + `engine-switching.spec.js` + `modular-mode.spec.js` — newer engine-selection mechanism not described in `CLAUDE.md`. Verify whether there is now a supported alternative engine besides WASM-MLP.
-- `playground/RECONCILIATION.md` is referenced by persistent memory but missing on disk. Either the memory is stale or the file needs creating.
-- `NISPS_CORE_TASKS.md` / `NISPS_CORE_EXTRACTION_PLAN.md` at the repo root likely describe completed work — candidates for deletion or archiving under `docs/history/`.
-- `PLAN-solidjs-migration.md` (34k) describes an unstarted rewrite. Either flag it "aspirational / not started" at the top or move to `docs/`.
-- No `README.md` for `playground/wasm/` — a 10-line binding table (C API ↔ JS wrapper ↔ nisps-core call) would save future agents a trip through `nisps_bindings.cpp`.
-- Firmware `IMLInterface`'s STORE_VALUE vs STORE_POSITION modes have no docs — decide which modes use which and document.
-- Global `std::shared_ptr<MIDIInOut>` in the sketch introduces refcount traffic on the 1 ms MIDI poll — likely benign, worth confirming.
-- Two duplicated CLAUDE.md copies at `~/.claude/CLAUDE.md` and `~/.claude-gp/CLAUDE.md` (symlinked), and a per-repo one — not a repo smell, just noted so future agents don't try to "reconcile".
+- `src/memllib` submodule is not auto-checked-out.
+- Firmware sketch path is `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` (Arduino-CLI requires sketch dir name == sketch file name); `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` are symlinks because Arduino's preprocessor refuses `..` in includes from sketch headers.
+- `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` `#undef`s Arduino macros (`sq`, `min`, `max`, `abs`, `round`) before pulling nisps headers — engines use those identifiers as method names.
+- `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in the `.ino`; combining `inline` with `__not_in_flash` produces a comdat conflict at link time.
+- The host fallback of `NISPS_AUDIO_FUNC` in `nisps/core/perf.hpp` is misshapen for use as a function-name decorator (firmware path expands to `__not_in_flash_func` which takes only a name); firmware glue avoids the macro to dodge the inconsistency. See `ALIGNMENT.md`.
+- `nisps_modes_tests` builds against generated schemas under `nisps/modes/generated/`; if you add a new mode, regenerate via `bun run codegen/generate.ts` before building.
+
+## Smells / strategic concerns
+
+See `ALIGNMENT.md`.

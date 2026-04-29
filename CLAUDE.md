@@ -4,307 +4,193 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-MEMLNaut-NISPS (Neural Interactive Shaping of Parameter Spaces) is firmware for the MEMLNaut hardware platform - a custom embedded audio device built on Raspberry Pi Pico (RP2040). It implements interactive machine learning for real-time audio synthesis and processing, enabling users to shape sound parameters through reinforcement learning.
+MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. A research platform for interactive ML control of audio. **One C++20 codebase** (`nisps/`) compiles to two targets:
+
+1. **RP2350 firmware** for the MEMLNaut hardware platform (`firmware/`).
+2. **WASM** in a SolidJS browser playground (`playground/`) — same engines + ML, run through an AudioWorklet.
+
+Browser audio engines are a superset of firmware engines (C15 is browser-only). Parameter contracts are JSON schemas (`schemas/`) with codegen producing both C++ headers and TypeScript types.
 
 Project documentation: https://musicallyembodiedml.github.io/memlnaut/approaches/nisps
 
-## NISPS Core Library
+For the codebase index, see `MAP.md`. For strategic gaps and open mission questions, see `ALIGNMENT.md`.
 
-The `nisps-core/` directory contains a platform-agnostic C++20 extraction of the interactive ML engine. This header-only library can be used in any C++ project for neural network-based parameter mapping.
-
-**Key differences from firmware**:
-- ✅ Platform-agnostic (no Arduino/RP2040 dependencies)
-- ✅ Header-only (just include and use)
-- ✅ C++20 (uses std::span)
-- ✅ Namespaced (`nisps::`)
-- ❌ No audio synthesis (use it to *control* your synth)
-- ❌ No hardware drivers
-
-**Use case**: Control synthesizers, effects, lights, game parameters, or any system that responds to continuous parameters.
-
-See `nisps-core/README.md` for complete documentation and examples.
-
-## Web Playground
-
-The `playground/` directory contains a browser-based interactive demo of the NISPS ML engine. No build step or dependencies — serve statically.
-
-- **2 inputs** (virtual joystick X/Y) mapped through a `[3, 32, 48, 64, 126]` MLP to **126 outputs**
-- **Four output modes**:
-  - **Visual**: first 20 outputs control a Canvas2D flow-field particle system
-  - **Synth (C15)**: all 126 outputs control the C15 WASM synthesizer
-  - **MIDI CC**: outputs mapped to configurable MIDI CC messages via WebMIDI
-  - **Audio Canvas**: 36 outputs drive a generative audio sampler
-- **Two learning modes**: Examples (set slider targets, add examples, train) and RL Feedback (thumbs up/down with exploration noise)
-- **Serve statically**: `cd playground && python3 -m http.server`
-- **Mobile-first**: designed for touch/foldable phone use
-
-Key files: `js/nisps/` (WASM engine + dataset), `js/ui/` (visualizer, joystick, controls, input pipeline, control surface), `js/synth/` (C15 bridge, param map, arpeggiator), `js/a-app.js` (immersive app wiring).
-
-### WASM ML Engine
-
-The immersive app (`a-immersive.html` / `a-app.js`) uses a WASM-compiled MLP for all inference and training. The legacy JS engine (`iml.js`, `mlp.js`, `layer.js`, `node.js`) is still used by the three older playground variants (`app.js`, `b-app.js`, `c-app.js`) but is slated for migration to WASM (see meml-dj9).
-
-**Architecture:**
+## The `nisps/` core
 
 ```
-Main thread                              Worker thread
-  WasmIML (nisps-wasm.js)                  nisps-wasm-worker.js
-  ├─ WASM instance A (persistent)          └─ WASM instance B (lazy)
-  │   inference() — every rAF tick              trainEx() — off-thread
-  │   inferBatch() — heatmap sampling           returns: weights + loss curve
-  │   moveWeightsEx() — RL exploration
-  │   evalLoss() — non-destructive query
-  │   getLayerStats() — per-layer health
-  │   getWeights/setWeights — sync w/ worker
-  │
-  └─ Dataset (JS-side, dataset.js)
-      ├─ FIFO ring buffer (max 100 examples)
-      └─ computeWeights() — recency/spatial/combined sample weighting
+nisps/
+├── core/      types, perf attrs, concepts (AudioEngine, MLEngine, Mode), fixed/ring buffers, deterministic RNG, math
+├── ml/        MLP class template (4-layer, 3 hidden); SGD, gradient clipping, spread-aware Xavier init,
+│              RL move_weights with output pin mask + per-layer scaling + weight decay
+├── dsp/       biquad, delay, reverb, filter, env, osc, pitch_shift, dc_blocker
+├── engines/   8 audio engines (paf_synth, channel_strip, xiasri, verb_fx, memlcelium, breakor,
+│              elysiamorf, analysis) + NoOpEngine. Each satisfies the AudioEngine concept.
+├── modes/     8 platform-agnostic modes binding {ML, engine, voice space, abstract I/O channels}.
+│              CRTP base eliminates the duplication that plagued firmware modes.
+└── wasm/      Emscripten C API bindings (compiled only for WASM target)
 ```
 
-**WASM bindings** (`playground/wasm/nisps_bindings.cpp`) expose a flat C API compiled via Emscripten:
+Build: `cmake -S nisps -B nisps/build -G Ninja && cmake --build nisps/build && ctest --test-dir nisps/build`.
 
-| Function | Purpose |
-|----------|---------|
-| `nisps_mlp_create/destroy` | Lifecycle |
-| `nisps_mlp_inference` | Single forward pass |
-| `nisps_mlp_infer_batch` | N forward passes in one call (heatmap) |
-| `nisps_mlp_train` | SGD training, returns final loss only |
-| `nisps_mlp_train_ex` | SGD training with full per-iteration loss curve |
-| `nisps_mlp_draw_weights_spread` | Xavier-aware weight randomization |
-| `nisps_mlp_move_weights_spread` | RL noise with weight decay |
-| `nisps_mlp_move_weights_ex` | Same + native output pin mask |
-| `nisps_mlp_eval_loss` | Forward pass + MSE, no weight update |
-| `nisps_mlp_get_layer_stats` | Per-layer: mean|w|, max|w|, dead%, saturating% |
-| `nisps_mlp_get/set_weights` | Flat weight serialization |
-| `nisps_mlp_weight_count` | Total weight count |
+Tests: 4 executables (`nisps_core_tests`, `nisps_dsp_engine_tests`, `nisps_modes_tests`, `nisps_golden_tests`). Run all: `bash scripts/build-cpp-tests.sh`. Parity vs WASM: `bash scripts/parity-check.sh` (asserts native and WASM produce identical outputs within 1e-5).
 
-**Building the WASM:**
-```bash
-cd playground/wasm && ./build.sh   # requires emcc (Emscripten)
+### Performance contract (RP2350)
+
+These rules apply to **all** code under `nisps/`. They are inert in WASM but kept globally for consistency.
+
+- **No heap.** No `new`, `malloc`, `std::vector` in hot paths. Use `nisps::FixedBuffer<T, N>` or `std::array<T, N>`.
+- **Constants discipline.** Float literals >255 used in hot paths must be `static const float val = X.f;` not inline.
+- **`.f` suffix on all float literals.** No double promotion in audio/inference paths.
+- **Memory section attributes.** Apply `NISPS_AUDIO_MEM` / `NISPS_AUDIO_FUNC` / `NISPS_APP_SRAM` / `NISPS_HOT` / `NISPS_FORCE_INLINE` (from `nisps/core/perf.hpp`).
+- **No virtual dispatch in audio path.** `AudioEngine` and `Mode` are C++20 concepts, not interfaces.
+- **Deterministic RNG.** All RNG state is per-instance; constructors take a seed; cross-platform parity tests rely on this.
+
+Lint: `bash scripts/lint-cpp.sh` warns on missing `.f` and fails on heap/`Arduino.h` use under `nisps/`.
+
+## The `firmware/` target
+
+```
+firmware/MEMLNaut-NISPS/
+├── MEMLNaut-NISPS.ino     # Entry point; mode selected via #define MEMLNAUT_MODE_TYPE
+├── glue/
+│   ├── audio_driver.hpp   # memllib AudioDriver block callback → Mode::process per-sample
+│   ├── peripherals.hpp    # joystick / pots / buttons → Mode::set_input + ML primitives
+│   ├── midi_io.hpp        # MIDI in → mode handlers; drain ControlEvent ring → MIDI UART
+│   ├── mode_select.hpp    # type aliases firmware mode name → nisps::modes::*Mode
+│   ├── input_router.hpp   # wire_inputs() entry point
+│   └── output_router.hpp  # drain_outputs() entry point
+└── src/{memllib,daisysp,nisps}    # symlinks (Arduino-CLI sketch tree convention)
 ```
 
-**Key difference from JS engine:** WASM uses float32 (not float64). The `spread`-aware `drawWeights`/`moveWeights` functions are implemented in the bindings file, not in nisps-core proper — they're playground-specific.
+Build: `scripts/build-firmware.sh [VARIANT]`. Verified compiling for PAFSynth, ChannelStrip, BreakOr on `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` with `-std=gnu++20`. Flash: `scripts/flash-firmware.sh`. One-shot: `scripts/build-and-flash-firmware.sh`.
 
-**Known issue:** Both the C++ `Train()` and WASM `train_ex` double-scale the loss when no sample weights are provided (each sample loss is weighted by 1/n, then the sum is multiplied by 1/n again). This is a backward-compat pattern from the C++ core (meml-ues).
+### Dual-core orchestration (firmware)
 
-### Debug Probe
+- **Core 0**: UI loop, ML inference (`Mode::tick_control`), peripheral polling (5ms period).
+- **Core 1**: Real-time audio processing (`Mode::process`), MIDI polling.
+- **Sync**: `nisps::core::ring_buffer` (templated SPSC lock-free, replaces pico/util/queue) + memory barriers (`nisps::core::memory_barrier`, `write_volatile`/`read_volatile`).
 
-The immersive app exposes `window.__nisps` when loaded with `?debug=1`. Used by Playwright e2e tests. Zero footprint in production.
+## The `playground/` target
 
-| Method | Returns |
-|--------|---------|
-| `getOutputs()` | Current 126-element output vector |
-| `getLoss()` | Last training loss (or null) |
-| `getWeights()` | Flat weight array (~13K floats) |
-| `getExampleCount()` | Number of training examples |
-| `setInputs(x, y)` | Set joystick position + run inference |
-| `thumbsUp()` / `thumbsDown()` | Trigger RL feedback |
-| `train()` | Sync training with full UI update |
-| `trainAsync()` | Async training (returns Promise) |
-| `randomise()` | Randomize weights |
-| `clearExamples()` | Clear dataset |
-| `saveState()` | Force localStorage save |
-| `evalLoss()` | Non-destructive loss query |
-| `inferBatch(points)` | Batch inference |
-| `getLayerStats()` | Per-layer weight health |
+```
+playground/                  # Vite + SolidJS + TypeScript
+├── src/
+│   ├── primitives/          # 16 UI building blocks (Slider, JoyMap, Heatmap, …) + .demo.tsx for /dev/primitives
+│   ├── modes/               # one TSX per firmware mode + C15Mode (browser-only); ModeShell + ModeSwitcher + mode-runtime
+│   ├── stores/              # Solid stores (ml, input, output, mode, control, session, exploration, bus + persistence)
+│   ├── audio/               # engine-host + AudioWorklet processor (loads nisps.wasm separately on each thread)
+│   ├── ml/                  # WasmIML class + disposable async-training Worker + dataset
+│   ├── input/, output/      # pure-fn pipelines (deadzone→zoom→curve→smoothing→momentum, then global curve→smoothing→slew→freeze)
+│   ├── features/            # heatmap, snapshots, A/B compare, region/param pin, trail, weight health, gradient flow
+│   └── debug/probe.ts       # synchronous window.__nisps for Playwright
+├── public/                  # nisps.{wasm,js}, c15.{wasm,glue}
+└── tests/e2e/               # Playwright specs + helpers
+```
 
-### URL Parameters
+Dev: `cd playground && bun install && bun run dev`. Build: `bun run build`. Typecheck: `bun run typecheck`. E2E: `bunx playwright test`.
+
+### Stores + reactivity
+
+All stores use SolidJS `createStore` for objects, `createSignal` for primitives. ML outputs are stored in a separate Float32Array signal (per the migration plan's perf guidance). Persistence (debounced 200ms localStorage round-trip) wired in `playground/src/stores/persistence.ts`. The signal bus (`bus.ts`) handles cross-store events (`ml.*`, `mode.*`, `pin.*`, `ui.*`).
+
+### Control surface
+
+Three compound axes (Boldness / Memory / Precision) interpolate per-axis tables to drive ~6 underlying parameters each, with offset overrides ("trim-pot" model). State is in `control-store`. Six built-in control presets (Default, First Touch, Jazz Hands, Sculptor, Improviser, Microscope) available via the ModeShell control bar.
+
+### Debug probe (Playwright)
+
+`window.__nisps` is exposed synchronously and bypasses Solid reactivity (uses `untrack`/`batch`). API matches the `.local/recon/04-playground.md` spec — `setInputs`, `getOutputs`, `getLoss`, `train`, `thumbsUp`/`thumbsDown`, `randomise`, `clearExamples`, `inferBatch`, `getLayerStats`, `saveState`, etc.
+
+## The `schemas/` + `codegen/` contract
+
+Each mode has a `schemas/modes/<mode>.json` describing its parameters (name, label, range, default, curve, group), ML config (input/output sizes, hidden layers), voice spaces (names — bodies are inline lambdas in the C++ engine), and UI config. The meta-schema at `schemas/schema.json` validates these.
+
+Codegen (`bun run codegen/generate.ts`) emits:
+- `nisps/modes/generated/<mode>_schema.hpp` — `constexpr` C++ data, namespace `nisps::modes::generated`, re-exports `nisps::Curve` from `nisps/core/math.hpp`.
+- `playground/src/modes/generated/<mode>_schema.ts` — typed const objects + per-mode params interface.
+
+Codegen is idempotent. Golden test ensures regenerating produces byte-identical output.
+
+## WASM bridge
+
+Two WASM instances at runtime:
+
+1. **Main thread** (`playground/src/ml/wasm-iml.ts`): ML inference + sync training + RL primitives. Update store after each call. Async training via disposable Web Worker (`wasm-worker.ts`).
+2. **AudioWorklet** (`playground/src/audio/worklet/nisps-processor.ts`): runs engine `process_block` per audio block. Loads `nisps.wasm` directly via `WebAssembly.compile` (no Emscripten glue in worklet). Bytes posted from main thread.
+
+C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `playground/public/`).
+
+The WASM target is fixed at `MLP<2, 10, 14, 18, 126>`. Modes with smaller `output_size` use the first N outputs only.
+
+### Known limitations
+
+- Loss history not yet plumbed through C API; `lossHistory` in the store is a single-element array per training run.
+- Engine MLP architecture is fixed at compile time — supporting per-mode hidden-layer shapes would need either multiple WASM modules or runtime variation.
+- Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired; UI scaffolds render but feature is TODO.
+- C15 voice space integration in C15Mode is a placeholder.
+
+## URL parameters (playground)
 
 | Param | Range | Default | Effect |
 |-------|-------|---------|--------|
-| `tame` | 0–1 | 1 | Constrains synth output ranges toward safe limits |
-| `spread` | 0–1 | 0.6 | Controls weight initialization, RL noise scaling, and weight decay (see below) |
-| `preset` | preset id | _(none)_ | Auto-loads a synth parameter preset on first visit (e.g. `?preset=beginner-1`) |
+| `tame` | 0–1 | 1 | Constrains synth output ranges toward safe limits. |
+| `spread` | 0–1 | 0.6 | Master noise regime (init scale, RL noise cap, per-layer Xavier scaling, weight decay). |
+| `preset` | preset id | _(none)_ | Auto-loads a synth preset on first visit. |
+| `debug` | 1 | _(off)_ | Exposes `window.__nisps` debug probe. |
 
-#### `spread` — sigmoid saturation control
+### `spread` — sigmoid saturation control
 
-The MLP uses ReLU hidden layers with a sigmoid output layer. With uniform [-1,1] weights, the sum of many weighted inputs at each layer drives sigmoid pre-activations far from zero (std dev ≈ √fan_in), causing outputs to saturate near 0 or 1. The `spread` parameter addresses this:
+The MLP uses ReLU hidden layers with a sigmoid output. With uniform [-1,1] weights, the sum of many weighted inputs at each layer drives sigmoid pre-activations far from zero (std dev ≈ √fan_in), causing outputs to saturate. The `spread` parameter addresses this:
 
-- **`spread=0`** (polarised): Weights drawn from uniform [-1,1]. RL noise cap = 0.3. Noise applied uniformly across layers. Outputs cluster at extremes — good for exploration of radical mappings.
-- **`spread=1`** (centered): Weights scaled by 1/√fan_in per layer (Xavier initialization). RL noise cap = 0.05. Noise also scaled per-layer. Weight decay prevents magnitude drift. Outputs spread across the full [0,1] range — better for fine-grained RL shaping.
-- **Intermediate values** interpolate linearly between these two regimes.
+- `spread=0` (polarised): uniform [-1,1] weights, RL noise cap 0.3, no decay. Outputs cluster at extremes — good for radical exploration.
+- `spread=1` (centered): Xavier-scaled weights, RL noise cap 0.05, 10% weight decay per move. Outputs spread across [0,1] — better for fine-grained shaping.
+- Intermediate values interpolate.
 
-Affects four code paths:
-1. **`drawWeights(spread)`** — initial randomisation weight scale
-2. **`moveWeights(speed, spread)`** — RL exploration noise scale per layer
-3. **Weight decay in `moveWeights`** — each call decays weights by `10% * spread` before adding noise, preventing unbounded magnitude drift from repeated thumbs-down. At spread=0 there is no decay (original behavior). At spread=1, weights decay ~10% per call, creating a natural equilibrium where exploration noise and decay balance out rather than weights growing until sigmoid permanently saturates.
-4. **Noise cap** in thumbs-down handler — `0.3*(1-spread) + 0.05*spread`
+## Verification chokepoints (user-confirmed)
 
-### C15 Parameter Map
+- **A. Hardware**: each firmware mode flashes and produces correct audio on RP2350.
+- **B. RP2350 perf**: no regression vs current main.
+- **C. Browser parity**: each firmware mode runs in browser via WASM, sounds equivalent.
+- **D. a-immersive feature parity**: control surface, snapshots, A/B compare, region/param pins, heatmap, weight health, gradient flow, output pipeline, session presets.
+- **E. CI green**: `bash scripts/run-all-tests.sh` (cmake build + ctest + WASM build + parity + lint + Playwright).
 
-The 126 synth parameters in `js/synth/param-map.js` were curated from the C15's 287 total parameters. Excluded categories:
-
-| Excluded | Count | Reason |
-|----------|-------|--------|
-| Hardware Amount/Source | 56 | No physical MIDI hardware in browser |
-| Macro Controls/Times | 12 | Meta-routing layer conflicts with direct ML control |
-| Scale offsets | 13 | Microtuning would break pitch unpredictably |
-| Key tracking (`*_KT`) | 11 | Pitch-dependent scaling needs calibrated defaults |
-| Velocity (`*_Vel`) | 11 | Velocity-dependent, ML can't observe key velocity |
-| Envelope mod depths (`*_Env_A/B/C`) | 19 | Multiplicative interaction with envelope shapes makes space too hard to learn |
-| Discrete/structural | 15 | Osc Pitch (full sweep), Master Vol/Tune, Voice Mute/Fade, Unison Voices, Mono modes, Split, Osc Reset |
-| Secondary config | 7 | Att Curve, Elevate, Chirp, Decay Gate, Retrigger |
-| PM shaper blend | 4 | Secondary routing params |
-| FB Mix source selects | 4 | Discrete A/B selectors |
-
-### Synth Presets
-
-Presets (`js/synth/presets.js`) control which parameters the ML engine can modify, with unselected params muted at safe defaults. Each preset defines per-param `{ muted, fixedValue, min, max, curve }` — no training examples or model weights.
-
-4 tiers of progressive complexity:
-
-| Tier | Presets | Active params | What's exposed |
-|------|---------|---------------|----------------|
-| 1 (Beginner) | 1.1–1.4 | 15 | Basic ADSR, SVF cutoff/res, Shaper A drive/fold, output levels, reverb mix |
-| 2 (Intermediate) | 2.1–2.4 | 40 | + Env B/C, filter FM, effects (reverb/echo/flanger), cabinet, stereo panning |
-| 3 (Advanced) | 3.1–3.3 | ~95 | + Cross-oscillator PM, feedback mixer, dual shapers, comb/gap filters, ring mod |
-| 4 (Expert) | 4.1–4.2 | 126 | Full engine |
-
-Presets use `curve` values to bias parameter distributions (< 0.5 = spend more time low, > 0.5 = bias high) without clamping extremes. Users can tweak any preset via the group drawer after loading.
-
-### Control Surface (Phase 1)
-
-The immersive app (`a-immersive.html`) has a control surface system for tuning how exploration and learning feel. Full spec: `playground/SPEC-controls.md`.
-
-**Architecture** — modular ES modules organized by phase, wired into `a-app.js`:
-
-| Module | Phase | Purpose |
-|--------|-------|---------|
-| `js/ui/input-pipeline.js` | 1 | Processes raw joystick input through deadzone → zoom → curve → smoothing → momentum-as-zoom. Pure math, no DOM. |
-| `js/ui/control-surface.js` | 1 | Compound axes (Boldness, Memory, Precision) that map single sliders to multiple underlying params. Offset-based override resolution (trim-pot model). 6 built-in control presets. |
-| `js/ui/control-surface-ui.js` | 1 | DOM layer: 3 axis sliders on floating bar, gear icon settings drawer with per-param overrides. Injects its own CSS. |
-| `js/ui/joy-map-enhanced.js` | 1 | Enhanced joy-map canvas: zoom minimap with adaptive grid, vanishing trail with Catmull-Rom spline and tap-to-return, dual concentric noise rings, frozen state overlay. |
-| `js/ui/snapshot-stack.js` | 2 | Ring buffer (20 max) of weight snapshots. Auto-snapshot on train/randomize/thumbs-down. Multi-level undo. |
-| `js/ui/ab-compare.js` | 2 | Rapid A/B weight state comparison. Capture, toggle, accept or revert. |
-| `js/ui/region-pin.js` | 2 | Pins rectangular input-space regions (Approach A: example pinning). Pinned examples always included in training. |
-| `js/ui/param-pin.js` | 2 | Per-output pin flags. Pin mask passed to `moveWeights()` to skip pinned output nodes. |
-| `js/ui/phase2-ui.js` | 2 | DOM: undo button with history popup, A/B toggle, region pin via long-press, param pin via double-tap. |
-| `js/ui/pressure-feedback.js` | 3 | Touch force + hold duration → intensity multiplier for noise growth/decay. |
-| `js/ui/auto-explore.js` | 3 | Automated thumbs-down at configurable interval. Zoom-scaled intensity. |
-| `js/ui/input-heatmap.js` | 3 | 2D color field sampling MLP across input space. 3 color modes, zoom-aware resampling. Supports `inferBatchFn` for single-call WASM batch inference. |
-| `js/ui/phase3-ui.js` | 3 | DOM: auto-explore toggle with progress ring, heatmap eye icon, pressure indicators. |
-| `js/ui/output-pipeline.js` | 4 | Global curve → smoothing → slew rate → freeze gate on MLP outputs before synth/visual routing. |
-| `js/ui/weight-health.js` | 4 | Weight magnitude histogram, dead/saturating/healthy status detection, ambient visualization. |
-| `js/ui/gradient-flow.js` | 4 | Per-layer weight-delta analysis after training. Vanishing/exploding/converged detection. |
-| `js/ui/session-presets.js` | 4 | Save/load full session state. URL sharing via compact params. |
-| `js/ui/phase4-ui.js` | 4 | DOM: freeze button, network health panel, session preset UI, output pipeline slider wiring. |
-
-**Compound Axes** — each controls 4-6 underlying parameters via interpolation tables:
-
-- **Boldness** (Caution ↔ Bold): input zoom, noise cap, noise growth, learning rate, weight decay, noise distribution
-- **Memory** (Amnesia ↔ Elephant): max examples, example decay, weight decay, noise decay, convergence threshold
-- **Precision** (Raw ↔ Precise): input curve, deadzone, smoothing, slew rate, momentum-zoom mode
-
-When a user manually overrides an individual param, the offset from the axis-derived value persists as the axis moves (like a trim pot on a mixing desk). Double-tap an axis to re-link all params.
-
-**Input Pipeline** — sits between physical joystick and MLP. Key feature: **zoom** narrows the effective input window around an anchor point (`effective = anchor + (raw - 0.5) * zoom_level`). Zoom-at-zero freezes input. Three anchor modes: auto (anchor follows current position when zoom changes), sticky (explicit anchor), center (always 0.5).
-
-**Control Presets**: Default, First Touch, Jazz Hands, Sculptor, Improviser, Microscope. These set compound axis positions — they don't include network weights or synth preset selection.
-
-**Integration** — the control surface dispatches `controlsurface:change` CustomEvents. `a-app.js` listens and updates the input pipeline config, spread level, and RL parameters (noise cap, growth, decay, floor, zoom-aware feedback scaling). Pipeline-processed coordinates are cached (`_lastPipeX/Y`) so `getCurrentInputs()` and `setCurrentInputs()` use the same values the MLP sees. State is persisted to localStorage alongside existing app state.
-
-**Remaining**: Engine configuration panel (Part 8 of spec) — network architecture, loss function, optimizer selection.
-
-## Testing
-
-Playwright e2e tests cover the immersive app's ML engine, UI state machines, input pipeline, and persistence. Tests run headless Chromium against a Python HTTP server.
+## Build system summary
 
 ```bash
-# Run all tests (starts server automatically on port 7331)
-npx playwright test
-
-# Run with browser visible
-npx playwright test --headed
-
-# Run a specific test file
-npx playwright test tests/e2e/ml-engine.spec.js
-```
-
-**Test files** (`tests/e2e/`):
-
-| File | Coverage |
-|------|----------|
-| `ml-engine.spec.js` | WASM inference bounds, training loss, thumbs up/down, async training, example capture |
-| `ui-interactions.spec.js` | Drawer open/close, mode switching, heatmap bars, presets, keyboard shortcuts (1/2/Z) |
-| `input-pipeline.spec.js` | Input→output variation, clamping, joystick drag, post-training bounds |
-| `persistence.spec.js` | URL params (?preset, ?spread), localStorage round-trip |
-| `wasm-api.spec.js` | Batch inference, evalLoss, getLayerStats, loss history curve, pin mask |
-
-Tests use the `?debug=1` probe (`window.__nisps`) for programmatic access to the ML engine. The `helpers.js` module provides `loadApp(page)` which clears localStorage, sets `nisps-help-seen`, and waits for WASM initialization.
-
-## Build System
-
-This is an Arduino project targeting the MEMLNaut RP2350 hardware. Build and flash it with the repo-local helper scripts, which wrap the correct board target and compiler settings.
-
-```bash
-# Initialize submodules (required for memllib)
+# Initialize submodules (required for memllib + daisysp)
 git submodule update --init --recursive
 
-# Build only
-scripts/build-firmware.sh
+# Codegen (run after editing any schemas/modes/*.json)
+cd codegen && bun install && bun run generate.ts
 
-# Build a specific variant
-scripts/build-firmware.sh MEMLCelium
+# C++ host tests
+bash scripts/build-cpp-tests.sh
 
-# Flash a previously-built UF2
+# WASM
+bash scripts/build-wasm.sh
+
+# Cross-platform parity
+bash scripts/parity-check.sh
+
+# Lint
+bash scripts/lint-cpp.sh
+
+# Firmware
+scripts/build-firmware.sh PAFSynth        # or any other variant
 scripts/flash-firmware.sh
-
-# Build then flash
 scripts/build-and-flash-firmware.sh
+
+# Playground
+cd playground && bun install
+bun run dev          # Vite dev (COOP/COEP enabled)
+bun run typecheck
+bun run build
+bunx playwright test
+
+# All tests
+bash scripts/run-all-tests.sh
 ```
 
-The scripts build for `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` and force C++20 via `compiler.cpp.extra_flags=-std=gnu++20`. The sketch lives at `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino`; everything platform-agnostic (ML, DSP, engines, modes) is under `nisps/` and reached via in-sketch `src/` symlinks.
-If no variant is passed to `build-firmware.sh` in an interactive shell, it parses the available `MEMLNautMode*` options from the sketch, prompts for one, and rewrites the active `MEMLNAUT_MODE_TYPE` before compiling.
+## Issue tracking
 
-## Architecture
-
-### Dual-Core Design
-
-The RP2040's dual cores are used for separation of concerns:
-- **Core 0**: UI loop, ML inference, hardware interface polling (5ms period)
-- **Core 1**: Real-time audio processing, parameter updates, MIDI polling
-
-Inter-core synchronization uses memory barriers (`MEMORY_BARRIER()`, `WRITE_VOLATILE()`, `READ_VOLATILE()`) and RP2040 queues (`queue_t`).
-
-### Mode System
-
-The active mode is selected at compile-time via `#define MEMLNAUT_MODE_TYPE` in `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino`. The macro expands to a type alias defined in `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` that maps each `MEMLNautMode<Name>` identifier to a concrete `nisps::modes::*Mode` type. Each mode satisfies the C++20 `nisps::Mode` concept (`nisps/core/concepts.hpp`):
-
-| Mode | Purpose |
-|------|---------|
-| `MEMLNautModeChannelStrip` | Audio channel strip (EQ, compression, gain staging) |
-| `MEMLNautModePAFSynth` | PAF (Phase Aligned Formant) synthesis with MIDI |
-| `MEMLNautModeXIASRI` | Audio-reactive mode using machine listening analysis |
-| `MEMLNautModeSoundAnalysisMIDI` | Sound analysis with MIDI output |
-| `MEMLNautModeBreakOr` | Break\|\| 8-track ratio sequencer |
-| `MEMLNautModeVerbFX` | Reverb/effects engine |
-| `MEMLNautModeElysiamorfs` | Elysiamorf granular sequencer |
-| `MEMLNautModeMEMLCelium` | MEMLCelium dual-voice synth + sequencer |
-
-### Voice Spaces
-
-Voice spaces map ML output vectors → engine parameters. They live as static lambdas inside each engine in `nisps/engines/*.hpp` (no longer in a separate `voicespaces/` directory). The mode picks a voice space at runtime via `engine().set_voice_space(idx)`.
-
-### Key Components
-
-- **`nisps::ModeBase`** (`nisps/modes/base.hpp`): CRTP scaffold; absorbs input forwarding, ML inference, voice-space dispatch, control-event ring buffer.
-- **`nisps::ml::MLP<NIn, NHidden..., NOut>`** (`nisps/ml/mlp.hpp`): Templated MLP with SGD/RMSProp, RL primitives (`move_weights`, `draw_weights`).
-- **`firmware/glue/audio_driver.hpp`**: Bridge from memllib `AudioDriver` per-block callback to `Mode::process(stereosample_t)` per-sample.
-- **`firmware/glue/peripherals.hpp`**: Joystick / pots / buttons → `Mode::set_input` and ML primitives.
-- **`nisps::AnalysisEngine`** (`nisps/engines/analysis.hpp`): Real-time audio feature extraction (pitch, aperiodicity, energy, brightness).
-
-### Submodules (in `src/`)
-
-- **memllib**: Hardware abstraction, audio drivers, MIDI, display.
-- **daisysp**: DSP library (filters, drums, effects, synthesis).
-
-## Memory Sections
-
-The codebase uses RP2040-specific memory placement:
-- `AUDIO_MEM` / `AUDIO_FUNC`: Place audio-critical code/data in SRAM
-- `APP_SRAM` / `__not_in_flash("app")`: Keep frequently-accessed data out of flash
-
-## Audio Parameters
-
-Sample rate is defined in `AudioDriver::GetSampleRate()`. The audio callback `audio_block_callback` runs on Core 1 and processes stereo audio (`stereosample_t`).
+This project uses **bd (beads)** for ALL task tracking. See `AGENTS.md` for conventions. Do not create markdown TODO lists or use other trackers.

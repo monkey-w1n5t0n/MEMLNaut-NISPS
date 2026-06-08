@@ -146,3 +146,18 @@ For the input-scope work: spike the `input_scope` field + the global-negative br
 | Pairwise/contrastive loss | noisy absolute signal | medium | §3 (#2); needs reference state |
 | Exploration boost | no exploration response | small | §3 (#3); analysis doc §7 already lists |
 | Gesture-disambiguated dislike | scope/meaning selection | medium (UX) | §5.5 |
+
+---
+
+## 8. Implemented: the `FEEDBACK_MODE` setting (2026-06-08)
+
+A runtime `FEEDBACK_MODE` setting now selects what the thumbs-down (MomA2) toggle does, realising meaning **#3 (exploration)** as a concrete "explore-then-keep" workflow that drops avoidance entirely. Lives in `InterfaceRL` (`src/memllib/examples/InterfaceRL.{hpp,cpp}`); TR8S exposes it via a `RotarySelectView` ("Down Action"). Default `AVOID` is the historical behaviour, so other modes are unaffected.
+
+- **`AVOID`** — unchanged geometric-push avoidance (§3, current system).
+- **`RANDOMISE_OUTPUTS`** — down bypasses the MLP and holds a **static random output** (focus-aware via `activeDims_`; re-rolls on each down); up keeps it as a +1 at the current input, resumes inference + learning. Learning is paused while held.
+- **`RANDOMISE_MLP`** — down snapshots the live weights and **randomises the net** (live inference continues; the left toggle re-rolls / jolts the temp net); up commits the current output in place, the existing **drag gesture** commits at a repositioned input, and down-again **cancels**. Every exit restores the snapshot and resumes learning, so the kept output trains into the *original* net.
+
+Notes that shaped the implementation:
+- Both "keep" paths store `action` (the post-focus output actually heard), consistent with normal likes.
+- The like/dislike control (`MomA`) is momentary and fires only on *press* — so the originally-specified "release up to record" isn't possible on that contact; repositioning uses the existing freeze-move-place drag gesture instead.
+- Not yet persisted across reboots (defaults to `AVOID` on boot) — a follow-up if wanted.

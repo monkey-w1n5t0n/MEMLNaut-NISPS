@@ -21,32 +21,72 @@
 // each with Ctrl/Tune/Decay/Level, plus global effect controls.
 static const std::vector<CCOption> kTR8SCCOptions = {
     // BD
-    { 96, "BD Ctrl"  }, { 20, "BD Tune"  }, { 23, "BD Decay" }, { 24, "BD Level" },
+    {96, "BD Ctrl"},
+    {20, "BD Tune"},
+    {23, "BD Decay"},
+    {24, "BD Level"},
     // SD
-    { 97, "SD Ctrl"  }, { 25, "SD Tune"  }, { 28, "SD Decay" }, { 29, "SD Level" },
+    {97, "SD Ctrl"},
+    {25, "SD Tune"},
+    {28, "SD Decay"},
+    {29, "SD Level"},
     // LT
-    {102, "LT Ctrl"  }, { 46, "LT Tune"  }, { 47, "LT Decay" }, { 48, "LT Level" },
+    {102, "LT Ctrl"},
+    {46, "LT Tune"},
+    {47, "LT Decay"},
+    {48, "LT Level"},
     // MT
-    {103, "MT Ctrl"  }, { 49, "MT Tune"  }, { 50, "MT Decay" }, { 51, "MT Level" },
+    {103, "MT Ctrl"},
+    {49, "MT Tune"},
+    {50, "MT Decay"},
+    {51, "MT Level"},
     // HT
-    {104, "HT Ctrl"  }, { 52, "HT Tune"  }, { 53, "HT Decay" }, { 54, "HT Level" },
+    {104, "HT Ctrl"},
+    {52, "HT Tune"},
+    {53, "HT Decay"},
+    {54, "HT Level"},
     // RS
-    {105, "RS Ctrl"  }, { 55, "RS Tune"  }, { 56, "RS Decay" }, { 57, "RS Level" },
+    {105, "RS Ctrl"},
+    {55, "RS Tune"},
+    {56, "RS Decay"},
+    {57, "RS Level"},
     // HC
-    {106, "HC Ctrl"  }, { 58, "HC Tune"  }, { 59, "HC Decay" }, { 60, "HC Level" },
+    {106, "HC Ctrl"},
+    {58, "HC Tune"},
+    {59, "HC Decay"},
+    {60, "HC Level"},
     // CH
-    {107, "CH Ctrl"  }, { 61, "CH Tune"  }, { 62, "CH Decay" }, { 63, "CH Level" },
+    {107, "CH Ctrl"},
+    {61, "CH Tune"},
+    {62, "CH Decay"},
+    {63, "CH Level"},
     // OH
-    {108, "OH Ctrl"  }, { 80, "OH Tune"  }, { 81, "OH Decay" }, { 82, "OH Level" },
+    {108, "OH Ctrl"},
+    {80, "OH Tune"},
+    {81, "OH Decay"},
+    {82, "OH Level"},
     // CC (Crash)
-    {109, "CC Ctrl"  }, { 83, "CC Tune"  }, { 84, "CC Decay" }, { 85, "CC Level" },
+    {109, "CC Ctrl"},
+    {83, "CC Tune"},
+    {84, "CC Decay"},
+    {85, "CC Level"},
     // RC (Ride)
-    {110, "RC Ctrl"  }, { 86, "RC Tune"  }, { 87, "RC Decay" }, { 88, "RC Level" },
+    {110, "RC Ctrl"},
+    {86, "RC Tune"},
+    {87, "RC Decay"},
+    {88, "RC Level"},
     // Global / FX
-    { 91, "Reverb Level"   }, { 16, "Delay Level"    }, { 17, "Delay Time"     },
-    { 18, "Delay Feedback" }, { 19, "Master FX Ctrl" }, { 15, "Master FX On"   },
-    { 71, "Accent"         }, {  9, "Shuffle"        }, { 12, "Ext In Level"   },
-    { 14, "Fill In On"     }, { 70, "Fill In Trig"   },
+    {91, "Reverb Level"},
+    {16, "Delay Level"},
+    {17, "Delay Time"},
+    {18, "Delay Feedback"},
+    {19, "Master FX Ctrl"},
+    {15, "Master FX On"},
+    {71, "Accent"},
+    {9, "Shuffle"},
+    {12, "Ext In Level"},
+    {14, "Fill In On"},
+    {70, "Fill In Trig"},
 };
 
 // Default 32 assignments: Ctrl + Tune for every instrument (22), Decay for the
@@ -59,8 +99,7 @@ static const std::vector<uint8_t> kTR8SDefaultCCs = {
     // Decay for BD/SD/LT/HC/CH/OH
     23, 28, 47, 59, 62, 81,
     // Reverb + Delay Level/Time/Feedback
-    91, 16, 17, 18
-};
+    91, 16, 17, 18};
 
 // Focus groups — one per TR-8S instrument plus a combined FX group.
 static constexpr size_t kTR8SNumGroups = 12;
@@ -79,7 +118,7 @@ static constexpr uint32_t kTR8SFocusFX = (1u << 11);
 
 class MEMLNautModeTR8S {
 public:
-    constexpr static size_t kN_InputParams    = InterfaceRL::kMaxNNInputs;
+    constexpr static size_t kN_InputParams = InterfaceRL::kMaxNNInputs;
     constexpr static size_t kDesiredSampleRate = 48000;
 
     inline static TRxSAudioApp<32> audioApp;
@@ -106,21 +145,21 @@ public:
         interface.setup(kN_InputParams, TRxSAudioApp<32>::kN_Params);
         // Repurpose rvx (RV_X1) from reward scale to the modulation fade amount.
         // Must be set before bindInterface(), which reads the override.
-        interface.setRVX1Override([this](float v) { fadeAmount_ = v; interface.markInputDirty(); });
+        interface.setRVX1Override([this](float v) {
+            fadeAmount_ = v;
+            interface.markInputDirty();
+        });
         interface.bindInterface(InterfaceRL::INPUT_MODES::JOYSTICK, true);
         interface.setModeInfo("tr8s", "TR-8S");
         interfacePtr = make_non_owning(interface);
 
-        const char* names[kTR8SNumGroups] =
-            {"BD", "SD", "LT", "MT", "HT", "RS", "HC", "CH", "OH", "CC", "RC", "FX"};
+        const char* names[kTR8SNumGroups] = {"BD", "SD", "LT", "MT", "HT", "RS", "HC", "CH", "OH", "CC", "RC", "FX"};
         for (size_t i = 0; i < kTR8SNumGroups; i++)
             focusManager.setGroupName(i, names[i]);
 
         // Focus latching applies to the NN outputs themselves (as before), so the NN
         // outputs screen and training see the raw, focus-filtered network values.
-        interface.paramTransformHook = [this](std::vector<float>& p) {
-            focusManager.applyInPlace(p);
-        };
+        interface.paramTransformHook = [this](std::vector<float>& p) { focusManager.applyInPlace(p); };
 
         // Home + fade is applied ONLY on the way out to MIDI — it does not touch the NN
         // outputs graph or the training action. Linear interpolation home -> NN output:
@@ -132,7 +171,8 @@ public:
                 float v = homeValues_[i] + fade * (nn[i] - homeValues_[i]);
                 liveValues_[i] = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
             }
-            if (midi_interf) midi_interf->SendParamsAsMIDICC(std::span<const float>(liveValues_.data(), n));
+            if (midi_interf)
+                midi_interf->SendParamsAsMIDICC(std::span<const float>(liveValues_.data(), n));
         };
     }
 
@@ -145,9 +185,7 @@ public:
 
     String getHelpTitle() { return "TR-8S Mode"; }
 
-    __force_inline stereosample_t process(stereosample_t x) {
-        return audioApp.Process(x);
-    }
+    __force_inline stereosample_t process(stereosample_t x) { return audioApp.Process(x); }
 
     void setupAudio(float sample_rate) {
         audioApp.Setup(sample_rate, interfacePtr);
@@ -161,7 +199,7 @@ public:
     void setupMIDI(std::shared_ptr<MIDIInOut> new_midi_interf) {
         midi_interf = new_midi_interf;
         midi_interf->Setup(TRxSAudioApp<32>::kN_Params);
-        midi_interf->SetMIDISendChannel(10);  // TR-8S default channel
+        midi_interf->SetMIDISendChannel(10); // TR-8S default channel
         midi_interf->SetParamCCNumbers(kTR8SDefaultCCs);
         interface.bindMIDI(midi_interf);
     }
@@ -180,13 +218,13 @@ public:
         // 12 focus blocks laid out 6x2; narrow buttons to fit the 320px display.
         auto focusView = std::make_shared<BlockSelectView>(
             "Focus", TFT_DARKGREY, kTR8SNumGroups, 40, 50, TFT_WHITE,
-            std::vector<String>{"BD", "SD", "LT", "MT", "HT", "RS",
-                                "HC", "CH", "OH", "CC", "RC", "FX"},
+            std::vector<String>{"BD", "SD", "LT", "MT", "HT", "RS", "HC", "CH", "OH", "CC", "RC", "FX"},
             TFT_GREENYELLOW, 2);
 
         focusView->SetOnSelectCallback([this, focusView, updateActiveDims](size_t id) {
             size_t groupIdx = id - 1;
-            if (!((presentGroupsMask_ >> groupIdx) & 1u)) return;
+            if (!((presentGroupsMask_ >> groupIdx) & 1u))
+                return;
             uint32_t newMask = focusManager.getSelectedMask() ^ (1u << groupIdx);
             focusManager.setFocus(newMask, interface.getLastAction());
             focusView->toggleAlt(groupIdx);
@@ -197,11 +235,11 @@ public:
         auto ccView = std::make_shared<CCSelectView>(TRxSAudioApp<32>::kN_Params, "CC Assign");
         ccView->setOptions(kTR8SCCOptions);
         ccView->setShowHome(true);
-        ccView->setLiveValues(liveValues_.data());  // "out" column reads live MIDI values
-        ccView_ = ccView;                            // for live refresh from loopCore0
+        ccView->setLiveValues(liveValues_.data()); // "out" column reads live MIDI values
+        ccView_ = ccView;                          // for live refresh from loopCore0
 
         std::vector<uint8_t> savedCCs;
-        std::vector<float>   savedHomes;
+        std::vector<float> savedHomes;
         loadCCAssignments(savedCCs, savedHomes);
         ccView->setSelectedCCs(savedCCs);
         ccView->setHomeValues(savedHomes);
@@ -224,25 +262,29 @@ public:
 
         // Persist to flash only when leaving the page / exiting edit — flash writes block
         // and would disrupt audio/MIDI processing if done on every knob tick.
-        ccView->setOnSaveCallback([this, ccView]() {
-            saveCCAssignments(ccView->getSelectedCCs(), ccView->getHomeValues());
-        });
+        ccView->setOnSaveCallback(
+            [this, ccView]() { saveCCAssignments(ccView->getSelectedCCs(), ccView->getHomeValues()); });
 
         // Gain knob sets the home of the cursored CC, but only while the CC page is
         // focused for editing. (This mode produces no audio, so the gain knob is free.)
-        MEMLNaut::Instance()->setRVGain1Callback([ccView](float v) {
-            if (ccView->isFocused()) ccView->setHomeForCursor(v);
-        }, 0);
+        MEMLNaut::Instance()->setRVGain1Callback(
+            [ccView](float v) {
+                if (ccView->isFocused())
+                    ccView->setHomeForCursor(v);
+            },
+            0);
 
         MEMLNaut::Instance()->disp->AddView(ccView);
         interface.addInputSourceView(false);
+        interface.addFeedbackModeView(); // "Down Action": Avoid / Rand Out / Rand MLP
     }
 
     inline void processAnalysisParams() {}
     void analyse(stereosample_t) {}
     AudioDriver::codec_config_t getCodecConfig() { return audioApp.GetDriverConfig(); }
     void loopCore0() {
-        if (ccView_) ccView_->refreshLiveColumn();  // live "out" column update (throttled)
+        if (ccView_)
+            ccView_->refreshLiveColumn(); // live "out" column update (throttled)
     }
 
 private:
@@ -250,25 +292,79 @@ private:
 
     static uint32_t ccToGroupMask(uint8_t cc) {
         switch (cc) {
-            case 96: case 20: case 23: case 24:  return kTR8SFocusBD;
-            case 97: case 25: case 28: case 29:  return kTR8SFocusSD;
-            case 102: case 46: case 47: case 48: return kTR8SFocusLT;
-            case 103: case 49: case 50: case 51: return kTR8SFocusMT;
-            case 104: case 52: case 53: case 54: return kTR8SFocusHT;
-            case 105: case 55: case 56: case 57: return kTR8SFocusRS;
-            case 106: case 58: case 59: case 60: return kTR8SFocusHC;
-            case 107: case 61: case 62: case 63: return kTR8SFocusCH;
-            case 108: case 80: case 81: case 82: return kTR8SFocusOH;
-            case 109: case 83: case 84: case 85: return kTR8SFocusCC;
-            case 110: case 86: case 87: case 88: return kTR8SFocusRC;
-            case 91: case 16: case 17: case 18: case 19:
-            case 15: case 71: case 9: case 12: case 14: case 70: return kTR8SFocusFX;
-            default: return 0;
+        case 96:
+        case 20:
+        case 23:
+        case 24:
+            return kTR8SFocusBD;
+        case 97:
+        case 25:
+        case 28:
+        case 29:
+            return kTR8SFocusSD;
+        case 102:
+        case 46:
+        case 47:
+        case 48:
+            return kTR8SFocusLT;
+        case 103:
+        case 49:
+        case 50:
+        case 51:
+            return kTR8SFocusMT;
+        case 104:
+        case 52:
+        case 53:
+        case 54:
+            return kTR8SFocusHT;
+        case 105:
+        case 55:
+        case 56:
+        case 57:
+            return kTR8SFocusRS;
+        case 106:
+        case 58:
+        case 59:
+        case 60:
+            return kTR8SFocusHC;
+        case 107:
+        case 61:
+        case 62:
+        case 63:
+            return kTR8SFocusCH;
+        case 108:
+        case 80:
+        case 81:
+        case 82:
+            return kTR8SFocusOH;
+        case 109:
+        case 83:
+        case 84:
+        case 85:
+            return kTR8SFocusCC;
+        case 110:
+        case 86:
+        case 87:
+        case 88:
+            return kTR8SFocusRC;
+        case 91:
+        case 16:
+        case 17:
+        case 18:
+        case 19:
+        case 15:
+        case 71:
+        case 9:
+        case 12:
+        case 14:
+        case 70:
+            return kTR8SFocusFX;
+        default:
+            return 0;
         }
     }
 
-    void recomputeFocusGroups(const std::vector<uint8_t>& ccs,
-                              std::shared_ptr<BlockSelectView> focusView,
+    void recomputeFocusGroups(const std::vector<uint8_t>& ccs, std::shared_ptr<BlockSelectView> focusView,
                               std::function<void()> updateActiveDims) {
         std::array<uint32_t, TRxSAudioApp<32>::kN_Params> masks{};
         for (size_t i = 0; i < ccs.size() && i < masks.size(); i++)
@@ -276,10 +372,11 @@ private:
         focusManager.setParamGroups(masks);
 
         presentGroupsMask_ = 0;
-        for (auto m : masks) presentGroupsMask_ |= m;
+        for (auto m : masks)
+            presentGroupsMask_ |= m;
 
         uint32_t currentSel = focusManager.getSelectedMask();
-        uint32_t validSel   = currentSel & presentGroupsMask_;
+        uint32_t validSel = currentSel & presentGroupsMask_;
         if (validSel != currentSel) {
             focusManager.setFocus(validSel, interface.getLastAction());
             for (size_t i = 0; i < kTR8SNumGroups; i++) {
@@ -302,14 +399,17 @@ private:
         if (f) {
             std::vector<uint8_t> raw;
             uint8_t b;
-            while (fread(&b, 1, 1, f) == 1) raw.push_back(b);
+            while (fread(&b, 1, 1, f) == 1)
+                raw.push_back(b);
             fclose(f);
 
             if (raw.size() >= 2 && raw[0] == kCCFileMagic) {
                 size_t n = raw[1];
                 if (raw.size() >= 2 + 2 * n) {
-                    for (size_t i = 0; i < n; i++) ccs.push_back(raw[2 + i]);
-                    for (size_t i = 0; i < n; i++) homes.push_back(raw[2 + n + i] / 127.f);
+                    for (size_t i = 0; i < n; i++)
+                        ccs.push_back(raw[2 + i]);
+                    for (size_t i = 0; i < n; i++)
+                        homes.push_back(raw[2 + n + i] / 127.f);
                     Serial.printf("TR8S: loaded %u CC assignments (with homes) from flash\n", (unsigned)n);
                     return;
                 }

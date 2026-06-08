@@ -1,5 +1,7 @@
 # Dislike System: Technical & ML Analysis
 
+*This doc describes **what the current system does**. For the broader design space — what "I don't like this" could mean, the input-/output-scope axes, alternative mechanisms, and the unresolved tensions — see [`dislike_system_design_space.md`](dislike_system_design_space.md).*
+
 ## 1. What it does, conceptually
 
 The dislike system is a form of **interactive reinforcement learning with human feedback (RLHF)**, but heavily simplified for an embedded context. The user presses a button to say "I don't like what the synthesizer is doing right now." The system records that moment as a negative experience and trains the neural network to avoid reproducing that output, while ideally being guided toward the territory of positive (liked) outputs.
@@ -43,7 +45,7 @@ reward += 0.0025 * max(|reward|, 1.0)
 ```
 Items with larger-magnitude rewards decay faster, so all items expire in roughly the same wall-clock time regardless of accumulated multiplier. Items are removed when `reward > -0.01`.
 
-**Step 4 — Geometric push**
+**Step 4 — Geometric push** *(only when ≥1 positive memory exists — see "Cold start" below)*
 
 ```
 pushStep = clamp(|avgRewardNeg|, 0.25, 1.0) * 0.5
@@ -56,6 +58,16 @@ effectivePushStep = pushStep / (1 + len)
 where `len` is the Euclidean distance from `neg_action` to `meanPositiveAction`. Actions already far from liked territory receive weaker pushes.
 
 Only active parameter dimensions (from `activeDims_`) are moved; unfocused dimensions are left unchanged.
+
+*Degenerate direction.* If a disliked action sits essentially **on** the centroid (`len <= 1e-4`), the toward-centroid direction is undefined. Rather than producing a zero push, each active dimension is instead nudged in a **random** direction (`d ∈ [-1, 1)` per dim). So disliking a sound that already resembles your liked prototype yields a random jolt, not a no-op.
+
+**Step 4b — Cold start (no positive memories yet)**
+
+The geometric push is guarded by `if (posMemCount > 0)`. Until at least one **like** has been recorded there is no centroid to push toward, so dislike falls back to training the negative batch *directly* with a **negative** learning rate:
+```
+lr = learningRateScaled * 0.1 * avgRewardNeg     // avgRewardNeg < 0  ⇒  lr < 0
+```
+This is plain inverted-gradient repulsion — gradient *ascent* away from the disliked output — not the contrastive metric-learning push. The "move toward the liked prototype" behaviour only engages once the buffer holds a positive example. The factor `0.1` keeps this cold-start push an order of magnitude gentler than a normal positive update.
 
 **Step 5 — Dynamic negative LR**
 
@@ -75,7 +87,7 @@ When items expire, `dislikeMultiplier_` halves per expired item, and fully reset
 
 ## 3. ML theory framing
 
-This is closest to **imitation learning with negative examples** — specifically a simplified variant of contrastive supervised learning. The geometric push is a form of **metric learning**: given a state, push the output away from the disliked action and toward a positive prototype (the centroid). The reward decay is equivalent to **hard forgetting with a linear schedule**.
+This is closest to **imitation learning with negative examples** — specifically a simplified variant of contrastive supervised learning. The geometric push is a form of **metric learning**: given a state, push the output away from the disliked action and toward a positive prototype (the centroid). The reward decay is equivalent to **hard forgetting with a linear schedule**. (This framing applies to the warm path only — before any like exists, dislike degrades to inverted-gradient repulsion with no positive target; see Step 4b.)
 
 It is not actor-critic RL (no value function), not Q-learning (no Bellman update), and not policy gradient (no log-probability weighting).
 
@@ -132,6 +144,8 @@ It is not actor-critic RL (no value function), not Q-learning (no Bellman update
 | i | Dynamic negative LR ratio: `0.5 - 0.4*negFraction` | `optimise()` |
 
 ## 7. Future improvement ideas
+
+These are *tactical* refinements to the current avoidance mechanism. For *strategic* alternatives — different semantics for the feedback signal entirely, the input-/output-scope axes, and the "bad here" vs "bad anywhere" distinction — see [`dislike_system_design_space.md`](dislike_system_design_space.md).
 
 - **Recency-weighted centroid** — exponentially weight positive memories by recency
 - **Separate positive/negative buffer pools** — prevent dislike storm from evicting all positive history

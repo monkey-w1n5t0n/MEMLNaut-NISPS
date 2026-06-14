@@ -48,6 +48,8 @@ constexpr uint8_t  SYNC_TX        = 0xBB;
 constexpr uint8_t  SYNC_I2C       = 0xCC;
 constexpr uint8_t  MSG_OUTPUT_VAL = 0x01;
 constexpr uint8_t  MSG_CONFIG     = 0x02;
+constexpr uint8_t  MSG_IDENTIFY   = 0x03;
+constexpr uint8_t  SYNC_I2C_IDENTIFY = 0xDD;
 constexpr uint8_t  MSG_INPUT_READ = 0x01;
 constexpr uint8_t  I2C_EXPANDER   = 0x10;  // default expander address
 constexpr uint16_t PWM_MAX        = 2047;
@@ -55,6 +57,7 @@ constexpr uint16_t PWM_MAX        = 2047;
 // Frame sizes
 constexpr uint8_t FRAME_OUTPUT_LEN = 31;  // sync(1) + type(1) + 14×u16(28) + crc(1)
 constexpr uint8_t FRAME_CONFIG_LEN = 5;   // sync(1) + type(1) + u16(2) + crc(1)
+constexpr uint8_t FRAME_IDENTIFY_LEN = 3; // sync(1) + type(1) + crc(1)
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -66,8 +69,9 @@ uint8_t  rxBuf[FRAME_OUTPUT_LEN];
 uint8_t  rxIdx = 0;
 bool     synced = false;
 
-uint32_t lastInputSendMs = 0;
-uint32_t lastI2CSendMs   = 0;
+uint32_t lastInputSendMs  = 0;
+uint32_t lastI2CSendMs    = 0;
+uint32_t lastI2CScanMs    = 0;
 
 uint8_t  expanderAddr = I2C_EXPANDER;
 bool     expanderFound = false;
@@ -113,15 +117,31 @@ void setupI2C() {
   Wire.setClock(400000);
   Wire.setTimeout(5);
 
-  // Scan for expander
-  for (uint8_t addr = 0x08; addr < 0x78; addr++) {
-    Wire.beginTransmission(addr);
-    if (Wire.endTransmission() == 0) {
-      expanderAddr = addr;
-      expanderFound = true;
-      break;
-    }
+  probeExpander();
+}
+
+// Probe the fixed expander address. Called at boot and periodically if not found.
+void probeExpander() {
+  Wire.beginTransmission(I2C_EXPANDER);
+  if (Wire.endTransmission() == 0) {
+    expanderAddr = I2C_EXPANDER;
+    expanderFound = true;
+    Serial.print("[I2C] Expander found at 0x");
+    Serial.println(I2C_EXPANDER, HEX);
+  } else {
+    expanderFound = false;
+    Serial.print("[I2C] No expander at 0x");
+    Serial.println(I2C_EXPANDER, HEX);
   }
+}
+
+// Retry expander discovery every 2s if not yet found (handles late boot)
+void retryExpanderScan() {
+  if (expanderFound) return;
+  uint32_t now = millis();
+  if (now - lastI2CScanMs < 2000) return;
+  lastI2CScanMs = now;
+  probeExpander();
 }
 
 void setup() {
@@ -150,6 +170,38 @@ void processConfigFrame() {
   modeBitmask = readU16LE(&rxBuf[2]);
 }
 
+void processIdentifyFrame() {
+  // Validate checksum: XOR of byte 1 only
+  if (rxBuf[1] != rxBuf[2]) return;
+
+  // Forward identify to expander
+  if (expanderFound) {
+    Wire.beginTransmission(expanderAddr);
+    Wire.write(SYNC_I2C_IDENTIFY);
+    Wire.endTransmission();
+  }
+
+  // Sweep the 6 main LEDs on
+  for (int i = 0; i < 6; i++) {
+    analogWrite(OUTPUT_LED_PINS[i], PWM_MAX);
+    delay(40);
+  }
+  delay(80);
+  // Sweep the 6 main LEDs off (reverse)
+  for (int i = 5; i >= 0; i--) {
+    analogWrite(OUTPUT_LED_PINS[i], 0);
+    delay(40);
+  }
+
+  // Send ack frame: SYNC_TX + MSG_IDENTIFY + status(1) + checksum
+  uint8_t ack[4];
+  ack[0] = SYNC_TX;
+  ack[1] = MSG_IDENTIFY;
+  ack[2] = 0x01;
+  ack[3] = ack[1] ^ ack[2];
+  Serial.write(ack, 4);
+}
+
 void readSerial() {
   while (Serial.available()) {
     uint8_t b = Serial.read();
@@ -167,17 +219,21 @@ void readSerial() {
 
     // After receiving msg type byte, determine expected length
     if (rxIdx == 2) {
-      if (rxBuf[1] != MSG_OUTPUT_VAL && rxBuf[1] != MSG_CONFIG) {
+      if (rxBuf[1] != MSG_OUTPUT_VAL && rxBuf[1] != MSG_CONFIG && rxBuf[1] != MSG_IDENTIFY) {
         synced = false;  // unknown msg type, resync
         continue;
       }
     }
 
-    uint8_t expectedLen = (rxBuf[1] == MSG_OUTPUT_VAL) ? FRAME_OUTPUT_LEN : FRAME_CONFIG_LEN;
+    uint8_t expectedLen;
+    if (rxBuf[1] == MSG_OUTPUT_VAL) expectedLen = FRAME_OUTPUT_LEN;
+    else if (rxBuf[1] == MSG_CONFIG) expectedLen = FRAME_CONFIG_LEN;
+    else expectedLen = FRAME_IDENTIFY_LEN;
 
     if (rxIdx >= expectedLen) {
       if (rxBuf[1] == MSG_OUTPUT_VAL) processOutputFrame();
       else if (rxBuf[1] == MSG_CONFIG) processConfigFrame();
+      else if (rxBuf[1] == MSG_IDENTIFY) processIdentifyFrame();
       synced = false;
     }
   }
@@ -278,6 +334,7 @@ void updateLEDs() {
 void loop() {
   readSerial();
   writeOutputs();
+  retryExpanderScan();
   forwardToExpander();
   sendInputs();
   updateLEDs();

@@ -356,6 +356,14 @@ function rebuildNonC15Sections(paramMeta) {
   }
 }
 
+function _numericSectionIndex(sec, fallback) {
+  if (!sec) return fallback;
+  for (let i = 0; i < nonC15Sections.length; i++) {
+    if (nonC15Sections[i].name === sec.name) return i;
+  }
+  return fallback;
+}
+
 /**
  * Restore paramToSection to the static C15 layout (from SYNTH_SECTIONS).
  */
@@ -730,7 +738,7 @@ class SynthVisualizer {
     for (const vi of visibleIndices) {
       const mapping = (n === N_OUTPUTS) ? paramToSection[vi] : null;
       const secForGap = this.sectionMap[vi];
-      const curSi = mapping ? mapping.si : (secForGap ? secForGap.name : vi);
+      const curSi = mapping ? mapping.si : _numericSectionIndex(secForGap, vi);
       if (prevSi !== -1 && curSi !== prevSi) {
         sectionGaps.add(vi);
       }
@@ -763,7 +771,7 @@ class SynthVisualizer {
       const i = visibleIndices[vi];
       const sec = this.sectionMap[i] ?? { name: 'Other', count: 1, color: '#666666' };
       const mapping = (n === N_OUTPUTS) ? paramToSection[i] : null;
-      const curSi = mapping ? mapping.si : (sec ? sec.name : -1);
+      const curSi = mapping ? mapping.si : _numericSectionIndex(sec, -1);
 
       // Section divider gap
       if (sectionGaps.has(i)) {
@@ -891,7 +899,11 @@ class SynthVisualizer {
         this._dragBarIndex = idx;
         this.canvas.setPointerCapture(e.pointerId);
         const val = this.yToValue(e.clientY);
-        rawParamValues[idx] = val;
+        if (outputMode === 'useq-celium' && useqCeliumMode) {
+          useqCeliumMode.setManualOverride(idx, val);
+        } else {
+          rawParamValues[idx] = val;
+        }
         this.params[idx] = val;
         routeOutputs(rawParamValues);
         updateHeatmap(rawParamValues);
@@ -900,12 +912,15 @@ class SynthVisualizer {
       this._onPointerMove = (e) => {
         if (!this._dragging) return;
         e.preventDefault();
-        // Allow sliding to adjacent bars
         let idx = this.hitTest(e.clientX, e.clientY);
         if (idx < 0) idx = this._dragBarIndex;
         this._dragBarIndex = idx;
         const val = this.yToValue(e.clientY);
-        rawParamValues[idx] = val;
+        if (outputMode === 'useq-celium' && useqCeliumMode) {
+          useqCeliumMode.setManualOverride(idx, val);
+        } else {
+          rawParamValues[idx] = val;
+        }
         this.params[idx] = val;
         routeOutputs(rawParamValues);
         updateHeatmap(rawParamValues);
@@ -2673,7 +2688,17 @@ function routeOutputs(outputs) {
   } else if (outputMode === 'audio-canvas') {
     if (audioCanvas) audioCanvas.setOutputs(outputs);
   } else if (outputMode === 'useq-celium') {
-    // uSEQ-Celium drives its own MLPs — nothing to route from the main MLP
+    // Apply group overrides and update visualizer
+    if (useqCeliumMode && engineParamOverrides) {
+      const combined = useqCeliumMode.getCombinedOutputs();
+      if (combined.length > 0) {
+        const overridden = new Array(combined.length);
+        for (let i = 0; i < combined.length; i++) {
+          overridden[i] = applyGroupOverrides(combined[i], i);
+        }
+        synthVisualizer.setParams(overridden);
+      }
+    }
   } else {
     const vis = new Array(N_VISUAL_OUTPUTS);
     for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
@@ -3074,7 +3099,10 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
       _buildUseqRoutingPanel();
       _wireUseqControls();
     }
-    synthVisualizer.rebuild(useqCeliumMode.getParamMeta());
+    const meta = useqCeliumMode.getParamMeta();
+    synthVisualizer.rebuild(meta);
+    rebuildNonC15Sections(meta);
+    _buildUseqEngineParamOverrides(meta);
     synthVisualizer.enableInteraction(true);
     useqCeliumMode.activate();
   } else {
@@ -3092,6 +3120,17 @@ async function setOutputMode(mode, { skipConfirm = false } = {}) {
 }
 
 // ---- uSEQ-Celium helpers ----
+function _buildUseqEngineParamOverrides(meta) {
+  if (!meta) { engineParamOverrides = null; return; }
+  engineParamOverrides = meta.map(() => ({
+    min: 0,
+    max: 1,
+    curve: 0.5,
+    muted: false,
+    fixedValue: 0.5,
+  }));
+}
+
 function _buildUseqRoutingPanel() {
   const list = document.getElementById('useq-routing-list');
   if (!list || !useqCeliumMode) return;
@@ -3109,17 +3148,25 @@ function _buildUseqRoutingPanel() {
     const btn = document.createElement('button');
     btn.className = `mode-toggle ${out.mode}`;
     btn.textContent = out.mode.toUpperCase();
-    btn.disabled = !out.cvCapable;
     btn.dataset.outputId = out.id;
     btn.addEventListener('click', () => {
-      const newMode = out.mode === 'cv' ? 'gate' : 'cv';
+      let newMode;
+      if (out.cvCapable) {
+        // CV-capable: cycle cv → gate → cv
+        newMode = out.mode === 'cv' ? 'gate' : 'cv';
+      } else {
+        // Digital-only (d1-d3): cycle gate → off → gate
+        newMode = out.mode === 'gate' ? 'off' : 'gate';
+      }
       try {
         useqCeliumMode.setOutputMode(out.id, newMode);
         out.mode = newMode;
         btn.textContent = newMode.toUpperCase();
         btn.className = `mode-toggle ${newMode}`;
-        // Rebuild visualizer with updated param layout
-        synthVisualizer.rebuild(useqCeliumMode.getParamMeta());
+        const meta = useqCeliumMode.getParamMeta();
+        synthVisualizer.rebuild(meta);
+        rebuildNonC15Sections(meta);
+        _buildUseqEngineParamOverrides(meta);
       } catch (e) {
         console.warn('[uSEQ] Cannot toggle:', e.message);
       }
@@ -3141,12 +3188,18 @@ function _wireUseqControls() {
       if (useqCeliumMode.serialConnected) {
         await useqCeliumMode.disconnectSerial();
         connectBtn.classList.remove('connected');
+        connectBtn.classList.remove('identified');
         if (statusEl) statusEl.textContent = 'Disconnected';
       } else {
-        const ok = await useqCeliumMode.connectSerial();
-        if (ok) {
+        const result = await useqCeliumMode.connectSerial();
+        if (result) {
           connectBtn.classList.add('connected');
-          if (statusEl) statusEl.textContent = 'Connected';
+          if (result === 'identified') {
+            connectBtn.classList.add('identified');
+            if (statusEl) statusEl.textContent = 'Verified';
+          } else {
+            if (statusEl) statusEl.textContent = 'Connected';
+          }
         }
       }
     });
@@ -4166,7 +4219,7 @@ function wireGroupDrawer() {
 
   // Detect hover over section labels on the synth vis canvas
   $synthVisCanvas.addEventListener('pointermove', (e) => {
-    if (outputMode !== 'synth') return;
+    if (outputMode !== 'synth' && outputMode !== 'useq-celium') return;
     const region = synthVisualizer.hitTestSection(e.clientX, e.clientY);
     if (region) {
       clearTimeout(drawerHideTimer);
@@ -4183,7 +4236,7 @@ function wireGroupDrawer() {
 
   // Also handle click for mobile
   $synthVisCanvas.addEventListener('pointerdown', (e) => {
-    if (outputMode !== 'synth') return;
+    if (outputMode !== 'synth' && outputMode !== 'useq-celium') return;
     const region = synthVisualizer.hitTestSection(e.clientX, e.clientY);
     if (region) {
       e.preventDefault();
@@ -4209,7 +4262,7 @@ function wireGroupDrawer() {
  * exist for the active engine.
  */
 function getSectionView(sectionIndex) {
-  if (activeEngine?.id === 'shaper-feedback') {
+  if (activeEngine?.id === 'shaper-feedback' && outputMode !== 'useq-celium') {
     const sec = SYNTH_SECTIONS[sectionIndex];
     const ov  = groupOverrides[sectionIndex];
     if (!sec || !ov) return null;
@@ -4240,7 +4293,10 @@ function getSectionView(sectionIndex) {
       nonC15GroupCurves[sectionIndex] = v;
       _nonC15GroupCurveMemory.set(sec.name, v);
     },
-    getParamName: (li) => activeEngine?.paramMeta?.[start + li]?.name ?? `p${start + li}`,
+    getParamName: (li) => {
+      const meta = (outputMode === 'useq-celium' && useqCeliumMode) ? useqCeliumMode.getParamMeta() : activeEngine?.paramMeta;
+      return meta?.[start + li]?.name ?? `p${start + li}`;
+    },
     getParamOverride: (li) => engineParamOverrides[start + li],
   };
 }

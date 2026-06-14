@@ -3,7 +3,6 @@
 // Receives 8 × 11-bit CV values over I2C from the main uSEQ board
 
 #include <Wire.h>
-#include <pico/unique_id.h>
 
 // ─── Pin definitions ─────────────────────────────────────────────────────────
 
@@ -38,6 +37,7 @@ constexpr uint8_t OUTPUT_LED_PINS[] = { PIN_E1_LED, PIN_E2_LED, PIN_E3_LED, PIN_
 // ─── Protocol constants ──────────────────────────────────────────────────────
 
 constexpr uint8_t  SYNC_I2C      = 0xCC;
+constexpr uint8_t  SYNC_I2C_IDENTIFY = 0xDD;
 constexpr uint8_t  FRAME_LEN     = 18;   // sync(1) + 8×u16LE(16) + checksum(1)
 constexpr uint16_t PWM_MAX       = 2047;
 constexpr uint8_t  FALLBACK_ADDR = 0x10;
@@ -46,6 +46,7 @@ constexpr uint8_t  FALLBACK_ADDR = 0x10;
 
 volatile uint16_t outputValues[8] = {};
 volatile bool     newFrame = false;
+volatile bool     doSweep  = false;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -59,17 +60,19 @@ static inline uint16_t readU16LE(const uint8_t* p) {
   return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
-static uint8_t deriveI2CAddress() {
-  pico_unique_board_id_t id;
-  pico_get_unique_board_id(&id);
-  uint8_t addr = id.id[PICO_UNIQUE_BOARD_ID_SIZE_BYTES - 1];
-  if (addr < 0x08 || addr > 0x77) addr = FALLBACK_ADDR;
-  return addr;
-}
+// Hardcoded I2C address — must match main firmware's I2C_EXPANDER constant.
+// Previously derived from chip unique ID, which caused address mismatches.
+constexpr uint8_t I2C_ADDRESS = FALLBACK_ADDR;  // 0x10
 
 // ─── I2C receive callback (ISR context) ──────────────────────────────────────
 
 void onI2CReceive(int numBytes) {
+  if (numBytes == 1) {
+    uint8_t b = Wire.read();
+    if (b == SYNC_I2C_IDENTIFY) doSweep = true;
+    return;
+  }
+
   if (numBytes != FRAME_LEN) {
     // Drain unexpected bytes
     while (Wire.available()) Wire.read();
@@ -108,11 +111,23 @@ void setupPWM() {
 }
 
 void setupI2C() {
-  uint8_t addr = deriveI2CAddress();
   Wire.setSDA(PIN_SDA);
   Wire.setSCL(PIN_SCL);
-  Wire.begin(addr);
+  Wire.begin(I2C_ADDRESS);
   Wire.onReceive(onI2CReceive);
+}
+
+// Startup LED sweep — visual confirmation that expander booted
+void bootSweep() {
+  for (int i = 0; i < 8; i++) {
+    analogWrite(OUTPUT_LED_PINS[i], PWM_MAX);
+    delay(40);
+  }
+  delay(80);
+  for (int i = 7; i >= 0; i--) {
+    analogWrite(OUTPUT_LED_PINS[i], 0);
+    delay(40);
+  }
 }
 
 void setup() {
@@ -141,6 +156,11 @@ void updateLEDs() {
 // ─── Main loop ──────────────────────────────────────────────────────────────
 
 void loop() {
+  if (doSweep) {
+    doSweep = false;
+    bootSweep();
+  }
+
   if (newFrame) {
     newFrame = false;
     writeOutputs();

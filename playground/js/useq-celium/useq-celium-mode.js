@@ -42,6 +42,9 @@ export class UseqCeliumMode {
 
     this._routingChangeUnsub = null;
     this._rebuildPending = false;
+
+    // Manual overrides from bar interaction (sparse: index → value)
+    this._manualOverrides = new Map();
   }
 
   async init(hiddenLayerOverrides = null) {
@@ -159,8 +162,14 @@ export class UseqCeliumMode {
       if (this._active) {
         this._serialDriver.startStreaming();
       }
+      // Request LED identify sweep and wait for ack
+      const identified = await this._serialDriver.sendIdentify();
+      if (identified) {
+        console.log('%c[uSEQ] Hardware identified — LED sweep confirmed', 'color:#4ade80');
+      }
+      return identified ? 'identified' : true;
     }
-    return success;
+    return false;
   }
 
   async disconnectSerial() {
@@ -211,9 +220,20 @@ export class UseqCeliumMode {
   }
 
   getCombinedOutputs() {
-    // Rhythm outputs first, then CV outputs — matches paramMeta order
     if (!this._rhythmOutputs || !this._cvOutputs) return [];
-    return [...this._rhythmOutputs, ...this._cvOutputs];
+    const combined = [...this._rhythmOutputs, ...this._cvOutputs];
+    for (const [idx, val] of this._manualOverrides) {
+      if (idx < combined.length) combined[idx] = val;
+    }
+    return combined;
+  }
+
+  setManualOverride(index, value) {
+    this._manualOverrides.set(index, value);
+  }
+
+  clearManualOverrides() {
+    this._manualOverrides.clear();
   }
 
   // --- Training controls ---
@@ -378,7 +398,7 @@ export class UseqCeliumMode {
   _startTickWorker() {
     if (this._tickWorker) return;
     const blob = new Blob([
-      'let iv=null;onmessage=e=>{if(e.data==="start"){iv=setInterval(()=>postMessage(0),10)}else{clearInterval(iv);iv=null}}'
+      'let iv=null;onmessage=e=>{if(e.data==="start"){iv=setInterval(()=>postMessage(0),33)}else{clearInterval(iv);iv=null}}'
     ], { type: 'application/javascript' });
     this._tickWorker = new Worker(URL.createObjectURL(blob));
     this._tickWorker.onmessage = () => this.tick();

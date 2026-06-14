@@ -41,14 +41,16 @@ Faithful JS port of the Euclidean rhythm generator from the MEMLCelium firmware 
 
 14 hardware outputs, dynamically assignable:
 
-| Output | Hardware | Default | Toggleable |
-|--------|----------|---------|------------|
-| d1-d3 | Digital GPIO (binary) | Gate | No (always gate) |
-| a1-a3 | PWM 11-bit (velocity-capable) | CV | Yes |
-| e1-e8 | Expander PWM 11-bit | CV | Yes |
+| Output | Hardware | Default | Modes |
+|--------|----------|---------|-------|
+| d1-d3 | Digital GPIO (binary) | Gate | Gate / Off |
+| a1-a3 | PWM 11-bit (velocity-capable) | CV | CV / Gate |
+| e1-e8 | Expander PWM 11-bit | CV | CV / Gate |
 
-- Max 4 rhythm sequences total (d1-d3 + 1 toggleable output)
+- Max 4 rhythm sequences total
+- d1-d3 can be individually disabled (Off), freeing sequence slots for CV-capable outputs
 - When a CV-capable output is set to gate mode, it outputs analog velocity (not binary on/off)
+- This means all 4 sequences can run on velocity-capable outputs if d1-d3 are turned off
 - Velocity comes from the rhythm MLP (amplitude ratios in RatioSeq)
 - Routing changes cause MLP architecture rebuild (output count changes)
 

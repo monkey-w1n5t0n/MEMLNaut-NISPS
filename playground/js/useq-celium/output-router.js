@@ -14,9 +14,9 @@ const OUTPUT_DEFS = [
   { id: 'a1', index: 0, cvCapable: true, toggleable: true },
   { id: 'a2', index: 1, cvCapable: true, toggleable: true },
   { id: 'a3', index: 2, cvCapable: true, toggleable: true },
-  { id: 'd1', index: 3, cvCapable: false, toggleable: false },
-  { id: 'd2', index: 4, cvCapable: false, toggleable: false },
-  { id: 'd3', index: 5, cvCapable: false, toggleable: false },
+  { id: 'd1', index: 3, cvCapable: false, toggleable: true },
+  { id: 'd2', index: 4, cvCapable: false, toggleable: true },
+  { id: 'd3', index: 5, cvCapable: false, toggleable: true },
   { id: 'e1', index: 6, cvCapable: true, toggleable: true },
   { id: 'e2', index: 7, cvCapable: true, toggleable: true },
   { id: 'e3', index: 8, cvCapable: true, toggleable: true },
@@ -39,12 +39,10 @@ export class OutputRouter {
     // Build lookup map
     this._outputMap = new Map();
     for (const def of OUTPUT_DEFS) {
-      this._outputMap.set(def.id, { ...def, mode: def.toggleable ? 'cv' : 'gate' });
+      // d1-d3 default to gate, everything else defaults to cv
+      const defaultMode = def.cvCapable ? 'cv' : 'gate';
+      this._outputMap.set(def.id, { ...def, mode: defaultMode });
     }
-    // d1-d3 are always gate
-    this._outputMap.get('d1').mode = 'gate';
-    this._outputMap.get('d2').mode = 'gate';
-    this._outputMap.get('d3').mode = 'gate';
 
     this._callbacks = [];
     // Pre-allocate output buffer for routeOutputs hot path
@@ -58,8 +56,13 @@ export class OutputRouter {
   setOutputMode(outputId, mode) {
     const output = this._outputMap.get(outputId);
     if (!output) throw new Error(`Unknown output: ${outputId}`);
-    if (!output.toggleable) throw new Error(`Output ${outputId} cannot be toggled (always gate)`);
-    if (mode !== 'cv' && mode !== 'gate') throw new Error(`Invalid mode: ${mode}`);
+    if (!output.toggleable) throw new Error(`Output ${outputId} cannot be toggled`);
+    if (mode !== 'cv' && mode !== 'gate' && mode !== 'off') throw new Error(`Invalid mode: ${mode}`);
+
+    // Digital-only outputs (d1-d3) can be gate or off, not cv
+    if (!output.cvCapable && mode === 'cv') {
+      throw new Error(`Output ${outputId} is digital-only — cannot set to CV`);
+    }
 
     // Check max sequences constraint
     if (mode === 'gate' && output.mode !== 'gate') {
@@ -177,15 +180,15 @@ export class OutputRouter {
     let cvIdx = 0;
 
     for (const entry of this._routing.outputs) {
-      if (entry.mode === 'cv') {
+      if (entry.mode === 'off') {
+        buf[entry.index] = 0;
+      } else if (entry.mode === 'cv') {
         buf[entry.index] = cvOutputs[cvIdx++];
       } else {
         const gs = gateStates[entry.seqIndex];
         if (entry.cvCapable) {
-          // Velocity gate: velocity * gate
           buf[entry.index] = gs.gate ? gs.velocity : 0;
         } else {
-          // Binary gate: 0 or 1
           buf[entry.index] = gs.gate ? 1 : 0;
         }
       }
@@ -234,14 +237,12 @@ export class OutputRouter {
 
   _recompute() {
     // Assign sequence indices to gate outputs
-    // d1=0, d2=1, d3=2, then by gate priority order
+    // Active d1-d3 first, then toggleable gates in priority order
     const gateOutputs = [];
-    // Fixed gates first
     for (const id of ['d1', 'd2', 'd3']) {
       const o = this._outputMap.get(id);
       if (o.mode === 'gate') gateOutputs.push(o);
     }
-    // Then toggleable gates in priority order
     for (const id of GATE_PRIORITY) {
       const o = this._outputMap.get(id);
       if (o.mode === 'gate') gateOutputs.push(o);
@@ -264,12 +265,15 @@ export class OutputRouter {
         index: def.index,
         mode: output.mode,
         cvCapable: def.cvCapable,
-        mlp: output.mode === 'cv' ? 'cv' : 'rhythm',
       };
 
-      if (output.mode === 'cv') {
+      if (output.mode === 'off') {
+        entry.mlp = null;
+      } else if (output.mode === 'cv') {
+        entry.mlp = 'cv';
         entry.mlpOutputIndex = cvMlpIndex++;
       } else {
+        entry.mlp = 'rhythm';
         const si = seqAssignment.get(def.id);
         entry.seqIndex = si;
         entry.mlpOutputIndex = si * PARAMS_PER_SEQUENCE;

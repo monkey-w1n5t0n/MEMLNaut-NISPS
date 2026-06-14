@@ -900,6 +900,7 @@ html, body {
 /* ---- Pill toggle (used in mode drawer) ---- */
 .pill-toggle {
   display: inline-flex;
+  flex-wrap: wrap;
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--glass-border);

@@ -23,35 +23,18 @@ Read `playground/USEQ-CELIUM.md` for full architecture, protocol spec, and desig
 Build firmware: `cd playground/firmware/main && pio run -t upload` (same for `expander/`)
 Serve playground: `cd playground && python3 -m http.server`
 
-## Open bugs to fix
+## Fixed bugs
 
-### 1. Tick timing too slow when tab is in focus
-**Symptom**: Rhythm sequences play 2-4x slower than expected BPM when the browser tab is active.
-**Root cause**: The tick loop runs in a Web Worker (`_startTickWorker` in useq-celium-mode.js) posting messages at 10ms intervals. Each message triggers `tick()` on the main thread which does WASM MLP inference. At 100Hz, this floods the main thread event queue, competing with rAF drawing. Messages get delayed, causing effective tick rate to drop.
-**Likely fix**: The serial driver already has its own 100Hz `setInterval` for sending frames. The mode's tick loop doesn't need to run that fast — reduce Worker interval to 16ms (~60Hz) or even 33ms (~30Hz). The RatioSeq uses real-time deltas (`performance.now()`) so reducing tick rate won't change tempo, only gate timing resolution.
-**Alternative**: Move the entire tick loop (MLP inference + RatioSeq + output routing) into the Worker itself. This is a bigger refactor since WasmIML runs on the main thread.
-**Files**: `playground/js/useq-celium/useq-celium-mode.js` lines 85-102, 377-393
+### 1. Tick timing too slow when tab is in focus — FIXED
+Worker interval reduced from 10ms (100Hz) to 33ms (~30Hz). RatioSeq uses `performance.now()` deltas so tempo is unaffected; only gate timing resolution changes (still fine for musical gates). Main thread no longer flooded.
 
-### 2. Expander LEDs not responding
-**Symptom**: Main uSEQ outputs work (LEDs change) but expander outputs don't change at all.
-**Possible causes**:
-- I2C address mismatch: main firmware scans addresses 0x08-0x77 and grabs the first responding device. Expander derives its address from RP2040 unique chip ID (`deriveI2CAddress()` in expander firmware). If these don't match, no communication.
-- I2C wiring: SDA/SCL pins differ between main (SDA=0, SCL=1) and expander (SDA=4, SCL=1). Verify hardware connections.
-- The scan runs once at boot. If the expander boots after the main board, it's missed.
-**Debug approach**:
-1. Add a startup LED blink pattern to the expander so you know it booted (e.g., sweep all 8 LEDs on/off)
-2. Add serial output to the main firmware printing whether `expanderFound` is true and what `expanderAddr` it found
-3. Hardcode the expander address on both sides to a known value (e.g., 0x10) instead of dynamic discovery
-**Files**: 
-- `playground/firmware/main/src/useq-celium-main.ino` lines 109-124 (setupI2C, scan), lines 213-230 (forwardToExpander)
-- `playground/firmware/expander/src/useq-celium-expander.ino` lines 62-68 (deriveI2CAddress), lines 72-94 (onI2CReceive)
+### 2. Expander LEDs not responding — FIXED
+- Hardcoded I2C address `0x10` on both main and expander (removed dynamic chip-ID derivation)
+- Added boot sweep LED animation on expander for visual boot confirmation
+- Added `[I2C]` serial debug logging on main
+- Main retries expander probe every 2s if not found at boot (handles late-boot expander)
 
-### 3. Visualizer bar color bleed (cosmetic)
-**Symptom**: First bar of each section shows the previous section's color in its body.
-**Root cause**: Despite pixel-snapping (`Math.round`) and removing bar gap (`barWidth - 0.5`), adjacent bars can still overlap by a subpixel. The `sec.color + 'cc'` (was removed, now opaque) or canvas antialiasing causes the previous bar's color to bleed into the next bar's area at section boundaries.
-**Current state**: Transparency was removed (opaque bars now). If bleed persists, the issue is canvas subpixel rendering.
-**Fix**: Clear a 1px strip before each section's first bar, or render sections in reverse order. Or accept it as a cosmetic artifact.
-**File**: `playground/js/a-app.js` — `SynthVisualizer.draw()` around line 794
+### 3. Visualizer bar color bleed — FIXED (prior session)
 
 ## Other known gaps (not bugs, features to add)
 

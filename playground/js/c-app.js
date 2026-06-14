@@ -185,7 +185,7 @@ class SynthVisualizer {
       // Section label
       const sectionWidth = barWidth * section.count;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-      ctx.font = '9px 'JetBrains Mono', monospace';
+      ctx.font = "9px 'JetBrains Mono', monospace";
       ctx.textAlign = 'center';
       ctx.fillText(section.name, x + sectionWidth / 2, h - 6);
 

@@ -19,6 +19,12 @@
 
 import type { EngineId } from '../ml/types';
 
+// `?worker&url` makes Vite COMPILE the worklet TS→JS, bundle its imports, and
+// hand back a hashed .js URL. Plain `new URL('./x.ts', import.meta.url)` does
+// NOT work for audioWorklet.addModule (Vite only treats that as a worker entry
+// for `new Worker(...)`) — it copies raw .ts, which the browser rejects.
+import workletUrl from './worklet/nisps-processor.ts?worker&url';
+
 const NISPS_WASM_URL = '/nisps.wasm';
 const PROCESSOR_NAME = 'nisps-processor';
 
@@ -102,10 +108,9 @@ export class EngineHost {
       this.wasmBytes = await this.fetchWasm_();
     }
 
-    // Register the processor module. Vite's `new URL(..., import.meta.url)`
-    // pattern bundles the worklet file correctly.
-    const procUrl = this.options.processorUrl ??
-      new URL('./worklet/nisps-processor.ts', import.meta.url).toString();
+    // Register the processor module. `workletUrl` is the Vite-compiled,
+    // bundled .js (see import note at top); addModule needs real JS, not raw TS.
+    const procUrl = this.options.processorUrl ?? workletUrl;
     await this.ctx.audioWorklet.addModule(procUrl);
 
     this.node = new AudioWorkletNode(this.ctx, PROCESSOR_NAME, {

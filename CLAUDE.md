@@ -193,4 +193,4 @@ bash scripts/run-all-tests.sh
 
 ## Issue tracking
 
-This project uses **bd (beads)** for ALL task tracking. See `AGENTS.md` for conventions. Do not create markdown TODO lists or use other trackers.
+Coding-work tasks go in **ergo** (`ergo ready | show | claim | done | block`), over the Holon EAV core — see the `ergo` skill. **bd (beads) is RETIRED** (migrated 2026-06-15; frozen read-only). Do NOT use `bd`, TodoWrite, or markdown TODO lists.

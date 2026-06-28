@@ -100,6 +100,12 @@ export interface ConsoleCtx {
   setOscUrl: (u: string) => void;
   oscSendRaw: boolean;
   setOscSendRaw: (v: boolean) => void;
+  /** VCV backend settings (bridge URL + send-raw toggle). The Deno bridge
+   * relays to the VCV module over UDP (default module port 7001). */
+  vcvUrl: string;
+  setVcvUrl: (u: string) => void;
+  vcvSendRaw: boolean;
+  setVcvSendRaw: (v: boolean) => void;
   /** Replace the whole params array (used when restoring a named preset). */
   setParams: (next: MFParam[]) => void;
 

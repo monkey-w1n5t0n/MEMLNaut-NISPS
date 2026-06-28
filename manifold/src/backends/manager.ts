@@ -22,12 +22,19 @@ import { WebMidiBackend } from './midi-backend';
 import { OscBridgeBackend } from './osc-backend';
 import { PassthroughBackend } from './passthrough-backend';
 import { ParticleBackend } from './particle-backend';
+import { VcvBackend, type VcvFeedbackOp } from './vcv-backend';
 
 /** The slice of EngineApi the manager depends on (keeps it decoupled/testable). */
 export interface ManagerEngine {
   subscribe(cb: () => void): () => void;
   routedOutput(): Float32Array | null;
   audio: { setMuted(muted: boolean): void };
+  /**
+   * Current control input vector (2-D for the fixed 2→N MLP). Optional — when
+   * present the VCV backend streams it to the module so the browser drives the
+   * module's inputs in bridged mode.
+   */
+  inputVector?(): ReadonlyArray<number>;
 }
 
 export class BackendManager {
@@ -50,12 +57,17 @@ export class BackendManager {
       ['synth', backends?.synth ?? new PassthroughBackend('synth', 'Built-in Synth — audio plays in the engine')],
       ['particles', backends?.particles ?? new ParticleBackend()],
       ['cvgate', backends?.cvgate ?? new PassthroughBackend('cvgate', 'CV / gate (via VCV bridge)')],
-      ['vcv', backends?.vcv ?? new PassthroughBackend('vcv', 'VCV bridge')],
+      ['vcv', backends?.vcv ?? new VcvBackend()],
     ]);
 
-    // Single subscription to the spine: forward routed → active backend.
+    // Single subscription to the spine: forward routed → active backend. For the
+    // VCV backend we also stream the current input vector each tick so the
+    // browser drives the module's inputs in bridged mode.
     this.unsub = this.engine.subscribe(() => {
       if (!this.active) return;
+      if (this.active instanceof VcvBackend && this.engine.inputVector) {
+        this.active.setInputVector(this.engine.inputVector());
+      }
       const routed = this.engine.routedOutput();
       if (routed) this.active.send(routed);
     });
@@ -70,6 +82,25 @@ export class BackendManager {
   osc(): OscBridgeBackend | null {
     const b = this.backends.get('osc');
     return b instanceof OscBridgeBackend ? b : null;
+  }
+
+  vcv(): VcvBackend | null {
+    const b = this.backends.get('vcv');
+    return b instanceof VcvBackend ? b : null;
+  }
+
+  /**
+   * Forward a verdict op to the VCV module's embedded learner over the bridge.
+   * No-op unless the VCV backend is the ACTIVE one — the verdict loop only
+   * trains the module when Mode = VCV (otherwise the browser engine is the
+   * learner). Returns true if it was forwarded.
+   */
+  forwardFeedback(op: VcvFeedbackOp): boolean {
+    if (this.activeId !== 'vcv') return false;
+    const vcv = this.vcv();
+    if (!vcv) return false;
+    vcv.sendFeedback(op);
+    return true;
   }
 
   get(id: BackendId): OutputBackend | undefined {

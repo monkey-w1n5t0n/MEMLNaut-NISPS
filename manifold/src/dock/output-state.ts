@@ -130,3 +130,8 @@ export function defaultMidiSpec(index: number): MidiCcSpec {
 export function defaultOscSpec(name: string): OscSpec {
   return { path: `/nisps/${name.toLowerCase()}`, rangeMin: 0, rangeMax: 1 };
 }
+
+/** Default VCV spec for an output — unipolar 0–10 V by default. */
+export function defaultVcvSpec(): VcvSpec {
+  return { bipolar: false };
+}

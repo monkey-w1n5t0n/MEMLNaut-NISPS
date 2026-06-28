@@ -131,6 +131,10 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [midiCcCount, setMidiCcCount] = useState(8);
   const [oscUrl, setOscUrl] = useState('ws://localhost:8765');
   const [oscSendRaw, setOscSendRaw] = useState(false);
+  // VCV bridge: WS URL of the Deno bridge that relays to the VCV module over UDP
+  // (default module UDP 7001). Independent of the OSC backend's bridge.
+  const [vcvUrl, setVcvUrl] = useState('ws://localhost:8765');
+  const [vcvSendRaw, setVcvSendRaw] = useState(false);
   // Feedback markers plotted on the 2D map (both polarities; session-scoped).
   const [markers, setMarkers] = useState<FeedbackMarker[]>([]);
   const [volume, setVolume] = useState(0.8);
@@ -264,14 +268,27 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   // spine and forwards routed outputs to the active backend; switching Mode
   // tears down the old backend, starts the new one, and gates synth audio
   // (mute on non-synth modes). MIDI/OSC config + names ride the shared params.
-  const { status: backendStatus, midiPorts, refreshMidiPorts } = useBackendManager(
+  const { manager: backendManager, status: backendStatus, midiPorts, refreshMidiPorts } = useBackendManager(
     engine,
     outputBackend,
     modeId,
     params,
     { outputId: midiOutputId, ccCount: midiCcCount },
     { url: oscUrl, sendRaw: oscSendRaw },
+    { url: vcvUrl, sendRaw: vcvSendRaw },
   );
+
+  // VCV bridge: forward a verdict op to the module's embedded learner. No-op
+  // unless Mode = VCV (the manager gates on the active backend). This is how
+  // thumbs-up/down + explore-and-place TRAIN the module across the bridge.
+  const forwardVcvFeedback = (op: 'up' | 'down' | 'rand' | 'clear') => {
+    backendManager?.forwardFeedback({
+      op,
+      spread: spread ? 1 : 0.6,
+      input: [pos[0], pos[1]],
+      output: Array.from(engine?.getOutputs() ?? new Float32Array(0)),
+    });
+  };
 
   // values come from the REAL engine output, shaped per-param. Recomputed when
   // the engine version bumps (new inference / weights) or params change.
@@ -326,6 +343,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       c?.like(pos, engine?.getOutputs() ?? new Float32Array(0));
       pushMarker(pos, 'positive');
     }
+    // VCV bridged mode: also train the module — thumbs-up = positive verdict.
+    forwardVcvFeedback('up');
     syncController();
     setNoiseCap((n) => Math.max(0.02, n * 0.7));
     setHealth((h) => Math.min(1, h + 0.08));
@@ -350,12 +369,16 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       } else {
         pushSnap('explore');
         c?.enterExplore();
+        // VCV bridged mode: entering explore re-rolls the module's net too.
+        forwardVcvFeedback('rand');
       }
     } else {
       // Geometric dislike: push the current mapping away from this sound.
       pushSnap('dislike −');
       c?.dislike(pos, engine?.getOutputs() ?? new Float32Array(0), noiseCap, spread ? 1 : 0.6);
       pushMarker(pos, 'negative');
+      // VCV bridged mode: thumbs-down = negative verdict.
+      forwardVcvFeedback('down');
       setSeed((s) => s + (Math.random() - 0.5) * (noiseCap * 4 + 0.3));
       setNoiseCap((n) => Math.min(0.5, n + 0.06));
       setHealth((h) => Math.max(0.1, h - 0.06));
@@ -376,6 +399,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       // Outside a scratchpad session a re-roll randomises the real net directly.
       engine?.randomise(spread ? 1 : 0.6);
     }
+    // VCV bridged mode: re-roll the module's net too.
+    forwardVcvFeedback('rand');
     syncController();
     setSeed(Math.random() * 6);
     setNoiseCap(0.4);
@@ -586,6 +611,10 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setOscUrl,
     oscSendRaw,
     setOscSendRaw,
+    vcvUrl,
+    setVcvUrl,
+    vcvSendRaw,
+    setVcvSendRaw,
     setParams: (next: MFParam[]) => setParams(next),
     markers,
     inputs,

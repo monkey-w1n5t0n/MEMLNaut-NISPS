@@ -16,6 +16,8 @@ export { WebMidiBackend } from './midi-backend';
 export type { MidiBackendConfig } from './midi-backend';
 export { OscBridgeBackend } from './osc-backend';
 export type { OscBackendConfig } from './osc-backend';
+export { VcvBackend } from './vcv-backend';
+export type { VcvBackendConfig, VcvFeedbackOp } from './vcv-backend';
 export { NispsOscClient } from './osc-client';
 export { PassthroughBackend } from './passthrough-backend';
 export { ParticleBackend } from './particle-backend';

@@ -63,6 +63,16 @@ function oscMessage(address, value) {
   ]);
 }
 
+/** A single OSC message carrying N floats (one ",fff…" message, not N messages). */
+function oscMessageFloats(address, values) {
+  const tags = ',' + 'f'.repeat(values.length);
+  return Buffer.concat([
+    oscString(address),
+    oscString(tags),
+    ...values.map((v) => oscFloat(v)),
+  ]);
+}
+
 function oscMessageString(address, value) {
   return Buffer.concat([
     oscString(address),
@@ -145,6 +155,11 @@ function sendOSCString(address, value) {
   udpSend.send(msg, OSC_PORT, OSC_HOST);
 }
 
+function sendOSCFloats(address, values) {
+  const msg = oscMessageFloats(address, values);
+  udpSend.send(msg, OSC_PORT, OSC_HOST);
+}
+
 function sendOSCBundle(params) {
   const messages = params.map(([name, value]) =>
     oscMessage(`${OSC_PREFIX}/${name}`, value)
@@ -217,6 +232,16 @@ wss.on('connection', (ws) => {
             return;
           case 'weights':
             sendOSCString(`${OSC_PREFIX}/weights`, JSON.stringify(data.payload));
+            return;
+          case 'input':
+            // Current input VECTOR as ONE multi-float message to /nisps/input.
+            if (Array.isArray(data.payload)) {
+              sendOSCFloats(`${OSC_PREFIX}/input`, data.payload);
+            }
+            return;
+          case 'feedback':
+            // Verdict op as OSC string to /nisps/feedback (trains the module).
+            sendOSCString(`${OSC_PREFIX}/feedback`, JSON.stringify(data.payload));
             return;
           case 'params':
             if (Array.isArray(data.payload)) {

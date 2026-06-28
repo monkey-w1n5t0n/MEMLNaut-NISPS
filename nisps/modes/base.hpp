@@ -141,7 +141,7 @@ class ModeBase {
         // Run an inference at default inputs so engine has params on first
         // process() call, even if no input has been touched.
         for (std::size_t i = 0u; i < NInputs; ++i) {
-            ml_.set_input(i, input_channels_[i]);
+            ml_.set_input(i, effective_input(i));
         }
         ml_.process();
         if constexpr (kRouteOutputsToEngine) {
@@ -160,13 +160,42 @@ class ModeBase {
         input_dirty_ = true;
     }
 
+    // ---- Input neutralization (single/double controller toggle) ----
+    //
+    // A pinned channel feeds `pin_value_` (neutral, default 0.5) to the MLP
+    // instead of its live value, without rebuilding/resizing the network.
+    // Glue toggles which channels are pinned (e.g. single-joystick mode pins
+    // the second 2D controller's two channels). The stored live value is left
+    // untouched, so unpinning resumes from the controller's current position.
+    NISPS_FORCE_INLINE void set_input_pinned(std::size_t idx, bool pinned) noexcept {
+        if (idx >= NInputs) return;
+        input_pinned_[idx] = pinned;
+        input_dirty_ = true;
+    }
+    NISPS_FORCE_INLINE bool is_input_pinned(std::size_t idx) const noexcept {
+        return idx < NInputs && input_pinned_[idx];
+    }
+    NISPS_FORCE_INLINE void set_pin_value(float v) noexcept {
+        if (v < 0.f) v = 0.f;
+        else if (v > 1.f) v = 1.f;
+        pin_value_ = v;
+        input_dirty_ = true;
+    }
+    float pin_value() const noexcept { return pin_value_; }
+
+    // Effective value fed to the MLP for channel i (pin override applied).
+    NISPS_FORCE_INLINE float effective_input(std::size_t i) const noexcept {
+        return input_pinned_[i] ? pin_value_ : input_channels_[i];
+    }
+
     NISPS_HOT void tick_control() noexcept {
         if constexpr (requires(Derived& d) { d.on_pre_inference(); }) {
             static_cast<Derived&>(*this).on_pre_inference();
         }
-        // Forward (possibly Derived-mutated) channels into the MLP.
+        // Forward (possibly Derived-mutated) channels into the MLP, applying
+        // the per-channel pin override.
         for (std::size_t i = 0u; i < NInputs; ++i) {
-            ml_.set_input(i, input_channels_[i]);
+            ml_.set_input(i, effective_input(i));
         }
         ml_.process();
         if constexpr (kRouteOutputsToEngine) {
@@ -235,6 +264,8 @@ class ModeBase {
     EngineT                                          engine_{};
     MLPType                                          ml_;
     std::array<float, NInputs>                       input_channels_{};
+    std::array<bool, NInputs>                        input_pinned_{};   // false => live
+    float                                            pin_value_ = 0.5f; // neutral
     bool                                             input_dirty_ = false;
     std::size_t                                      voice_space_idx_ = 0u;
     RingBuffer<ControlEvent, kModeEventBufferSize>   events_{};

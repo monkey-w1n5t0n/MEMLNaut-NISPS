@@ -56,6 +56,7 @@ const MODE_ICON: Record<OutputMode, { Icon: (p: IconProps) => JSX.Element; glyph
   particles: { Icon: ParticleIcon, glyph: GLYPH_FALLBACK.particles },
   midi: { Icon: MidiIcon, glyph: GLYPH_FALLBACK.midi },
   osc: { Icon: OscIcon, glyph: GLYPH_FALLBACK.osc },
+  cv: { Icon: OscIcon, glyph: GLYPH_FALLBACK.cv },
   synth: { Icon: SynthIcon, glyph: GLYPH_FALLBACK.synth },
   editor: { Icon: EditorIcon, glyph: GLYPH_FALLBACK.editor },
 };

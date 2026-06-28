@@ -17,8 +17,8 @@
  */
 import { useEffect, useState } from 'react';
 import type { ConsoleCtx } from '../console/types';
-import type { BackendId } from './output-state';
-import { defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from './output-state';
+import type { BackendId, CvChannelId } from './output-state';
+import { CV_CHANNELS, defaultCvSpec, defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from './output-state';
 import {
   applyPreset,
   deletePreset,
@@ -583,6 +583,89 @@ function VcvConfig({ ctx }: { ctx: ConsoleCtx }) {
   );
 }
 
+// ---- uSEQ CV / gate config (backends-spec §2.5; docs/useq-celium) -----------
+
+function CvConfig({ ctx }: { ctx: ConsoleCtx }) {
+  const s = ctx.backendStatus;
+  const statusColor =
+    s.state === 'ready' ? 'var(--good)' : s.state === 'connecting' ? 'var(--warn)' : 'var(--danger)';
+  return (
+    <>
+      <SectionLabel>uSEQ device (USB serial)</SectionLabel>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button type="button" style={btn('var(--accent)')} onClick={ctx.cvConnect}>
+          Connect device
+        </button>
+        <button type="button" style={btn('var(--fg-mute)')} onClick={ctx.cvIdentify}>
+          Identify (flash LEDs)
+        </button>
+        <button type="button" style={btn('var(--danger)')} onClick={ctx.cvDisconnect}>
+          Disconnect
+        </button>
+        <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
+      </div>
+      <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+        Flash the uSEQ main + expander with <code>firmware/useq-celium</code>, connect over USB, then assign each
+        model output to a CV jack or gate. 11 CV (3 main + 8 expander) + 3 gates, streamed at 100&nbsp;Hz.
+      </p>
+
+      <SectionLabel>Per-output channel · gate threshold</SectionLabel>
+      <div style={{ maxHeight: 320, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <Th>Output</Th>
+              <Th>uSEQ channel</Th>
+              <Th>Gate ≥</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {ctx.params.map((p, i) => {
+              const c = (p.cv as { channel: CvChannelId; gateThreshold: number } | undefined) ?? defaultCvSpec(i);
+              const isGate = c.channel.startsWith('gate');
+              return (
+                <tr key={i}>
+                  <td style={{ padding: '3px 6px', fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>{p.name}</td>
+                  <td style={{ padding: '3px 6px', width: 150 }}>
+                    <select
+                      value={c.channel}
+                      onChange={(e) => ctx.setParam(i, { cv: { ...c, channel: e.target.value as CvChannelId } })}
+                      style={{ ...cellInput, cursor: 'pointer' }}
+                    >
+                      <option value="none">— none —</option>
+                      {CV_CHANNELS.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ padding: '3px 6px', width: 80 }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      disabled={!isGate}
+                      style={{ ...cellInput, opacity: isGate ? 1 : 0.4 }}
+                      value={c.gateThreshold}
+                      onChange={(e) =>
+                        ctx.setParam(i, {
+                          cv: { ...c, gateThreshold: Math.max(0, Math.min(1, num(e.target.value, c.gateThreshold))) },
+                        })
+                      }
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 // ---- Public entry ----------------------------------------------------------
 
 export interface OutputsBackendConfigProps {
@@ -592,14 +675,22 @@ export interface OutputsBackendConfigProps {
 
 /** The specialised, editable per-backend config + preset bar for the Outputs panel. */
 export function OutputsBackendConfig({ ctx, backend }: OutputsBackendConfigProps) {
-  // MIDI / OSC / VCV carry a config + preset surface here; synth/particle/editor
+  // MIDI / OSC / VCV / CV carry a config + preset surface here; synth/particle/editor
   // config is rendered by ModeConfig in Drawers. The full-depth BackendAdvanced
   // modal reuses the same per-channel sections.
-  if (backend !== 'midi' && backend !== 'osc' && backend !== 'vcv') return null;
+  if (backend !== 'midi' && backend !== 'osc' && backend !== 'vcv' && backend !== 'cvgate') return null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <PresetBar ctx={ctx} backend={backend} />
-      {backend === 'midi' ? <MidiConfig ctx={ctx} /> : backend === 'osc' ? <OscConfig ctx={ctx} /> : <VcvConfig ctx={ctx} />}
+      {backend === 'midi' ? (
+        <MidiConfig ctx={ctx} />
+      ) : backend === 'osc' ? (
+        <OscConfig ctx={ctx} />
+      ) : backend === 'vcv' ? (
+        <VcvConfig ctx={ctx} />
+      ) : (
+        <CvConfig ctx={ctx} />
+      )}
     </div>
   );
 }

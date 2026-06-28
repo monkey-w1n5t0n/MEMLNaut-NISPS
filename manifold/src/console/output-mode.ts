@@ -1,11 +1,12 @@
 /**
  * output-mode.ts — the TOP dock selector catalogue (operator dock restructure).
  *
- * "Mode" here = the active OUTPUT BACKEND/target. Five options, in order, the
+ * "Mode" here = the active OUTPUT BACKEND/target. Six options, in order, the
  * first the default:
  *   • Particle System (visual)  — DEFAULT
  *   • MIDI
  *   • OSC
+ *   • CV / uSEQ                  — uSEQ CV/gate over USB Web Serial (cvgate backend)
  *   • Built-in Synth             — the synth backend; NEVER the string "C15"
  *   • MEMLNaut Editor            — hardware-connection mode (Web Serial)
  *
@@ -57,6 +58,13 @@ export const OUTPUT_MODES: readonly OutputModeDescriptor[] = [
     description: 'OSC bridge — named paths + physical ranges.',
     audio: false,
     backend: 'osc',
+  },
+  {
+    id: 'cv',
+    label: 'CV / uSEQ',
+    description: 'uSEQ CV/gate over USB serial — 11 CV + 3 gate.',
+    audio: false,
+    backend: 'cvgate',
   },
   {
     id: 'synth',

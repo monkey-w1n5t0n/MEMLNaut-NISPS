@@ -20,6 +20,8 @@ interface SerialPort {
   close(): Promise<void>;
   readonly readable: ReadableStream<Uint8Array> | null;
   readonly writable: WritableStream<Uint8Array> | null;
+  addEventListener?(type: 'connect' | 'disconnect', listener: () => void): void;
+  removeEventListener?(type: 'connect' | 'disconnect', listener: () => void): void;
 }
 
 interface SerialPortRequestOptions {

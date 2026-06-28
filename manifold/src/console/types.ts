@@ -24,7 +24,7 @@ export interface Pin {
  * (operator dock restructure). "Built-in Synth" is the synth backend — the
  * string "C15" must NEVER appear. Particle + Editor are non-audio.
  */
-export type OutputMode = 'particles' | 'midi' | 'osc' | 'synth' | 'editor';
+export type OutputMode = 'particles' | 'midi' | 'osc' | 'cv' | 'synth' | 'editor';
 
 /** Feedback marker plotted on the 2D map at the input location it was given. */
 export interface FeedbackMarker {
@@ -106,6 +106,10 @@ export interface ConsoleCtx {
   setVcvUrl: (u: string) => void;
   vcvSendRaw: boolean;
   setVcvSendRaw: (v: boolean) => void;
+  /** uSEQ CV backend (USB serial): connect a port / flash LEDs / disconnect. */
+  cvConnect: () => void;
+  cvIdentify: () => void;
+  cvDisconnect: () => void;
   /** Replace the whole params array (used when restoring a named preset). */
   setParams: (next: MFParam[]) => void;
 

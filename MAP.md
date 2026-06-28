@@ -26,6 +26,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
   - `settings_view.hpp` — `wire_settings(mode)`: adds on-device settings views to the MEMLNaut display carousel (TFT + rotary encoder). Joystick Dual/Single toggle for the 4-input ("two 2-D joystick") modes — "Single" pins ML input channels 2,3 to neutral via `ModeBase::set_input_pinned` (no net rebuild). Registered in the `.ino` after `addSystemInfoView()`.
 - `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks (Arduino-CLI requires sketch-tree includes; preprocessor refuses `..` in headers).
 - `firmware/README.md` — structure + build instructions.
+- `firmware/useq-celium/` — standalone RP2040 firmware (PlatformIO, Arduino-Pico core) that turns a uSEQ module + CV expander into a USB→CV/gate converter driven by the manifold `cvgate` backend. `shared/protocol.h` is the v2 wire-protocol single source of truth (mirrored by `manifold/src/backends/useq-protocol.ts`); `main/` (USB serial → CV1–3 + GATE1–3, I2C → expander) and `expander/` (I2C slave → CV4–11). Wire spec: `docs/useq-celium/protocol.md`. Restored from the April-2026 "uSEQ-Celium" mode.
 
 ### `playground/` — SolidJS + Vite + TypeScript app
 - `playground/index.html`, `vite.config.ts`, `tsconfig.json`, `package.json` — scaffold. COOP/COEP headers configured.
@@ -63,7 +64,10 @@ anchor + locked decisions) and the `docs/redesign/*-spec.md` set.
 - `manifold/src/dock/` — `OutputControlRow` (off/fixed/live + mute + solo/arm + min/max/curve), `output-state.ts`,
   `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel), `BackendAdvanced.tsx`.
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
-  (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `presets.ts` (named presets), `manager.ts`.
+  (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `vcv-backend.ts` (VCV-over-WS), `cv-backend.ts`
+  (`UseqCvBackend` — uSEQ CV/gate over USB Web Serial, backend id `cvgate`) + `useq-protocol.ts` (v2 wire
+  protocol, mirrors `firmware/useq-celium/shared/protocol.h`; `useq-protocol.test.ts` runs via `bun test`),
+  `particle-backend.ts`, `passthrough-backend.ts`, `presets.ts` (named presets), `manager.ts`.
 - `manifold/src/midi-devices/` — external-synth device templates. `generated/` is codegen output from
   `schemas/midi_devices/` (`MIDI_DEVICES` catalogue + `MIDI_DEVICES_BY_ID`, params by name+CC). The MIDI Outputs
   config (`dock/OutputsBackendConfig.tsx`) reads it for the device picker + param-select that fills the CC table.

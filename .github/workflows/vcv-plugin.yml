@@ -1,0 +1,130 @@
+name: VCV Rack plugin (cross-platform)
+
+# Builds the MEMLNaut Rack 2 plugin for all four supported platforms using the
+# OFFICIAL VCVRack/rack-plugin-toolchain (the same Docker-based cross-builder the
+# VCV Library uses). The toolchain image ships the Linux/MinGW/osxcross cross-
+# compilers and the per-platform Rack SDKs, so every .vcvplugin is reproducible on
+# a single Linux runner — no per-platform native runners, no Apple hardware.
+#
+# Outputs: one <slug>-<version>-<platform>.vcvplugin per platform, uploaded as a
+# workflow artifact, and attached to a GitHub Release when triggered by a tag push
+# (v*). See vcv/DISTRIBUTION.md for the publish-to-/next/vcv flow.
+
+on:
+  push:
+    branches: [main, feat/manifold-mission, feat/vcv-dist]
+    paths:
+      - 'vcv/**'
+      - '.github/workflows/vcv-plugin.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'vcv/**'
+      - '.github/workflows/vcv-plugin.yml'
+  workflow_dispatch:
+
+env:
+  # Pin the official toolchain to a known-good commit (Rack SDK 2.6.6, docker
+  # image version 19). Bump deliberately; never float on master.
+  TOOLCHAIN_REPO: VCVRack/rack-plugin-toolchain
+  TOOLCHAIN_REF: 4fd1318701624051cee54b385343f23d59b4845c
+  TOOLCHAIN_IMAGE_VERSION: '19'
+  PLUGIN_DIR_REL: vcv
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # lin-x64 + win-x64 cross-build with gcc / mingw (no Apple SDK).
+        # mac-x64 + mac-arm64 use osxcross baked into the toolchain image — this
+        # is how plugins are cross-built for macOS WITHOUT Apple hardware. The
+        # license-restricted macOS SDK is fetched only inside the toolchain image
+        # build (never committed to this repo).
+        platform: [lin-x64, win-x64, mac-x64, mac-arm64]
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Checkout rack-plugin-toolchain (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TOOLCHAIN_REPO }}
+          ref: ${{ env.TOOLCHAIN_REF }}
+          path: toolchain
+
+      - name: Cache toolchain Docker image
+        id: img-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/rack-toolchain-image
+          key: rack-toolchain-${{ env.TOOLCHAIN_REF }}-v${{ env.TOOLCHAIN_IMAGE_VERSION }}
+
+      - name: Fetch per-platform Rack SDKs
+        working-directory: toolchain
+        run: make rack-sdk-all
+
+      - name: Load or build toolchain image
+        working-directory: toolchain
+        run: |
+          set -euo pipefail
+          IMG="rack-plugin-toolchain:${TOOLCHAIN_IMAGE_VERSION}"
+          if [ -f /tmp/rack-toolchain-image/image.tar ]; then
+            echo "Loading cached toolchain image $IMG"
+            docker load -i /tmp/rack-toolchain-image/image.tar
+          else
+            echo "Building toolchain image $IMG (one-off; cached for later runs)"
+            # rack-sdk-all already ran; build the cross-toolchain image (mingw +
+            # osxcross). This is the heavy step — cached by TOOLCHAIN_REF.
+            docker build --build-arg JOBS=$(nproc) \
+              --tag "$IMG" . --progress=plain
+            mkdir -p /tmp/rack-toolchain-image
+            docker save "$IMG" -o /tmp/rack-toolchain-image/image.tar
+          fi
+
+      - name: Build .vcvplugin for ${{ matrix.platform }}
+        working-directory: toolchain
+        run: |
+          set -euo pipefail
+          make docker-plugin-build-${{ matrix.platform }} \
+            PLUGIN_DIR="${GITHUB_WORKSPACE}/${PLUGIN_DIR_REL}"
+
+      - name: Collect artifact
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp toolchain/plugin-build/*.vcvplugin out/
+          ls -la out
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MEMLNaut-${{ matrix.platform }}
+          path: out/*.vcvplugin
+          if-no-files-found: error
+
+  release:
+    name: Attach to release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.vcvplugin
+          generate_release_notes: true

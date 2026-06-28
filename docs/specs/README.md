@@ -33,7 +33,7 @@ Files:
 | T3 | `T3-component-design/{core,playground,firmware,backends}.md` | not started |
 | T4 | `T4-implementation/{core,playground,firmware,backends}.md` → beads | not started |
 | — | `00-decisions-log.md` | the interview outcomes that seed these tiers |
-| ref | `slp-workshop-firmware.md` | **stable reference** — SLP-Workshop firmware mode + Jolt / OU-explore gestures (built + merged) |
+| ref | `slp-workshop-firmware.md` | **evolving** — SLP-Workshop: Part I shipped (mode + Jolt / OU-explore gestures), Part II planned (output modes, gate sequences, Manifold config UX) |
 
 ## Audit protocol (why tiers exist)
 

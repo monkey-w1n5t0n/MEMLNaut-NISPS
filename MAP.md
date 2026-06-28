@@ -175,4 +175,4 @@ See `ALIGNMENT.md`.
 - **Index**: none
 - **Skill**: invoke `/specs` to review/maintain/add/navigate.
 
-The corpus is a tiered T0–T4 prescriptive plan ("what we are going to build"); only `README.md` plus a handful of files exist so far. Alongside the tiers it also holds **stable reference specs** for already-built features — e.g. `slp-workshop-firmware.md` (SLP-Workshop firmware mode + the Jolt / OU-explore adaptive-learning gestures). Before changing the behaviour a spec covers, find it via `/specs`; the spec wins by intent — if it's wrong, update it in the same commit as the code.
+The corpus is a tiered T0–T4 prescriptive plan ("what we are going to build"); only `README.md` plus a handful of files exist so far. Alongside the tiers it also holds **feature specs** — e.g. `slp-workshop-firmware.md`, the single SLP-Workshop spec: Part I (shipped) covers the mode + Jolt / OU-explore learning gestures; Part II (planned) covers the output-mode evolution, gate sequences, and Manifold config UX. Before changing the behaviour a spec covers, find it via `/specs`; the spec wins by intent — if it's wrong, update it in the same commit as the code.

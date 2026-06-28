@@ -1,26 +1,34 @@
 ---
-stability: stable
+stability: evolving
 layer: binding
 ---
 
-# SLP-Workshop Firmware & Adaptive-Learning Gestures
+# SLP-Workshop Firmware, Learning Gestures & Output Modes
 
-> Reference spec for the **SLP-Workshop** firmware mode (built for a workshop at
-> Synth Library Portland) and the two adaptive-learning gestures it introduced —
-> **Jolt** (held continuous weight morph) and **OU explore** (Ornstein-Uhlenbeck
-> output walk). Both gestures live in the shared mode base, so they are available
-> to every mode; SLP-Workshop is the mode that surfaces them.
+> The single spec for **SLP-Workshop** (built for a workshop at Synth Library
+> Portland). It has two parts:
 >
-> This describes a feature that is already built and merged. It is a stable
-> reference, not a forward plan: it records what is, and why the load-bearing
-> decisions were made the way they were.
+> - **Part I (§1–8) — shipped & stable.** The `slp_workshop` mode and the two
+>   adaptive-learning gestures it introduced — **Jolt** (held continuous weight
+>   morph) and **OU explore** (Ornstein-Uhlenbeck output walk). These live in the
+>   shared mode base, so every mode gains them; SLP-Workshop is the mode that
+>   surfaces them. Built and merged.
+> - **Part II (§9–13) — planned / evolving.** The output-mode evolution: the
+>   Continuous/Rhythm stream model, gate sequences, and the Manifold-side
+>   configuration UX so firmware and browser stay aligned. **Not implemented
+>   yet** — this part fixes the model and shapes, not the final counts.
 >
-> Provenance: landed on branch `workshop/synth-fw-audit` (commits `4e60d01`
-> core + firmware, `57c9ede` browser controls); merged to `main` at `527b8fc`.
+> The file is marked `evolving` because Part II is still being figured out; treat
+> Part I as the stable baseline and Part II as the agreed direction.
+>
+> Migrated from `docs/slp-workshop/SPEC.md` (folded in 2026-06-28; donor removed).
+> Provenance of Part I: branch `workshop/synth-fw-audit` (commits `4e60d01` core +
+> firmware, `57c9ede` browser controls); merged to `main` at `527b8fc`.
 
 ## Source files
 
 - `nisps/modes/slp_workshop.hpp` — `nisps::modes::SLPWorkshopMode` (mode_id `slp_workshop`); reuses the MEMLCelium engine + MLP shape verbatim.
+- `nisps/engines/memlcelium.hpp` — the shared engine: one `MLP<4,[10,14,18],56>`, 56 outputs split into sequencer + synthesis; exposes `pop_events()`.
 - `nisps/ml/jolt.hpp` — `ml::Jolt`: held-gesture continuous weight morph + post-release LR ramp.
 - `nisps/ml/ou_noise.hpp` — `ml::OUNoise<N>`: Ornstein-Uhlenbeck random walk on the output vector.
 - `nisps/modes/base.hpp` — `nisps::ModeBase` CRTP base; owns `jolt_`/`ou_` and the guarded integration points.
@@ -33,8 +41,11 @@ layer: binding
 - `playground/src/modes/SLPWorkshopMode.tsx`, `playground/src/modes/mode-runtime.ts` — browser controls.
 - `playground/src/ml/jolt.ts`, `playground/src/output/ou-explore.ts` — browser-side gesture math.
 - `tests/cpp/test_mlp_jolt.cpp`, `tests/cpp/test_mlp_ou_noise.cpp`, `tests/cpp/test_mode_learning.cpp`, `tests/cpp/test_mode_concepts.cpp` — anchoring tests.
+- **Part II companions (planned work):** `docs/useq-celium/protocol.md` (CV wire protocol), `manifold/src/backends/` (CV/MIDI output backends), `manifold/src/inputs/` (input layer).
 
 ---
+
+# Part I — Shipped: mode + adaptive-learning gestures
 
 ## 1. Frame
 
@@ -42,7 +53,7 @@ layer: binding
 **Why:** the workshop wanted its own identity (preset directory, display name) and a UI that foregrounds the two adaptive-learning gestures, but no new synthesis behaviour — so the synthesis mapping is byte-for-byte MEMLCelium's, and only the mode wrapper, identity, and surfaced controls differ.
 
 1.2 The synthesis mapping in SLP-Workshop **MUST** stay identical to `MEMLCeliumMode` for the same seed and inputs.
-**Why:** the two adaptive-learning gestures live in the shared base (§2), not in this mode; SLP-Workshop adds only identity and control surfacing. A test asserts SLP-Workshop ≡ MEMLCelium (same seed, identical audio) with the new features off.
+**Why:** the two adaptive-learning gestures live in the shared base (§5), not in this mode; SLP-Workshop adds only identity and control surfacing. A test asserts SLP-Workshop ≡ MEMLCelium (same seed, identical audio) with the new features off.
 
 1.3 Firmware compiles exactly one mode at a time (`MEMLNAUT_MODE_TYPE`), so the per-mode code cost of an extra mode is negligible.
 **Why:** modes are selected at compile time, not linked together; an unused mode contributes nothing to the firmware image.
@@ -149,9 +160,105 @@ layer: binding
 
 ---
 
+# Part II — Planned: output modes, gate sequences & config UX
+
+> **Status: planned, not implemented.** This part fixes the *model and shapes*, not
+> the final counts. **Locked operator decisions (2026-06-28):** (1) hardware keeps
+> exactly **2** ratio sequences (memlcelium verbatim); the browser may instantiate
+> as many as the user wants. (2) The 3 uSEQ gate-only jacks make gates **optional**
+> — pure CV is valid; if doing gates at all, use those 3 first, then convert CV
+> jacks. (3) Split-net input is **per-input-channel** engine routing (each
+> pad/stick/CC tagged Continuous or Rhythm). (4) **Internal BPM clock** now;
+> external-MIDI-clock sync is a later nicety.
+
+## 9. Ground truth: what `memlcelium` is
+
+9.1 `memlcelium` is **one** MLP (`MLP<4, [10,14,18], 56>`), not two. Its 56 outputs split: `[0..13]` **sequencer** (2 sequences × 7 ratio-seq params), `[14..55]` **synthesis** (42 continuous params, Voice 0 + Voice 1). The single net produces both the continuous values and the RatioSeq params; an internal RatioSeq tick turns the seq params into note triggers, exposed via `pop_events()`.
+**Why:** the planned output modes are *slices/reshapes of this one net*, and the gate stream already exists inside the engine — so gate outputs are a routing/consumption feature, not new DSP. (A true two-MLP-head "split" topology is genuinely different and therefore browser-only; §11.2.)
+
+9.2 The 7 ratio-seq params per track are: `ratios[0..2]` (3), `phasor_mul` (1), `phase_off` (1), `amp_ratios[0..1]` (2).
+**Why:** firmware parity. (The April browser uSEQ-Celium used 8, adding a pulse-width param; pulse width is an optional 8th later — §13.)
+
+---
+
+## 10. The unifying model: two output streams
+
+10.1 Everything collapses to two output **streams**, each driven by an MLP head:
+
+| Stream         | MLP outputs                      | Generates          | Routes to             |
+|----------------|----------------------------------|--------------------|-----------------------|
+| **Continuous** | 1 value per channel              | smooth 0..1 values | MIDI CC / CV jack     |
+| **Rhythm**     | 7 params per gate-sequence track | clock-driven gates | MIDI note / gate jack |
+
+A **mode** is just *which streams are active* and *whether they share a network*.
+
+10.2 The Rhythm stream **SHOULD** generate gates via RatioSeq, per track per control tick: (1) a shared internal-BPM clock advances a bar phasor; (2) `seq_phasor = (bar_phasor × phasor_mul + phase_off) mod 1`; (3) `ratio_seq_3(seq_phasor, ratios, pw=0.5)` → boolean gate; (4) `ratio_seq_2(amp_ratios)` → 2-level velocity (127/64); (5) rising edge → note-on / gate-high, falling edge → note-off / gate-low.
+**Why:** a gate is **clock + learned pattern**, not a threshold on a continuous value — this is what makes Rhythm a distinct stream and why it needs its own 7 params per track rather than one output per gate. Defaults (pulse-width 0.5, 2-level velocity) match firmware.
+
+10.3 Where RatioSeq runs (browser): when the active engine *is* the memlcelium/SLP WASM engine, consume `pop_events()`; for CV/MIDI modes that don't run that audio engine, a small **TS RatioSeq** fed by the Rhythm MLP's 7-params/track drives the gates.
+**Why:** the gate generator must work whether or not the WASM audio engine is the active backend.
+
+---
+
+## 11. Modes
+
+11.1 **Firmware (compile-time, one chosen at build)** **MUST** always use exactly 2 ratio sequences (memlcelium verbatim). Three slices of the `slp_workshop` mode:
+
+| Mode                                   | Streams           | Nets | MLP output_size           |
+|----------------------------------------|-------------------|------|---------------------------|
+| Continuous only                        | Continuous        | 1    | continuous params only    |
+| Continuous & Rhythm (= memlcelium)     | both, **shared**  | 1    | 14 seq + 42 synth = 56    |
+| Rhythm only                            | Rhythm            | 1    | 2 × 7 = 14 seq params     |
+
+**Why:** the firmware does not vary sequence count (locked decision); exact output_size counts for the sliced modes are the firmware agent's call — this spec fixes the shapes.
+
+11.2 **Browser (Manifold, dynamic, switchable live)** **MAY** offer the same three plus a **split-nets** variant (a separate Continuous MLP and Rhythm MLP), with **as many ratio sequences as the user wants** (each gate sequence = its own 7-param track; the net reshapes to suit). The browser mode is **implied by the Outputs config** (§12), not a separate picker: continuous>0 & gates=0 ⇒ Continuous-only; gates>0 & Shared net ⇒ hybrid-shared; gates>0 & Separate net ⇒ hybrid-split; continuous=0 ⇒ Rhythm-only.
+**Why:** the browser has the compute for two MLP heads and dynamic reshape; making the mode a consequence of the config avoids a redundant mode dropdown. Shared-net `output_size = continuous + 7 × n_gates` must respect the 126-output WASM cap (~16 gates max shared); a separate Rhythm net is sized independently and scales further.
+
+---
+
+## 12. Configuring gate sequences (Manifold, CV **and** MIDI)
+
+12.1 Two output kinds: **Continuous** → CC (MIDI) / CV jack (CV); **Gate sequence** → note (MIDI) / gate jack (CV), each = one RatioSeq track.
+
+12.2 **MIDI mode** **SHOULD** expose two independent counts — Continuous (CC) and Gate-sequences — capped by the model output budget.
+
+12.3 **CV mode** hardware is fixed (11 PWM/CV-capable jacks + 3 digital gate-only jacks), so the two counts are **linked** and gates are optional. The rule **MUST** be `gates ∈ [0, 14]`; `CV = gates ≤ 3 ? 11 : 14 − gates`.
+**Why:** the first 3 gate sequences land on the dedicated gate-only jacks and cost no CV (0→11 CV, 3→11 CV, 6→8 CV, 14→0 CV); converting CV jacks only begins past 3. Pure CV (0 gates) is valid.
+
+12.4 Wire-protocol impact **MUST** be none: a CV jack acting as a gate carries 0/full (or the 2-level velocity) in its `u16` slot; the 3 dedicated gate bits stay digital pins (`docs/useq-celium/protocol.md`). `CvSpec` extends so PWM jacks can also be gate targets.
+**Why:** reusing the existing protocol slots avoids a protocol revision for a routing feature.
+
+12.5 The **Rhythm network** toggle (shown only when gate sequences > 0) selects **Separate** (default) or **Shared**. Separate gives the Rhythm stream its own MLP and routes each input channel to one engine, automatically by source kind: XY pad → a second on-screen pad (pad 1 → Continuous, pad 2 → Rhythm); gamepad → double-stick (left → Continuous, right → Rhythm); MIDI controller → per-CC `Continuous | Rhythm` toggle. Shared uses one MLP for both streams (all inputs feed it; the hardware-parity hybrid).
+**Why:** the decision surface stays **two numbers + one toggle** — the second pad / double-stick / per-CC tag is a *consequence* of Separate, surfaced inline, reusing the existing input layer (`InputSource.axisCount()` / `axisLabels()`).
+
+12.6 `BackendAdvanced` (full-depth modal) **MAY** override per-output defaults: which model output drives each CC/CV; which rhythm track drives each note/gate; gate threshold; MIDI note#/channel; CV polarity.
+**Why:** identity defaults cover the common case, so advanced overrides stay optional.
+
+---
+
+## 13. Proposed UI (the "simple" target)
+
+13.1 The Outputs panel **SHOULD** read, top to bottom: (1) **Output kinds** — `Continuous [n]` + `Gate sequences [n]` (MIDI) or the linked `Gate sequences 0–14` slider with a live `CV n · Gate n` readout (CV); (2) the **Rhythm network** toggle `( Shared | Separate )` plus its inline input surface (2nd pad / double-stick / per-CC tags), shown only when gate sequences > 0; (3) the existing per-output rows (off/fixed/live, mute, arm, min/max/curve) and per-backend specifics (CC#, CV jack, note#).
+**Why:** the counts + toggle *are* the mode, so no mode dropdown is needed for the rhythm/continuous split.
+
+---
+
 ## Open / Deferred
+
+Part I (shipped) caveats:
 
 - **Browser↔firmware noise parity is intentionally NOT guaranteed.** `playground/src/ml/jolt.ts` and `playground/src/output/ou-explore.ts` reimplement the gesture math in TypeScript (driving weights via the existing `nisps_ml_get/set_weights` bindings) rather than calling C++ `ml::Jolt` / `ml::OUNoise` through WASM, and they use `Math.random()` not the deterministic `Rng`. Acceptable for stochastic exploration aids, but the noise itself will not be bit-identical across firmware and browser.
 - **The post-release LR ramp (§3.4) is not ported to the browser.** The browser SLP mode trains only on explicit gestures, so there is no resumed continuous trainer to ease back in.
 - **Verified in the dev environment:** C++ host tests (`tests/cpp/test_mlp_jolt.cpp`, `test_mlp_ou_noise.cpp`, `test_mode_learning.cpp`, `test_mode_concepts.cpp`), lint, WASM build, native↔WASM parity, codegen golden, playground typecheck.
-- **NOT verifiable in the dev environment (hardware/toolchain-bound; corresponds to verification chokepoints A/B):** firmware compile (no arduino-cli / submodules), Playwright e2e, on-hardware audio. To close: run `scripts/build-firmware.sh SLPWorkshop`, then flash on the RP2350.
+- **NOT verifiable in the dev environment (hardware/toolchain-bound; verification chokepoints A/B):** firmware compile (no arduino-cli / submodules), Playwright e2e, on-hardware audio. To close: run `scripts/build-firmware.sh SLPWorkshop`, then flash on the RP2350.
+
+Part II (planned) build deltas, when we proceed:
+
+- **Manifold engine:** today one MLP head on the spine. "Separate" needs a second Rhythm MLP head + per-input-axis engine routing (engine + input-layer scope).
+- **TS RatioSeq:** a browser-side RatioSeq (or a `pop_events()` bridge) to turn Rhythm-MLP params into gate/note events for the CV & MIDI backends (2 sequences on firmware; arbitrary count in the browser).
+- **MIDI backend:** gate sequences → note on/off (it currently sends CC only).
+- **CvSpec:** allow PWM jacks (`cv1..cv11`) to be gate targets (incl. velocity-CV), with the 3 digital pins as the first-used gate jacks.
+- **Reshape:** shared-net `output_size = continuous + 7 × gate_sequences` (≤126 WASM cap) — confirm against the reshape / reset-on-reshape flow.
+- **Firmware output_size** for the "Continuous only" / "Rhythm only" slices of `slp_workshop` — the firmware agent's call; this spec fixes the shapes, not exact counts.
+- **Deferred niceties (explicitly not blocking):** external-MIDI-clock sync; per-track pulse-width (gate length, the optional 8th ratio-seq param); continuous velocity/accent beyond the 127/64 two-level.

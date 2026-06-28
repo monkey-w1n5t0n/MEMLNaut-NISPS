@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-EMCC="${EMCC:-/usr/lib/emscripten/emcc}"
+EMCC="${EMCC:-$(command -v emcc || echo /usr/lib/emscripten/emcc)}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/playground/public"
 SRC="$ROOT/nisps/wasm/bindings.cpp"
@@ -38,6 +38,15 @@ EXPORTED_FUNCS='[
   "_nisps_ml_clear_examples","_nisps_ml_example_count",
   "_nisps_ml_weight_count","_nisps_ml_get_weights","_nisps_ml_set_weights",
   "_nisps_ml_draw_weights","_nisps_ml_move_weights",
+  "_nisps_ml_feedback_set_mode","_nisps_ml_feedback_get_mode",
+  "_nisps_ml_feedback_exploring","_nisps_ml_feedback_learning_paused",
+  "_nisps_ml_feedback_set_focus","_nisps_ml_feedback_down",
+  "_nisps_ml_feedback_up","_nisps_ml_feedback_drag","_nisps_ml_feedback_static_output",
+  "_nisps_ml_feedback_enter_explore","_nisps_ml_feedback_exit_explore",
+  "_nisps_ml_feedback_reroll","_nisps_ml_feedback_nudge","_nisps_ml_feedback_undo",
+  "_nisps_ml_feedback_like","_nisps_ml_feedback_commit_place","_nisps_ml_feedback_cancel_place",
+  "_nisps_ml_feedback_placing","_nisps_ml_feedback_state","_nisps_ml_feedback_undo_depth",
+  "_nisps_ml_feedback_placed_output",
   "_nisps_ml_get_layer_stats","_nisps_ml_describe",
   "_nisps_engine_create","_nisps_engine_destroy",
   "_nisps_engine_set_params","_nisps_engine_process_block"

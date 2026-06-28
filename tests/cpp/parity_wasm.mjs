@@ -38,7 +38,7 @@ const __dirname  = dirname(__filename);
 const repoRoot   = resolve(__dirname, '..', '..');
 
 const MAGIC   = 0x5450524e; // 'NPRT'
-const VERSION = 1;
+const VERSION = 3; // v3 adds stage 5d (ExploreAndPlace lifecycle)
 
 const SEED         = 42 >>> 0;
 const INPUT_X      = 0.25;
@@ -101,6 +101,17 @@ function bind(Module) {
     getWeights:  cwrap('nisps_ml_get_weights',  null,     ['number','number']),
     drawWeights: cwrap('nisps_ml_draw_weights', null,     ['number','number']),
     moveWeights: cwrap('nisps_ml_move_weights', null,     ['number','number','number','number']),
+    feedbackSetMode:      cwrap('nisps_ml_feedback_set_mode',      null,     ['number','number']),
+    feedbackDown:         cwrap('nisps_ml_feedback_down',          'number', ['number','number','number','number','number']),
+    feedbackUp:           cwrap('nisps_ml_feedback_up',            'number', ['number']),
+    feedbackStaticOutput: cwrap('nisps_ml_feedback_static_output', 'number', ['number','number']),
+    feedbackEnterExplore: cwrap('nisps_ml_feedback_enter_explore', null,     ['number','number']),
+    feedbackReroll:       cwrap('nisps_ml_feedback_reroll',        null,     ['number','number']),
+    feedbackNudge:        cwrap('nisps_ml_feedback_nudge',         null,     ['number','number']),
+    feedbackUndo:         cwrap('nisps_ml_feedback_undo',          null,     ['number']),
+    feedbackLike:         cwrap('nisps_ml_feedback_like',          null,     ['number']),
+    feedbackCommitPlace:  cwrap('nisps_ml_feedback_commit_place',  null,     ['number']),
+    feedbackPlacedOutput: cwrap('nisps_ml_feedback_placed_output', 'number', ['number','number']),
     describe:    cwrap('nisps_ml_describe',     null,     ['number']),
 
     engineCreate:    cwrap('nisps_engine_create', 'number', ['string','number']),
@@ -235,7 +246,7 @@ async function main() {
   api.process(ml);
   const outsStage2 = getOutputsCopy(api, ml, N_OUT);
 
-  api.destroy(ml);
+  // (ml stays alive through stage 5 below; destroyed after the feedback stage.)
 
   // --- Stage 3: PAFSynth ---
   // PAFSynth has 33 params per param_count() in nisps/engines/paf_synth.hpp.
@@ -243,6 +254,72 @@ async function main() {
 
   // --- Stage 4: ChannelStrip (24 params) ---
   const [csL, csR] = runEngine(api, 'channel_strip', 24, 0.25, SYNTH_FRAMES);
+
+  // --- Stage 5: feedback ("Down Action": RandomiseOutputs + RandomiseMlp) ---
+  // Mirrors parity_check.cpp stage 5. The controller is seeded inside the WASM
+  // MLHandle as (seed XOR salt), matching the native side. ml is untouched by
+  // stages 3-4, so its RNG state here equals post-stage-2.
+  const FB_RANDOUT = 1;
+  const FB_RANDMLP = 2;
+  const feedbackFloats = [];
+  const fbBuf = api.malloc(N_OUT * 4);
+  api.feedbackSetMode(ml, FB_RANDOUT);
+  api.feedbackDown(ml, 0, 0.1, 0.5, 0);  // enter
+  api.feedbackStaticOutput(ml, fbBuf);
+  for (const v of new Float32Array(api.HEAPF32.buffer, fbBuf, N_OUT)) feedbackFloats.push(v);
+  api.feedbackDown(ml, 0, 0.1, 0.5, 0);  // re-roll
+  api.feedbackStaticOutput(ml, fbBuf);
+  for (const v of new Float32Array(api.HEAPF32.buffer, fbBuf, N_OUT)) feedbackFloats.push(v);
+  api.free(fbBuf);
+  api.feedbackUp(ml);                    // commit (no weight change)
+
+  api.feedbackSetMode(ml, FB_RANDMLP);
+  api.feedbackDown(ml, 0, 0.1, 0.5, 0);  // enter → randomise temp net
+  {
+    const tempW = getWeightsCopy(api, ml);
+    for (const idx of PROBE_IDX) feedbackFloats.push(idx < tempW.length ? tempW[idx] : 0);
+  }
+  api.feedbackUp(ml);                    // commit → restore original net
+  {
+    const restoredW = getWeightsCopy(api, ml);
+    for (const idx of PROBE_IDX) feedbackFloats.push(idx < restoredW.length ? restoredW[idx] : 0);
+  }
+
+  // --- Stage 5d: ExploreAndPlace lifecycle ---
+  // Reuses the single MLHandle.feedback controller (mode → ExploreAndPlace) so
+  // its RNG state matches native `fb` (both drained identical RandomiseOutputs
+  // draws). enter → reroll → nudge → undo → place → commit.
+  const FB_EXPLORE_PLACE = 3;
+  api.feedbackSetMode(ml, FB_EXPLORE_PLACE);
+  api.feedbackEnterExplore(ml, 0.5);     // snapshot + randomise scratchpad
+  api.feedbackReroll(ml, 0.5);           // scratchpad op
+  api.feedbackNudge(ml, 0.05);           // controller-Rng perturb
+  {
+    const scratchW = getWeightsCopy(api, ml);
+    for (const idx of PROBE_IDX) feedbackFloats.push(idx < scratchW.length ? scratchW[idx] : 0);
+  }
+  api.feedbackUndo(ml);                  // pop nudge
+  api.setInput(ml, 0, INPUT_X);
+  api.setInput(ml, 1, INPUT_Y);
+  api.process(ml);
+  api.feedbackLike(ml);                  // begin place: freeze scratchpad output
+  {
+    const placedBuf = api.malloc(N_OUT * 4);
+    api.feedbackPlacedOutput(ml, placedBuf);
+    for (const v of new Float32Array(api.HEAPF32.buffer, placedBuf, N_OUT)) feedbackFloats.push(v);
+    api.free(placedBuf);
+  }
+  api.feedbackCommitPlace(ml);           // restore real net
+  {
+    const restoredW = getWeightsCopy(api, ml);
+    for (const idx of PROBE_IDX) feedbackFloats.push(idx < restoredW.length ? restoredW[idx] : 0);
+    const committedBuf = api.malloc(N_OUT * 4);
+    api.feedbackPlacedOutput(ml, committedBuf);
+    for (const v of new Float32Array(api.HEAPF32.buffer, committedBuf, N_OUT)) feedbackFloats.push(v);
+    api.free(committedBuf);
+  }
+
+  api.destroy(ml);
 
   // --- Build payload, write blob ---
   const payload = [];
@@ -252,6 +329,7 @@ async function main() {
   payload.push(finalLoss);
   payload.push(pafL, pafR);
   payload.push(csL,  csR);
+  for (const v of feedbackFloats) payload.push(v);
 
   // Sanity: all finite.
   for (let i = 0; i < payload.length; ++i) {

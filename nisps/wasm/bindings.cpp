@@ -65,6 +65,7 @@
 
 // ML.
 #include "../core/types.hpp"
+#include "../ml/feedback.hpp"
 #include "../ml/mlp.hpp"
 #include "../ml/stats.hpp"
 
@@ -93,11 +94,17 @@ constexpr std::size_t kDefaultOutputs = DefaultMLP::kOutput;
 // the opaque pointer to JS.
 struct MLHandle {
     DefaultMLP mlp;
+    // "Down Action" negative-feedback controller (Avoid/RandomiseOutputs/
+    // RandomiseMlp). Seeded off the MLP seed XOR a salt so its static-output
+    // RNG stream is independent of the MLP's inference/move RNG.
+    nisps::ml::FeedbackController<DefaultMLP> feedback;
     // Buffers used to bridge JS → C++:
     std::array<float, kDefaultInputs>  input_scratch{};
     std::array<float, kDefaultOutputs> output_scratch{};
     // Stats buffer fed back to JS via get_layer_stats.
     std::array<float, DefaultMLP::kNumLayers * 4u> stats_scratch{};
+    // Static-output buffer for the RandomiseOutputs bypass path.
+    std::array<float, kDefaultOutputs> feedback_static_scratch{};
     // Used by infer_batch with arbitrary N — must exceed any reasonable
     // request from the heatmap. 256x256 = 65536 max points → too many in
     // practice. We cap batch size at 4096 here; callers must split larger
@@ -105,7 +112,8 @@ struct MLHandle {
     static constexpr std::size_t kMaxBatch = 4096u;
     std::array<float, kMaxBatch * kDefaultOutputs> batch_out_scratch{};
 
-    explicit MLHandle(std::uint64_t seed) noexcept : mlp(seed) {}
+    explicit MLHandle(std::uint64_t seed) noexcept
+        : mlp(seed), feedback(seed ^ 0xFEEDBACC0DEull) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -425,6 +433,221 @@ void nisps_ml_move_weights(void* ml, float speed, float spread,
         mask = std::span<const std::uint8_t>(output_pin_mask, kDefaultOutputs);
     }
     h->mlp.move_weights(speed, spread, mask);
+}
+
+// ---------------------------------------------------------------------------
+// ML feedback — the "Down Action" state machine (Avoid / RandomiseOutputs /
+// RandomiseMlp). The controller decides WHAT transition happened (returns a
+// FeedbackAction int); JS performs the side effect (store example, grow noise,
+// train). See nisps/ml/feedback.hpp. Mode ints: 0=Avoid 1=RandOut 2=RandMlp.
+// Action ints mirror nisps::ml::FeedbackAction.
+//
+// CALLER CONTRACT (commit ordering — important):
+//   On a "keep" (up) or drag-commit while exploring RandomiseMlp, the controller
+//   RESTORES the original net before returning. The output the user is hearing
+//   comes from the *temporary* (randomised) net, so you MUST capture the current
+//   output (nisps_ml_outputs / nisps_ml_feedback_static_output) BEFORE calling
+//   nisps_ml_feedback_up / _drag, then store THAT captured vector as the +1
+//   example. Reading the output AFTER the call yields the restored (wrong) net.
+//   nisps_ml_feedback_down with current_out should pass the full kDefaultOutputs
+//   live vector (RandomiseOutputs freezes unfocused dims at those values).
+// ---------------------------------------------------------------------------
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_set_mode(void* ml, int mode) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    nisps::ml::FeedbackMode m = nisps::ml::FeedbackMode::Avoid;
+    if (mode == 1) m = nisps::ml::FeedbackMode::RandomiseOutputs;
+    else if (mode == 2) m = nisps::ml::FeedbackMode::RandomiseMlp;
+    else if (mode == 3) m = nisps::ml::FeedbackMode::ExploreAndPlace;
+    h->feedback.set_mode(m, h->mlp);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_get_mode(void* ml) {
+    if (!ml) return 0;
+    return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.mode());
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_exploring(void* ml) {
+    if (!ml) return 0;
+    return static_cast<MLHandle*>(ml)->feedback.exploring() ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_learning_paused(void* ml) {
+    if (!ml) return 0;
+    return static_cast<MLHandle*>(ml)->feedback.learning_paused() ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_set_focus(void* ml, const uint8_t* mask, int n) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    if (!mask || n <= 0) {
+        h->feedback.clear_focus_mask();
+        return;
+    }
+    h->feedback.set_focus_mask(
+        std::span<const std::uint8_t>(mask, static_cast<std::size_t>(n)));
+}
+
+// current_out = kDefaultOutputs floats the user is hearing (may be null).
+// pin_mask may be null. Returns the FeedbackAction int.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_down(void* ml, const float* current_out,
+                           float speed, float spread, const uint8_t* pin_mask) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    std::span<const float> out;
+    if (current_out) out = std::span<const float>(current_out, kDefaultOutputs);
+    std::span<const std::uint8_t> mask;
+    if (pin_mask) mask = std::span<const std::uint8_t>(pin_mask, kDefaultOutputs);
+    return static_cast<int>(h->feedback.on_down(h->mlp, out, speed, spread, mask));
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_up(void* ml) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    return static_cast<int>(h->feedback.on_up(h->mlp));
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_drag(void* ml) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    return static_cast<int>(h->feedback.on_drag(h->mlp));
+}
+
+// If returns 1, `out` (kDefaultOutputs floats) holds the static bypass vector
+// and the caller should NOT call nisps_ml_process(); if 0, run process().
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_static_output(void* ml, float* out) {
+    if (!ml || !out) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    const bool bypass =
+        h->feedback.static_output(std::span<float>(h->feedback_static_scratch));
+    if (bypass) {
+        std::memcpy(out, h->feedback_static_scratch.data(),
+                    kDefaultOutputs * sizeof(float));
+    }
+    return bypass ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// ML feedback — ExploreAndPlace lifecycle (Idle → Exploring → Placing → Idle).
+// Granular transitions so the SAME shared core drives both the browser (which
+// also uses on_down/on_up via _down/_up) and firmware (which maps buttons to
+// these directly). Set mode 3 (ExploreAndPlace) via nisps_ml_feedback_set_mode.
+//
+// CALLER CONTRACT (commit ordering): on _commit_place the controller restores
+// the REAL net; the caller then reads nisps_ml_feedback_committed_output and
+// adds it as the +1 example label at the chosen input, then trains.
+// ---------------------------------------------------------------------------
+
+// Idle→Exploring: snapshot the real net, randomise a scratchpad.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_enter_explore(void* ml, float spread) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.enter_explore(h->mlp, spread);
+}
+
+// Exploring→Idle: restore the real net, discard scratchpad.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_exit_explore(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.exit_explore(h->mlp);
+}
+
+// Exploring scratchpad op: re-randomise.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_reroll(void* ml, float spread) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.reroll(h->mlp, spread);
+}
+
+// Exploring scratchpad op: bounded nudge (amount = noise stddev, e.g. 0.05).
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_nudge(void* ml, float amount) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.nudge(h->mlp, amount);
+}
+
+// Exploring scratchpad op: undo last reroll/nudge.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_undo(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.undo(h->mlp);
+}
+
+// Exploring→Placing: freeze the scratchpad output at its CURRENT input.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_like(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.begin_place(h->mlp);
+}
+
+// Placing→Idle: restore the real net. Caller then reads committed_output and
+// stores the +1 example at the chosen input.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_commit_place(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.commit_place(h->mlp);
+}
+
+// Placing→Exploring: back out of placing (no store).
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_cancel_place(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->feedback.cancel_place();
+}
+
+// 1 if currently Placing (audition is the frozen vector), else 0.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_placing(void* ml) {
+    if (!ml) return 0;
+    return static_cast<MLHandle*>(ml)->feedback.placing() ? 1 : 0;
+}
+
+// ExploreState int: 0=Idle 1=Exploring 2=Placing.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_state(void* ml) {
+    if (!ml) return 0;
+    return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.explore_state());
+}
+
+// Scratchpad undo-ring depth currently available to pop.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_undo_depth(void* ml) {
+    if (!ml) return 0;
+    return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.undo_depth());
+}
+
+// Writes the committed/placed output vector (kDefaultOutputs floats) into `out`.
+// Returns 1 if a vector was written (placing OR a fresh commit), else 0. Reads
+// committed_output() (valid post-commit) falling back to placed_output() (while
+// placing) so the caller can grab the label either before or after commit.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_placed_output(void* ml, float* out) {
+    if (!ml || !out) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    std::span<const float> v = h->feedback.committed_output();
+    if (v.empty()) v = h->feedback.placed_output();
+    if (v.empty()) return 0;
+    const std::size_t n = (v.size() < kDefaultOutputs) ? v.size() : kDefaultOutputs;
+    std::memcpy(out, v.data(), n * sizeof(float));
+    return 1;
 }
 
 EMSCRIPTEN_KEEPALIVE

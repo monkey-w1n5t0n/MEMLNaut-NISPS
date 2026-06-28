@@ -56,6 +56,7 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mlp_training.cpp
         ${NISPS_TEST_DIR}/test_mlp_loss.cpp
         ${NISPS_TEST_DIR}/test_mlp_rl.cpp
+        ${NISPS_TEST_DIR}/test_mlp_feedback.cpp
         ${NISPS_TEST_DIR}/test_mlp_serialize.cpp
     )
     target_link_libraries(nisps_core_tests PRIVATE nisps_core)

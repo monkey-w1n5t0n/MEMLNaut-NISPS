@@ -16,7 +16,7 @@
 import { readFile } from 'node:fs/promises';
 
 const MAGIC   = 0x5450524e;
-const VERSION = 1;
+const VERSION = 3;
 const DEFAULT_TOL = 1e-5;
 
 // Layout for context in error messages — must match parity_check.cpp / parity_wasm.mjs.
@@ -27,6 +27,19 @@ const SECTIONS = [
   { name: 'final_loss',      count: 1 },
   { name: 'paf_synth_means', count: 2 },
   { name: 'channel_strip_means', count: 2 },
+  // Stage 5 (feedback): 126 enter-static + 126 reroll-static + 12 temp-net
+  // weight probes + 12 restored-net weight probes.
+  { name: 'feedback_randout_enter',  count: 126 },
+  { name: 'feedback_randout_reroll', count: 126 },
+  { name: 'feedback_randmlp_temp',   count: 12 },
+  { name: 'feedback_randmlp_restored', count: 12 },
+  // Stage 5d (ExploreAndPlace): 12 scratchpad-net probes (post enter/reroll/
+  // nudge) + 126 frozen placed output + 12 restored-net probes + 126 committed
+  // output.
+  { name: 'feedback_ep_scratch',    count: 12 },
+  { name: 'feedback_ep_placed',     count: 126 },
+  { name: 'feedback_ep_restored',   count: 12 },
+  { name: 'feedback_ep_committed',  count: 126 },
 ];
 
 async function readBlob(path) {

@@ -50,7 +50,9 @@ test('engine loads, spine propagates, console renders', async ({ page }) => {
   // 4. The convertible Console rendered (assert on the dock drawer rail, which
   //    is always present — the old "MEMLNaut" wordmark only shows outside
   //    Particle mode now that the particle top bar is a heatmap strip).
-  await expect(page.getByText('Learning')).toBeVisible();
+  //    Drawers are closed by default, so assert on the rail button's title
+  //    rather than the (hidden) drawer-header text.
+  await expect(page.getByTitle('Learning')).toBeVisible();
 
   // 5. No "C15" anywhere in the rendered UI.
   const body = await page.evaluate(() => document.body.innerText);

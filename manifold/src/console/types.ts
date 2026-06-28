@@ -43,7 +43,7 @@ export interface Snapshot {
 }
 
 export type DrawerKey = 'learn' | 'inputs' | 'route' | 'settings' | 'help';
-export type DrawerDepth = 'peek' | 'expand' | 'full';
+export type DrawerDepth = 'condensed' | 'expanded';
 export type Focus = 'in' | 'split' | 'out' | 'composite';
 
 export interface Axes {

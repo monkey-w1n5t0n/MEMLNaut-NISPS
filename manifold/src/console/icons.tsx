@@ -130,6 +130,22 @@ export function HelpIcon({ size = 18, style }: IconProps) {
   );
 }
 
+/** Dice — explore / re-roll into a scratchpad (a die showing five pips). */
+export function DiceIcon({ size = 22, style }: IconProps) {
+  return svg(
+    size,
+    style,
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none" />
+    </>,
+  );
+}
+
 /** Close (✕). */
 export function CloseIcon({ size = 14, style }: IconProps) {
   return svg(size, style, <path d="M6 6l12 12M18 6 6 18" />);

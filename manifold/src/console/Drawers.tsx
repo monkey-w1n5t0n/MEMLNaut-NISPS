@@ -1,6 +1,6 @@
 /**
  * Console — the FIVE real dock drawers (operator dock restructure). Each renderer
- * takes (ctx, depth); what shows is gated by depth (peek | expand | full):
+ * takes (ctx, depth); what shows is gated by depth (condensed | expanded):
  *
  *   learn    — Learning : feedback-mode selector, solo/arm chooser, live params
  *   inputs   — Inputs   : input source
@@ -162,13 +162,13 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
 
       <SectionLabel>Down action · feedback mode</SectionLabel>
       <Segmented value={ctx.feedbackMode} onChange={ctx.setFeedbackMode} options={FEEDBACK_OPTS} />
-      {depth !== 'peek' && (
+      {depth === 'expanded' && (
         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           {FEEDBACK_DESC[ctx.feedbackMode]}
         </p>
       )}
 
-      {depth !== 'peek' && (
+      {depth === 'expanded' && (
         <>
           <SectionLabel>Solo / arm scope</SectionLabel>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -204,7 +204,7 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         </>
       )}
 
-      {depth === 'full' && (
+      {depth === 'expanded' && (
         <>
           <SectionLabel>Feedback lab</SectionLabel>
           <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
@@ -339,21 +339,21 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
 
       <SectionLabel>Input source</SectionLabel>
       <Segmented value={inp.inputMode} onChange={inp.setInputMode} options={INPUT_MODE_OPTS} />
-      {active && depth !== 'peek' && (
+      {active && depth === 'expanded' && (
         <span style={{ fontSize: 9, color: STATUS_TONE[active.status.state] ?? 'var(--fg-dim)' }}>
           {active.status.message}
         </span>
       )}
 
       {/* ---- Internal (XY pad / manifold) ---- */}
-      {inp.inputMode === 'internal' && depth !== 'peek' && (
+      {inp.inputMode === 'internal' && depth === 'expanded' && (
         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           Drag the on-screen manifold / XY pad. Two axes feed the net directly — this is the default.
         </p>
       )}
 
       {/* ---- Game Controller ---- */}
-      {inp.inputMode === 'gamepad' && depth !== 'peek' && (
+      {inp.inputMode === 'gamepad' && depth === 'expanded' && (
         <>
           <SectionLabel>Sticks</SectionLabel>
           <Segmented
@@ -384,7 +384,7 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       )}
 
       {/* ---- MIDI ---- */}
-      {inp.inputMode === 'midi' && depth !== 'peek' && (
+      {inp.inputMode === 'midi' && depth === 'expanded' && (
         <>
           <SectionLabel>Device</SectionLabel>
           {inp.midiInputs.length === 0 ? (
@@ -466,7 +466,7 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       )}
 
       {/* ---- Reshape note (only when >2 axes feed the fixed WASM head) ---- */}
-      {reshaping && depth !== 'peek' && (
+      {reshaping && depth === 'expanded' && (
         <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           {/* TODO(workstream F, docs/redesign/inputs-spec.md — "multiple WASM modules +
               warm-start"): give every axis its own genuine input dimension by (re)loading a
@@ -509,7 +509,7 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
             <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>audio starts on the play gesture</span>
           </div>
           <Slider label="master volume" value={ctx.volume} min={0} max={1} step={0.01} onChange={ctx.setVolume} />
-          {depth !== 'peek' && (
+          {depth === 'expanded' && (
             <>
               <SectionLabel>Tempo</SectionLabel>
               <Slider label="bpm" value={ctx.bpm} min={40} max={220} step={1} onChange={ctx.setBpm} />
@@ -530,7 +530,7 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
         </>
       );
     case 'particles':
-      return depth !== 'peek' ? (
+      return depth === 'expanded' ? (
         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           Flow-field visualiser driven by the first {Math.min(20, ctx.params.length)} outputs (no audio).
           {/* TODO(backends-spec §4): port FlowFieldVisualizer + visual preset chips. */}
@@ -539,13 +539,13 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
     case 'midi':
       // The full MIDI config (port picker, CC count, per-output CC/channel/name)
       // + preset bar render via OutputsBackendConfig in RoutingDrawer below.
-      return depth !== 'peek' ? (
+      return depth === 'expanded' ? (
         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           Each output sends a real Web MIDI CC. Pick a port and set CC# / channel per output.
         </p>
       ) : null;
     case 'osc':
-      return depth !== 'peek' ? (
+      return depth === 'expanded' ? (
         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           Each output sends to an OSC path with a physical range, over the WebSocket bridge.
         </p>
@@ -568,23 +568,8 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
   const nameFor = (idx: number, fallback: string) =>
     ctx.outputMode === 'particles' ? VISUAL_NAMES[idx] ?? fallback : fallback;
 
-  if (depth === 'full') {
-    return (
-      <>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Chip tone="var(--accent)">{modeDesc.label}</Chip>
-          <BackendStatusChip ctx={ctx} />
-        </div>
-        {ModeConfig(ctx, depth)}
-        {/* Specialised, editable per-backend config (MIDI/OSC) + named-preset bar. */}
-        <OutputsBackendConfig ctx={ctx} backend={modeDesc.backend} />
-        <SectionLabel>Advanced · {modeDesc.label}</SectionLabel>
-        <BackendAdvanced backend={modeDesc.backend} params={ctx.params} setParam={ctx.setParam} />
-      </>
-    );
-  }
-
-  const rows = depth === 'peek' ? ctx.params.slice(0, 6) : ctx.params;
+  const expanded = depth === 'expanded';
+  const rows = expanded ? ctx.params : ctx.params.slice(0, 6);
   return (
     <>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -596,15 +581,15 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         <BackendStatusChip ctx={ctx} />
       </div>
       {ModeConfig(ctx, depth)}
-      {/* Specialised per-backend config + named-preset bar (MIDI/OSC); hidden at peek. */}
-      {depth !== 'peek' && <OutputsBackendConfig ctx={ctx} backend={modeDesc.backend} />}
+      {/* Specialised per-backend config + named-preset bar (MIDI/OSC); hidden when condensed. */}
+      {expanded && <OutputsBackendConfig ctx={ctx} backend={modeDesc.backend} />}
       <SectionLabel>Outputs · M mute · S arm · off/fixed/live</SectionLabel>
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
           gap: 4,
-          maxHeight: depth === 'peek' ? 220 : 460,
+          maxHeight: expanded ? 460 : 220,
           overflow: 'auto',
         }}
       >
@@ -617,13 +602,19 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
               param={labelled}
               value={values[i] ?? 0}
               onChange={(patch) => ctx.setParam(i, patch)}
-              showCurve={depth !== 'peek'}
+              showCurve={expanded}
             />
           );
         })}
       </div>
-      {depth === 'peek' && ctx.params.length > 6 && (
+      {!expanded && ctx.params.length > 6 && (
         <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>+{ctx.params.length - 6} more — expand to edit</span>
+      )}
+      {expanded && (
+        <>
+          <SectionLabel>Advanced · {modeDesc.label}</SectionLabel>
+          <BackendAdvanced backend={modeDesc.backend} params={ctx.params} setParam={ctx.setParam} />
+        </>
       )}
     </>
   );
@@ -654,7 +645,7 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
         onChange={(v) => set('monochromeIcons', v)}
         label="Monochrome icons"
       />
-      {depth !== 'peek' && (
+      {depth === 'expanded' && (
         <>
           <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>Unfocused icon colour</div>
           <PillToggle
@@ -683,7 +674,7 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
         onChange={(v) => set('inputMap', v as InputMapMode)}
         options={INPUT_MAP_OPTS}
       />
-      {depth !== 'peek' && (
+      {depth === 'expanded' && (
         <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           The 2D input surface: a rectangular XY map or a circular joystick-style disc. "Follow mode"
           uses the active mode's declared input (joystick → circular, else rectangular).
@@ -700,7 +691,7 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
         unit="px"
         onChange={(v) => set('cornerRadius', Math.round(v))}
       />
-      {depth !== 'peek' && (
+      {depth === 'expanded' && (
         <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           Roundness of buttons, control rows, dock icons and panels. Pills and the circular verdict
           buttons are intentionally exempt. Default 2px.
@@ -716,7 +707,7 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
 
 const KEYS: [string, string][] = [
   ['1–5', 'open drawers'],
-  ['\\', 'full depth'],
+  ['\\', 'expand drawer'],
   ['space / ↑', 'commit +'],
   ['↓', 'perturb / down −'],
   ['z', 'undo'],

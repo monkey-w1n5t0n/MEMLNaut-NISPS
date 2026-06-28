@@ -106,8 +106,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [tame, setTame] = useState(0.85);
   const [health, setHealth] = useState(0.8);
   const [rev, setRev] = useState(1);
-  const [active, setActive] = useState<DrawerKey | null>('learn');
-  const [depth, setDepth] = useState<DrawerDepth>('peek');
+  const [active, setActive] = useState<DrawerKey | null>(null);
+  const [depth, setDepth] = useState<DrawerDepth>('condensed');
   // Sandwich (parameter-landscape) centre-stage toggle — dock-bottom layers icon.
   const [sandwich, setSandwich] = useState(false);
 
@@ -222,8 +222,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setFollow(false);
     setPins([]);
     setMarkers([]);
-    setActive('learn');
-    setDepth('peek');
+    setActive(null);
+    setDepth('condensed');
     if (engine) engine.setInput(0.5, 0.5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modeId]);
@@ -412,6 +412,23 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   };
 
   /**
+   * Nudge — a small bounded weight perturbation of the current net (the left
+   * half of the secondary pill). Routes to the scratchpad while exploring,
+   * otherwise nudges the real net directly.
+   */
+  const nudgeNet = () => {
+    const c = controllerRef.current;
+    if (feedbackMode === 'explore-and-place' && c?.getState().exploring) {
+      c.nudge();
+    } else {
+      engine?.feedback.nudge(0.05);
+      engine?.process();
+    }
+    syncController();
+    setRev((r) => r + 1);
+  };
+
+  /**
    * Undo. While exploring (Mode 2) this pops the scratchpad undo ring (reroll /
    * nudge). Otherwise it falls back to the UI snapshot stack (visual A/B seed).
    */
@@ -526,8 +543,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       };
       if (map[e.key]) {
         setActive((a) => (a === map[e.key] ? null : map[e.key]));
-        setDepth('peek');
-      } else if (e.key === '\\') setDepth((d) => (d === 'full' ? 'peek' : 'full'));
+        setDepth('condensed');
+      } else if (e.key === '\\') setDepth((d) => (d === 'expanded' ? 'condensed' : 'expanded'));
       else if (focus === 'composite' && e.key === '[') {
         e.preventDefault();
         setSplit((s) => Math.max(0, s - 0.04));
@@ -903,6 +920,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             onUndo={undo}
             onCommit={commit}
             onReroll={reroll}
+            onNudge={nudgeNet}
+            onRandomise={reroll}
             canUndo={feedbackMode === 'explore-and-place' && exploring ? undoDepth > 0 : snapshots.length > 0}
             ab={ab}
             onToggleAB={toggleAB}

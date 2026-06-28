@@ -543,14 +543,21 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
+      // Verdict accelerators: 1 = thumbs-down / explore, 2 = thumbs-up. These
+      // work everywhere, including while the manifold is in follow-mouse mode
+      // (the knob tracks the cursor; the keys still land the verdict).
       const map: Record<string, DrawerKey> = {
-        '1': 'learn',
-        '2': 'inputs',
         '3': 'route',
         '4': 'settings',
         '5': 'help',
       };
-      if (map[e.key]) {
+      if (e.key === '1') {
+        e.preventDefault();
+        perturb();
+      } else if (e.key === '2') {
+        e.preventDefault();
+        commit();
+      } else if (map[e.key]) {
         setActive((a) => (a === map[e.key] ? null : map[e.key]));
         setDepth('condensed');
       } else if (e.key === '\\') setDepth((d) => (d === 'expanded' ? 'condensed' : 'expanded'));

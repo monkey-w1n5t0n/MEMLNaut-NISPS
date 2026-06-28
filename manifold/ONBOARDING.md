@@ -94,7 +94,7 @@ decision. Buffers are reused frame-to-frame; never assume a fresh array.
 ### The "convertible" Stages (one renders at a time, chosen by `focus` + `outputMode`)
 | Stage | File | Renders when | What it is |
 |---|---|---|---|
-| Manifold | `Manifold.tsx` | `focus==='in'` (default input view) | Full-bleed 2D input surface; canvas trail + pins + feedback markers; pointer → `onMove`. |
+| Manifold | `Manifold.tsx` | `focus==='in'` (default input view) | Full-bleed 2D input surface; canvas trail + pins + feedback markers; pointer → `onMove`. **Double-click the input mark → follow-mouse mode** (self-contained state; a window `pointermove` listener maps the whole viewport onto this surface's space so the knob tracks the cursor across the entire UI; Esc / second double-click exits). |
 | OutputStage | `OutputStage.tsx` | `focus==='out'` | Full-bleed output columns; drag bars set value; `InputMini` docked in a corner. |
 | SplitStage | `SplitStage.tsx` | `focus==='split'` | Manifold left, OutputStage right, equal width. |
 | CompositeStage | `CompositeStage.tsx` | `focus==='composite'` (**app default / hero**) | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |

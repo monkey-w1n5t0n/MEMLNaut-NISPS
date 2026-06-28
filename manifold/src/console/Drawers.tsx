@@ -719,12 +719,15 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
 // ===========================================================================
 
 const KEYS: [string, string][] = [
-  ['1–5', 'open drawers'],
-  ['\\', 'expand drawer'],
+  ['1', 'down − / explore'],
+  ['2', 'commit +'],
   ['space / ↑', 'commit +'],
-  ['↓', 'perturb / down −'],
+  ['↓', 'down − / explore'],
+  ['3–5', 'open drawers'],
+  ['\\', 'expand drawer'],
   ['z', 'undo'],
   ['[ ] =', 'split (composite)'],
+  ['dbl-click mark', 'follow mouse (Esc exits)'],
 ];
 function HelpDrawer() {
   return (

@@ -6,8 +6,8 @@
  *
  * Ported faithfully from the window-global `Manifold.jsx`.
  */
-import { useEffect, useRef } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { FeedbackMarker, Pin } from './types';
 
 export interface ManifoldProps {
@@ -55,6 +55,17 @@ export function Manifold({
   // Transient "just placed" marker location (manifold space), for a brief flash.
   const placedRef = useRef<{ x: number; y: number; t: number } | null>(null);
 
+  // FOLLOW-MOUSE mode: double-click the input mark to glue the knob to the
+  // cursor, then it tracks the mouse anywhere on screen (the whole viewport maps
+  // onto this surface's [0,1]² space). Escape or a second double-click exits.
+  const [followMouse, setFollowMouse] = useState(false);
+  const followMouseRef = useRef(false);
+  followMouseRef.current = followMouse;
+  // onMove can change identity each render; keep a ref so the global listener
+  // never has to be re-installed per frame while following.
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+
   stateRef.current = { pos, noiseCap, pins, markers, variant, frozen, follow, picking };
 
   // push trail point whenever pos changes
@@ -99,8 +110,65 @@ export function Manifold({
     if (p) onMove(p[0], p[1]);
   };
 
+  /**
+   * FOLLOW-MOUSE mapping: turn an absolute viewport coordinate (client px) into
+   * a normalised [0,1]² manifold position. The *whole window* maps onto this
+   * surface's space so the knob genuinely tracks the cursor across the entire
+   * UI — left edge → x=0, right edge → x=1 — regardless of where (or how small)
+   * this surface sits. The circular variant clamps to the inscribed unit disc.
+   */
+  const posFromClient = (clientX: number, clientY: number): [number, number] => {
+    const W = window.innerWidth || 1;
+    const H = window.innerHeight || 1;
+    const nx = clientX / W;
+    const ny = 1 - clientY / H; // screen y is down; flip so up = +
+    if (stateRef.current.variant === 'circular') {
+      let vx = (nx - 0.5) * 2;
+      let vy = (ny - 0.5) * 2;
+      const mag = Math.hypot(vx, vy);
+      if (mag > 1) {
+        vx /= mag;
+        vy /= mag;
+      }
+      return [0.5 + 0.5 * vx, 0.5 + 0.5 * vy];
+    }
+    return [Math.max(0, Math.min(1, nx)), Math.max(0, Math.min(1, ny))];
+  };
+
+  /** Screen-pixel (client) position of the drawn input mark, for the hit-test. */
+  const knobClient = (r: DOMRect, p: [number, number]): [number, number] => {
+    if (stateRef.current.variant === 'circular') {
+      const radius = Math.min(r.width, r.height) / 2 - 2;
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      return [cx + (p[0] - 0.5) * 2 * radius, cy - (p[1] - 0.5) * 2 * radius];
+    }
+    return [r.left + p[0] * r.width, r.top + (1 - p[1]) * r.height];
+  };
+
+  /**
+   * Double-click toggles follow-mouse mode. Entering requires the click to land
+   * on the input mark (within ~36px of the knob); a second double-click — the
+   * mark is now under the cursor — exits.
+   */
+  const onDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (stateRef.current.frozen || stateRef.current.picking) return;
+    if (followMouseRef.current) {
+      setFollowMouse(false);
+      return;
+    }
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const [kx, ky] = knobClient(r, stateRef.current.pos);
+    if (Math.hypot(e.clientX - kx, e.clientY - ky) <= 36) setFollowMouse(true);
+  };
+
   const down = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (stateRef.current.frozen) return;
+    // While following the mouse, the global listener owns the knob — don't start
+    // a pan/long-press drag (double-click still fires to exit).
+    if (followMouseRef.current) return;
     // PICK-LOCATION: when placing, this pointer-down picks the anchor location
     // (rl-feedback §2.2 §3) and does NOT start a pan/drive drag.
     if (stateRef.current.picking) {
@@ -119,6 +187,7 @@ export function Manifold({
     }, 600);
   };
   const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (followMouseRef.current) return;
     if (draggingRef.current) {
       setFromEvent(e);
       if (lpTimer.current) clearTimeout(lpTimer.current);
@@ -185,7 +254,7 @@ export function Manifold({
       const sx = circular ? (nx: number) => cx + (nx - 0.5) * 2 * radius : (nx: number) => nx * W;
       const sy = circular ? (ny: number) => cy - (ny - 0.5) * 2 * radius : (ny: number) => (1 - ny) * H;
 
-      if (fl && !draggingRef.current && !fz) {
+      if (fl && !draggingRef.current && !fz && !followMouseRef.current) {
         let [x, y] = p;
         const d = driftRef.current;
         x += d.vx;
@@ -391,6 +460,29 @@ export function Manifold({
     };
   }, []);
 
+  // FOLLOW-MOUSE: while active, a window-level listener drives the knob from the
+  // raw cursor position (anywhere on screen), and Escape exits. Kept on `window`
+  // so it keeps tracking even when the cursor leaves this surface.
+  useEffect(() => {
+    if (!followMouse) return;
+    const onWinMove = (e: PointerEvent) => {
+      if (stateRef.current.frozen) return;
+      const p = posFromClient(e.clientX, e.clientY);
+      onMoveRef.current(p[0], p[1]);
+    };
+    const onWinKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFollowMouse(false);
+    };
+    window.addEventListener('pointermove', onWinMove);
+    window.addEventListener('keydown', onWinKey);
+    return () => {
+      window.removeEventListener('pointermove', onWinMove);
+      window.removeEventListener('keydown', onWinKey);
+    };
+    // posFromClient/onMoveRef read live refs, so [followMouse] is the only dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followMouse]);
+
   return (
     <div
       ref={wrapRef}
@@ -398,15 +490,40 @@ export function Manifold({
       onPointerMove={move}
       onPointerUp={up}
       onPointerCancel={up}
+      onDoubleClick={onDoubleClick}
       style={{
         position: 'absolute',
         inset: 0,
-        cursor: frozen ? 'not-allowed' : picking ? 'cell' : 'crosshair',
+        cursor: frozen ? 'not-allowed' : picking ? 'cell' : followMouse ? 'none' : 'crosshair',
         touchAction: 'none',
         userSelect: 'none',
       }}
     >
       <canvas ref={canvasRef} style={{ display: 'block' }} />
+      {followMouse && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '3px 10px',
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--accent)',
+            background: 'rgba(13,13,13,0.7)',
+            border: '1px solid var(--line)',
+            borderRadius: 'var(--r-1)',
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            zIndex: 30,
+          }}
+        >
+          <span style={{ fontSize: 8 }}>●</span> following mouse — Esc / double-click to exit
+        </div>
+      )}
     </div>
   );
 }

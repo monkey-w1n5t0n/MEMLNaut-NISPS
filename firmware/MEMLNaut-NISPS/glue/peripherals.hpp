@@ -16,13 +16,14 @@
 // `[0, N)` — that's the trivial mapping that matches every concrete mode's
 // schema today (joystick first, optional 4D extra pot for joy_w).
 //
-// Buttons drive the InteractiveML primitives directly:
-//   MomA1 (TA up)    : randomise / draw weights
-//   MomA2 (TA down)  : clear examples (reset dataset)
-//   MomB1 (MA up)    : randomise (synonym, deliberate)
-//   MomB2 (MA down)  : nudge (small bounded perturbation)
+// Buttons/toggles drive the SHARED ExploreAndPlace lifecycle. The authoritative
+// per-control mapping is documented at the binding site below; in summary:
+//   MomA1 (TA up)    : enter / exit explore (toggle)
+//   MomA2 (TA down)  : like — freeze current scratchpad output (begin place)
+//   MomB1 (MA up)    : Exploring → reroll scratchpad; Idle → grab (reposition)
+//   MomB2 (MA down)  : Exploring → nudge scratchpad; Repositioning → drop+train
 //   TogB1            : Jolt — held continuous weight morph (up=morph, down=freeze)
-//   TogB2            : train (rising-edge → call ml.train())
+//   TogB2            : commit place (rising-edge) — store +1 example + train
 //   RVX1             : exploration amount (Ornstein-Uhlenbeck output walk)
 //
 // The button block below wires the SHARED ExploreAndPlace lifecycle
@@ -115,8 +116,12 @@ inline void bind_peripherals(Mode& mode) {
     //
     //   MomA1 (TA up)   : down  — enter explore (Idle→Exploring) /
     //                             exit explore (Exploring→Idle) TOGGLE
-    //   MomB1 (MA up)   : randomise — reroll the scratchpad (Exploring)
-    //   MomB2 (MA down) : nudge — small bounded perturbation (Exploring)
+    //   MomB1 (MA up)   : STATE-GATED — Exploring: reroll the scratchpad;
+    //                             Idle: GRAB (begin reposition — freeze the
+    //                             current trained-net output to carry it).
+    //   MomB2 (MA down) : STATE-GATED — Exploring: nudge (small perturbation);
+    //                             Repositioning: DROP (commit the carried output
+    //                             at the current joystick input + train).
     //   MomA2 (TA down) : like — begin place (Exploring→Placing, freeze output)
     //   TogB2 (rising)  : up   — commit place (Placing→Idle) at the CURRENT
     //                            joystick input, then store the +1 example and
@@ -140,14 +145,52 @@ inline void bind_peripherals(Mode& mode) {
         }
     });
 
-    // MomB1: reroll the scratchpad (only in Exploring; no-op otherwise).
+    // MomB1: STATE-GATED.
+    //   Exploring → reroll the scratchpad (a fresh random sound).
+    //   Idle      → GRAB: begin a reposition. Freezes the output currently heard
+    //               from the trained net so the user can carry it to a new input
+    //               location (the 4D variant has no joystick button, so the
+    //               grab/drop gesture lives on this momentary toggle). The real
+    //               net is NOT set aside — only the heard output is frozen.
     meml->setMomB1Callback([&mode]() {
-        feedback.reroll(mode.ml(), mode.param_schema().default_spread);
+        switch (feedback.explore_state()) {
+            case nisps::ml::ExploreState::Exploring:
+                feedback.reroll(mode.ml(), mode.param_schema().default_spread);
+                break;
+            case nisps::ml::ExploreState::Idle:
+                feedback.begin_reposition(mode.ml());  // process + capture + hold
+                break;
+            case nisps::ml::ExploreState::Placing:
+                break;  // already holding — ignore
+        }
     });
 
-    // MomB2: nudge the scratchpad (small bounded perturbation; undoable).
+    // MomB2: STATE-GATED.
+    //   Exploring     → nudge the scratchpad (small bounded perturbation).
+    //   Repositioning → DROP: commit the carried output at the CURRENT joystick
+    //                   input, store the +1 example (new input → carried output)
+    //                   and warm-start train. This is the "move an existing
+    //                   positive example to a new position" gesture.
     meml->setMomB2Callback([&mode]() {
-        feedback.nudge(mode.ml(), 0.05f);
+        if (feedback.explore_state() == nisps::ml::ExploreState::Exploring) {
+            feedback.nudge(mode.ml(), 0.05f);
+            return;
+        }
+        if (feedback.repositioning()) {
+            // Capture the current joystick input — the DESTINATION position.
+            const auto in = mode.input_channels();
+            std::array<float, Mode::ML::kInput> features{};
+            for (std::size_t i = 0; i < Mode::ML::kInput; ++i) {
+                features[i] = (i < in.size()) ? in[i] : 0.f;
+            }
+            feedback.commit_reposition();  // no weight restore (net never set aside)
+            const auto label = feedback.committed_output();  // the carried output
+            if (!label.empty()) {
+                mode.ml().add_example(
+                    std::span<const float>(features.data(), Mode::ML::kInput), label);
+                (void)mode.ml().train();
+            }
+        }
     });
 
     // MomA2: like → begin place. Freezes the current scratchpad output so the

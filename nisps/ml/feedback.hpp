@@ -124,6 +124,12 @@ class FeedbackController {
     // ---- ExploreAndPlace state introspection --------------------------------
     ExploreState explore_state() const noexcept { return ep_state_; }
     bool placing() const noexcept { return ep_state_ == ExploreState::Placing; }
+    // True while a REPOSITION hold is active (grab→move→drop). Distinguishes a
+    // reposition (real net never set aside) from an Explore→Place (scratchpad +
+    // snapshot). Both sit in ExploreState::Placing and both hold placed_out_ via
+    // static_output(); only commit/teardown differ (reposition does NOT restore
+    // weights — there is nothing to restore).
+    bool repositioning() const noexcept { return reposition_; }
     // Depth of the scratchpad undo ring currently available to pop (0..UndoDepth).
     std::size_t undo_depth() const noexcept { return undo_count_; }
     // The output vector frozen at like()/begin-place time. Valid only while
@@ -359,10 +365,67 @@ class FeedbackController {
 
     // Placing→Exploring. Back out of placing without storing; resume auditioning
     // the scratchpad (which is still live — begin_place did not touch weights).
+    // A reposition hold has no scratchpad to return to, so it backs out to Idle.
     void cancel_place() noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Placing) return;
+        if (reposition_) {
+            reposition_      = false;
+            learning_paused_ = false;
+            ep_state_        = ExploreState::Idle;
+            return;
+        }
         ep_state_ = ExploreState::Exploring;
+    }
+
+    // =========================================================================
+    // Reposition (grab → move → drop) — relocate an EXISTING positive example's
+    // output to a new input position. Distinct from Explore→Place: there is NO
+    // scratchpad and NO weight snapshot — the real (trained) net stays live the
+    // whole time. We only FREEZE the currently-heard output and hold it (via
+    // static_output) while the user moves to a new input, then the caller adds
+    // a +1 example (new input → carried output) and trains. This is the new
+    // core's home for the upstream "drag-store / reposition-commit" gesture.
+    // =========================================================================
+
+    // Idle→Placing(reposition). Freeze `current_out` — the output the user is
+    // hearing from the TRAINED net — and hold it. No-op unless Idle.
+    void begin_reposition(std::span<const float> current_out) noexcept {
+        if (mode_ != FeedbackMode::ExploreAndPlace) return;
+        if (ep_state_ != ExploreState::Idle) return;
+        const std::size_t n = (current_out.size() < kNOut) ? current_out.size() : kNOut;
+        for (std::size_t i = 0; i < n; ++i) placed_out_[i] = current_out[i];
+        reposition_        = true;
+        learning_paused_   = true;
+        last_placed_valid_ = false;
+        ep_state_          = ExploreState::Placing;
+    }
+
+    // Convenience: capture the trained net's output at its CURRENT input
+    // (process + capture). Equivalent to begin_reposition(mlp.outputs()).
+    void begin_reposition(MLP_T& mlp) noexcept {
+        if (mode_ != FeedbackMode::ExploreAndPlace) return;
+        if (ep_state_ != ExploreState::Idle) return;
+        mlp.process();
+        const auto outs = mlp.outputs();
+        const std::size_t n = (outs.size() < kNOut) ? outs.size() : kNOut;
+        for (std::size_t i = 0; i < n; ++i) placed_out_[i] = outs[i];
+        reposition_        = true;
+        learning_paused_   = true;
+        last_placed_valid_ = false;
+        ep_state_          = ExploreState::Placing;
+    }
+
+    // Placing(reposition)→Idle. NO weight restore (the net was never set aside).
+    // committed_output() then holds the carried vector so the caller can add the
+    // +1 example at the new input and train. No-op unless repositioning.
+    void commit_reposition() noexcept {
+        if (!reposition_ || ep_state_ != ExploreState::Placing) return;
+        reposition_        = false;
+        last_placed_valid_ = true;   // committed_output() valid for the caller
+        learning_paused_   = false;
+        ep_state_          = ExploreState::Idle;
+        undo_count_        = 0u;
     }
 
    private:
@@ -435,7 +498,19 @@ class FeedbackController {
     }
 
     void abort_explore_place(MLP_T& mlp) noexcept {
-        if (ep_state_ != ExploreState::Idle) restore_real_net(mlp);
+        if (ep_state_ == ExploreState::Idle) return;
+        if (reposition_) {
+            // A reposition never set the real net aside, so there is nothing to
+            // restore — clearing snapshot_ into the net here would CLOBBER the
+            // live trained weights. Just drop the hold.
+            reposition_        = false;
+            learning_paused_   = false;
+            ep_state_          = ExploreState::Idle;
+            undo_count_        = 0u;
+            last_placed_valid_ = false;
+            return;
+        }
+        restore_real_net(mlp);
     }
 
     FeedbackMode mode_            = FeedbackMode::Avoid;
@@ -448,8 +523,9 @@ class FeedbackController {
 
     // ---- ExploreAndPlace state (all fixed-size, no heap) --------------------
     ExploreState                                    ep_state_ = ExploreState::Idle;
-    std::array<float, kNOut>                        placed_out_{};       // frozen audition vector
+    std::array<float, kNOut>                        placed_out_{};       // frozen audition/carried vector
     bool                                            last_placed_valid_ = false;
+    bool                                            reposition_ = false; // grab→move→drop hold; net NOT set aside
     std::array<std::array<float, kWeights>, kUndoDepth> undo_ring_{};    // bounded undo
     std::size_t                                     undo_head_  = 0u;    // next write slot
     std::size_t                                     undo_count_ = 0u;    // valid entries (0..kUndoDepth)

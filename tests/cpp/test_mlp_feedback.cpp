@@ -682,4 +682,98 @@ NISPS_TEST(ep_full_flow_two_anchors_caller_trains) {
     NISPS_EXPECT(m.example_count() == 2u);
 }
 
+// ===========================================================================
+// Reposition (grab → move → drop) — relocate an existing positive example's
+// output to a new input position. NO scratchpad, NO weight snapshot/restore.
+// ===========================================================================
+
+NISPS_TEST(ep_reposition_holds_output_without_setting_net_aside) {
+    SmallMLP m(0ull);
+    m.draw_weights(0.5f);
+    FB fb(0ull);
+    fb.set_mode(FeedbackMode::ExploreAndPlace, m);
+
+    // The trained net's output at input A — the sound we want to carry.
+    m.set_input(0u, 0.2f);
+    m.set_input(1u, 0.8f);
+    m.process();
+    std::array<float, kNOut> heard{};
+    { auto o = m.outputs(); for (std::size_t i = 0; i < kNOut; ++i) heard[i] = o[i]; }
+    const auto real = snapshot_weights(m);
+
+    fb.begin_reposition(m);  // GRAB (process + capture at current input)
+    NISPS_EXPECT(fb.repositioning());
+    NISPS_EXPECT(fb.placing());
+    NISPS_EXPECT(fb.learning_paused());
+    NISPS_EXPECT(weights_equal(m, real));  // real net NOT snapshotted/randomised
+
+    // The carried output survives moving the input toward B.
+    m.set_input(0u, 0.9f);
+    m.set_input(1u, 0.1f);
+    std::array<float, kNOut> buf{};
+    NISPS_EXPECT(fb.static_output(std::span<float>(buf)));
+    for (std::size_t i = 0; i < kNOut; ++i) NISPS_EXPECT(buf[i] == heard[i]);
+}
+
+NISPS_TEST(ep_reposition_commit_stores_carried_output_no_restore) {
+    SmallMLP m(0ull);
+    m.draw_weights(0.5f);
+    FB fb(0ull);
+    fb.set_mode(FeedbackMode::ExploreAndPlace, m);
+    m.set_input(0u, 0.2f); m.set_input(1u, 0.8f); m.process();
+    std::array<float, kNOut> heard{};
+    { auto o = m.outputs(); for (std::size_t i = 0; i < kNOut; ++i) heard[i] = o[i]; }
+
+    fb.begin_reposition(m);
+    const auto held = snapshot_weights(m);  // weights frozen during the hold
+
+    fb.commit_reposition();  // DROP
+    NISPS_EXPECT(!fb.repositioning());
+    NISPS_EXPECT(fb.explore_state() == ExploreState::Idle);
+    NISPS_EXPECT(!fb.learning_paused());
+    NISPS_EXPECT(weights_equal(m, held));  // NO weight restore on commit
+
+    // The committed vector is the carried (existing) output; the caller stores
+    // it at the NEW input B.
+    auto out = fb.committed_output();
+    NISPS_EXPECT(out.size() == kNOut);
+    for (std::size_t i = 0; i < kNOut; ++i) NISPS_EXPECT(out[i] == heard[i]);
+    const std::array<float, 2> inputB{0.9f, 0.1f};
+    m.add_example(std::span<const float>(inputB.data(), 2u), out);
+    NISPS_EXPECT(m.example_count() == 1u);
+}
+
+NISPS_TEST(ep_reposition_mode_switch_aborts_without_clobbering_net) {
+    // The teardown path must NOT set_weights(stale snapshot_) for a reposition —
+    // that would destroy the live trained net.
+    SmallMLP m(0ull);
+    m.draw_weights(0.5f);
+    FB fb(0ull);
+    fb.set_mode(FeedbackMode::ExploreAndPlace, m);
+    m.process();
+    const auto real = snapshot_weights(m);
+    fb.begin_reposition(m);
+    NISPS_EXPECT(fb.repositioning());
+
+    fb.set_mode(FeedbackMode::Avoid, m);  // abort the hold
+    NISPS_EXPECT(!fb.repositioning());
+    NISPS_EXPECT(fb.explore_state() == ExploreState::Idle);
+    NISPS_EXPECT(!fb.learning_paused());
+    NISPS_EXPECT(weights_equal(m, real));  // live net preserved
+}
+
+NISPS_TEST(ep_reposition_begin_only_from_idle) {
+    SmallMLP m(0ull);
+    m.draw_weights(0.5f);
+    FB fb(0ull);
+    fb.set_mode(FeedbackMode::ExploreAndPlace, m);
+    fb.enter_explore(m, 0.5f);              // now Exploring, not Idle
+    fb.begin_reposition(m);                 // must be a no-op
+    NISPS_EXPECT(!fb.repositioning());
+    NISPS_EXPECT(fb.explore_state() == ExploreState::Exploring);
+    // commit with no hold active is a no-op too.
+    fb.commit_reposition();
+    NISPS_EXPECT(fb.explore_state() == ExploreState::Exploring);
+}
+
 }  // namespace

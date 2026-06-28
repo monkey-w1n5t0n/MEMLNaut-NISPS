@@ -14,8 +14,8 @@
  *                               the bridge maps each to /nisps/<name>; the module
  *                               also derives its own outputs, but the browser
  *                               value is authoritative in bridged mode
- *     /nisps/feedback {op,…}    verdict op (up | down | rand | clear) as JSON
- *                               state — { op, spread, input[], output[] }
+ *     /nisps/feedback {op,…}    verdict op (up | down | rand | clear) as a JSON
+ *                               string — { op, spread, input[], output[] }
  *
  *   module → browser
  *     /nisps/output   <f…f>     module's live outputs (status / visualisation)
@@ -162,10 +162,8 @@ export class VcvBackend implements OutputBackend {
    */
   sendFeedback(op: VcvFeedbackOp): void {
     if (!this.client.connected) return;
-    // The bridge ships `{ type:'state', payload }` as an OSC string to
-    // /nisps/state. We reuse that string channel for /nisps/feedback by tagging
-    // the payload with a `feedback` envelope the module routes accordingly.
-    this.client.sendState({ feedback: op });
+    // → bridge `feedback` verb → OSC string to /nisps/feedback.
+    this.client.sendFeedback(op);
   }
 
   send(routed: Float32Array): void {
@@ -182,11 +180,8 @@ export class VcvBackend implements OutputBackend {
     if (Math.abs(ix - this.lastInputSent[0]) >= DEAD_ZONE || Math.abs(iy - this.lastInputSent[1]) >= DEAD_ZONE) {
       this.lastInputSent[0] = ix;
       this.lastInputSent[1] = iy;
-      // The bridge maps `input` → /nisps/input <f…f> (its `inputs` relay path).
-      this.client.sendParams([
-        ['input', ix],
-        ['input', iy],
-      ]);
+      // → bridge `input` verb → ONE multi-float message to /nisps/input.
+      this.client.sendInput(this.inputVec);
     }
 
     // 2) Stream the routed per-output values (authoritative CV in bridged mode).

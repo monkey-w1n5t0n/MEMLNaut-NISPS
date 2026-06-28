@@ -22,8 +22,11 @@
 //   /nisps/<param_name> <float>   (webapp -> target)
 //   /nisps/state <string>         (webapp -> target: full JSON state)
 //   /nisps/weights <string>       (webapp -> target: weights JSON)
+//   /nisps/input <f...f>          (webapp -> target: input vector, ONE message;
+//                                   also target -> webapp for visualisation)
+//   /nisps/feedback <string>      (webapp -> target: verdict op JSON —
+//                                   { op, spread, input[], output[] })
 //   /nisps/output <f...f>         (target -> webapp: output float array)
-//   /nisps/input <f...f>          (target -> webapp: input float array)
 
 import { parseArgs } from "jsr:@std/cli@1/parse-args";
 
@@ -102,6 +105,13 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
 
 function oscMessage(address: string, value: number): Uint8Array {
   return concat(oscString(address), oscString(",f"), oscFloat(value));
+}
+
+/** A single OSC message carrying N floats (one ",fff…" message, not N messages). */
+function oscMessageFloats(address: string, values: number[]): Uint8Array {
+  const tags = "," + "f".repeat(values.length);
+  const floatBufs = values.map((v) => oscFloat(v));
+  return concat(oscString(address), oscString(tags), ...floatBufs);
 }
 
 function oscMessageString(address: string, value: string): Uint8Array {
@@ -197,6 +207,11 @@ function sendOSCString(address: string, value: string): void {
   udpSend.send(msg, oscAddr);
 }
 
+function sendOSCFloats(address: string, values: number[]): void {
+  const msg = oscMessageFloats(address, values);
+  udpSend.send(msg, oscAddr);
+}
+
 function sendOSCBundle(params: [string, number][]): void {
   const messages = params.map(([name, value]) =>
     oscMessage(`${OSC_PREFIX}/${name}`, value)
@@ -248,6 +263,18 @@ function handleWs(ws: WebSocket): void {
           case "weights":
             // Send weights JSON as OSC string to /nisps/weights
             sendOSCString(`${OSC_PREFIX}/weights`, JSON.stringify(data.payload));
+            return;
+          case "input":
+            // Current input VECTOR as ONE multi-float message to /nisps/input
+            // (browser drives the VCV module's inputs in bridged mode).
+            if (Array.isArray(data.payload)) {
+              sendOSCFloats(`${OSC_PREFIX}/input`, data.payload as number[]);
+            }
+            return;
+          case "feedback":
+            // Verdict op as OSC string to /nisps/feedback (trains the module's
+            // embedded learner: { op, spread, input[], output[] }).
+            sendOSCString(`${OSC_PREFIX}/feedback`, JSON.stringify(data.payload));
             return;
           case "params":
             // Legacy batch format embedded in structured message

@@ -123,6 +123,24 @@ export class NispsOscClient {
     this.send({ type: 'weights', payload });
   }
 
+  /**
+   * Send the current input VECTOR as ONE multi-float OSC message to
+   * `<prefix>/input` (the bridge `input` verb). Used in VCV bridged mode so the
+   * browser drives the module's inputs. Distinct from `sendParams` (which emits
+   * one single-float message per entry).
+   */
+  sendInput(values: ReadonlyArray<number>): void {
+    this.send({ type: 'input', payload: Array.from(values) });
+  }
+
+  /**
+   * Send a verdict op as a JSON string to `<prefix>/feedback` (the bridge
+   * `feedback` verb). Trains the VCV module's embedded learner over the bridge.
+   */
+  sendFeedback(op: object): void {
+    this.send({ type: 'feedback', payload: op });
+  }
+
   // ── Receive ────────────────────────────────────────────────────────
   onOutputsReceived(cb: (v: number[]) => void): () => void {
     this.outputsCbs.push(cb);

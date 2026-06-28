@@ -1,10 +1,23 @@
 /**
  * flow-field.ts — Canvas2D flow-field particle system, a faithful TypeScript
- * port of the a-immersive playground visualiser (`js/ui/visualizer.js`).
+ * port of the a-immersive playground visualiser
+ * (`/home/w1n5t0n/deployments/meml-aimmersive/js/ui/visualizer.js`).
  *
- * Driven by the first 20 model outputs (each ∈ [0,1]); `setParams` maps them to
- * the visual ranges. The simulation advances on its own clock, so particles keep
- * flowing between inferences — only the *field* changes when the MLP outputs do.
+ * FAITHFULNESS (verified 2026-06-28 against the original):
+ *   • 400 particles, identical permutation-table value noise (`PERM`/`noise2D`).
+ *   • The first 20 model outputs (each ∈ [0,1]) map to the visual ranges exactly
+ *     as the original `setParams` (p0..p19 — see the per-line comments below).
+ *   • The advection/attractor/dispersion/repulsor integration in `draw()` is a
+ *     line-for-line port of the original.
+ *   • Deliberate improvements over the original (NOT drift):
+ *       - `resize()` resets the transform before `scale(dpr)` so repeated resizes
+ *         don't compound the device-pixel-ratio scale (the original double-scaled
+ *         on every resize); it also repaints the background so a resize doesn't
+ *         leave stale trails.
+ *       - `draw()` early-returns while the canvas has zero size (pre-layout).
+ *
+ * The simulation advances on its own clock, so particles keep flowing between
+ * inferences — only the *field* changes when the MLP outputs do.
  */
 
 // Simple value noise (no dependencies) — identical permutation scheme to the

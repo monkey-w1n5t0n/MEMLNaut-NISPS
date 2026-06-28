@@ -18,6 +18,7 @@ export { OscBridgeBackend } from './osc-backend';
 export type { OscBackendConfig } from './osc-backend';
 export { NispsOscClient } from './osc-client';
 export { PassthroughBackend } from './passthrough-backend';
+export { ParticleBackend } from './particle-backend';
 export {
   useBackendManager,
 } from './useBackendManager';

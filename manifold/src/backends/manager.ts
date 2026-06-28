@@ -21,6 +21,7 @@ import type { BackendId } from '../dock/output-state';
 import { WebMidiBackend } from './midi-backend';
 import { OscBridgeBackend } from './osc-backend';
 import { PassthroughBackend } from './passthrough-backend';
+import { ParticleBackend } from './particle-backend';
 
 /** The slice of EngineApi the manager depends on (keeps it decoupled/testable). */
 export interface ManagerEngine {
@@ -47,7 +48,7 @@ export class BackendManager {
       ['midi', backends?.midi ?? new WebMidiBackend()],
       ['osc', backends?.osc ?? new OscBridgeBackend()],
       ['synth', backends?.synth ?? new PassthroughBackend('synth', 'Built-in Synth — audio plays in the engine')],
-      ['particles', backends?.particles ?? new PassthroughBackend('particles', 'Particle visualiser')],
+      ['particles', backends?.particles ?? new ParticleBackend()],
       ['cvgate', backends?.cvgate ?? new PassthroughBackend('cvgate', 'CV / gate (via VCV bridge)')],
       ['vcv', backends?.vcv ?? new PassthroughBackend('vcv', 'VCV bridge')],
     ]);

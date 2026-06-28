@@ -1,0 +1,34 @@
+/**
+ * Manifold — spacing, radius, layout, z-index
+ * Compact 4px-based scale (the playground is dense, instrument-panel UI).
+ */
+
+:root {
+  /* ---- Spacing (px) ---- */
+  --sp-0: 2px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* ---- Radius ---- */
+  --r-1: 4px;     /* buttons, inputs, small chips */
+  --r-2: 8px;     /* panels, pads, cards */
+  --r-3: 14px;    /* large surfaces, drawers */
+  --r-pill: 999px;
+
+  /* ---- Z layers ---- */
+  --z-bg: 0; /* @kind other */
+  --z-content: 10; /* @kind other */
+  --z-overlay: 100; /* @kind other */
+  --z-drawer: 200; /* @kind other */
+  --z-modal: 1000; /* @kind other */
+
+  /* ---- Control sizing ---- */
+  --control-h: 48px;   /* training buttons, large hit targets */
+  --hit-min: 44px;     /* minimum touch target */
+}

@@ -94,6 +94,8 @@ export class Spine implements EngineSink {
   // Last raw input, so `EngineApi.process()` can re-tick after a weight change.
   lastRawX = 0.5;
   lastRawY = 0.5;
+  // Full last raw input vector (N-D) for re-ticking without losing extra axes.
+  private lastRawInputs: Float32Array = new Float32Array(2);
   private mlBuf: F32 = new Float32Array(126);
   private routedBuf: F32 | null = null;
 
@@ -164,34 +166,61 @@ export class Spine implements EngineSink {
   // ---- The hot action ------------------------------------------------
 
   /**
-   * Drive a raw [0,1] XY input through processed → ml → routed eagerly and
-   * synchronously, then fire the single backend.send at the tail. Off render.
-   * Returns the routed buffer (live, reused — do not retain across calls).
+   * Drive a raw [0,1] XY input through processed → ml → routed. Convenience for
+   * the 2-D manifold / XY-pad path — delegates to {@link setInputs}.
    */
   setInput(x: number, y: number): Float32Array | null {
+    return this.setInputs([x, y]);
+  }
+
+  /**
+   * Drive an N-dimensional raw input vector (each ∈ [0,1]) through
+   * processed → ml → routed eagerly and synchronously, then fire the single
+   * backend.send at the tail. Off render. Returns the routed buffer (live,
+   * reused — do not retain across calls).
+   *
+   * The mix-and-match input layer composes one axis PER active input source
+   * (XY pad / gamepad sticks / learned MIDI CCs) into this vector. The first
+   * two axes run through the 2-D input pipeline (deadzone→zoom→curve→smoothing→
+   * momentum) so the pad keeps its feel and the ≤2-D path is unchanged; axes 2+
+   * are written raw (sources self-condition). Unused slots up to the net's input
+   * arity are held at 0 so a shrinking vector never leaves a stale dimension hot.
+   */
+  setInputs(arr: ArrayLike<number>): Float32Array | null {
     const iml = this.iml;
     if (!iml) return null;
 
-    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-    const dt = this.lastTickMs > 0 ? (now - this.lastTickMs) / 1000 : 1 / 60;
-    this.lastTickMs = now;
+    const dt = this.dt_();
+    const inSize = this.state_.inputSize;
 
-    // 1. processed (pure input pipeline)
+    // 1. primary pair through the pure input pipeline (pad feel / 2-D parity).
+    const x = arr.length > 0 ? arr[0] : 0.5;
+    const y = arr.length > 1 ? arr[1] : 0.5;
     this.rawInput[0] = x;
     this.rawInput[1] = y;
     this.lastRawX = x;
     this.lastRawY = y;
     const proc = processInput(this.rawInput, this.inputConfig, this.inputState, dt);
     this.inputState = proc.state;
-
-    // 2. ml (inference into the reused buffer; no alloc)
     iml.setInput(0, proc.x);
     iml.setInput(1, proc.y);
+
+    // 2. extra axes raw; unused slots cleared to 0. Remember the full raw vector
+    //    so process() can re-tick after a weight change without losing dims.
+    if (this.lastRawInputs.length !== inSize) this.lastRawInputs = new Float32Array(inSize);
+    this.lastRawInputs[0] = x;
+    this.lastRawInputs[1] = y;
+    for (let i = 2; i < inSize; i++) {
+      const v = i < arr.length ? arr[i] : 0;
+      iml.setInput(i, v);
+      this.lastRawInputs[i] = v;
+    }
+
+    // 3. ml (inference into the reused buffer; no alloc).
     iml.processInto(this.mlBuf);
-    // Mirror to liveOutputs for imperative reads + bump.
     this.liveOutputs.set(this.mlBuf.subarray(0, this.liveOutputs.length));
 
-    // 3. routed (output pipeline → reused routedBuf)
+    // 4. routed (output pipeline → reused routedBuf).
     const routedRes = processOutput(this.mlBuf, this.outputConfig, this.outputState, dt * 1000);
     this.outputState = routedRes.state;
     const routed = routedRes.processed;
@@ -201,11 +230,28 @@ export class Spine implements EngineSink {
       this.routedBuf = routed;
     }
 
-    // 4. single backend.send at the tail (off React render)
+    // 5. single backend.send at the tail (off React render).
     if (this.backendSend && this.routedBuf) this.backendSend(this.routedBuf);
 
     this.bump_();
     return this.routedBuf;
+  }
+
+  /**
+   * Re-run the LAST full raw input vector through the spine (after a weight
+   * change — train / randomise / feedback) so outputs + audio reflect the new
+   * net without the user touching a control. Preserves all N dimensions.
+   */
+  reprocess(): Float32Array | null {
+    return this.setInputs(this.lastRawInputs);
+  }
+
+  /** Monotonic per-tick dt in seconds (≈1/60 on the first tick). */
+  private dt_(): number {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const dt = this.lastTickMs > 0 ? (now - this.lastTickMs) / 1000 : 1 / 60;
+    this.lastTickMs = now;
+    return dt;
   }
 
   // ---- Imperative reads (canvas consumers bypass React) --------------

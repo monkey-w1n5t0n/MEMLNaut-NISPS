@@ -21,7 +21,7 @@
 //   4. ChannelStrip engine: identical methodology.
 //
 // We use the EXACT SAME compile-time MLP architecture as the WASM build:
-//   MLP<2, 10, 14, 18, 126>
+//   MLP<32, 10, 14, 18, 126>   (32-input max for mix-and-match; see bindings.cpp)
 //
 // Output blob format
 // ------------------
@@ -62,7 +62,7 @@
 
 namespace {
 
-using ParityMLP = nisps::ml::MLP<2u, 10u, 14u, 18u, 126u>;
+using ParityMLP = nisps::ml::MLP<32u, 10u, 14u, 18u, 126u>;
 
 // The WASM bindings (nisps/wasm/bindings.cpp) sign-extend the 32-bit JS
 // seed via `s ^ (s << 32)`. To get bit-equal output between native and
@@ -133,9 +133,14 @@ int main(int argc, char** argv) {
     }
 
     // ---- Stage 2: training ----
-    constexpr std::array<std::array<float, 2u>, 3u> features = {{
-        {{0.1f, 0.9f}}, {{0.5f, 0.5f}}, {{0.9f, 0.1f}},
-    }};
+    // Feature vectors are NIn(32)-wide: two real axes + zero-pad (the front-end
+    // feeds the same shape — active axes in the low slots, unused slots at 0).
+    // add_example requires features.size() >= NIn, so the pad is mandatory.
+    constexpr std::size_t kNIn = ParityMLP::kInput;
+    std::array<std::array<float, kNIn>, 3u> features = {};
+    features[0][0] = 0.1f; features[0][1] = 0.9f;
+    features[1][0] = 0.5f; features[1][1] = 0.5f;
+    features[2][0] = 0.9f; features[2][1] = 0.1f;
     auto label_for = [](std::size_t i) {
         std::array<float, 126u> out{};
         const float a = static_cast<float>(i) * 0.3f + 0.05f;
@@ -146,7 +151,7 @@ int main(int argc, char** argv) {
     };
     for (std::size_t i = 0; i < features.size(); ++i) {
         const auto label = label_for(i);
-        mlp.add_example(std::span<const float>(features[i].data(), 2u),
+        mlp.add_example(std::span<const float>(features[i].data(), kNIn),
                         std::span<const float>(label.data(), 126u));
     }
     const float final_loss = mlp.train(0.3f, 50u, 0.0f);

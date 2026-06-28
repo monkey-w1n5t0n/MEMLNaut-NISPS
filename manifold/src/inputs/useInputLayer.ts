@@ -2,20 +2,20 @@
  * useInputLayer — the thin React binding over the framework-neutral
  * {@link InputLayer} + source adapters.
  *
- * Owns:
- *   - ONE InputLayer + one instance of each source (XY pad / MIDI / gamepad),
- *     created per engine and attached to it.
- *   - Which sources are ENABLED (the dock toggles these); enabling starts a
- *     source (async for MIDI) and adds it to the layer's composed set.
- *   - Per-source config (gamepad stick mode; MIDI learn arm + bindings).
- *   - The composed channel layout + per-source status, surfaced for the drawer.
+ * The dock surfaces ONE exclusive input MODE at a time (inputs-spec):
+ *   - `internal` → the on-screen XY pad / manifold (default; today's behaviour).
+ *   - `gamepad`  → a physical game controller (sticks → axes, buttons → verdicts).
+ *   - `midi`     → a connected MIDI device (CCs learned onto axes).
  *
- * The XY pad source is the one consumers push into directly: `pushPad(x,y)` is
- * called from ConsoleApp.onMove so the existing pad keeps working unchanged
- * while still composing with the other sources.
+ * Switching mode stops the previous source and starts the chosen one, then sets
+ * the layer's composed source set to exactly that source. The XY pad is the one
+ * consumers push into directly (`pushPad` from ConsoleApp.onMove) so the manifold
+ * keeps working unchanged in `internal` mode.
  *
- * Discrete actions (MIDI notes / gamepad buttons) are fanned out via
- * `onAction` so the console can later bind them to verdicts (commit/perturb).
+ * Per-mode config (gamepad stick mode + button verdict legend; MIDI device pick,
+ * batch learn arm, learned bindings) and per-source status are surfaced for the
+ * drawer. Discrete actions (gamepad buttons / MIDI notes) are fanned out via
+ * `onAction` so the console can bind them to verdicts (commit/perturb/…).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineApi } from '../engine';
@@ -23,7 +23,13 @@ import { InputLayer } from './input-layer';
 import { XYPadSource } from './xy-pad-source';
 import { WebMidiInputSource, type MidiBinding } from './midi-input-source';
 import { GamepadSource, type StickMode } from './gamepad-source';
-import type { InputAction, InputSource, InputSourceKind, InputSourceStatus } from './types';
+import type {
+  InputAction,
+  InputMode,
+  InputSource,
+  InputSourceKind,
+  InputSourceStatus,
+} from './types';
 
 export interface SourceView {
   kind: InputSourceKind;
@@ -33,13 +39,25 @@ export interface SourceView {
   axisCount: number;
 }
 
+/** Which source backs each exclusive input mode. */
+const MODE_SOURCE: Record<InputMode, InputSourceKind> = {
+  internal: 'xy-pad',
+  gamepad: 'gamepad',
+  midi: 'midi',
+};
+
 export interface UseInputLayer {
   /** Push the on-screen XY pad position (∈ [0,1]) — call from onMove. */
   pushPad: (x: number, y: number) => void;
-  /** Per-source enable + status + axis count for the dock. */
+
+  // ---- exclusive mode ----
+  /** The active input mode (Internal / Game Controller / MIDI). */
+  inputMode: InputMode;
+  /** Switch the exclusive input mode. */
+  setInputMode: (m: InputMode) => void;
+
+  /** Per-source status + axis count for the dock (the active mode's source is `enabled`). */
   sources: SourceView[];
-  /** Toggle a source on/off. */
-  setEnabled: (kind: InputSourceKind, enabled: boolean) => void;
   /** Composed channel layout (per-axis source+label). */
   channelLayout: { source: string; label: string }[];
   /** Total composed axis count. */
@@ -51,16 +69,23 @@ export interface UseInputLayer {
   gamepadStickMode: StickMode;
   setGamepadStickMode: (m: StickMode) => void;
 
-  // ---- midi learn-map ----
+  // ---- midi device + learn-map ----
+  /** Available MIDI input ports. */
+  midiInputs: { id: string; name: string }[];
+  /** The selected MIDI input port (null = listen to all ports). */
+  midiDeviceId: string | null;
+  selectMidiDevice: (id: string | null) => void;
+  /** True while batch MIDI-Learn is armed (sweep controls, then Done). */
   midiLearnArmed: boolean;
   armMidiLearn: (armed: boolean) => void;
   midiBindings: MidiBinding[];
   clearMidiBinding: (i: number) => void;
   clearMidiBindings: () => void;
-  midiInputs: { id: string; name: string }[];
 
   /** Subscribe to discrete actions (notes/buttons). */
   onAction: (cb: (a: InputAction) => void) => () => void;
+  /** Subscribe to the reduced 2D input each frame (for the on-screen manifold). */
+  onReducedInput: (cb: (x: number, y: number) => void) => () => void;
 }
 
 export function useInputLayer(engine: EngineApi | null): UseInputLayer {
@@ -81,12 +106,7 @@ export function useInputLayer(engine: EngineApi | null): UseInputLayer {
   const midi = midiRef.current!;
   const gamepad = gamepadRef.current!;
 
-  // Enabled set — pad on by default (parity with today's behaviour).
-  const [enabled, setEnabledSet] = useState<Record<InputSourceKind, boolean>>({
-    'xy-pad': true,
-    midi: false,
-    gamepad: false,
-  });
+  const [inputMode, setInputModeState] = useState<InputMode>('internal');
   const [statuses, setStatuses] = useState<Record<InputSourceKind, InputSourceStatus>>({
     'xy-pad': pad.status(),
     midi: midi.status(),
@@ -97,8 +117,9 @@ export function useInputLayer(engine: EngineApi | null): UseInputLayer {
   const [midiLearnArmed, setMidiLearnArmed] = useState(false);
   const [midiBindings, setMidiBindings] = useState<MidiBinding[]>([]);
   const [midiInputs, setMidiInputs] = useState<{ id: string; name: string }[]>([]);
+  const [midiDeviceId, setMidiDeviceId] = useState<string | null>(null);
 
-  // Attach to engine; start the pad immediately. Wire status/binding listeners.
+  // Attach to engine; start in `internal` mode (the XY pad). Wire listeners.
   useEffect(() => {
     if (!engine) return;
     layer.attach(engine);
@@ -108,13 +129,13 @@ export function useInputLayer(engine: EngineApi | null): UseInputLayer {
 
     const unsubs: (() => void)[] = [];
     const wireStatus = (s: InputSource) =>
-      unsubs.push(
-        s.onStatusChange((st) => setStatuses((m) => ({ ...m, [s.kind]: st }))),
-      );
+      unsubs.push(s.onStatusChange((st) => setStatuses((m) => ({ ...m, [s.kind]: st }))));
     wireStatus(pad);
     wireStatus(midi);
     wireStatus(gamepad);
     unsubs.push(layer.onLayoutChange(() => setLayoutTick((t) => t + 1)));
+    // Refresh the device-picker list when ports come and go (hot-plug).
+    unsubs.push(midi.onStatusChange(() => setMidiInputs(midi.listInputs())));
     unsubs.push(
       midi.onBindingsChange((b) => {
         setMidiBindings(b);
@@ -131,34 +152,37 @@ export function useInputLayer(engine: EngineApi | null): UseInputLayer {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine]);
 
-  // Recompose the active source set whenever the enabled set changes.
+  // Recompose the active source set whenever the mode changes.
   useEffect(() => {
-    const active: InputSource[] = [];
-    if (enabled['xy-pad']) active.push(pad);
-    if (enabled.midi) active.push(midi);
-    if (enabled.gamepad) active.push(gamepad);
-    layer.setSources(active);
+    const kind = MODE_SOURCE[inputMode];
+    const src = kind === 'xy-pad' ? pad : kind === 'gamepad' ? gamepad : midi;
+    layer.setSources([src]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [inputMode]);
 
-  const setEnabled = useCallback(
-    (kind: InputSourceKind, on: boolean) => {
-      setEnabledSet((m) => ({ ...m, [kind]: on }));
-      if (kind === 'midi') {
-        if (on) {
-          void midi.start().then(() => setMidiInputs(midi.listInputs()));
-        } else {
-          void midi.stop();
-        }
-      } else if (kind === 'gamepad') {
-        if (on) gamepad.start();
-        else gamepad.stop();
-      } else if (kind === 'xy-pad') {
-        if (on) pad.start();
+  const setInputMode = useCallback(
+    (mode: InputMode) => {
+      setInputModeState((prev) => {
+        if (prev === mode) return prev;
+        // Stop the outgoing source, start the incoming one.
+        if (prev === 'gamepad') gamepad.stop();
+        else if (prev === 'midi') void midi.stop();
         else pad.stop();
-      }
+
+        if (mode === 'gamepad') {
+          gamepad.start();
+        } else if (mode === 'midi') {
+          void midi.start().then(() => {
+            setMidiInputs(midi.listInputs());
+            setMidiDeviceId(midi.getSelectedDeviceId());
+          });
+        } else {
+          pad.start();
+        }
+        return mode;
+      });
     },
-    [midi, gamepad, pad],
+    [pad, midi, gamepad],
   );
 
   const setGamepadStickMode = useCallback(
@@ -168,6 +192,15 @@ export function useInputLayer(engine: EngineApi | null): UseInputLayer {
       setLayoutTick((t) => t + 1);
     },
     [gamepad],
+  );
+
+  const selectMidiDevice = useCallback(
+    (id: string | null) => {
+      midi.selectDevice(id);
+      setMidiDeviceId(id);
+      setMidiInputs(midi.listInputs());
+    },
+    [midi],
   );
 
   const armMidiLearn = useCallback(
@@ -194,42 +227,50 @@ export function useInputLayer(engine: EngineApi | null): UseInputLayer {
 
   const pushPad = useCallback((x: number, y: number) => pad.pushAxes(x, y), [pad]);
   const onAction = useCallback((cb: (a: InputAction) => void) => layer.onAction(cb), [layer]);
+  const onReducedInput = useCallback(
+    (cb: (x: number, y: number) => void) => layer.onReducedInput(cb),
+    [layer],
+  );
 
   const sources: SourceView[] = useMemo(
     () =>
       ([pad, midi, gamepad] as InputSource[]).map((s) => ({
         kind: s.kind,
         label: s.label,
-        enabled: enabled[s.kind],
+        enabled: MODE_SOURCE[inputMode] === s.kind,
         status: statuses[s.kind],
-        axisCount: enabled[s.kind] ? s.axisCount() : 0,
+        axisCount: MODE_SOURCE[inputMode] === s.kind ? s.axisCount() : 0,
       })),
     // layoutTick forces recompute when axis counts shift (learn-map / stick mode).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [enabled, statuses, layoutTick, pad, midi, gamepad],
+    [inputMode, statuses, layoutTick, pad, midi, gamepad],
   );
 
   const channelLayout = useMemo(
     () => layer.channelLayout(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layoutTick, enabled],
+    [layoutTick, inputMode],
   );
 
   return {
     pushPad,
+    inputMode,
+    setInputMode,
     sources,
-    setEnabled,
     channelLayout,
     axisCount: channelLayout.length,
     engineInputSize: engine?.architecture.inputSize ?? 2,
     gamepadStickMode,
     setGamepadStickMode,
+    midiInputs,
+    midiDeviceId,
+    selectMidiDevice,
     midiLearnArmed,
     armMidiLearn,
     midiBindings,
     clearMidiBinding,
     clearMidiBindings,
-    midiInputs,
     onAction,
+    onReducedInput,
   };
 }

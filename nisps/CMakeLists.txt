@@ -165,8 +165,14 @@ if(NOT EMSCRIPTEN)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         target_compile_options(nisps_parity_check PRIVATE
             -Wall -Wextra -Werror -Wpedantic
+            # Disable FP multiply-add contraction so native matches the WASM
+            # build, which has no FMA instruction. Without this, native clang/gcc
+            # fuses MACs in the training backprop and the (chaotic) loop amplifies
+            # the rounding difference past the 1e-5 parity tolerance — pronounced
+            # since the input layer widened to 32 for mix-and-match inputs.
+            -ffp-contract=off
         )
     elseif(MSVC)
-        target_compile_options(nisps_parity_check PRIVATE /W4 /WX)
+        target_compile_options(nisps_parity_check PRIVATE /W4 /WX /fp:precise)
     endif()
 endif()

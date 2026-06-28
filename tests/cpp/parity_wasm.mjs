@@ -191,8 +191,8 @@ async function main() {
   api.describe(dimsBuf);
   const dims = new Int32Array(Module.HEAP32.buffer, dimsBuf, 6).slice();
   api.free(dimsBuf);
-  // Expect: [2, 10, 14, 18, 126, 4]
-  const expectedDims = [2, 10, 14, 18, 126, 4];
+  // Expect: [32, 10, 14, 18, 126, 4]  (32-input max for mix-and-match)
+  const expectedDims = [32, 10, 14, 18, 126, 4];
   for (let i = 0; i < expectedDims.length; ++i) {
     if (dims[i] !== expectedDims[i]) {
       console.error(`[parity_wasm] WASM build has dim[${i}]=${dims[i]}, native expected ${expectedDims[i]}`);
@@ -200,10 +200,11 @@ async function main() {
       process.exit(2);
     }
   }
+  const N_IN = dims[0];
   const N_OUT = dims[4];
 
   // --- Stage 1: ML inference ---
-  const ml = api.create(2, N_OUT, 0, 0, SEED);
+  const ml = api.create(N_IN, N_OUT, 0, 0, SEED);
   api.drawWeights(ml, 0.5);
   api.setInput(ml, 0, INPUT_X);
   api.setInput(ml, 1, INPUT_Y);
@@ -226,10 +227,13 @@ async function main() {
     for (let j = 0; j < N_OUT; ++j) out[j] = a + 0.005 * j;
     return out;
   };
-  const featBuf = api.malloc(2 * 4);
-  const featF32 = new Float32Array(api.HEAPF32.buffer, featBuf, 2);
+  // Feature buffer is NIn-wide (zero-padded): two real axes + unused slots at 0,
+  // matching the native side and the front-end's mix-and-match input shape.
+  const featBuf = api.malloc(N_IN * 4);
+  const featF32 = new Float32Array(api.HEAPF32.buffer, featBuf, N_IN);
   const labelBuf = api.malloc(N_OUT * 4);
   for (let i = 0; i < features.length; ++i) {
+    featF32.fill(0);
     featF32[0] = features[i][0];
     featF32[1] = features[i][1];
     const label = labelFor(i);

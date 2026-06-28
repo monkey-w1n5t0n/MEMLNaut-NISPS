@@ -5,24 +5,27 @@
 //   2. AudioWorklet processor (playground/src/audio/worklet/...)  — engine
 //      calls. (Each instance owns its own WASM module instance.)
 //
-// FIXED-ARCHITECTURE LIMITATION (VERY IMPORTANT)
-// ----------------------------------------------
+// ARCHITECTURE (input dim is OVER-PROVISIONED for mix-and-match inputs)
+// ---------------------------------------------------------------------
 // The C++ MLP class is templated on layer sizes (architecture.md §4.1, §6.2).
 // We instantiate ONE concrete configuration here:
 //
-//     using DefaultMLP = nisps::ml::MLP<2, 10, 14, 18, 126>;
+//     using DefaultMLP = nisps::ml::MLP<32, 10, 14, 18, 126>;
 //
-// This was chosen as the union of the playground use case (2-D joystick →
-// 126 synth params) and the largest hidden-layer footprint that still fits
-// firmware budgets. `nisps_ml_create()` accepts caller-supplied input_size,
-// output_size, hidden[], n_hidden but ONLY validates them against the
-// compile-time defaults — extra inputs/outputs are clipped at the boundary.
-// If the caller passes incompatible dimensions we still create the module:
-// extra inputs are zero-padded, extra outputs are truncated, and the
-// hidden-layer override is silently ignored.
+// The 32-input dimension is the MAX number of composed input axes the manifold
+// front-end can feed (matches MAX_AXES in manifold/src/inputs/input-layer.ts).
+// The mix-and-match input layer (Internal XY pad + Game Controller + MIDI) gives
+// each active axis its OWN dedicated input slot — NO mean-blending — and feeds
+// the remaining (unused) slots a constant 0. The "active input dimension count"
+// is a front-end concept: a 2-axis pad uses slots 0–1, a 4-axis pad+stick uses
+// 0–3, etc. Because slot assignment is stable and unused slots are held at 0,
+// the net behaves as an N-input net where N = active axes; changing N is a
+// reshape, after which the front-end resets the weights (recreate-from-scratch,
+// behind a confirm modal). 126 outputs cover C15 + any current schema.
 //
-// Future work: ship multiple WASM modules (one per common architecture) or
-// rebuild on demand. See architecture.md "open questions" — Stream 7 punts.
+// `nisps_ml_create()` accepts caller-supplied input_size/output_size/hidden[]
+// but only validates them against these compile-time defaults — extra
+// inputs/outputs are clipped at the boundary and hidden overrides are ignored.
 //
 // WIRE FORMAT FOR WEIGHTS
 // -----------------------
@@ -85,7 +88,7 @@ namespace {
 //   * 126 outputs         — enough for the C15 mode and any current schema.
 //
 // The MLP also has dataset slots, loss history etc. — see mlp.hpp.
-using DefaultMLP = nisps::ml::MLP<2u, 10u, 14u, 18u, 126u>;
+using DefaultMLP = nisps::ml::MLP<32u, 10u, 14u, 18u, 126u>;
 
 constexpr std::size_t kDefaultInputs  = DefaultMLP::kInput;
 constexpr std::size_t kDefaultOutputs = DefaultMLP::kOutput;

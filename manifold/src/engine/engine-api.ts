@@ -164,9 +164,13 @@ export class EngineApi {
     this.spine.setInput(x, y);
   }
 
-  /** Set an arbitrary input vector (first two used as XY for the fixed 2→N MLP). */
+  /**
+   * Set the full N-dimensional input vector (one axis per active input source).
+   * The first two axes run through the 2-D input pipeline; axes 2+ are raw.
+   * Extra axes beyond the net's input arity are ignored; unused slots → 0.
+   */
   setInputs(arr: ReadonlyArray<number>): void {
-    this.spine.setInput(arr[0] ?? 0.5, arr[1] ?? 0.5);
+    this.spine.setInputs(arr);
   }
 
   /** Live post-ML output vector (reused buffer — read, don't retain). */
@@ -193,7 +197,7 @@ export class EngineApi {
    * state without the user having to move the controller.
    */
   process(): void {
-    this.spine.setInput(this.spine.lastRawX, this.spine.lastRawY);
+    this.spine.reprocess();
   }
 
   // ---- Training ------------------------------------------------------

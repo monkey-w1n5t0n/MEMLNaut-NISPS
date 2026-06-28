@@ -23,6 +23,7 @@
 import type { ReactNode } from 'react';
 import { Badge, Button, PillToggle, Slider, Switch } from '../primitives';
 import type { ConsoleCtx, DrawerDepth, DrawerKey, FeedbackModeUI, SoloMode } from './types';
+import type { InputMode } from '../inputs';
 import { OutputControlRow } from '../dock/OutputControlRow';
 import { BackendAdvanced } from '../dock/BackendAdvanced';
 import { OutputsBackendConfig, BackendStatusChip } from '../dock/OutputsBackendConfig';
@@ -236,164 +237,245 @@ const STATUS_TONE: Record<string, string> = {
   idle: 'var(--fg-dim)',
 };
 
+const INPUT_MODE_OPTS: { value: InputMode; label: string }[] = [
+  { value: 'internal', label: 'Internal' },
+  { value: 'gamepad', label: 'Game Controller' },
+  { value: 'midi', label: 'MIDI' },
+];
+
+/** Standard-mapping gamepad button → verdict legend (mirrors ConsoleApp). */
+const GAMEPAD_LEGEND: { btn: string; action: string }[] = [
+  { btn: 'RB', action: 'Up · positive feedback' },
+  { btn: 'LB', action: 'Down · negative feedback' },
+  { btn: 'X', action: 'Randomise' },
+  { btn: 'Y', action: 'Nudge' },
+  { btn: 'B', action: 'Undo' },
+  { btn: 'A (hold)', action: 'Reposition — hold, move stick, release to place' },
+];
+
+/**
+ * Read-only INPUT meter — shows a learned MIDI control's live value. Deliberately
+ * styled apart from the output Sliders (which are orange, interactive thumbs):
+ * these are inset bars on the secondary accent with an "in" tag, so the user can
+ * see at a glance that these feed the net rather than being driven by it.
+ */
+function MidiInputMeter({ label, value, onClear }: { label: string; value: number; onClear: () => void }) {
+  const pct = Math.max(0, Math.min(1, value));
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span
+        style={{
+          fontSize: 9,
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--accent-2)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          minWidth: 70,
+        }}
+      >
+        {label}
+      </span>
+      <div
+        style={{
+          position: 'relative',
+          flex: 1,
+          height: 8,
+          background: 'var(--bg-2)',
+          border: '1px solid var(--line)',
+          borderLeft: '2px solid var(--accent-2)',
+          borderRadius: 'var(--r-1)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: `${pct * 100}%`,
+            background: 'var(--accent-2)',
+            opacity: 0.55,
+          }}
+        />
+      </div>
+      <span
+        style={{
+          fontSize: 9,
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--fg-mute)',
+          minWidth: 28,
+          textAlign: 'right',
+        }}
+      >
+        {value.toFixed(2)}
+      </span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={`Remove ${label}`}
+        style={{ background: 'transparent', border: 0, color: 'var(--danger)', cursor: 'pointer', fontSize: 'var(--fs-xs)' }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
   const inp = ctx.inputs;
-  const enabledCount = inp.sources.filter((s) => s.enabled).length;
   const reshaping = inp.axisCount > inp.engineInputSize;
+  const active = inp.sources.find((s) => s.enabled);
+  const modeLabel = INPUT_MODE_OPTS.find((o) => o.value === inp.inputMode)?.label ?? 'Internal';
 
   return (
     <>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Badge tone="info">
-          {enabledCount === 0 ? 'no source' : `${enabledCount} source${enabledCount > 1 ? 's' : ''}`}
-        </Badge>
-        <Chip tone="var(--accent)">{inp.axisCount} axes</Chip>
-        <Chip>engine: {inp.engineInputSize}-in</Chip>
+        <Badge tone="info">{modeLabel}</Badge>
+        {inp.inputMode !== 'internal' && <Chip tone="var(--accent)">{inp.axisCount} axes</Chip>}
         {reshaping && <Chip tone="var(--warn)">blended → {inp.engineInputSize}</Chip>}
+        {active && (
+          <Chip tone={STATUS_TONE[active.status.state] ?? 'var(--fg-dim)'}>{active.status.state}</Chip>
+        )}
       </div>
 
-      <SectionLabel>Sources</SectionLabel>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {inp.sources.map((s) => (
-          <div
-            key={s.kind}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
-              padding: '4px 8px',
-              background: 'var(--bg-2)',
-              border: '1px solid var(--line)',
-              borderRadius: 'var(--r-1)',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-mute)' }}>
-                {s.label}
-                {s.enabled ? ` · ${s.axisCount} ax` : ''}
-              </span>
-              {depth !== 'peek' && (
-                <span style={{ fontSize: 9, color: STATUS_TONE[s.status.state] ?? 'var(--fg-dim)' }}>
-                  {s.status.message}
-                </span>
-              )}
-            </div>
-            <Switch checked={s.enabled} onChange={(v) => inp.setEnabled(s.kind, v)} label="" />
-          </div>
-        ))}
-      </div>
+      <SectionLabel>Input source</SectionLabel>
+      <Segmented value={inp.inputMode} onChange={inp.setInputMode} options={INPUT_MODE_OPTS} />
+      {active && depth !== 'peek' && (
+        <span style={{ fontSize: 9, color: STATUS_TONE[active.status.state] ?? 'var(--fg-dim)' }}>
+          {active.status.message}
+        </span>
+      )}
 
-      {depth !== 'peek' && (
+      {/* ---- Internal (XY pad / manifold) ---- */}
+      {inp.inputMode === 'internal' && depth !== 'peek' && (
+        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+          Drag the on-screen manifold / XY pad. Two axes feed the net directly — this is the default.
+        </p>
+      )}
+
+      {/* ---- Game Controller ---- */}
+      {inp.inputMode === 'gamepad' && depth !== 'peek' && (
         <>
-          {/* ---- Gamepad config ---- */}
-          {inp.sources.find((s) => s.kind === 'gamepad')?.enabled && (
-            <>
-              <SectionLabel>Gamepad · sticks</SectionLabel>
-              <Segmented
-                value={inp.gamepadStickMode}
-                onChange={inp.setGamepadStickMode}
-                options={[
-                  { value: 'single', label: 'Single (2 ax)' },
-                  { value: 'double', label: 'Double (4 ax)' },
-                ]}
-              />
-            </>
-          )}
-
-          {/* ---- MIDI learn-map ---- */}
-          {inp.sources.find((s) => s.kind === 'midi')?.enabled && (
-            <>
-              <SectionLabel>MIDI · learn-map</SectionLabel>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Button
-                  size="sm"
-                  variant={inp.midiLearnArmed ? 'primary' : 'secondary'}
-                  onClick={() => inp.armMidiLearn(!inp.midiLearnArmed)}
-                >
-                  {inp.midiLearnArmed ? 'learning… (move a control)' : 'Learn axis'}
-                </Button>
-                {inp.midiBindings.length > 0 && (
-                  <Button size="sm" variant="secondary" onClick={inp.clearMidiBindings}>
-                    Clear all
-                  </Button>
-                )}
+          <SectionLabel>Sticks</SectionLabel>
+          <Segmented
+            value={inp.gamepadStickMode}
+            onChange={inp.setGamepadStickMode}
+            options={[
+              { value: 'single', label: 'One stick (2 ax)' },
+              { value: 'double', label: 'Both sticks (4 ax)' },
+            ]}
+          />
+          <SectionLabel>Buttons</SectionLabel>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {GAMEPAD_LEGEND.map((g) => (
+              <div
+                key={g.btn}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-xs)' }}
+              >
+                <Chip tone="var(--accent)">{g.btn}</Chip>
+                <span style={{ color: 'var(--fg-mute)' }}>{g.action}</span>
               </div>
-              {inp.midiBindings.length === 0 ? (
-                <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
-                  No axes learned yet — arm Learn, then wiggle a knob or hit a pad. CCs map to a
-                  continuous axis; notes map to a gate (1 while held).
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {inp.midiBindings.map((b, i) => (
-                    <div
-                      key={`${b.kind}-${b.number}-${b.channel}`}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        fontSize: 'var(--fs-xs)',
-                        color: 'var(--fg-mute)',
-                      }}
-                    >
-                      <span>
-                        {b.label} · {b.value.toFixed(2)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => inp.clearMidiBinding(i)}
-                        style={{
-                          background: 'transparent',
-                          border: 0,
-                          color: 'var(--danger)',
-                          cursor: 'pointer',
-                          fontSize: 'var(--fs-xs)',
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {inp.midiInputs.length > 0 && (
-                <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
-                  Listening on: {inp.midiInputs.map((p) => p.name).join(', ')}
-                </p>
-              )}
-            </>
-          )}
+            ))}
+          </div>
+          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+            Connect a controller and press any button to wake it. Sticks drive the input map;
+            buttons fire the verdicts above.
+          </p>
+        </>
+      )}
 
-          {/* ---- Channel layout ---- */}
-          <SectionLabel>Channel layout</SectionLabel>
-          {inp.channelLayout.length === 0 ? (
+      {/* ---- MIDI ---- */}
+      {inp.inputMode === 'midi' && depth !== 'peek' && (
+        <>
+          <SectionLabel>Device</SectionLabel>
+          {inp.midiInputs.length === 0 ? (
             <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
-              No active axes. Enable a source above.
+              No MIDI inputs detected. Connect a device — it appears here automatically.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {inp.channelLayout.map((c, i) => (
-                <Chip key={i}>
-                  {i}: {c.source}·{c.label}
-                </Chip>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <Button
+                size="sm"
+                variant={inp.midiDeviceId === null ? 'primary' : 'secondary'}
+                onClick={() => inp.selectMidiDevice(null)}
+              >
+                All ports
+              </Button>
+              {inp.midiInputs.map((p) => (
+                <Button
+                  key={p.id}
+                  size="sm"
+                  variant={inp.midiDeviceId === p.id ? 'primary' : 'secondary'}
+                  onClick={() => inp.selectMidiDevice(p.id)}
+                >
+                  {p.name}
+                </Button>
               ))}
             </div>
           )}
 
-          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-            The active sources concatenate into one input vector at the head of the spine.
-            {reshaping
-              ? ` The browser WASM is a fixed ${inp.engineInputSize}-input head (MLP<2,…>), so the
-                 ${inp.axisCount} axes are blended down to ${inp.engineInputSize} (even→X / odd→Y mean).`
-              : ''}{' '}
-            {/* TODO(workstream F, docs/redesign/inputs-spec.md — "multiple WASM modules +
-                warm-start"): give every axis its own genuine input dimension by (re)loading a
-                WASM module whose MLP arity matches axisCount and warm-starting from the prior
-                net. Deferred — the reduction lives in InputLayer.compose(). */}
-            True per-axis dimensions land with the multi-WASM reshape (inputs-spec).
-          </p>
+          <SectionLabel>MIDI Learn</SectionLabel>
+          {inp.midiLearnArmed ? (
+            <div
+              style={{
+                padding: '8px 10px',
+                background: 'var(--bg-2)',
+                border: '1px solid var(--accent-2)',
+                borderRadius: 'var(--r-1)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent-2)', lineHeight: 1.5 }}>
+                Move all of the controls you want to use, then click Done. Each knob or fader you
+                touch becomes an input.
+              </span>
+              <Button size="sm" variant="primary" onClick={() => inp.armMidiLearn(false)}>
+                Done ({inp.midiBindings.length} learned)
+              </Button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Button size="sm" variant="secondary" onClick={() => inp.armMidiLearn(true)}>
+                {inp.midiBindings.length ? 'Learn more…' : 'Start MIDI Learn'}
+              </Button>
+              {inp.midiBindings.length > 0 && (
+                <Button size="sm" variant="secondary" onClick={inp.clearMidiBindings}>
+                  Clear all
+                </Button>
+              )}
+            </div>
+          )}
+
+          {inp.midiBindings.length > 0 && (
+            <>
+              <SectionLabel>Learned controls</SectionLabel>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {inp.midiBindings.map((b, i) => (
+                  <MidiInputMeter
+                    key={`${b.kind}-${b.number}-${b.channel}`}
+                    label={b.label}
+                    value={b.value}
+                    onClear={() => inp.clearMidiBinding(i)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </>
+      )}
+
+      {/* ---- Reshape note (only when >2 axes feed the fixed WASM head) ---- */}
+      {reshaping && depth !== 'peek' && (
+        <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+          {/* TODO(workstream F, docs/redesign/inputs-spec.md — "multiple WASM modules +
+              warm-start"): give every axis its own genuine input dimension by (re)loading a
+              WASM module whose MLP arity matches axisCount and warm-starting from the prior
+              net. Deferred — the reduction lives in InputLayer.compose(). */}
+          The browser WASM is a fixed {inp.engineInputSize}-input head (MLP&lt;2,…&gt;), so the{' '}
+          {inp.axisCount} axes are blended down to {inp.engineInputSize} (even→X / odd→Y mean). True
+          per-axis dimensions land with the multi-WASM reshape.
+        </p>
       )}
     </>
   );

@@ -13,24 +13,18 @@
  * its value), but routing everything through one compose path keeps sources
  * composable and the channel layout coherent.
  *
- * ── Arity mismatch (the WASM reshape TODO) ──────────────────────────────────
- * The browser WASM is fixed at MLP<2, …, 126> — a TWO-input head. When the
- * composed vector has > 2 axes (double-stick gamepad = 4, MIDI learn-map = many)
- * we must reduce to 2 to feed today's engine. We do NOT fake a wider net.
+ * ── Dedicated dimensions (no blending) ──────────────────────────────────────
+ * The WASM net is over-provisioned to a 32-input head (= MAX_AXES; see
+ * nisps/wasm/bindings.cpp). Each active axis drives its OWN engine input slot
+ * 1:1 — a double-stick gamepad is 4 genuine dims, a learned MIDI surface is N
+ * genuine dims. `compose()` simply forwards the active axes; the engine
+ * zero-pads the remaining slots and a zero input is inert (0 × weight = 0), so
+ * unused dimensions never perturb the net. We do NOT mean-blend (the previous
+ * behaviour) — that diluted every source and biased the net toward idle
+ * sources' resting values.
  *
- *   chosen reduction (this pass): pairwise BLEND.
- *     inX = mean(axis[0], axis[2], axis[4], …)   // even axes
- *     inY = mean(axis[1], axis[3], axis[5], …)   // odd axes
- *   so a single stick passes straight through (axis0→X, axis1→Y), a double
- *   stick averages L/R into one XY, and MIDI axes fold into X/Y by parity.
- *
- * TODO(workstream F, docs/redesign/inputs-spec.md — "multiple WASM modules +
- * warm-start"): the real fix is to (re)load a WASM module whose MLP input arity
- * matches the composed axis count and warm-start its weights from the prior net,
- * so every axis gets its own genuine input dimension instead of being blended.
- * That is a larger build (multiple .wasm artefacts or a runtime-variadic head)
- * and is deliberately deferred — this layer is wired so that swapping the
- * reduction for a true reshape is a localised change in `compose()`.
+ * Changing the ACTIVE axis count is a reshape: the front-end resets the net
+ * (recreate-from-scratch, behind a confirm modal) since slot meanings change.
  */
 import type { InputAction, InputSource } from './types';
 
@@ -50,6 +44,7 @@ export class InputLayer {
   private rafId: number | null = null;
   private actionListeners = new Set<(a: InputAction) => void>();
   private layoutListeners = new Set<() => void>();
+  private reducedListeners = new Set<(x: number, y: number) => void>();
   private unsubActions = new Map<InputSource, () => void>();
 
   attach(engine: InputEngineSink): void {
@@ -144,50 +139,32 @@ export class InputLayer {
 
     // 4. one engine write.
     engine.setInputs(reduced);
+
+    // 5. report the reduced 2D position so the on-screen manifold can track a
+    //    gamepad/MIDI-driven input (the XY pad pushes its own position).
+    if (this.reducedListeners.size) {
+      const x = reduced[0] ?? 0.5;
+      const y = reduced[1] ?? reduced[0] ?? 0.5;
+      for (const cb of this.reducedListeners) cb(x, y);
+    }
   }
 
   /**
-   * Reduce the composed N-axis vector to the engine's input arity.
+   * Map the composed N active axes to the engine's input vector — DEDICATED
+   * DIMENSIONS, no blending. Each active axis i drives engine input slot i 1:1;
+   * the engine zero-pads the slots beyond `count` and a zero input is inert
+   * (0 × weight = 0), so unused dimensions never perturb the net.
    *
-   * For the fixed 2-input WASM, fold by parity (even→X, odd→Y) via mean. If a
-   * future multi-module engine reports inputSize >= n, this passes axes through
-   * 1:1 (truncated/padded) — the seam where the real reshape lands.
+   * The net's input arity is over-provisioned (32, = MAX_AXES), so `inputSize`
+   * is effectively always ≥ n; the `min` only guards a transient where more
+   * axes are active than the net can take. We deliberately do NOT mean-blend
+   * (the old behaviour) — that diluted every source and biased the net toward
+   * idle sources' resting values.
    */
   private compose(n: number, inputSize: number): number[] {
-    if (inputSize >= n) {
-      // True passthrough path (future multi-module head). Pad with 0.5.
-      const out = new Array<number>(inputSize);
-      for (let i = 0; i < inputSize; i++) out[i] = i < n ? this.vector[i] : 0.5;
-      return out;
-    }
-    if (inputSize === 2) {
-      let sx = 0;
-      let sy = 0;
-      let cx = 0;
-      let cy = 0;
-      for (let i = 0; i < n; i++) {
-        if ((i & 1) === 0) {
-          sx += this.vector[i];
-          cx++;
-        } else {
-          sy += this.vector[i];
-          cy++;
-        }
-      }
-      return [cx ? sx / cx : 0.5, cy ? sy / cy : 0.5];
-    }
-    // Generic fallback for any other fixed arity: chunked mean.
-    const out = new Array<number>(inputSize).fill(0.5);
-    const per = Math.ceil(n / inputSize);
-    for (let k = 0; k < inputSize; k++) {
-      let s = 0;
-      let c = 0;
-      for (let i = k * per; i < Math.min((k + 1) * per, n); i++) {
-        s += this.vector[i];
-        c++;
-      }
-      if (c) out[k] = s / c;
-    }
+    const count = Math.min(n, inputSize);
+    const out = new Array<number>(count);
+    for (let i = 0; i < count; i++) out[i] = this.vector[i];
     return out;
   }
 
@@ -207,6 +184,14 @@ export class InputLayer {
     };
   }
 
+  /** Subscribe to the reduced 2D input each frame (composed → engine arity). */
+  onReducedInput(cb: (x: number, y: number) => void): () => void {
+    this.reducedListeners.add(cb);
+    return () => {
+      this.reducedListeners.delete(cb);
+    };
+  }
+
   private fanAction(a: InputAction): void {
     for (const cb of this.actionListeners) cb(a);
   }
@@ -221,5 +206,6 @@ export class InputLayer {
     this.unsubActions.clear();
     this.actionListeners.clear();
     this.layoutListeners.clear();
+    this.reducedListeners.clear();
   }
 }

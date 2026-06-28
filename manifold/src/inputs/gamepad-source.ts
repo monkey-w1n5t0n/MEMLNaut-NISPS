@@ -25,6 +25,31 @@ export type StickMode = 'single' | 'double';
 
 const DEADZONE = 0.08;
 
+/**
+ * Standard-mapping button index → human label. The Inputs dock binds these to
+ * verdict ops (see useInputLayer / ConsoleApp): LB/RB = down/up feedback, the
+ * face buttons = randomise / nudge / undo, and a hold-and-move button drops a
+ * repositioned example. The labels here keep the dock legend honest.
+ */
+const BUTTON_LABELS: Record<number, string> = {
+  0: 'A',
+  1: 'B',
+  2: 'X',
+  3: 'Y',
+  4: 'LB',
+  5: 'RB',
+  6: 'LT',
+  7: 'RT',
+  8: 'Back',
+  9: 'Start',
+  10: 'L3',
+  11: 'R3',
+  12: 'D↑',
+  13: 'D↓',
+  14: 'D←',
+  15: 'D→',
+};
+
 export class GamepadSource extends BaseSource {
   readonly kind: InputSourceKind = 'gamepad';
   readonly label = 'Gamepad';
@@ -117,8 +142,17 @@ export class GamepadSource extends BaseSource {
         this.emitAction({
           source: this.kind,
           id: `button:${i}`,
-          label: `Button ${i}`,
+          label: BUTTON_LABELS[i] ?? `Button ${i}`,
           value: pad.buttons[i].value || 1,
+          phase: 'press',
+        });
+      } else if (!pressed && this.buttonsDown[i]) {
+        this.emitAction({
+          source: this.kind,
+          id: `button:${i}`,
+          label: BUTTON_LABELS[i] ?? `Button ${i}`,
+          value: 0,
+          phase: 'release',
         });
       }
       this.buttonsDown[i] = pressed;

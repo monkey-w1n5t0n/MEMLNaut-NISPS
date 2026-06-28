@@ -10,10 +10,17 @@
  *    note-off. Note-on ALSO surfaces a discrete action (so a pad can fire
  *    commit/perturb without the keyboard).
  *
- * **Learn-map.** When `armLearn()` is active, the NEXT distinct CC or note seen
- * is bound to a new axis (appended). This is the standard "MIDI learn" gesture:
- * arm → wiggle the knob/pad → it captures. Axes can be cleared individually.
- * The bindings are exposed for the dock channel-layout view.
+ * **Batch learn ("MIDI Learn" mode).** When `armLearn(true)` is active, EVERY
+ * distinct CC that moves is captured as a new axis (appended, deduped). The
+ * gesture the dock presents: arm → wiggle ALL the knobs/faders you want →
+ * click "Done" (`armLearn(false)`). This differs from the one-shot learn other
+ * apps use — the user sweeps the whole control surface in one pass. Notes are
+ * NOT auto-bound as axes (they stay as discrete actions); the "controls" the
+ * user sweeps are continuous CCs. Axes can be cleared individually or all.
+ *
+ * **Device selection.** By default every connected input port is listened to.
+ * `selectDevice(id)` narrows to a single port (the dock device picker); `null`
+ * restores listen-all.
  *
  * Pull-based: messages latch the latest per-binding value into `values`;
  * `sample()` copies them out. Hot path performs no IO/allocation.
@@ -51,6 +58,8 @@ export class WebMidiInputSource extends BaseSource {
   private inputs: MIDIInput[] = [];
   private bindings: MidiBinding[] = [];
   private learnArmed = false;
+  /** Restrict listening to this input port id; null = every connected port. */
+  private selectedDeviceId: string | null = null;
   private bindingsListeners = new Set<(b: MidiBinding[]) => void>();
 
   isAvailable(): boolean {
@@ -73,18 +82,32 @@ export class WebMidiInputSource extends BaseSource {
 
   // ---- Learn-map API (consumed by the dock) -------------------------------
 
-  /** Arm/disarm MIDI-learn: the next distinct CC/note is captured as an axis. */
+  /**
+   * Enter/leave batch MIDI-Learn. While armed, every distinct CC that moves is
+   * appended as an axis (the user sweeps their whole control surface, then
+   * clicks Done). Disarming keeps whatever was captured.
+   */
   armLearn(armed: boolean): void {
     this.learnArmed = armed;
     this.setStatus(
       armed
-        ? { state: 'ready', message: 'Learn armed — move a knob or hit a pad' }
+        ? { state: 'ready', message: 'MIDI Learn — move every control you want, then click Done' }
         : this.readyStatus(),
     );
   }
 
   isLearnArmed(): boolean {
     return this.learnArmed;
+  }
+
+  /** Narrow listening to one input port (dock device picker). null = all ports. */
+  selectDevice(id: string | null): void {
+    this.selectedDeviceId = id;
+    this.rewire();
+  }
+
+  getSelectedDeviceId(): string | null {
+    return this.selectedDeviceId;
   }
 
   getBindings(): ReadonlyArray<MidiBinding> {
@@ -149,11 +172,15 @@ export class WebMidiInputSource extends BaseSource {
     if (!this.access) return;
     for (const inp of this.inputs) inp.onmidimessage = null;
     this.inputs = [];
-    this.access.inputs.forEach((inp) => {
+    this.access.inputs.forEach((inp, id) => {
+      // Honour the device picker: when a port is selected, listen to it alone.
+      if (this.selectedDeviceId !== null && id !== this.selectedDeviceId) return;
       inp.onmidimessage = (e) => this.onMessage(e);
       this.inputs.push(inp);
     });
-    if (this.statusState.state !== 'connecting') this.setStatus(this.readyStatus());
+    if (this.statusState.state !== 'connecting' && !this.learnArmed) {
+      this.setStatus(this.readyStatus());
+    }
   }
 
   private readyStatus(): { state: 'ready'; message: string } {
@@ -173,41 +200,45 @@ export class WebMidiInputSource extends BaseSource {
     const d2 = data.length > 2 ? data[2] : 0;
 
     if (status === STATUS_BYTE_CC) {
-      this.handleBindable('cc', d1, channel, d2 / 127);
+      this.handleCc(d1, channel, d2 / 127);
     } else if (status === STATUS_BYTE_NOTE_ON && d2 > 0) {
-      this.handleBindable('note', d1, channel, 1);
-      this.emitAction({ source: this.kind, id: `note:${d1}`, label: `Note ${d1}`, value: d2 / 127 });
+      // Notes drive a held-gate on any already-learned note axis + a discrete
+      // action (so a pad can fire commit/perturb). Batch learn binds CCs only.
+      this.updateNote(d1, channel, 1);
+      this.emitAction({ source: this.kind, id: `note:${d1}`, label: `Note ${d1}`, value: d2 / 127, phase: 'press' });
     } else if (status === STATUS_BYTE_NOTE_OFF || (status === STATUS_BYTE_NOTE_ON && d2 === 0)) {
-      this.handleBindable('note', d1, channel, 0, /*onlyUpdate*/ true);
+      this.updateNote(d1, channel, 0);
+      this.emitAction({ source: this.kind, id: `note:${d1}`, label: `Note ${d1}`, value: 0, phase: 'release' });
     }
   }
 
   /**
-   * Route an incoming bindable message: update a matching binding's value, or —
-   * if learn is armed — create a new axis binding for it.
+   * Route an incoming CC: update a matching binding's value, or — if batch
+   * learn is armed — capture it as a NEW axis (deduped). Learn stays armed so
+   * the user can sweep their whole control surface in one pass.
    */
-  private handleBindable(
-    kind: MidiBindingKind,
-    number: number,
-    channel: number,
-    value: number,
-    onlyUpdate = false,
-  ): void {
+  private handleCc(number: number, channel: number, value: number): void {
     const existing = this.bindings.find(
-      (b) => b.kind === kind && b.number === number && b.channel === channel,
+      (b) => b.kind === 'cc' && b.number === number && b.channel === channel,
     );
     if (existing) {
       existing.value = value;
       this.notifyBindings();
       return;
     }
-    if (onlyUpdate) return; // note-off for an unbound note: ignore
     if (this.learnArmed) {
-      const label =
-        kind === 'cc' ? `CC${number} ch${channel}` : `Note ${number} ch${channel}`;
-      this.bindings.push({ kind, number, channel, value, label });
-      this.learnArmed = false; // learn one binding per arm
-      this.setStatus(this.readyStatus());
+      this.bindings.push({ kind: 'cc', number, channel, value, label: `CC${number} ch${channel}` });
+      this.notifyBindings();
+    }
+  }
+
+  /** Update a learned note axis's gate value (note bindings are not auto-learned). */
+  private updateNote(number: number, channel: number, value: number): void {
+    const existing = this.bindings.find(
+      (b) => b.kind === 'note' && b.number === number && b.channel === channel,
+    );
+    if (existing) {
+      existing.value = value;
       this.notifyBindings();
     }
   }

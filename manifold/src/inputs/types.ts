@@ -45,6 +45,17 @@ export interface InputSourceStatus {
 export type InputSourceKind = 'xy-pad' | 'midi' | 'gamepad';
 
 /**
+ * The exclusive INPUT MODE the user picks in the Inputs dock. Unlike the
+ * lower-level {@link InputSourceKind} (which the InputLayer can compose), the
+ * dock surfaces exactly one mode at a time:
+ *
+ *  - `internal`       → the on-screen XY pad / manifold (default; today's behaviour).
+ *  - `gamepad`        → a physical game controller (sticks → axes, buttons → verdicts).
+ *  - `midi`           → a connected MIDI device (learned CCs → axes).
+ */
+export type InputMode = 'internal' | 'gamepad' | 'midi';
+
+/**
  * A momentary discrete action surfaced by a source (e.g. a MIDI note-on or a
  * gamepad face-button press). Fanned out to InputLayer action listeners so the
  * console can bind them to commit / perturb / reroll without the keyboard.
@@ -57,6 +68,13 @@ export interface InputAction {
   label: string;
   /** 0..1 velocity / analogue value where meaningful (else 1 for a press). */
   value: number;
+  /**
+   * Edge phase. `press` (the default) fires on the leading edge; `release` on
+   * the trailing edge. Hold-and-move bindings (e.g. "hold a button, move the
+   * stick, release to drop an example") need both edges — most consumers only
+   * care about `press`.
+   */
+  phase?: 'press' | 'release';
 }
 
 /**

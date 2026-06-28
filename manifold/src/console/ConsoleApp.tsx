@@ -546,6 +546,59 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     return () => window.removeEventListener('keydown', onKey);
   });
 
+  // ---- Game-controller verdict bindings (inputs-spec) ---------------------
+  // The gamepad's sticks already feed the input layer (→ engine); its BUTTONS
+  // drive verdicts here. Standard-mapping indices:
+  //   LB(4) = down/negative · RB(5) = up/positive · X(2) = randomise ·
+  //   Y(3) = nudge · B(1) = undo · A(0) hold-and-move = reposition an example
+  //   (hold A, move the stick to a spot on the manifold, release to drop it).
+  // MIDI note actions are surfaced too but left unbound (MIDI mode learns CCs
+  // as INPUT axes; verdicts there stay on the on-screen / keyboard controls).
+  // The effect has no dep array (matching the keydown handler above) so each
+  // binding closes over the latest verdict functions + live `pos`.
+  useEffect(() => {
+    const unBtn = inputs.onAction((a) => {
+      if (a.source !== 'gamepad') return;
+      const phase = a.phase ?? 'press';
+      if (phase === 'press') {
+        switch (a.id) {
+          case 'button:4': // LB → thumbs-down
+            perturb();
+            break;
+          case 'button:5': // RB → thumbs-up
+            commit();
+            break;
+          case 'button:2': // X → randomise / re-roll
+            reroll();
+            break;
+          case 'button:3': // Y → nudge (scratchpad)
+            onScratchNudge();
+            break;
+          case 'button:1': // B → undo
+            undo();
+            break;
+          case 'button:0': // A (down) → begin repositioning an example
+            onPlace();
+            break;
+        }
+      } else if (phase === 'release' && a.id === 'button:0') {
+        // A (up) → drop the example at the current (stick-driven) location.
+        onPickLocation(pos[0], pos[1]);
+      }
+    });
+    // Mirror the composed gamepad/MIDI position onto the on-screen manifold so
+    // markers + readouts track the controller (the XY pad pushes its own pos).
+    // The callback fires every rAF frame — only re-render when it actually moves.
+    const unPos = inputs.onReducedInput((x, y) => {
+      if (inputs.inputMode === 'internal') return;
+      setPos((prev) => (Math.abs(prev[0] - x) < 1e-3 && Math.abs(prev[1] - y) < 1e-3 ? prev : [x, y]));
+    });
+    return () => {
+      unBtn();
+      unPos();
+    };
+  });
+
   const onToggleAudio = () => {
     if (!engine) return;
     if (engine.audio.isStarted) {

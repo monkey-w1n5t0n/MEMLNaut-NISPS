@@ -66,6 +66,14 @@ anchor + locked decisions) and the `docs/redesign/*-spec.md` set.
 - `manifold/src/midi-devices/` — external-synth device templates. `generated/` is codegen output from
   `schemas/midi_devices/` (`MIDI_DEVICES` catalogue + `MIDI_DEVICES_BY_ID`, params by name+CC). The MIDI Outputs
   config (`dock/OutputsBackendConfig.tsx`) reads it for the device picker + param-select that fills the CC table.
+- `manifold/src/inputs/` — modular INPUT layer feeding the ML head. The Inputs dock picks ONE exclusive mode
+  (`InputMode` = `internal` | `gamepad` | `midi`; Internal/XY-pad is default). `input-layer.ts` owns a single rAF
+  loop composing the active source's axes → reduced to the engine arity (fixed 2-in WASM → even/odd blend) → one
+  `setInputs`, plus an `onReducedInput` callback the manifold tracks. Sources: `xy-pad-source` (push-driven),
+  `gamepad-source` (sticks→axes single/double; buttons emit press+release actions, bound in `ConsoleApp` to
+  verdicts — LB/RB=down/up, X/Y/B=randomise/nudge/undo, A-hold=reposition), `midi-input-source` (device picker +
+  BATCH "MIDI Learn": every CC swept while armed becomes an axis, shown as read-only meters). `useInputLayer.ts`
+  is the React binding; `base-source.ts` shared status/action plumbing; `types.ts` the adapter contract.
 - `manifold/src/feedback/` — `controller.ts` (Explore-and-place scratchpad + geometric-dislike + solo, TS
   prototype), `rng.ts` (seeded).
 - `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius).

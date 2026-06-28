@@ -1,14 +1,15 @@
 /**
  * Modular INPUT layer (workstream F) — public surface.
  *
- * The user picks the input SOURCE(s) feeding the ML head (XY pad / MIDI /
- * gamepad, or a combination); the InputLayer composes their axes into one
- * N-dim vector at the head of the reactive spine. See input-layer.ts for the
+ * The user picks ONE exclusive input MODE feeding the ML head (Internal XY pad /
+ * Game Controller / MIDI); the InputLayer composes the active source's axes into
+ * one N-dim vector at the head of the reactive spine. See input-layer.ts for the
  * arity-reduction + the documented multi-WASM reshape TODO.
  */
 export type {
   InputSource,
   InputSourceKind,
+  InputMode,
   InputSourceState,
   InputSourceStatus,
   InputAction,

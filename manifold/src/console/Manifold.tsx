@@ -72,18 +72,25 @@ export function Manifold({
     const el = wrapRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    let x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    let y = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
     if (stateRef.current.variant === 'circular') {
-      // Clamp to the unit disc centred at (0.5, 0.5).
-      const dx = x - 0.5;
-      const dy = y - 0.5;
-      const d = Math.hypot(dx, dy);
-      if (d > 0.5) {
-        x = 0.5 + (dx / d) * 0.5;
-        y = 0.5 + (dy / d) * 0.5;
+      // Map the pointer relative to the *inscribed circle* the canvas draws (see
+      // `drawRadius` below): a unit-disc vector around the centre, so the knob
+      // tracks the cursor inside the disc and snaps to the rim outside it. This
+      // keeps the reachable area a true circle on a non-square surface (where a
+      // [0,1]² clamp would render as an ellipse spilling past the drawn rim).
+      const radius = Math.min(r.width, r.height) / 2 - 2;
+      if (radius <= 0) return [0.5, 0.5];
+      let vx = (e.clientX - r.left - r.width / 2) / radius;
+      let vy = (r.height / 2 - (e.clientY - r.top)) / radius; // screen y is down; flip so up = +
+      const mag = Math.hypot(vx, vy);
+      if (mag > 1) {
+        vx /= mag;
+        vy /= mag;
       }
+      return [0.5 + 0.5 * vx, 0.5 + 0.5 * vy];
     }
+    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const y = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / r.height));
     return [x, y];
   };
 
@@ -170,6 +177,13 @@ export function Manifold({
       const cx = W / 2;
       const cy = H / 2;
       const radius = Math.min(W, H) / 2 - 2;
+      // Map a normalised [0,1] coord to a screen pixel. The rectangular variant
+      // spreads [0,1]² across the full surface; the circular variant maps the
+      // central unit disc onto the inscribed circle so the [0,1]² clamp lines up
+      // exactly with the drawn rim (and stays a true circle when W ≠ H). x and y
+      // map independently (the circular transform is separable).
+      const sx = circular ? (nx: number) => cx + (nx - 0.5) * 2 * radius : (nx: number) => nx * W;
+      const sy = circular ? (ny: number) => cy - (ny - 0.5) * 2 * radius : (ny: number) => (1 - ny) * H;
 
       if (fl && !draggingRef.current && !fz) {
         let [x, y] = p;
@@ -180,6 +194,17 @@ export function Manifold({
         if (y < 0.05 || y > 0.95) d.vy *= -1;
         x = Math.max(0.05, Math.min(0.95, x));
         y = Math.max(0.05, Math.min(0.95, y));
+        if (circular) {
+          // Keep the auto-drift inside the disc too, so it never wanders past
+          // the drawn rim into the corners.
+          const dx = x - 0.5;
+          const dy = y - 0.5;
+          const dd = Math.hypot(dx, dy);
+          if (dd > 0.5) {
+            x = 0.5 + (dx / dd) * 0.5;
+            y = 0.5 + (dy / dd) * 0.5;
+          }
+        }
         onMove(x, y);
       }
 
@@ -228,12 +253,12 @@ export function Manifold({
         }
       }
 
-      const px = p[0] * W;
-      const py = (1 - p[1]) * H;
+      const px = sx(p[0]);
+      const py = sy(p[1]);
 
       for (const pin of pn) {
-        const ppx = pin.x * W;
-        const ppy = (1 - pin.y) * H;
+        const ppx = sx(pin.x);
+        const ppy = sy(pin.y);
         ctx.fillStyle = pin.color || 'rgba(255,106,0,0.18)';
         ctx.beginPath();
         ctx.arc(ppx, ppy, 34, 0, Math.PI * 2);
@@ -248,8 +273,8 @@ export function Manifold({
       // Feedback markers: positive = filled accent dot, negative = open red
       // ring. Plotted at the input location each verdict was given (session).
       for (const m of mk) {
-        const mx = m.x * W;
-        const my = (1 - m.y) * H;
+        const mx = sx(m.x);
+        const my = sy(m.y);
         if (m.polarity === 'positive') {
           ctx.fillStyle = 'rgba(255,106,0,0.9)';
           ctx.beginPath();
@@ -280,8 +305,8 @@ export function Manifold({
         const alpha = (1 - age / LIFE) * 0.5;
         ctx.strokeStyle = `rgba(0,204,255,${alpha})`;
         ctx.beginPath();
-        ctx.moveTo(a.x * W, (1 - a.y) * H);
-        ctx.lineTo(b.x * W, (1 - b.y) * H);
+        ctx.moveTo(sx(a.x), sy(a.y));
+        ctx.lineTo(sx(b.x), sy(b.y));
         ctx.stroke();
       }
 
@@ -320,8 +345,8 @@ export function Manifold({
           placedRef.current = null;
         } else {
           const a = 1 - age / 900;
-          const mx = placed.x * W;
-          const my = (1 - placed.y) * H;
+          const mx = sx(placed.x);
+          const my = sy(placed.y);
           ctx.strokeStyle = `rgba(0,204,255,${a})`;
           ctx.lineWidth = 2;
           ctx.beginPath();

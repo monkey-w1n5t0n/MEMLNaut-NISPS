@@ -42,6 +42,7 @@
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeChannelStrip
 #define MEMLNAUT_MODE_TYPE MEMLNautModePAFSynth
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeMEMLCelium
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeSLPWorkshop
 // ---- External-synth MIDI-CC variants (control an external hardware synth) ----
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthSub37
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthSubPhatty

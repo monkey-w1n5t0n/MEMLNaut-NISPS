@@ -12,6 +12,7 @@
 #include "../../nisps/modes/elysiamorf.hpp"
 #include "../../nisps/modes/memlcelium.hpp"
 #include "../../nisps/modes/paf_synth.hpp"
+#include "../../nisps/modes/slp_workshop.hpp"
 #include "../../nisps/modes/sound_analysis_midi.hpp"
 #include "../../nisps/modes/verb_fx.hpp"
 #include "../../nisps/modes/xiasri.hpp"
@@ -25,6 +26,7 @@ static_assert(Mode<modes::ChannelStripMode>);
 static_assert(Mode<modes::XIASRIMode>);
 static_assert(Mode<modes::VerbFXMode>);
 static_assert(Mode<modes::MEMLCeliumMode>);
+static_assert(Mode<modes::SLPWorkshopMode>);
 static_assert(Mode<modes::BreakOrMode>);
 static_assert(Mode<modes::ElysiamorfMode>);
 static_assert(Mode<modes::SoundAnalysisMIDIMode>);
@@ -68,6 +70,16 @@ NISPS_TEST(mode_memlcelium_metadata) {
     NISPS_EXPECT(modes::MEMLCeliumMode::mode_id() == "memlcelium");
     NISPS_EXPECT(s.output_size == 56u);
     NISPS_EXPECT(s.engine_id == "memlcelium");
+}
+
+NISPS_TEST(mode_slp_workshop_metadata) {
+    const auto& s = modes::SLPWorkshopMode::param_schema();
+    NISPS_EXPECT(modes::SLPWorkshopMode::mode_id() == "slp_workshop");
+    NISPS_EXPECT(modes::SLPWorkshopMode::input_channel_count() == 4u);
+    NISPS_EXPECT(s.output_size == 56u);
+    // Reuses the MEMLCelium engine verbatim.
+    NISPS_EXPECT(s.engine_id == "memlcelium");
+    NISPS_EXPECT(s.voice_spaces.size() == 1u);
 }
 
 NISPS_TEST(mode_breakor_metadata) {

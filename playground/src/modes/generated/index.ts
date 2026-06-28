@@ -7,6 +7,7 @@ export * from './channel_strip_schema';
 export * from './elysiamorf_schema';
 export * from './memlcelium_schema';
 export * from './paf_synth_schema';
+export * from './slp_workshop_schema';
 export * from './sound_analysis_midi_schema';
 export * from './verb_fx_schema';
 export * from './xiasri_schema';

@@ -44,6 +44,7 @@
 #include "../src/nisps/modes/external_synth_midi.hpp"
 #include "../src/nisps/modes/memlcelium.hpp"
 #include "../src/nisps/modes/paf_synth.hpp"
+#include "../src/nisps/modes/slp_workshop.hpp"
 #include "../src/nisps/modes/sound_analysis_midi.hpp"
 #include "../src/nisps/modes/verb_fx.hpp"
 #include "../src/nisps/modes/xiasri.hpp"
@@ -58,6 +59,10 @@ using MEMLNautModeBreakOr           = ::nisps::modes::BreakOrMode;
 using MEMLNautModeVerbFX            = ::nisps::modes::VerbFXMode;
 using MEMLNautModeElysiamorfs       = ::nisps::modes::ElysiamorfMode;
 using MEMLNautModeMEMLCelium        = ::nisps::modes::MEMLCeliumMode;
+// SLP-Workshop: the Synth Library Portland workshop build. Reuses the
+// MEMLCelium engine; foregrounds the Jolt (TogB1) + OU-explore (RVX1)
+// adaptive-learning gestures wired in peripherals.hpp.
+using MEMLNautModeSLPWorkshop       = ::nisps::modes::SLPWorkshopMode;
 
 // ---- External-synth MIDI-CC variants (one flashable variant per device) ----
 // Joystick -> MLP -> MIDI CC for the named external hardware synth. Device

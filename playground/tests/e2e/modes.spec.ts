@@ -21,6 +21,7 @@ const MODE_IDS = [
   'xiasri',
   'verb_fx',
   'memlcelium',
+  'slp_workshop',
   'breakor',
   'elysiamorf',
   'sound_analysis_midi',

@@ -20,10 +20,10 @@
 //   MomA1 (TA up)    : randomise / draw weights
 //   MomA2 (TA down)  : clear examples (reset dataset)
 //   MomB1 (MA up)    : randomise (synonym, deliberate)
-//   MomB2 (MA down)  : jolt / move_weights
-//   TogB1            : add example (latched: when high, capture current
-//                       inputs+outputs as a training pair)
+//   MomB2 (MA down)  : nudge (small bounded perturbation)
+//   TogB1            : Jolt — held continuous weight morph (up=morph, down=freeze)
 //   TogB2            : train (rising-edge → call ml.train())
+//   RVX1             : exploration amount (Ornstein-Uhlenbeck output walk)
 //
 // The button block below wires the SHARED ExploreAndPlace lifecycle
 // (nisps/ml/feedback.hpp, the same core the browser drives via WASM) to the
@@ -97,6 +97,15 @@ inline void bind_peripherals(Mode& mode) {
         AudioDriver::SetMasterVolume(v);
     });
 
+    // RVX1 → exploration amount. Drives the Ornstein-Uhlenbeck random walk
+    // added to the mode's output vector (nisps/ml/ou_noise.hpp, ported from
+    // upstream InterfaceRL). 0 = off (inert); turning it up makes the sound
+    // slowly roam so likes/dislikes can steer the net. Available on every
+    // mode via ModeBase::set_explore_intensity.
+    meml->setRVX1Callback([&mode](float v) {
+        mode.set_explore_intensity(v);
+    });
+
     // ---- Buttons / toggles → ExploreAndPlace lifecycle (SHARED C++ core) ----
     //
     // The same nisps::ml::FeedbackController that runs in the browser (via
@@ -145,6 +154,17 @@ inline void bind_peripherals(Mode& mode) {
     // user can move the joystick to choose WHERE to place it.
     meml->setMomA2Callback([&mode]() {
         feedback.begin_place(mode.ml());
+    });
+
+    // TogB1: Jolt — held continuous weight morph (nisps/ml/jolt.hpp, ported
+    // from upstream InterfaceRL). Flip up to start morphing a scatter of
+    // weights live; flip down to freeze them (the change is permanent) and
+    // let the learning rate ramp gently back in. A toggle (not a momentary)
+    // because Jolt is a HELD gesture and momentary buttons only fire on
+    // press. Available on every mode via ModeBase::jolt_press/jolt_release.
+    meml->setTogB1Callback([&mode](bool state) {
+        if (state) mode.jolt_press();
+        else       mode.jolt_release();
     });
 
     // TogB2 (rising): up → commit place at the current joystick input, then

@@ -37,6 +37,8 @@
 #include "../core/perf.hpp"
 #include "../core/ring_buffer.hpp"
 #include "../core/types.hpp"
+#include "../ml/jolt.hpp"
+#include "../ml/ou_noise.hpp"
 #include "generated/schema_types.hpp"
 
 namespace nisps {
@@ -131,7 +133,10 @@ class ModeBase {
 
     static constexpr std::size_t input_channel_count() noexcept { return NInputs; }
 
-    explicit ModeBase(std::uint64_t seed = 0xC0FFEEu) noexcept : ml_(seed) {}
+    explicit ModeBase(std::uint64_t seed = 0xC0FFEEu) noexcept
+        : ml_(seed),
+          jolt_(seed ^ 0x91E10C5Eull),
+          ou_(seed ^ 0x0CEA0FF5ull) {}
 
     // ---- Mode concept surface ----
     void setup(float sample_rate) noexcept {
@@ -164,19 +169,60 @@ class ModeBase {
         if constexpr (requires(Derived& d) { d.on_pre_inference(); }) {
             static_cast<Derived&>(*this).on_pre_inference();
         }
+        // Jolt: continuous weight morph while a gesture is held. Inert (and
+        // free) when inactive — no copy, no RNG advance, weights untouched.
+        // Kept out-of-line so the heavy get/set-weights copy doesn't bloat
+        // the control path or perturb the optimizer's analysis of the
+        // control-event ring buffer below.
+        if (jolt_.active()) apply_jolt_();
+        jolt_.tick_lr_ramp();
+
         // Forward (possibly Derived-mutated) channels into the MLP.
         for (std::size_t i = 0u; i < NInputs; ++i) {
             ml_.set_input(i, input_channels_[i]);
         }
         ml_.process();
         if constexpr (kRouteOutputsToEngine) {
-            engine_.set_params(ml_.outputs());
+            // Exploration OU walk on the output vector (inert when intensity
+            // is 0 → falls through to the original direct-route path).
+            if (ou_.enabled()) {
+                const auto o = ml_.outputs();
+                const std::size_t no = o.size();
+                for (std::size_t i = 0u; i < no && i < out_buf_.size(); ++i) {
+                    out_buf_[i] = o[i];
+                }
+                ou_.apply(std::span<float>(out_buf_.data(), no));
+                engine_.set_params(std::span<const float>(out_buf_.data(), no));
+            } else {
+                engine_.set_params(ml_.outputs());
+            }
         }
         input_dirty_ = false;
         if constexpr (requires(Derived& d) { d.on_post_inference(); }) {
             static_cast<Derived&>(*this).on_post_inference();
         }
     }
+
+    // ---- Adaptive-learning gestures (shared by every mode) ----
+    //
+    // Jolt — held gesture that continuously morphs a scatter of weights,
+    // then freezes them on release (see ml/jolt.hpp). Wire a momentary
+    // button / MIDI pedal: press on down-edge, release on up-edge.
+    void  jolt_press()   noexcept { jolt_.press(MLPType::weight_count()); }
+    void  jolt_release() noexcept { jolt_.release(); }
+    bool  jolt_active()  const noexcept { return jolt_.active(); }
+    // Effective-LR multiplier for the caller's training step (0 while held,
+    // ramps to 1 after release). Multiply your training LR by this.
+    float jolt_lr_scale() const noexcept { return jolt_.lr_scale(); }
+    ml::Jolt&       jolt()       noexcept { return jolt_; }
+    const ml::Jolt& jolt() const noexcept { return jolt_; }
+
+    // Exploration — Ornstein-Uhlenbeck random walk added to the output
+    // vector (see ml/ou_noise.hpp). `level` in [0,1]; 0 disables.
+    void  set_explore_intensity(float level) noexcept { ou_.set_intensity(level); }
+    float explore_intensity() const noexcept { return ou_.intensity(); }
+    ml::OUNoise<MLPType::kOutput>&       ou_noise()       noexcept { return ou_; }
+    const ml::OUNoise<MLPType::kOutput>& ou_noise() const noexcept { return ou_; }
 
     NISPS_HOT NISPS_FORCE_INLINE stereosample_t process(stereosample_t x) noexcept {
         return engine_.process(x);
@@ -230,6 +276,19 @@ class ModeBase {
 
     float sample_rate() const noexcept { return sample_rate_; }
 
+   private:
+    // Copy the flat weights out of the MLP, morph the jolt-selected few, and
+    // write them back. Out-of-line on purpose (see tick_control).
+    NISPS_NOINLINE void apply_jolt_() noexcept {
+        const auto w = ml_.get_weights();  // span into ml_'s flat scratch
+        const std::size_t wc = w.size();
+        for (std::size_t i = 0u; i < wc && i < jolt_buf_.size(); ++i) {
+            jolt_buf_[i] = w[i];
+        }
+        jolt_.step(std::span<float>(jolt_buf_.data(), wc));
+        ml_.set_weights(std::span<const float>(jolt_buf_.data(), wc));
+    }
+
    protected:
     float                                            sample_rate_ = 48000.f;
     EngineT                                          engine_{};
@@ -238,6 +297,17 @@ class ModeBase {
     bool                                             input_dirty_ = false;
     std::size_t                                      voice_space_idx_ = 0u;
     RingBuffer<ControlEvent, kModeEventBufferSize>   events_{};
+    // Adaptive-learning state (Jolt + OU). Declared AFTER events_ so the
+    // lock-free ring buffer keeps its original object offset — inserting the
+    // large jolt_buf_ before it provokes a spurious GCC -Wstringop-overflow
+    // on the ring's atomic index under -O3. Order matters only to that
+    // false positive; behaviour is identical either way.
+    ml::Jolt                                         jolt_;
+    ml::OUNoise<MLPType::kOutput>                    ou_;
+    // Scratch for OU output blending and Jolt weight morphing. Sized to the
+    // single compiled mode; firmware only ever instantiates one mode.
+    std::array<float, MLPType::kOutput>              out_buf_{};
+    std::array<float, MLPType::weight_count()>       jolt_buf_{};
 };
 
 }  // namespace nisps

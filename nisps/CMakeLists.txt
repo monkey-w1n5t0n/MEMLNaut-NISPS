@@ -56,6 +56,8 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mlp_training.cpp
         ${NISPS_TEST_DIR}/test_mlp_loss.cpp
         ${NISPS_TEST_DIR}/test_mlp_rl.cpp
+        ${NISPS_TEST_DIR}/test_mlp_jolt.cpp
+        ${NISPS_TEST_DIR}/test_mlp_ou_noise.cpp
         ${NISPS_TEST_DIR}/test_mlp_feedback.cpp
         ${NISPS_TEST_DIR}/test_mlp_serialize.cpp
     )
@@ -115,6 +117,7 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mode_paf_synth.cpp
         ${NISPS_TEST_DIR}/test_mode_voice_space.cpp
         ${NISPS_TEST_DIR}/test_mode_breakor_events.cpp
+        ${NISPS_TEST_DIR}/test_mode_learning.cpp
     )
     target_link_libraries(nisps_modes_tests PRIVATE nisps_core)
 

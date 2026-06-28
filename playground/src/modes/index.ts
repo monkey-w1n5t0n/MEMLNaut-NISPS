@@ -12,6 +12,7 @@ import { ChannelStripMode } from './ChannelStripMode';
 import { XIASRIMode } from './XIASRIMode';
 import { VerbFXMode } from './VerbFXMode';
 import { MEMLCeliumMode } from './MEMLCeliumMode';
+import { SLPWorkshopMode } from './SLPWorkshopMode';
 import { BreakOrMode } from './BreakOrMode';
 import { ElysiamorfMode } from './ElysiamorfMode';
 import { SoundAnalysisMIDIMode } from './SoundAnalysisMIDIMode';
@@ -60,6 +61,12 @@ export const MODE_REGISTRY: ReadonlyArray<ModeRegistration> = [
     label: 'MEML Celium',
     description: 'Voice + dual-MLP CV/gate via uSEQ.',
     Component: MEMLCeliumMode,
+  },
+  {
+    id: 'slp_workshop',
+    label: 'SLP-Workshop',
+    description: 'MEMLCelium voice + live Jolt / Explore learning (Synth Library Portland).',
+    Component: SLPWorkshopMode,
   },
   {
     id: 'breakor',

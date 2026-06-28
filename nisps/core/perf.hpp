@@ -19,10 +19,16 @@
   #define NISPS_APP_SRAM      __not_in_flash("app")
   #define NISPS_FORCE_INLINE  __attribute__((always_inline)) inline
   #define NISPS_HOT           __attribute__((hot))
+  #define NISPS_NOINLINE      __attribute__((noinline))
 #else
   #define NISPS_AUDIO_MEM
   #define NISPS_AUDIO_FUNC(decl) decl
   #define NISPS_APP_SRAM
   #define NISPS_FORCE_INLINE  inline
   #define NISPS_HOT
+  #if defined(__GNUC__) || defined(__clang__)
+    #define NISPS_NOINLINE    __attribute__((noinline))
+  #else
+    #define NISPS_NOINLINE
+  #endif
 #endif

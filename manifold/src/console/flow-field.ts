@@ -70,9 +70,8 @@ function noise2D(x: number, y: number): number {
 const TWO_PI = Math.PI * 2;
 
 /**
- * The 20 visual output params, in output order (p0..p19). Names and colours are
- * verbatim from the a-immersive original (`VISUAL_PARAM_NAMES` /
- * `VISUAL_PARAM_COLORS`, a-app.js:46/51) so the heatmap strip matches it 1:1.
+ * The 20 visual output params, in output order (p0..p19). Names are verbatim
+ * from the a-immersive original (`VISUAL_PARAM_NAMES`, a-app.js:46).
  */
 export const VISUAL_PARAM_NAMES = [
   'Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb',
@@ -80,14 +79,46 @@ export const VISUAL_PARAM_NAMES = [
   'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate',
 ] as const;
 
-export const VISUAL_PARAM_COLORS = [
-  '#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
-  '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff',
-  '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f',
-  '#ffc15f', '#ff8a3d',
-] as const;
-
 export const N_VISUAL_OUTPUTS = VISUAL_PARAM_NAMES.length;
+
+/**
+ * Heatmap-strip bar colours. Rather than the a-immersive original's clashing
+ * 20-colour palette, these are an on-theme ramp interpolated between Manifold's
+ * two brand accents — warm-orange `--accent` (#ff6a00) → cool-cyan `--accent-2`
+ * (#00ccff) — so the strip reads as one cohesive instrument that belongs to the
+ * rest of the app's colour language. Each bar still gets a distinct hue.
+ */
+function hslToHex(h: number, s: number, l: number): string {
+  const sN = s / 100;
+  const lN = l / 100;
+  const c = (1 - Math.abs(2 * lN - 1)) * sN;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = lN - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  const to2 = (v: number) =>
+    Math.round((v + m) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${to2(r)}${to2(g)}${to2(b)}`;
+}
+
+// Brand anchors in HSL: --accent ≈ hsl(25,100,50), --accent-2 ≈ hsl(192,100,50).
+// The sweep passes through gold (--warn) and green (--good) — all theme hues.
+// Saturation/lightness sit in the app's semantic-token register (S≈70, not neon)
+// so the strip feels native on the dark canvas rather than electric.
+export const VISUAL_PARAM_COLORS = Array.from({ length: N_VISUAL_OUTPUTS }, (_, i) => {
+  const t = N_VISUAL_OUTPUTS > 1 ? i / (N_VISUAL_OUTPUTS - 1) : 0;
+  const hue = 25 + t * (192 - 25); // warm-orange → cool-cyan across the two accents
+  return hslToHex(hue, 72, 60);
+});
 
 interface Particle {
   x: number;

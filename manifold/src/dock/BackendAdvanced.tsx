@@ -9,8 +9,8 @@
  * inline config in OutputsBackendConfig; both write the same store.
  */
 import type { MFParam } from '../console/model';
-import type { BackendId } from './output-state';
-import { defaultMidiSpec, defaultOscSpec } from './output-state';
+import type { BackendId, CvChannelId } from './output-state';
+import { CV_CHANNELS, defaultCvSpec, defaultMidiSpec, defaultOscSpec } from './output-state';
 
 function num(s: string, fallback: number): number {
   const v = parseFloat(s);
@@ -59,8 +59,9 @@ export function BackendAdvanced({ backend, params, setParam }: BackendAdvancedPr
     case 'osc':
       return <OscPathEditor params={params} setParam={setParam} />;
     case 'vcv':
-    case 'cvgate':
       return <VcvChannelEditor params={params} setParam={setParam} />;
+    case 'cvgate':
+      return <CvChannelEditor params={params} setParam={setParam} />;
     default:
       return <SynthGroupNote params={params} />;
   }
@@ -264,6 +265,77 @@ function VcvChannelEditor({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ---- uSEQ CV / gate (docs/useq-celium) -------------------------------------
+
+function CvChannelEditor({
+  params,
+  setParam,
+}: {
+  params: MFParam[];
+  setParam: (i: number, patch: Partial<MFParam>) => void;
+}) {
+  return (
+    <div>
+      <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: '0 0 8px' }}>
+        Live CV/gate over USB serial to a uSEQ module + expander (docs/useq-celium). Assign each model output to a
+        CV jack or gate; gates threshold the mapped 0–1 value. Connect the device in the Outputs panel.
+      </p>
+      <div style={{ maxHeight: 360, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <Th>Output</Th>
+              <Th>uSEQ channel</Th>
+              <Th>Gate ≥</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {params.map((p, i) => {
+              const c = (p.cv as { channel: CvChannelId; gateThreshold: number } | undefined) ?? defaultCvSpec(i);
+              const isGate = c.channel.startsWith('gate');
+              return (
+                <tr key={i}>
+                  <td style={{ padding: '3px 6px', fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>{p.name}</td>
+                  <td style={{ padding: '3px 6px', width: 150 }}>
+                    <select
+                      value={c.channel}
+                      onChange={(e) => setParam(i, { cv: { ...c, channel: e.target.value as CvChannelId } })}
+                      style={{ ...cellInput, cursor: 'pointer' }}
+                    >
+                      <option value="none">— none —</option>
+                      {CV_CHANNELS.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td style={{ padding: '3px 6px', width: 80 }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      disabled={!isGate}
+                      style={{ ...cellInput, opacity: isGate ? 1 : 0.4 }}
+                      value={c.gateThreshold}
+                      onChange={(e) =>
+                        setParam(i, {
+                          cv: { ...c, gateThreshold: Math.max(0, Math.min(1, num(e.target.value, c.gateThreshold))) },
+                        })
+                      }
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

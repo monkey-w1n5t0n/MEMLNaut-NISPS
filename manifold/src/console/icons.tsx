@@ -245,6 +245,7 @@ export const GLYPH_FALLBACK = {
   particles: '✦',
   midi: '🎹',
   osc: '◉',
+  cv: '⎓',
   synth: '🔊',
   editor: '🔌',
 } as const;

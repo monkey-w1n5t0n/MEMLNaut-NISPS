@@ -45,6 +45,8 @@ export interface MFParam {
   osc?: { path: string; rangeMin: number; rangeMax: number };
   /** VCV backend spec ({ bipolar }). */
   vcv?: { bipolar: boolean };
+  /** uSEQ CV/gate backend spec ({ channel, gateThreshold }). */
+  cv?: { channel: string; gateThreshold: number };
 }
 
 export interface MFMode {

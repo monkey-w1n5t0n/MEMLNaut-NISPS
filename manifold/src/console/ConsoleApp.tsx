@@ -271,7 +271,15 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   // spine and forwards routed outputs to the active backend; switching Mode
   // tears down the old backend, starts the new one, and gates synth audio
   // (mute on non-synth modes). MIDI/OSC config + names ride the shared params.
-  const { manager: backendManager, status: backendStatus, midiPorts, refreshMidiPorts } = useBackendManager(
+  const {
+    manager: backendManager,
+    status: backendStatus,
+    midiPorts,
+    refreshMidiPorts,
+    cvConnect,
+    cvIdentify,
+    cvDisconnect,
+  } = useBackendManager(
     engine,
     outputBackend,
     modeId,
@@ -688,6 +696,9 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setVcvUrl,
     vcvSendRaw,
     setVcvSendRaw,
+    cvConnect,
+    cvIdentify,
+    cvDisconnect,
     setParams: (next: MFParam[]) => setParams(next),
     markers,
     inputs,

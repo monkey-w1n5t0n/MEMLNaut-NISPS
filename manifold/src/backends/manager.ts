@@ -23,6 +23,7 @@ import { OscBridgeBackend } from './osc-backend';
 import { PassthroughBackend } from './passthrough-backend';
 import { ParticleBackend } from './particle-backend';
 import { VcvBackend, type VcvFeedbackOp } from './vcv-backend';
+import { UseqCvBackend } from './cv-backend';
 
 /** The slice of EngineApi the manager depends on (keeps it decoupled/testable). */
 export interface ManagerEngine {
@@ -56,7 +57,7 @@ export class BackendManager {
       ['osc', backends?.osc ?? new OscBridgeBackend()],
       ['synth', backends?.synth ?? new PassthroughBackend('synth', 'Built-in Synth — audio plays in the engine')],
       ['particles', backends?.particles ?? new ParticleBackend()],
-      ['cvgate', backends?.cvgate ?? new PassthroughBackend('cvgate', 'CV / gate (via VCV bridge)')],
+      ['cvgate', backends?.cvgate ?? new UseqCvBackend()],
       ['vcv', backends?.vcv ?? new VcvBackend()],
     ]);
 
@@ -87,6 +88,11 @@ export class BackendManager {
   vcv(): VcvBackend | null {
     const b = this.backends.get('vcv');
     return b instanceof VcvBackend ? b : null;
+  }
+
+  cv(): UseqCvBackend | null {
+    const b = this.backends.get('cvgate');
+    return b instanceof UseqCvBackend ? b : null;
   }
 
   /**

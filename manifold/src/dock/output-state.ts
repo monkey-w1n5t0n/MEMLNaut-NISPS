@@ -41,7 +41,7 @@ export const BACKENDS: readonly BackendDescriptor[] = [
   { id: 'synth', label: 'Powerful Synth Engine', description: 'Firmware-parity built-in audio engine.' },
   { id: 'midi', label: 'MIDI', description: 'Web MIDI CC out — per-output CC#/channel.' },
   { id: 'osc', label: 'OSC', description: 'OSC bridge — named paths + physical ranges.' },
-  { id: 'cvgate', label: 'CV', description: 'CV / gate (via VCV bridge or DC-coupled audio).' },
+  { id: 'cvgate', label: 'CV', description: 'uSEQ CV/gate over USB serial — 11 CV + 3 gate.' },
   { id: 'vcv', label: 'VCV', description: 'VCV Rack module — 16 CV outs with LED rings.' },
   { id: 'particles', label: 'Particle', description: 'Flow-field visualiser (no audio).' },
 ] as const;
@@ -66,6 +66,49 @@ export interface OscSpec {
 /** VCV backend per-output extras (dock-spec §4.3) — baseline min/max IS the range. */
 export interface VcvSpec {
   bipolar: boolean; // unipolar 0..10V vs bipolar ±5V
+}
+
+/**
+ * uSEQ CV/gate backend per-output extras. Each model output is assigned to one
+ * physical uSEQ channel (or 'none'); gate channels threshold the mapped 0..1
+ * value. The fixed hardware topology is 11 CV + 3 gate — see
+ * docs/useq-celium/protocol.md.
+ */
+export type CvChannelId =
+  | 'none'
+  | 'cv1' | 'cv2' | 'cv3' | 'cv4' | 'cv5' | 'cv6'
+  | 'cv7' | 'cv8' | 'cv9' | 'cv10' | 'cv11'
+  | 'gate1' | 'gate2' | 'gate3';
+
+export interface CvChannelDesc {
+  id: CvChannelId;
+  label: string;
+  kind: 'cv' | 'gate';
+}
+
+/** The fixed uSEQ channel roster (UI dropdown order). */
+export const CV_CHANNELS: readonly CvChannelDesc[] = [
+  { id: 'cv1', label: 'CV1 · main A1', kind: 'cv' },
+  { id: 'cv2', label: 'CV2 · main A2', kind: 'cv' },
+  { id: 'cv3', label: 'CV3 · main A3', kind: 'cv' },
+  { id: 'cv4', label: 'CV4 · exp E1', kind: 'cv' },
+  { id: 'cv5', label: 'CV5 · exp E2', kind: 'cv' },
+  { id: 'cv6', label: 'CV6 · exp E3', kind: 'cv' },
+  { id: 'cv7', label: 'CV7 · exp E4', kind: 'cv' },
+  { id: 'cv8', label: 'CV8 · exp E5', kind: 'cv' },
+  { id: 'cv9', label: 'CV9 · exp E6', kind: 'cv' },
+  { id: 'cv10', label: 'CV10 · exp E7', kind: 'cv' },
+  { id: 'cv11', label: 'CV11 · exp E8', kind: 'cv' },
+  { id: 'gate1', label: 'Gate1 · main D1', kind: 'gate' },
+  { id: 'gate2', label: 'Gate2 · main D2', kind: 'gate' },
+  { id: 'gate3', label: 'Gate3 · main D3', kind: 'gate' },
+] as const;
+
+export interface CvSpec {
+  /** Physical uSEQ channel this output drives, or 'none' to skip it. */
+  channel: CvChannelId;
+  /** For gate channels: gate goes HIGH when the mapped 0..1 value ≥ this. */
+  gateThreshold: number;
 }
 
 /**
@@ -134,4 +177,13 @@ export function defaultOscSpec(name: string): OscSpec {
 /** Default VCV spec for an output — unipolar 0–10 V by default. */
 export function defaultVcvSpec(): VcvSpec {
   return { bipolar: false };
+}
+
+/**
+ * Default uSEQ CV channel for output `index` — identity map: outputs 0..10 →
+ * CV1..CV11, outputs 11..13 → GATE1..3, the rest unassigned ('none').
+ */
+export function defaultCvSpec(index: number): CvSpec {
+  const ch = CV_CHANNELS[index]?.id ?? 'none';
+  return { channel: ch, gateThreshold: 0.5 };
 }

@@ -18,8 +18,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineApi } from '../engine';
 import type { MFParam } from '../console/model';
 import type { BackendContext, BackendStatus, OutputMapping } from './backend';
-import type { BackendId, MidiCcSpec, OscSpec, VcvSpec } from '../dock/output-state';
-import { defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from '../dock/output-state';
+import type { BackendId, CvSpec, MidiCcSpec, OscSpec, VcvSpec } from '../dock/output-state';
+import { defaultCvSpec, defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from '../dock/output-state';
 import { BackendManager } from './manager';
 
 export interface MidiSettings {
@@ -56,6 +56,12 @@ export interface UseBackendManager {
   /** Available MIDI output ports (refreshes when MIDI starts/hot-plugs). */
   midiPorts: { id: string; name: string }[];
   refreshMidiPorts: () => void;
+  /** uSEQ CV backend: pick + open a serial port (user gesture). */
+  cvConnect: () => void;
+  /** uSEQ CV backend: flash the module LEDs to confirm the link. */
+  cvIdentify: () => void;
+  /** uSEQ CV backend: close the serial port. */
+  cvDisconnect: () => void;
 }
 
 export function useBackendManager(
@@ -148,5 +154,17 @@ export function useBackendManager(
     vcv.setVcvConfig(specs, { url: vcvSettings.url, sendRaw: vcvSettings.sendRaw });
   }, [manager, params, vcvSettings.url, vcvSettings.sendRaw]);
 
-  return { manager, status, midiPorts, refreshMidiPorts };
+  // Push per-output uSEQ CV config (channel + gate threshold) whenever it changes.
+  useEffect(() => {
+    const cv = manager?.cv();
+    if (!cv) return;
+    const specs: CvSpec[] = params.map((p, i) => (p.cv as CvSpec | undefined) ?? defaultCvSpec(i));
+    cv.setCvConfig(specs);
+  }, [manager, params]);
+
+  const cvConnect = () => void manager?.cv()?.connect();
+  const cvIdentify = () => manager?.cv()?.identify();
+  const cvDisconnect = () => void manager?.cv()?.disconnect();
+
+  return { manager, status, midiPorts, refreshMidiPorts, cvConnect, cvIdentify, cvDisconnect };
 }

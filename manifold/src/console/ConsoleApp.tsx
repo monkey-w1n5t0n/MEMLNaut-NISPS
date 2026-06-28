@@ -719,12 +719,7 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
           }}
         >
           {outputMode === 'particles' ? (
-            <ParticleStage
-              pos={pos}
-              onMove={onMove}
-              axes={axes}
-              setAxis={(k, v) => setAxes((s) => ({ ...s, [k]: v }))}
-            />
+            <ParticleStage pos={pos} onMove={onMove} />
           ) : focus === 'composite' ? (
             <CompositeStage
               split={split}

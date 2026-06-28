@@ -69,6 +69,26 @@ function noise2D(x: number, y: number): number {
 
 const TWO_PI = Math.PI * 2;
 
+/**
+ * The 20 visual output params, in output order (p0..p19). Names and colours are
+ * verbatim from the a-immersive original (`VISUAL_PARAM_NAMES` /
+ * `VISUAL_PARAM_COLORS`, a-app.js:46/51) so the heatmap strip matches it 1:1.
+ */
+export const VISUAL_PARAM_NAMES = [
+  'Flow', 'Scale', 'Speed', 'Hue', 'Spread', 'Size', 'Trail', 'Turb',
+  'Attract', 'Radius', 'DispRate', 'DispAmt', 'Lifetime', 'Respawn',
+  'Advection', 'Inertia', 'Drag', 'Repulse', 'RepCnt', 'RepRate',
+] as const;
+
+export const VISUAL_PARAM_COLORS = [
+  '#ff6a00', '#00ccff', '#ff6600', '#ff00cc', '#ffcc00', '#88ff00',
+  '#0088ff', '#ff3366', '#9bff5f', '#59d3ff', '#ff8f3f', '#a0b7ff',
+  '#f4ff7a', '#ffa8db', '#7dffc8', '#ffd166', '#8ad4ff', '#ff5f5f',
+  '#ffc15f', '#ff8a3d',
+] as const;
+
+export const N_VISUAL_OUTPUTS = VISUAL_PARAM_NAMES.length;
+
 interface Particle {
   x: number;
   y: number;

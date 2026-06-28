@@ -51,7 +51,7 @@ function MiniSlider({
         disabled={disabled}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="mf-slider-input"
-        style={{ width: '100%' }}
+        style={{ width: '100%', ['--mf-pct' as string]: `${Math.max(0, Math.min(1, value))}` } as CSSProperties}
       />
     </label>
   );

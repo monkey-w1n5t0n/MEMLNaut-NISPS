@@ -13,13 +13,21 @@
  */
 
 /* ---- Slider (.mf-slider-input) ---- */
+/* Base reset so the custom track/thumb styling applies even when a consumer
+   doesn't set these inline (e.g. OutputControlRow's held slider). The colored
+   fill tracks `--mf-pct` (0..1); it falls back to 0 if a consumer forgets it. */
+.mf-slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
 .mf-slider-input::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 999px;
   background: linear-gradient(
     to right,
     var(--accent) 0%,
-    var(--accent) calc(var(--mf-pct) * 100%),
+    var(--accent) calc(var(--mf-pct, 0) * 100%),
     var(--bg-3) 0%
   );
 }
@@ -27,6 +35,11 @@
   height: 4px;
   border-radius: 999px;
   background: var(--bg-3);
+}
+.mf-slider-input::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
 }
 .mf-slider-input::-webkit-slider-thumb {
   -webkit-appearance: none;

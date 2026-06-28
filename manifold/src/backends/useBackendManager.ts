@@ -18,8 +18,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineApi } from '../engine';
 import type { MFParam } from '../console/model';
 import type { BackendContext, BackendStatus, OutputMapping } from './backend';
-import type { BackendId, MidiCcSpec, OscSpec } from '../dock/output-state';
-import { defaultMidiSpec, defaultOscSpec } from '../dock/output-state';
+import type { BackendId, MidiCcSpec, OscSpec, VcvSpec } from '../dock/output-state';
+import { defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from '../dock/output-state';
 import { BackendManager } from './manager';
 
 export interface MidiSettings {
@@ -29,6 +29,13 @@ export interface MidiSettings {
 
 export interface OscSettings {
   url: string;
+  sendRaw: boolean;
+}
+
+export interface VcvSettings {
+  /** Bridge WebSocket URL (the Deno bridge relays to the module over UDP). */
+  url: string;
+  /** Send raw 0..1 instead of the per-output bipolar/unipolar voltage range. */
   sendRaw: boolean;
 }
 
@@ -58,6 +65,7 @@ export function useBackendManager(
   params: MFParam[],
   midiSettings: MidiSettings,
   oscSettings: OscSettings,
+  vcvSettings: VcvSettings,
 ): UseBackendManager {
   const managerRef = useRef<BackendManager | null>(null);
   const [status, setStatus] = useState<BackendStatus>({ state: 'idle', message: 'idle' });
@@ -131,6 +139,14 @@ export function useBackendManager(
     const specs: OscSpec[] = params.map((p) => p.osc ?? defaultOscSpec(p.name));
     osc.setOscConfig(specs, { url: oscSettings.url, sendRaw: oscSettings.sendRaw });
   }, [manager, params, oscSettings.url, oscSettings.sendRaw]);
+
+  // Push per-output VCV config (polarity) + bridge URL/raw whenever they change.
+  useEffect(() => {
+    const vcv = manager?.vcv();
+    if (!vcv) return;
+    const specs: VcvSpec[] = params.map((p) => p.vcv ?? defaultVcvSpec());
+    vcv.setVcvConfig(specs, { url: vcvSettings.url, sendRaw: vcvSettings.sendRaw });
+  }, [manager, params, vcvSettings.url, vcvSettings.sendRaw]);
 
   return { manager, status, midiPorts, refreshMidiPorts };
 }

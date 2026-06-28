@@ -142,6 +142,14 @@ export class EngineApi {
   }
 
   /**
+   * Current control input vector (2-D for the fixed 2→N MLP). Used by the VCV
+   * backend (via BackendManager) to drive the module's inputs over the bridge.
+   */
+  inputVector(): ReadonlyArray<number> {
+    return [this.spine.lastRawX, this.spine.lastRawY];
+  }
+
+  /**
    * Re-run the LAST raw input through the spine — used after a weight change
    * (train / randomise / feedback) so outputs + audio reflect the new MLP
    * state without the user having to move the controller.

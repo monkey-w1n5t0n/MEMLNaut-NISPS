@@ -6,7 +6,9 @@
  * namespace) on top, then a per-backend config section:
  *   - MIDI  → output-port picker, number-of-CCs, per-output CC#/channel/name.
  *   - OSC   → bridge URL + connect status + send-raw toggle, per-output path/range.
- *   - VCV/CV→ per-output polarity (delegates to the existing BackendAdvanced body).
+ *   - VCV/CV→ bridge URL + connect status + send-raw toggle, per-output polarity
+ *             (uni 0–10 V / bipolar ±5 V). The browser drives + trains the VCV
+ *             module over the same Deno bridge.
  *   - Synth/Particle/Editor → handled by ModeConfig in Drawers (no extra config here).
  *
  * Everything is editable inline; writes go through the shared MFParam store
@@ -16,7 +18,7 @@
 import { useEffect, useState } from 'react';
 import type { ConsoleCtx } from '../console/types';
 import type { BackendId } from './output-state';
-import { defaultMidiSpec, defaultOscSpec } from './output-state';
+import { defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from './output-state';
 import {
   applyPreset,
   deletePreset,
@@ -107,6 +109,7 @@ function PresetBar({ ctx, backend }: { ctx: ConsoleCtx; backend: BackendId }) {
   const backendSettings = (): Record<string, unknown> => {
     if (backend === 'midi') return { outputId: ctx.midiOutputId, ccCount: ctx.midiCcCount };
     if (backend === 'osc') return { url: ctx.oscUrl, sendRaw: ctx.oscSendRaw };
+    if (backend === 'vcv') return { url: ctx.vcvUrl, sendRaw: ctx.vcvSendRaw };
     return {};
   };
 
@@ -118,6 +121,9 @@ function PresetBar({ ctx, backend }: { ctx: ConsoleCtx; backend: BackendId }) {
     } else if (backend === 'osc') {
       if ('url' in s) ctx.setOscUrl(String(s.url));
       if ('sendRaw' in s) ctx.setOscSendRaw(Boolean(s.sendRaw));
+    } else if (backend === 'vcv') {
+      if ('url' in s) ctx.setVcvUrl(String(s.url));
+      if ('sendRaw' in s) ctx.setVcvSendRaw(Boolean(s.sendRaw));
     }
   };
 
@@ -381,6 +387,76 @@ function OscConfig({ ctx }: { ctx: ConsoleCtx }) {
   );
 }
 
+// ---- VCV / CV config (backends-spec §2.6 / §4.3) ---------------------------
+
+function VcvConfig({ ctx }: { ctx: ConsoleCtx }) {
+  const s = ctx.backendStatus;
+  const statusColor = s.state === 'ready' ? 'var(--good)' : s.state === 'connecting' ? 'var(--warn)' : 'var(--danger)';
+  const [draftUrl, setDraftUrl] = useState(ctx.vcvUrl);
+  useEffect(() => setDraftUrl(ctx.vcvUrl), [ctx.vcvUrl]);
+  return (
+    <>
+      <SectionLabel>VCV bridge</SectionLabel>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          style={{ ...cellInput, width: 200 }}
+          value={draftUrl}
+          onChange={(e) => setDraftUrl(e.target.value)}
+          onBlur={() => ctx.setVcvUrl(draftUrl)}
+          placeholder="ws://localhost:8765"
+        />
+        <button type="button" style={btn('var(--accent)')} onClick={() => ctx.setVcvUrl(draftUrl)}>
+          Connect
+        </button>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
+          <input type="checkbox" checked={ctx.vcvSendRaw} onChange={(e) => ctx.setVcvSendRaw(e.target.checked)} />
+          send raw 0..1
+        </label>
+        <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
+      </div>
+      <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+        The VCV Rack NISPS module AND the Deno OSC bridge (manifold/osc-bridge) must both be running. The browser drives
+        the module's inputs and forwards the verdict loop (thumbs up/down, explore-and-place) over the bridge, so the
+        module's embedded net trains in lock-step. Default module UDP port 7001.
+      </p>
+
+      <SectionLabel>Per-output polarity</SectionLabel>
+      <div style={{ maxHeight: 320, overflow: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <Th>output</Th>
+              <Th>range</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {ctx.params.map((p, i) => {
+              const v = p.vcv ?? defaultVcvSpec();
+              return (
+                <tr key={i}>
+                  <td style={{ padding: '3px 6px', fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>{p.name}</td>
+                  <td style={{ padding: '3px 6px', width: 110 }}>
+                    <button
+                      type="button"
+                      onClick={() => ctx.setParam(i, { vcv: { bipolar: !v.bipolar } })}
+                      style={{
+                        ...btn(v.bipolar ? 'var(--danger)' : 'var(--fg-mute)'),
+                        width: '100%',
+                      }}
+                    >
+                      {v.bipolar ? '±5 V' : '0–10 V'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 // ---- Public entry ----------------------------------------------------------
 
 export interface OutputsBackendConfigProps {
@@ -390,14 +466,14 @@ export interface OutputsBackendConfigProps {
 
 /** The specialised, editable per-backend config + preset bar for the Outputs panel. */
 export function OutputsBackendConfig({ ctx, backend }: OutputsBackendConfigProps) {
-  // Only MIDI / OSC carry a config + preset surface here; synth/particle/editor
-  // config is rendered by ModeConfig in Drawers. VCV/CV polarity stays in the
-  // full-depth BackendAdvanced modal.
-  if (backend !== 'midi' && backend !== 'osc') return null;
+  // MIDI / OSC / VCV carry a config + preset surface here; synth/particle/editor
+  // config is rendered by ModeConfig in Drawers. The full-depth BackendAdvanced
+  // modal reuses the same per-channel sections.
+  if (backend !== 'midi' && backend !== 'osc' && backend !== 'vcv') return null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <PresetBar ctx={ctx} backend={backend} />
-      {backend === 'midi' ? <MidiConfig ctx={ctx} /> : <OscConfig ctx={ctx} />}
+      {backend === 'midi' ? <MidiConfig ctx={ctx} /> : backend === 'osc' ? <OscConfig ctx={ctx} /> : <VcvConfig ctx={ctx} />}
     </div>
   );
 }

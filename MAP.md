@@ -162,3 +162,13 @@ the "BUILD DELTAS" block at the top of `vcv/SPEC.md`). `src/MEMLNaut.cpp` (modul
 ## Smells / strategic concerns
 
 See `ALIGNMENT.md`.
+
+## Specs
+
+- **Root**: `docs/specs/`
+- **Entry**: `README.md`
+- **Layout**: `flat`
+- **Index**: none
+- **Skill**: invoke `/specs` to review/maintain/add/navigate.
+
+The corpus is a tiered T0–T4 prescriptive plan ("what we are going to build"); only `README.md` plus a handful of files exist so far. Alongside the tiers it also holds **stable reference specs** for already-built features — e.g. `slp-workshop-firmware.md` (SLP-Workshop firmware mode + the Jolt / OU-explore adaptive-learning gestures). Before changing the behaviour a spec covers, find it via `/specs`; the spec wins by intent — if it's wrong, update it in the same commit as the code.

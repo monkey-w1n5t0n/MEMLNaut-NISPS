@@ -1,5 +1,11 @@
 # Building MEMLNaut VCV Plugin
 
+> **Distribution & cross-platform builds:** for packaging `.vcvplugin` files,
+> the cross-platform CI matrix, and publishing to `/next/vcv`, see
+> [DISTRIBUTION.md](DISTRIBUTION.md). The official `make dist` target (from the
+> SDK's `plugin.mk`) produces `dist/<slug>-<version>-<platform>.vcvplugin`; the
+> legacy `Makefile.dist` (zip-based, hard-coded 0.1.0) is superseded by it.
+
 ## Prerequisites
 
 - **VCV Rack 2 SDK** — download from https://vcvrack.com/manual/PluginDevelopmentTutorial or build from source

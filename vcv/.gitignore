@@ -1,0 +1,7 @@
+# VCV plugin build products (see BUILDING.md / DISTRIBUTION.md)
+/build/
+/dist/
+/plugin.so
+/plugin.dylib
+/plugin.dll
+*.vcvplugin

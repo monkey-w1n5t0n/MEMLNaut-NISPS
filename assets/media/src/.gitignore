@@ -1,0 +1,4 @@
+# Manim render work tree — regenerable, do not commit.
+media/
+concat_feedback.txt
+__pycache__/

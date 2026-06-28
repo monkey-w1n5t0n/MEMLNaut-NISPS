@@ -15,6 +15,10 @@ official `plugin.mk` `dist` target produces it, named
 `<slug>-<version>-<platform>.vcvplugin` (e.g. `MEMLNaut-0.2.0-lin-x64.vcvplugin`).
 Platforms: `lin-x64`, `win-x64`, `mac-x64`, `mac-arm64`.
 
+We have no dedicated build box, so we build **on this host**, but **resource-bounded**
+so a build can never starve the live services. Build products (`build/`, `dist/`,
+`plugin.so`, `*.vcvplugin`) are git-ignored — they are publish artefacts, not source.
+
 ### Linux x64 — locally (works today)
 
 The Rack 2 SDK is installed at `$HOME/.local/share/Rack2/Rack-SDK`:
@@ -25,21 +29,39 @@ RACK_DIR=$HOME/.local/share/Rack2/Rack-SDK make dist
 # -> vcv/dist/MEMLNaut-<version>-lin-x64.vcvplugin
 ```
 
-This is the only platform we build on the server: the host toolchain is native
-Linux x64 and the SDK is already present. Build products (`build/`, `dist/`,
-`plugin.so`, `*.vcvplugin`) are git-ignored — they are publish artefacts, not
-source.
+Native host toolchain, SDK already present — trivial, no caps needed.
 
-### Windows / macOS — cross-built on CI (NOT on the server)
+### Windows x64 — locally, resource-bounded (works today)
 
-The other three platforms are cross-built by the official
-[VCVRack/rack-plugin-toolchain](https://github.com/VCVRack/rack-plugin-toolchain),
-the same Docker cross-builder the VCV Library uses. **We do not run that toolchain
-on the production VPS** — its image build compiles mingw + osxcross and pulls the
-Apple SDK (multi-GB, multi-hour), which would overload a host that serves live
-services. macOS additionally requires the Apple SDK, which we never redistribute.
-CI is the right place for all of this; for a local-only macOS build the operator
-can use a Mac with the native SDK.
+`vcv/build-win.sh` cross-builds Windows in a **hard-capped Docker container** using
+**prebuilt mingw-w64** (no GCC/toolchain compile — it only apt-installs mingw and
+compiles two `.cpp` files). The container is capped on CPU + memory with no extra
+swap, so the cgroup OOM-kills the container rather than the host if it ever exceeded
+the cap. In practice the host stays at full free RAM throughout.
+
+```bash
+vcv/build-win.sh                 # defaults: CPUS=6 MEM=8g, Rack SDK 2.6.4
+CPUS=4 MEM=6g vcv/build-win.sh   # tighter caps
+# -> vcv/dist/MEMLNaut-<version>-win-x64.vcvplugin
+```
+
+Note: the OSC bridge server needs Winsock on Windows; `vcv/Makefile` links
+`-lws2_32` when `ARCH_WIN` is set (mingw ignores the MSVC `#pragma comment(lib,…)`).
+
+### macOS (x64 + arm64) — Apple SDK required
+
+macOS cross-builds need Apple's **licensed macOS SDK**, which we never download or
+redistribute on this host. Two routes:
+
+1. **CI** (`.github/workflows/vcv-plugin.yml`) — the
+   [VCVRack/rack-plugin-toolchain](https://github.com/VCVRack/rack-plugin-toolchain)
+   builds mac-x64 + mac-arm64 on tagged releases (the toolchain fetches the SDK only
+   inside its own image build).
+2. **A Mac** — build with the native SDK + `RACK_DIR` set to the macOS Rack SDK.
+
+The full rack-plugin-toolchain image build is **not** run on this host: its Dockerfile
+`COPY`s the Apple SDK and compiles osxcross, so it both needs the SDK and is multi-GB
+/ multi-hour. That belongs on CI. (Linux + Windows above need none of it.)
 
 ---
 

@@ -168,6 +168,19 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         </p>
       )}
 
+      <SectionLabel>Recorded examples</SectionLabel>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Chip>
+          {ctx.datasetCount} example{ctx.datasetCount === 1 ? '' : 's'}
+        </Chip>
+        <Button size="sm" variant="secondary" onClick={ctx.onClear}>
+          Clear
+        </Button>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
+          forget every example & wipe the on-map marks
+        </span>
+      </div>
+
       {depth === 'expanded' && (
         <>
           <SectionLabel>Solo / arm scope</SectionLabel>

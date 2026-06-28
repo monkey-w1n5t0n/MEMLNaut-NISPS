@@ -196,9 +196,10 @@ a setting → `--r-*` tokens.
 
 ### Feedback — `src/feedback/`
 - `controller.ts` (**~490 lines**) — `FeedbackController`, framework-neutral, owned by ConsoleApp.
-  Two modes: **explore-and-place** (default, Mode 2, positive-only — drives the C++ core's
-  snapshot/scratchpad/undo lifecycle; caller accumulates anchors and trains on finalise with
-  warm-start) and **geometric-dislike** (Mode 1, selectable). Solo/arm via per-output mask.
+  Two modes: **geometric-dislike** (default, Mode 1, "Push away" — down carves the current sound
+  away from what you like, directed repulsion) and **explore-and-place** (Mode 2, positive-only,
+  selectable — drives the C++ core's snapshot/scratchpad/undo lifecycle; caller accumulates anchors
+  and trains on finalise with warm-start). Solo/arm via per-output mask.
 - `rng.ts` — `SeededRng` (deterministic xorshift32 + gaussian). **Stand-in** until the C++ nudge owns
   the stream — not bit-identical to `nisps::Rng`.
 - **`--- C++ GAP ---` markers** flag behaviour approximated in TS pending C++ port: true geometric

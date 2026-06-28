@@ -112,8 +112,9 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [sandwich, setSandwich] = useState(false);
 
   // Learning-behaviour store (dock-spec §1; rl-feedback-design). Default
-  // feedback mode = "Explore and place"; default solo = "Mask gradients".
-  const [feedbackMode, setFeedbackModeState] = useState<FeedbackModeUI>('explore-and-place');
+  // feedback mode = "Push away" (geometric); default solo = "Mask gradients".
+  // (Explore-and-place is selectable but the geometric push is the better default.)
+  const [feedbackMode, setFeedbackModeState] = useState<FeedbackModeUI>('geometric-dislike');
   const [soloMode, setSoloMode] = useState<SoloMode>('mask-gradients');
   const [exploring, setExploring] = useState(false);
   const [learningPaused, setLearningPaused] = useState(false);
@@ -654,10 +655,14 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     onAddExample: addExample,
     onTrain: train,
     onClear: () => {
+      // Drop the recorded training examples AND every on-map visual that
+      // represents them (feedback markers + placed-anchor pins). The cursor
+      // trail is ephemeral and self-decays, so it needs no explicit reset.
       engine?.clearExamples();
       setExamples(0);
       setLoss([]);
       setMarkers([]);
+      setPins([]);
     },
     snapshots,
     onJump: (id) => {

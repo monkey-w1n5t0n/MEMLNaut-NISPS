@@ -48,20 +48,33 @@ CPUS=4 MEM=6g vcv/build-win.sh   # tighter caps
 Note: the OSC bridge server needs Winsock on Windows; `vcv/Makefile` links
 `-lws2_32` when `ARCH_WIN` is set (mingw ignores the MSVC `#pragma comment(lib,…)`).
 
-### macOS (x64 + arm64) — Apple SDK required
+### macOS (x64 + arm64) — locally, resource-bounded (works today)
 
-macOS cross-builds need Apple's **licensed macOS SDK**, which we never download or
-redistribute on this host. Two routes:
+`vcv/build-mac.sh` cross-builds both macOS arches in a **hard-capped Docker container**
+(`--cpus=8 --memory=20g --memory-swap=20g`, no host swap), ad-hoc signs the dylibs with
+`rcodesign`, and writes `vcv/dist/MEMLNaut-<version>-mac-{x64,arm64}.vcvplugin`.
 
-1. **CI** (`.github/workflows/vcv-plugin.yml`) — the
-   [VCVRack/rack-plugin-toolchain](https://github.com/VCVRack/rack-plugin-toolchain)
-   builds mac-x64 + mac-arm64 on tagged releases (the toolchain fetches the SDK only
-   inside its own image build).
-2. **A Mac** — build with the native SDK + `RACK_DIR` set to the macOS Rack SDK.
+```bash
+vcv/build-mac.sh                  # first run ~18 min (builds the osxcross toolchain image)
+vcv/build-mac.sh                  # reruns ~2.5 min (cached image)
+REBUILD_TOOLCHAIN=1 vcv/build-mac.sh   # force-rebuild the toolchain image
+```
 
-The full rack-plugin-toolchain image build is **not** run on this host: its Dockerfile
-`COPY`s the Apple SDK and compiles osxcross, so it both needs the SDK and is multi-GB
-/ multi-hour. That belongs on CI. (Linux + Windows above need none of it.)
+Key choices that keep it bounded + legal-ish:
+- **osxcross is built with the container's SYSTEM clang** — we do NOT compile
+  Clang/LLVM from source (the official toolchain's `build_clang.sh` is the multi-hour,
+  RAM-hungry trap). osxcross only builds cctools-port + ld64 + wrappers (~16-18 min,
+  peak < 1 GB RAM). The result is cached as a local Docker image
+  `nisps-osxcross:darwin21.4-12.3` (~3 GB, contains the SDK) so reruns are fast.
+- **Apple macOS SDK**: `MacOSX12.3.sdk.tar.xz` from
+  [joseluisq/macosx-sdks](https://github.com/joseluisq/macosx-sdks). Apple's licence
+  restricts SDK use to Apple hardware — this is a grey area; it never leaves the local
+  toolchain image and is never redistributed.
+- The dylibs are **ad-hoc signed, not notarised**, so macOS Gatekeeper may quarantine a
+  download. Users clear it once: `xattr -dr com.apple.quarantine ~/Documents/Rack2/plugins-mac-*/MEMLNaut`.
+
+CI (below) remains an alternative for macOS — and the only option if you don't want the
+SDK on this host — but the local bounded build is the default now (no dedicated box).
 
 ---
 

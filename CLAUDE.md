@@ -15,6 +15,8 @@ Project documentation: https://musicallyembodiedml.github.io/memlnaut/approaches
 
 For the codebase index, see `MAP.md`. For strategic gaps and open mission questions, see `ALIGNMENT.md`.
 
+**For anything UI-related in the Manifold front-end (`manifold/`), read `manifold/ONBOARDING.md` first** — it's a single-file agent orientation (run/build/deploy/test, the UI/engine-spine/WASM layering, the convertible Stages, the Dock + drawers, and the non-obvious gotchas).
+
 ## The `nisps/` core
 
 ```

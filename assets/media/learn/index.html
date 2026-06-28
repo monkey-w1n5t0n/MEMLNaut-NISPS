@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Manifold — the parameter landscape</title>
+<style>
+  :root{
+    --bg:#0d0d0d; --bg-1:#141414; --bg-2:#1c1c1c; --bg-3:#242424;
+    --fg:#e8e8e8; --fg-mute:#9a9a9a; --fg-dim:#5a5a5a;
+    --line:#2a2a2a; --line-strong:#3a3a3a;
+    --accent:#ff6a00; --accent-2:#00ccff; --good:#6bc26b; --bad:#5aa6c8;
+    --font-mono:'JetBrains Mono','Fira Code','SF Mono',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font-family:var(--font-mono);font-size:14px;-webkit-font-smoothing:antialiased;overflow:hidden}
+
+  #app{position:fixed;inset:0}
+  #scene{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+  #scene:active{cursor:grabbing}
+
+  /* floating HUD blocks */
+  .hud{position:absolute;z-index:5}
+  /* three zones, left → right: input · MLP stack · outputs */
+  .hud-l{left:24px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+  .hud-r{right:24px;top:50%;transform:translateY(-50%)}
+  .hud-bc{left:50%;bottom:22px;transform:translateX(-50%)}
+  .hud-tr{right:18px;top:18px}
+  .zonecap{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--fg-dim);margin-bottom:2px}
+
+  /* output fader bank (1-D projection of each layer's value at the point) */
+  .outs{display:flex;gap:13px;align-items:flex-start;background:rgba(20,20,20,.55);
+    border:1px solid var(--line);border-radius:12px;padding:12px 14px;backdrop-filter:blur(4px)}
+  .fader{display:flex;flex-direction:column;align-items:center;gap:6px;width:30px}
+  .fader .track{position:relative;width:8px;height:200px;background:var(--bg-3);
+    border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .fader .fill{position:absolute;left:0;right:0;bottom:0;border-radius:999px;transition:height .05s linear}
+  .fader .handle{position:absolute;left:50%;width:16px;height:3px;border-radius:2px;
+    transform:translate(-50%,1.5px);box-shadow:0 0 8px currentColor}
+  .fader .flab{font-size:9px;letter-spacing:.03em;text-transform:uppercase;max-width:34px;text-align:center;line-height:1.1}
+  .fader .fval{font-size:10px;font-variant-numeric:tabular-nums;color:var(--fg)}
+
+  /* XY pad */
+  #ndpad{display:block;border:1px solid var(--line);border-radius:8px;background:var(--bg-2);
+    cursor:crosshair;touch-action:none}
+  .padcap{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-dim)}
+
+  /* parameter numberbox */
+  .kbox{display:flex;align-items:center;gap:8px;background:var(--bg-1);border:1px solid var(--line);
+    border-radius:8px;padding:5px 8px;width:fit-content}
+  .kbox .lab{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-mute)}
+  .kbox .val{min-width:1.4ch;text-align:center;color:var(--fg);font-size:15px;font-variant-numeric:tabular-nums}
+  .step{width:24px;height:24px;display:grid;place-items:center;padding:0;font-size:15px;line-height:1;
+    background:var(--bg-2);border:1px solid var(--line-strong);border-radius:6px;color:var(--fg);cursor:pointer}
+  .step:hover{background:var(--bg-3)}
+  .step:disabled{opacity:.3;cursor:default}
+
+  /* action bar */
+  .actionbar{display:flex;align-items:center;gap:8px;background:rgba(20,20,20,.82);
+    border:1px solid var(--line);border-radius:12px;padding:8px;backdrop-filter:blur(6px)}
+  .act{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:58px;padding:8px 6px;
+    background:var(--bg-2);border:1px solid var(--line-strong);border-radius:9px;color:var(--fg);
+    cursor:pointer;font-family:inherit;transition:border-color .12s,background .12s}
+  .act:hover{background:var(--bg-3)}
+  .act .ic{font-size:18px;line-height:1}
+  .act .tx{font-size:9px;letter-spacing:.04em;color:var(--fg-mute);text-transform:uppercase}
+  .act.up:hover{border-color:var(--accent);box-shadow:0 0 12px rgba(255,106,0,.25)}
+  .act.down:hover{border-color:var(--accent-2);box-shadow:0 0 12px rgba(0,204,255,.22)}
+  .act:disabled{opacity:.35;cursor:default;box-shadow:none}
+  .sep{width:1px;align-self:stretch;background:var(--line);margin:2px 2px}
+
+  /* mode toggle */
+  .modeseg{display:inline-flex;border:1px solid var(--line-strong);border-radius:9px;overflow:hidden}
+  .modeseg button{border:0;border-radius:0;padding:0 12px;height:100%;min-height:54px;font-family:inherit;
+    font-size:11px;letter-spacing:.04em;background:var(--bg-2);color:var(--fg-mute);cursor:pointer}
+  .modeseg button.on{background:var(--accent);color:#0d0d0d}
+
+  /* info toggle */
+  #infoBtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line-strong);background:rgba(20,20,20,.82);
+    color:var(--fg-mute);font-size:15px;cursor:pointer;backdrop-filter:blur(6px)}
+  #infoBtn:hover{color:var(--accent);border-color:var(--accent)}
+
+  /* fading rotate hint */
+  #hint{position:absolute;left:50%;top:18px;transform:translateX(-50%);z-index:4;
+    font-size:11px;letter-spacing:.08em;color:var(--fg-dim);pointer-events:none;
+    transition:opacity 1s ease;opacity:.85}
+  #hint.gone{opacity:0}
+
+  /* loading */
+  #loading{position:absolute;inset:0;display:grid;place-items:center;z-index:9;background:var(--bg);
+    color:var(--fg-dim);font-size:13px;letter-spacing:.1em}
+  #loading.gone{display:none}
+  #loading b{color:var(--accent);letter-spacing:-.01em}
+
+  /* prose drawer (revealed by the info switch) */
+  #prose{position:absolute;top:0;right:0;bottom:0;width:min(440px,86vw);z-index:8;overflow:auto;
+    background:rgba(13,13,13,.96);border-left:1px solid var(--line);padding:40px 26px 64px;
+    transform:translateX(102%);transition:transform .28s ease}
+  body:not(.minimal) #prose{transform:none}
+  #prose h1{font-size:24px;margin:0 0 8px}
+  #prose h1 b{color:var(--accent)}
+  #prose p{color:var(--fg-mute);line-height:1.6;margin:0 0 12px}
+  #prose p b{color:var(--fg)}
+  #prose .lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:26px 0 8px}
+  #prose .ph{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-dim);
+    border:1px dashed var(--line-strong);border-radius:6px;padding:6px 9px;display:inline-block;margin-bottom:14px}
+  #prose .bars{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+  #prose .ro{display:flex;align-items:center;gap:10px}
+  #prose .ro span{width:74px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--fg-mute)}
+  #prose .bar{flex:1;height:7px;background:var(--bg-3);border:1px solid var(--line);border-radius:999px;overflow:hidden;position:relative}
+  #prose .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:999px}
+  #prose .num{width:3.2ch;text-align:right;font-variant-numeric:tabular-nums;color:var(--fg);font-size:12px}
+  #prose a{color:var(--accent-2);text-decoration:none}
+</style>
+</head>
+<body class="minimal">
+<div id="app">
+  <canvas id="scene"></canvas>
+
+  <div id="hint">drag to rotate · top-down view = the flat 2-D map</div>
+
+  <!-- ZONE 1 · input: the 2-D control + parameter count (left) -->
+  <div class="hud hud-l">
+    <div class="zonecap">input · 2-D control</div>
+    <canvas id="ndpad" width="140" height="140"></canvas>
+    <div class="kbox">
+      <span class="lab">params</span>
+      <button class="step" id="kdown" title="fewer parameters">−</button>
+      <span class="val" id="kval">1</span>
+      <button class="step" id="kup" title="more parameters">+</button>
+    </div>
+  </div>
+
+  <!-- ZONE 3 · outputs: vertical faders, one per layer (right) -->
+  <div class="hud hud-r">
+    <div class="zonecap">outputs</div>
+    <div class="outs" id="outs"></div>
+  </div>
+
+  <!-- action bar (bottom-center) -->
+  <div class="hud hud-bc actionbar">
+    <button class="act" id="aRand"><span class="ic">🎲</span><span class="tx">randomise</span></button>
+    <button class="act" id="aNudge"><span class="ic">〜</span><span class="tx">nudge</span></button>
+    <button class="act" id="aUndo"><span class="ic">↶</span><span class="tx">undo</span></button>
+    <div class="sep"></div>
+    <button class="act up" id="aUp"><span class="ic">👍</span><span class="tx">keep</span></button>
+    <button class="act down" id="aDown"><span class="ic">👎</span><span class="tx" id="downTx">push away</span></button>
+    <div class="sep"></div>
+    <div class="modeseg">
+      <button id="mPush" class="on">push&#8209;away</button>
+      <button id="mExp">explore</button>
+    </div>
+  </div>
+
+  <button id="infoBtn" class="hud hud-tr" title="show / hide explanation">ⓘ</button>
+
+  <div id="loading"><span>loading the <b>&nbsp;NISPS&nbsp;</b> engine…</span></div>
+</div>
+
+<!-- placeholder explanatory copy (revealed by the ⓘ switch; to be reworked) -->
+<div id="prose">
+  <h1>The <b>parameter landscape</b></h1>
+  <p class="ph">placeholder copy — to be reworked</p>
+  <p>Two numbers go in — your <b>X / Y control position</b> — and a whole fistful of parameters comes
+  out. You can't picture a dozen dimensions at once, so picture them <b>stacked</b>: each <b>slab</b> is one
+  parameter, drawn as a 3-D landscape whose height at any spot is that parameter's value. <b>One probe</b>
+  reads every slab at the same control position.</p>
+  <p>Seen straight from above the slabs overlap into a single flat map — it looks 2-D. <b>Tilt it</b> and the
+  reveal lands: it was a stack of 3-D surfaces all along. Add parameters to grow the sandwich.</p>
+  <p>Every surface here is the <b>real NISPS network</b> sampled across the input space. <b>👍 keep</b> teaches
+  the net that this sound belongs at this spot and the landscape bends to honour it; <b>👎</b> either pushes the
+  mapping away from the current sound or (in explore mode) re-rolls a fresh candidate to audition. <b>nudge</b>
+  and <b>randomise</b> perturb the net; <b>undo</b> steps back.</p>
+  <div class="lbl">Values under the probe</div>
+  <div class="bars" id="ndbars"></div>
+  <p style="margin-top:24px"><a href="../">← back to the instrument</a> · <a href="../animations/">animated explainers →</a></p>
+</div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const clamp=(v,a=0,b=1)=>v<a?a:v>b?b:v;
+  const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const MONO=cssv('--font-mono')||'monospace';
+
+  const NAMES=['Cutoff','Resonance','Drive','Tone','Decay','Air','Pitch','Width'];
+  const ABBR =['Cut','Res','Drv','Ton','Dec','Air','Pit','Wid'];
+  const MAXK=NAMES.length;
+  const OUT=126, IN=2, GRID=12, N=GRID, PTS=(N+1)*(N+1);
+
+  let K=1;                          // parameters (slabs) visualised — from the same net
+  let cx=0.5, cy=0.5;               // 2-D control position in [0,1]
+  let mode='pushaway';              // 'pushaway' | 'explore'
+  let exploring=false;              // explore-and-place scratchpad session active
+  let ready=false, auto=true, autoT=0.6;
+
+  // camera — START TOP-DOWN (looks 2-D); drag tilts to reveal the 3-D stack
+  let yaw=0, pitch=Math.PI/2, dragRot=false, lastX=0, lastY=0;
+
+  // ===== engine (vanilla wrapper over nisps.wasm; same C ABI the manifold uses) =====
+  const E={
+    mod:null,h:0,bIn:0,bOut:0,bF:0,bL:0,bW:0,bFb:0,wc:0,
+    async init(){
+      // nisps.{js,wasm} sit one level up at /next/ in production; probe a few bases.
+      let base=null,src=null;
+      for(const b of ['../','','./']){
+        try{const r=await fetch(b+'nisps.js');if(r.ok){src=await r.text();base=b;break;}}catch(e){}
+      }
+      if(base===null) throw new Error('nisps.js not found');
+      if(!window.createNispsModule)(0,eval)(src);
+      this.mod=await window.createNispsModule({locateFile:p=>p.endsWith('.wasm')?base+'nisps.wasm':p});
+      const m=this.mod;
+      this.h=m._nisps_ml_create(IN,OUT,0,0,(Date.now()>>>0));
+      this.wc=m._nisps_ml_weight_count(this.h);
+      this.bF=m._malloc(IN*4); this.bL=m._malloc(OUT*4); this.bFb=m._malloc(OUT*4);
+      this.bW=m._malloc(this.wc*4);
+      this.bIn=m._malloc(PTS*IN*4); this.bOut=m._malloc(PTS*OUT*4);
+    },
+    inferXY(x,y){const m=this.mod;m._nisps_ml_set_input(this.h,0,x);m._nisps_ml_set_input(this.h,1,y);
+      m._nisps_ml_process(this.h);const p=m._nisps_ml_outputs(this.h);
+      return new Float32Array(m.HEAPF32.buffer,p,OUT);},
+    inferGrid(){const m=this.mod;const inv=new Float32Array(m.HEAPF32.buffer,this.bIn,PTS*IN);
+      let q=0;for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){inv[q++]=i/N;inv[q++]=j/N;}
+      m._nisps_ml_infer_batch(this.h,this.bIn,PTS,this.bOut);
+      return new Float32Array(new Float32Array(m.HEAPF32.buffer,this.bOut,PTS*OUT));},
+    addExample(f,l){const m=this.mod;const fv=new Float32Array(m.HEAPF32.buffer,this.bF,IN);
+      const lv=new Float32Array(m.HEAPF32.buffer,this.bL,OUT);fv[0]=f[0];fv[1]=f[1];
+      for(let i=0;i<OUT;i++)lv[i]=l[i]||0;m._nisps_ml_add_example(this.h,this.bF,this.bL);},
+    train(lr,it,me){return this.mod._nisps_ml_train(this.h,lr,it,me,0);},
+    draw(s){this.mod._nisps_ml_draw_weights(this.h,s);},
+    move(sp,s){this.mod._nisps_ml_move_weights(this.h,sp,s,0);},
+    setMode(i){this.mod._nisps_ml_feedback_set_mode(this.h,i);},
+    down(out,sp,s){const m=this.mod;const ov=new Float32Array(m.HEAPF32.buffer,this.bFb,OUT);
+      ov.fill(0);for(let i=0;i<OUT;i++)ov[i]=out[i]||0;m._nisps_ml_feedback_down(this.h,this.bFb,sp,s,0);},
+    enterExplore(s){this.mod._nisps_ml_feedback_enter_explore(this.h,s);},
+    reroll(s){this.mod._nisps_ml_feedback_reroll(this.h,s);},
+    coreNudge(a){this.mod._nisps_ml_feedback_nudge(this.h,a);},
+    coreUndo(){this.mod._nisps_ml_feedback_undo(this.h);},
+    exitExplore(){this.mod._nisps_ml_feedback_exit_explore(this.h);},
+    getWeights(){this.mod._nisps_ml_get_weights(this.h,this.bW);
+      return new Float32Array(new Float32Array(this.mod.HEAPF32.buffer,this.bW,this.wc));},
+    setWeights(w){const v=new Float32Array(this.mod.HEAPF32.buffer,this.bW,this.wc);v.set(w);
+      this.mod._nisps_ml_set_weights(this.h,this.bW);},
+  };
+
+  // Low spread = polarised weights = strong spatial relief (measured); high spread
+  // flattens the surface toward 0.5. Keep it low so the landscapes show real terrain.
+  const SPREAD=0.1, NUDGE=0.05, BOOT_SPREAD=0.05;
+  let grid=null, probeOut=new Float32Array(OUT);
+  function H(k,i,j){return grid?grid[(j*(N+1)+i)*OUT+k]:0.5;}
+  function resample(){grid=E.inferGrid();}
+  function updateProbe(){const o=E.inferXY(cx,cy);probeOut=new Float32Array(o);}
+
+  // ---- weight-snapshot undo (push-away mode; explore mode uses the core ring) ----
+  const undoStack=[];
+  function pushUndo(){undoStack.push(E.getWeights());if(undoStack.length>24)undoStack.shift();}
+  function popUndo(){const w=undoStack.pop();if(w){E.setWeights(w);return true;}return false;}
+
+  // ---- feedback examples marked on the 2-D control plane (like the main app) ----
+  // {x,y,sign} — sign +1 kept (👍), -1 pushed away (👎). undo pops the last.
+  const marks=[];
+
+  // ===== actions (all backed by the real engine) =====
+  function act(name){
+    if(!ready)return;
+    if(mode==='pushaway'){
+      if(name==='rand'){pushUndo();E.draw(SPREAD);}
+      else if(name==='nudge'){pushUndo();E.move(0.04,SPREAD);}
+      else if(name==='undo'){popUndo();marks.pop();}
+      else if(name==='up'){pushUndo();const o=new Float32Array(E.inferXY(cx,cy));E.addExample([cx,cy],o);E.train(1.0,200,1e-4);marks.push({x:cx,y:cy,sign:1});}
+      else if(name==='down'){pushUndo();const o=new Float32Array(E.inferXY(cx,cy));E.down(o,0.15,SPREAD);marks.push({x:cx,y:cy,sign:-1});}
+    }else{ // explore-and-place
+      if(name==='rand'||name==='down'){
+        if(!exploring){E.setMode(3);E.enterExplore(SPREAD);exploring=true;}else E.reroll(SPREAD);
+      }else if(name==='nudge'){
+        if(!exploring){E.setMode(3);E.enterExplore(SPREAD);exploring=true;}else E.coreNudge(NUDGE);
+      }else if(name==='undo'){
+        if(exploring)E.coreUndo();else{popUndo();marks.pop();}
+      }else if(name==='up'){
+        const o=new Float32Array(E.inferXY(cx,cy));
+        if(exploring){E.exitExplore();exploring=false;}
+        E.addExample([cx,cy],o);E.train(1.0,200,1e-4);marks.push({x:cx,y:cy,sign:1});
+      }
+    }
+    resample();updateProbe();reflectButtons();redraw();
+  }
+  function setMode(m){
+    if(m===mode)return;
+    if(mode==='explore'&&exploring){E.exitExplore();exploring=false;}
+    mode=m;E.setMode(m==='explore'?3:0);
+    document.getElementById('mPush').classList.toggle('on',m==='pushaway');
+    document.getElementById('mExp').classList.toggle('on',m==='explore');
+    document.getElementById('downTx').textContent=m==='explore'?'skip':'push away';
+    if(ready){resample();updateProbe();reflectButtons();redraw();}
+  }
+  function reflectButtons(){
+    const ud=document.getElementById('aUndo');
+    ud.disabled=(mode==='explore'?false:undoStack.length===0)&&!exploring;
+  }
+
+  // ===== 3-D projection: yaw + pitch orbit, bounding-sphere fit, X inverted =====
+  const SX=300,SZ=300,LAYER_GAP=120,ZAMP=92,MARGIN=44;
+  // Anchor the view to the TOP slab (k=0) at a FIXED world Y and a FIXED screen
+  // position, independent of K. So adding parameters grows the stack DOWNWARD and
+  // the top slab always stays the top — it never re-centres onto new layers.
+  const AWY=ZAMP*0.5, ANCHOR_FY=0.42;
+  let CW=800,CH=600,scale=1;
+  function computeView(){
+    let R=1;                              // bounding-sphere radius about the top anchor
+    for(let k=0;k<K;k++)for(const z of[0,1])for(const gx of[-0.5,0.5])for(const gy of[-0.5,0.5]){
+      const X=gx*SX,Y=(-k*LAYER_GAP+z*ZAMP)-AWY,Z=gy*SZ;const d=Math.sqrt(X*X+Y*Y+Z*Z);if(d>R)R=d;}
+    scale=(Math.min(CW,CH)/2-MARGIN)/R;
+  }
+  function project(gx,gy,zv,k){
+    const X=gx*SX, Y=(-k*LAYER_GAP+zv*ZAMP)-AWY, Z=-gy*SZ;   // Z negated: pad-up = map-up
+    const cyA=Math.cos(yaw),syA=Math.sin(yaw);
+    const x1=X*cyA-Z*syA, z1=X*syA+Z*cyA;
+    const cpA=Math.cos(pitch),spA=Math.sin(pitch);
+    const y2=Y*cpA-z1*spA, z2=Y*spA+z1*cpA;
+    return {x:CW/2+x1*scale,y:CH*ANCHOR_FY-y2*scale,depth:z2,wx:X,wy:Y,wz:Z};
+  }
+
+  const DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+  const scene=document.getElementById('scene'),sctx=scene.getContext('2d');
+  const pad=document.getElementById('ndpad'),pctx=pad.getContext('2d');
+  pad.width=140*DPR;pad.height=140*DPR;pctx.scale(DPR,DPR);
+  function resize(){
+    const r=scene.getBoundingClientRect();CW=Math.max(320,Math.round(r.width));CH=Math.max(320,Math.round(r.height));
+    scene.width=CW*DPR;scene.height=CH*DPR;sctx.setTransform(DPR,0,0,DPR,0,0);computeView();
+  }
+
+  const hueOf=k=>K>1?(26+(196-26)*k/(K-1)):26;
+  const colCss=(k,a)=>`hsla(${hueOf(k).toFixed(0)},85%,60%,${a})`;
+  const LIGHT=(()=>{const v=[0.35,0.86,0.36],m=Math.hypot(v[0],v[1],v[2]);return[v[0]/m,v[1]/m,v[2]/m];})();
+
+  function renderScene(){
+    const c=sctx;c.clearRect(0,0,CW,CH);
+    const quads=[],labels=[];
+    for(let k=0;k<K;k++){
+      const hue=hueOf(k),P=[];
+      for(let j=0;j<=N;j++){P[j]=[];for(let i=0;i<=N;i++)P[j][i]=project(i/N-0.5,j/N-0.5,H(k,i,j),k);}
+      for(let j=0;j<N;j++)for(let i=0;i<N;i++){
+        const a=P[j][i],b=P[j][i+1],d=P[j+1][i+1],e=P[j+1][i];
+        const ux=d.wx-a.wx,uy=d.wy-a.wy,uz=d.wz-a.wz,vx=b.wx-e.wx,vy=b.wy-e.wy,vz=b.wz-e.wz;
+        const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,nm=Math.hypot(nx,ny,nz)||1;
+        const L=clamp(0.32+0.62*Math.abs((nx*LIGHT[0]+ny*LIGHT[1]+nz*LIGHT[2])/nm));
+        quads.push({a,b,d,e,hue,L,depth:(a.depth+b.depth+d.depth+e.depth)/4});
+      }
+      const lp=project(-0.5,0.5,H(k,0,N),k);labels.push({x:lp.x,y:lp.y,hue,name:NAMES[k]});
+    }
+    quads.sort((p,q)=>q.depth-p.depth);
+    for(const Q of quads){
+      c.fillStyle=`hsla(${Q.hue},80%,${(26+Q.L*44).toFixed(0)}%,0.66)`;
+      c.strokeStyle=`hsla(${Q.hue},80%,82%,0.18)`;c.lineWidth=0.6;
+      c.beginPath();c.moveTo(Q.a.x,Q.a.y);c.lineTo(Q.b.x,Q.b.y);c.lineTo(Q.d.x,Q.d.y);c.lineTo(Q.e.x,Q.e.y);c.closePath();
+      c.fill();c.stroke();
+    }
+    c.font='11px '+MONO;c.textAlign='right';c.textBaseline='middle';
+    for(const Lb of labels){c.fillStyle=`hsla(${Lb.hue},85%,74%,0.95)`;c.fillText(Lb.name,Lb.x-6,Lb.y);}
+    // probe column at (cx,cy) through every slab
+    const gx=cx-0.5,gy=cy-0.5;
+    const top=project(gx,gy,1.18,0),bot=project(gx,gy,-0.18,K-1);
+    c.strokeStyle='rgba(255,255,255,0.32)';c.lineWidth=1;c.setLineDash([3,4]);
+    c.beginPath();c.moveTo(top.x,top.y);c.lineTo(bot.x,bot.y);c.stroke();c.setLineDash([]);
+    for(let k=0;k<K;k++){
+      const p=project(gx,gy,clamp(probeOut[k]),k),fl=project(gx,gy,0,k);
+      c.strokeStyle=colCss(k,0.5);c.lineWidth=1;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(fl.x,fl.y);c.stroke();
+      c.fillStyle=colCss(k,1);c.shadowColor=colCss(k,1);c.shadowBlur=12;
+      c.beginPath();c.arc(p.x,p.y,6,0,Math.PI*2);c.fill();c.shadowBlur=0;
+      c.fillStyle='#0d0d0d';c.beginPath();c.arc(p.x,p.y,2.2,0,Math.PI*2);c.fill();
+    }
+  }
+  function drawPad(){
+    pctx.clearRect(0,0,140,140);pctx.fillStyle='#1c1c1c';pctx.fillRect(0,0,140,140);
+    pctx.strokeStyle='rgba(255,255,255,0.06)';pctx.lineWidth=1;
+    for(let i=1;i<4;i++){const t=i/4*140;pctx.beginPath();pctx.moveTo(t,0);pctx.lineTo(t,140);pctx.stroke();
+      pctx.beginPath();pctx.moveTo(0,t);pctx.lineTo(140,t);pctx.stroke();}
+    // feedback examples (👍 +, 👎 −) — same convention as the main app
+    const TAU=Math.PI*2;
+    for(const m of marks){const mx=m.x*140,my=(1-m.y)*140,col=m.sign>0?'#ff6a00':'#00ccff';
+      pctx.globalAlpha=0.28;pctx.fillStyle=col;pctx.beginPath();pctx.arc(mx,my,8,0,TAU);pctx.fill();
+      pctx.globalAlpha=1;pctx.strokeStyle=col;pctx.lineWidth=1.5;pctx.beginPath();pctx.arc(mx,my,5,0,TAU);pctx.stroke();
+      pctx.fillStyle=col;pctx.font='9px '+MONO;pctx.textAlign='center';pctx.textBaseline='middle';
+      pctx.fillText(m.sign>0?'+':'–',mx,my+0.5);}
+    const dx=cx*140,dy=(1-cy)*140;
+    pctx.strokeStyle='rgba(255,255,255,0.1)';pctx.beginPath();pctx.moveTo(0,dy);pctx.lineTo(140,dy);
+    pctx.moveTo(dx,0);pctx.lineTo(dx,140);pctx.stroke();
+    pctx.fillStyle='#ff6a00';pctx.shadowColor='#ff6a00';pctx.shadowBlur=12;
+    pctx.beginPath();pctx.arc(dx,dy,6,0,Math.PI*2);pctx.fill();pctx.shadowBlur=0;
+    pctx.fillStyle='#0d0d0d';pctx.beginPath();pctx.arc(dx,dy,2.4,0,Math.PI*2);pctx.fill();
+  }
+
+  // readout bars (prose drawer only)
+  const barsEl=document.getElementById('ndbars');let barI=[],barN=[];
+  function buildBars(){barsEl.innerHTML='';barI=[];barN=[];
+    for(let k=0;k<K;k++){const ro=document.createElement('div');ro.className='ro';
+      ro.innerHTML=`<span style="color:${colCss(k,0.95)}">${NAMES[k]}</span>`+
+        `<div class="bar"><i style="background:${colCss(k,1)}"></i></div><div class="num">0.50</div>`;
+      barsEl.appendChild(ro);barI[k]=ro.querySelector('i');barN[k]=ro.querySelector('.num');}}
+  function updateBars(){if(!barI.length)return;for(let k=0;k<K;k++){const v=clamp(probeOut[k]);
+    barI[k].style.width=(v*100)+'%';barN[k].textContent=v.toFixed(2);}}
+
+  // output faders — the 1-D projection of each layer's value at the current point
+  const TRACK_H=200;
+  const outsEl=document.getElementById('outs');let fFill=[],fHan=[],fVal=[];
+  function buildOuts(){outsEl.innerHTML='';fFill=[];fHan=[];fVal=[];
+    for(let k=0;k<K;k++){const col=colCss(k,1);const f=document.createElement('div');f.className='fader';
+      f.innerHTML=`<div class="track"><div class="fill" style="background:${col}"></div>`+
+        `<div class="handle" style="background:${col};color:${col}"></div></div>`+
+        `<div class="flab" style="color:${colCss(k,0.95)}" title="${NAMES[k]}">${ABBR[k]}</div><div class="fval">0.50</div>`;
+      outsEl.appendChild(f);fFill[k]=f.querySelector('.fill');fHan[k]=f.querySelector('.handle');fVal[k]=f.querySelector('.fval');}}
+  function updateOuts(){if(!fFill.length)return;for(let k=0;k<K;k++){const v=clamp(probeOut[k]);
+    fFill[k].style.height=(v*100)+'%';fHan[k].style.bottom=(v*TRACK_H)+'px';fVal[k].textContent=v.toFixed(2);}}
+
+  function redraw(){renderScene();drawPad();updateBars();updateOuts();}
+
+  // ===== interaction =====
+  function setK(n){K=clamp(n,1,MAXK);document.getElementById('kval').textContent=K;
+    document.getElementById('kup').disabled=K>=MAXK;document.getElementById('kdown').disabled=K<=1;
+    computeView();buildBars();buildOuts();updateProbe&&(probeOut=new Float32Array(E.inferXY(cx,cy)));redraw();}
+
+  function stopAuto(){auto=false;document.getElementById('hint').classList.add('gone');}
+
+  // pad → control position
+  function setFromPad(e){const r=pad.getBoundingClientRect();
+    cx=clamp((e.clientX-r.left)/r.width);cy=clamp(1-(e.clientY-r.top)/r.height);}
+  let padDrag=false;
+  pad.addEventListener('pointerdown',e=>{padDrag=true;pad.setPointerCapture(e.pointerId);stopAuto();setFromPad(e);updateProbe();redraw();});
+  pad.addEventListener('pointermove',e=>{if(padDrag){setFromPad(e);updateProbe();redraw();}});
+  pad.addEventListener('pointerup',()=>padDrag=false);
+
+  // scene → orbit (pitch inverted; pitch up to π/2 = exact top-down)
+  scene.addEventListener('pointerdown',e=>{dragRot=true;scene.setPointerCapture(e.pointerId);stopAuto();lastX=e.clientX;lastY=e.clientY;});
+  scene.addEventListener('pointermove',e=>{if(!dragRot)return;
+    yaw+=(e.clientX-lastX)*0.01;
+    pitch=clamp(pitch+(e.clientY-lastY)*0.008,0.06,Math.PI/2);   // vertical (Y) drag — inverted
+    lastX=e.clientX;lastY=e.clientY;redraw();});
+  scene.addEventListener('pointerup',()=>dragRot=false);
+  scene.addEventListener('pointercancel',()=>dragRot=false);
+
+  // buttons
+  const B=(id,fn)=>document.getElementById(id).addEventListener('click',()=>{stopAuto();fn();});
+  B('aRand',()=>act('rand'));B('aNudge',()=>act('nudge'));B('aUndo',()=>act('undo'));
+  B('aUp',()=>act('up'));B('aDown',()=>act('down'));
+  B('kup',()=>setK(K+1));B('kdown',()=>setK(K-1));
+  document.getElementById('mPush').addEventListener('click',()=>{stopAuto();setMode('pushaway');});
+  document.getElementById('mExp').addEventListener('click',()=>{stopAuto();setMode('explore');});
+  document.getElementById('infoBtn').addEventListener('click',()=>{
+    document.body.classList.toggle('minimal');
+    document.getElementById('infoBtn').textContent=document.body.classList.contains('minimal')?'ⓘ':'✕';});
+
+  window.addEventListener('resize',()=>{resize();redraw();});
+
+  function loop(){
+    if(auto&&ready&&!padDrag&&!dragRot){
+      autoT+=0.006;cx=0.5+0.42*Math.sin(autoT*0.9);cy=0.5+0.42*Math.sin(autoT*1.27+1.3);
+      updateProbe();redraw();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ===== boot =====
+  (async()=>{
+    try{
+      await E.init();
+      E.draw(BOOT_SPREAD);            // a fresh net is near-flat; draw for visible relief
+      window.__learn={E,setK,resample,redraw,
+        range(k){let lo=1,hi=0;for(let j=0;j<=N;j++)for(let i=0;i<=N;i++){const v=H(k,i,j);if(v<lo)lo=v;if(v>hi)hi=v;}return[lo,hi];}};
+      resize();setK(1);resample();updateProbe();reflectButtons();
+      ready=true;document.getElementById('loading').classList.add('gone');
+      redraw();requestAnimationFrame(loop);
+      // fade the hint after a while
+      setTimeout(()=>{if(auto)document.getElementById('hint').classList.add('gone');},6000);
+    }catch(err){
+      console.error('[learn] engine init failed:',err);
+      document.getElementById('loading').innerHTML='<span style="color:#c8553a">engine failed to load — see console</span>';
+    }
+  })();
+})();
+</script>
+</body>
+</html>

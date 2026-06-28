@@ -50,6 +50,19 @@ export function ModeIcon({ size = 18, style }: IconProps) {
   );
 }
 
+/** Sandwich — stacked parameter-landscape slabs (the layer toggle). */
+export function SandwichIcon({ size = 18, style }: IconProps) {
+  return svg(
+    size,
+    style,
+    <>
+      <path d="M3 6.5 12 3l9 3.5L12 10 3 6.5Z" />
+      <path d="M3 12 12 15.5 21 12" />
+      <path d="M3 17 12 20.5 21 17" />
+    </>,
+  );
+}
+
 /** Learning — a brain-ish node graph. */
 export function LearningIcon({ size = 18, style }: IconProps) {
   return svg(
@@ -113,6 +126,22 @@ export function HelpIcon({ size = 18, style }: IconProps) {
       <circle cx="12" cy="12" r="9" />
       <path d="M9.3 9.3a2.7 2.7 0 0 1 5.2 1c0 1.8-2.5 2-2.5 3.7" />
       <circle cx="12" cy="17.2" r="0.6" fill="currentColor" stroke="none" />
+    </>,
+  );
+}
+
+/** Dice — explore / re-roll into a scratchpad (a die showing five pips). */
+export function DiceIcon({ size = 22, style }: IconProps) {
+  return svg(
+    size,
+    style,
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none" />
     </>,
   );
 }

@@ -58,7 +58,8 @@ firmware/MEMLNaut-NISPS/
 │   ├── midi_io.hpp        # MIDI in → mode handlers; drain ControlEvent ring → MIDI UART
 │   ├── mode_select.hpp    # type aliases firmware mode name → nisps::modes::*Mode
 │   ├── input_router.hpp   # wire_inputs() entry point
-│   └── output_router.hpp  # drain_outputs() entry point
+│   ├── output_router.hpp  # drain_outputs() entry point
+│   └── settings_view.hpp  # wire_settings(): TFT/rotary menu (Joystick Dual/Single for 4-in modes)
 └── src/{memllib,daisysp,nisps}    # symlinks (Arduino-CLI sketch tree convention)
 ```
 

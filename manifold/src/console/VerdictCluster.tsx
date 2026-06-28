@@ -18,6 +18,7 @@
 import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { FeedbackModeUI } from './types';
+import { DiceIcon } from './icons';
 
 function ThumbIcon({ size = 24, down = false }: { size?: number; down?: boolean }) {
   return (
@@ -44,6 +45,10 @@ export interface VerdictClusterProps {
   onUndo: () => void;
   onCommit: () => void;
   onReroll: () => void;
+  /** Small bounded weight perturbation of the current net (left half of the pill). */
+  onNudge: () => void;
+  /** Full re-roll of the current net (right half of the pill). */
+  onRandomise: () => void;
   canUndo: boolean;
   ab: 'A' | 'B';
   onToggleAB: () => void;
@@ -62,6 +67,8 @@ export function VerdictCluster({
   onUndo,
   onCommit,
   onReroll,
+  onNudge,
+  onRandomise,
   canUndo,
   ab,
   onToggleAB,
@@ -116,6 +123,22 @@ export function VerdictCluster({
     ...extra,
   });
 
+  // Two halves of the secondary pill (nudge | randomise).
+  const pillHalf = (extra: CSSProperties): CSSProperties => ({
+    flex: 1,
+    height: 30,
+    border: 0,
+    background: 'transparent',
+    color: 'var(--fg-mute)',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 'var(--fs-xs)',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    transition: 'background var(--dur-fast), color var(--dur-fast)',
+    ...extra,
+  });
+
   return (
     <div
       onPointerEnter={() => setHover(true)}
@@ -126,75 +149,138 @@ export function VerdictCluster({
         left: '50%',
         transform: 'translateX(-50%)',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 'var(--sp-3)',
-        padding: 'var(--sp-2) var(--sp-3)',
-        background: 'var(--glass)',
-        backdropFilter: 'blur(14px)',
-        WebkitBackdropFilter: 'blur(14px)',
-        border: '1px solid var(--glass-line)',
-        borderRadius: 'var(--r-pill)',
-        boxShadow: 'var(--shadow-2)',
+        gap: 'var(--sp-2)',
         opacity: hover || firstSession ? 1 : 0.55,
         transition: 'opacity var(--dur-med) var(--ease-console)',
         zIndex: 40,
       }}
     >
-      <button
-        type="button"
-        title={downTitle}
-        onPointerDown={perturbDown}
-        onPointerUp={perturbUp}
-        onPointerLeave={() => {
-          if (lp.current) clearTimeout(lp.current);
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-3)',
+          padding: 'var(--sp-2) var(--sp-3)',
+          background: 'var(--glass)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          border: '1px solid var(--glass-line)',
+          borderRadius: 'var(--r-pill)',
+          boxShadow: 'var(--shadow-2)',
         }}
-        style={big(
-          explore
-            ? exploring
-              ? { background: 'rgba(0,204,255,0.16)', color: 'var(--accent-2)' }
-              : { background: 'rgba(0,204,255,0.10)', color: 'var(--accent-2)' }
-            : { background: 'rgba(255,68,102,0.16)', color: 'var(--danger)' },
-        )}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
       >
-        {/* Explore-mode down is a re-roll/explore (↻), not a dislike thumb. */}
-        {explore ? <span style={{ fontSize: 24, lineHeight: 1 }}>↻</span> : <ThumbIcon down />}
-      </button>
+        <button
+          type="button"
+          title={downTitle}
+          onPointerDown={perturbDown}
+          onPointerUp={perturbUp}
+          onPointerLeave={() => {
+            if (lp.current) clearTimeout(lp.current);
+          }}
+          style={big({
+            background: explore && exploring ? 'rgba(255,106,0,0.22)' : 'rgba(255,106,0,0.16)',
+            color: 'var(--accent)',
+          })}
+          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          {/* Explore mode = dice (re-roll into a scratchpad); dislike mode = thumb-down. */}
+          {explore ? <DiceIcon size={24} /> : <ThumbIcon down />}
+        </button>
 
-      <button
-        type="button"
-        title="Undo (z)"
-        onClick={onUndo}
-        disabled={!canUndo}
-        style={big({
-          width: 48,
-          height: 48,
-          fontSize: 20,
-          background: 'var(--bg-2)',
-          color: 'var(--fg-mute)',
-          opacity: canUndo ? 1 : 0.4,
-          cursor: canUndo ? 'pointer' : 'not-allowed',
-        })}
-      >
-        ↺
-      </button>
+        <button
+          type="button"
+          title="Undo (z)"
+          onClick={onUndo}
+          disabled={!canUndo}
+          style={big({
+            width: 36,
+            height: 36,
+            fontSize: 16,
+            background: 'var(--bg-2)',
+            color: 'var(--fg-mute)',
+            opacity: canUndo ? 1 : 0.4,
+            cursor: canUndo ? 'pointer' : 'not-allowed',
+          })}
+        >
+          ↺
+        </button>
 
-      <button
-        type="button"
-        title={upTitle}
-        onClick={onCommit}
-        style={big({
-          background: picking ? 'rgba(0,204,255,0.22)' : 'rgba(255,106,0,0.18)',
-          color: picking ? 'var(--accent-2)' : 'var(--accent)',
-          boxShadow: picking ? '0 0 16px var(--accent-2)' : '0 0 16px var(--glow-accent)',
-        })}
-        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
-        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        <button
+          type="button"
+          title={upTitle}
+          onClick={onCommit}
+          style={big(
+            picking
+              ? {
+                  background: 'rgba(0,204,255,0.22)',
+                  color: 'var(--accent-2)',
+                  boxShadow: '0 0 16px var(--accent-2)',
+                }
+              : {
+                  background: 'rgba(107,194,107,0.20)',
+                  color: 'var(--good)',
+                  boxShadow: '0 0 16px rgba(107,194,107,0.45)',
+                },
+          )}
+          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          {/* Explore-mode up is "place" (a pin glyph) once exploring. */}
+          {explore && exploring ? <span style={{ fontSize: 22, lineHeight: 1 }}>⌖</span> : <ThumbIcon />}
+        </button>
+      </div>
+
+      {/* Secondary pill — two halves: nudge (small perturbation) | randomise (full re-roll). */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          width: 220,
+          background: 'var(--glass)',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          border: '1px solid var(--glass-line)',
+          borderRadius: 'var(--r-pill)',
+          boxShadow: 'var(--shadow-2)',
+          overflow: 'hidden',
+        }}
       >
-        {/* Explore-mode up is "place" (a pin glyph) once exploring. */}
-        {explore && exploring ? <span style={{ fontSize: 22, lineHeight: 1 }}>⌖</span> : <ThumbIcon />}
-      </button>
+        <button
+          type="button"
+          title="Nudge — small bounded perturbation of the current net"
+          onClick={onNudge}
+          style={pillHalf({ borderRight: '1px solid var(--glass-line)' })}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,106,0,0.12)';
+            e.currentTarget.style.color = 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--fg-mute)';
+          }}
+        >
+          nudge
+        </button>
+        <button
+          type="button"
+          title="Randomise — full re-roll of the current net"
+          onClick={onRandomise}
+          style={pillHalf({})}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,106,0,0.12)';
+            e.currentTarget.style.color = 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--fg-mute)';
+          }}
+        >
+          randomise
+        </button>
+      </div>
     </div>
   );
 }

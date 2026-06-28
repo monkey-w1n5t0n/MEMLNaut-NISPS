@@ -1,6 +1,8 @@
 /**
  * The Console dock — right-edge 48px rail + one mutually-exclusive drawer with
- * three depth states (Peek 320 / Expand 520 / Full modal).
+ * two depth states: condensed (360px side panel) and expanded (centred modal,
+ * ~80% of the viewport). A vertically-centred tab on the panel's left edge
+ * toggles between them; drawers are closed by default.
  *
  * RESTRUCTURED (operator dock restructure):
  *   - TOP, pinned: the **Mode** selector — the active OUTPUT BACKEND/target
@@ -22,12 +24,12 @@ import type { ConsoleCtx, DrawerDepth, DrawerKey, OutputMode } from './types';
 import { OUTPUT_MODES } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
 import {
-  ModeIcon,
   ParticleIcon,
   MidiIcon,
   OscIcon,
   SynthIcon,
   EditorIcon,
+  SandwichIcon,
   CloseIcon,
   ExpandIcon,
   GLYPH_FALLBACK,
@@ -79,17 +81,20 @@ function ModeSelector({
           width: 40,
           height: 40,
           borderRadius: 'var(--r-2)',
-          border: '1px solid var(--accent)',
+          border: '1px solid #ffffff',
           background: 'rgba(255,106,0,0.12)',
           color: 'var(--accent)',
           cursor: 'pointer',
-          fontSize: 18,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 22,
+          fontWeight: 700,
+          lineHeight: 1,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        {mono ? <ModeIcon /> : '⊞'}
+        M
       </button>
       {open && (
         <div
@@ -173,11 +178,14 @@ export interface DockProps {
   setActive: (k: DrawerKey | null) => void;
   depth: DrawerDepth;
   setDepth: (d: DrawerDepth) => void;
+  /** Sandwich (parameter-landscape) centre-stage toggle. */
+  sandwich: boolean;
+  setSandwich: (v: boolean) => void;
 }
 
 const ORDER: DrawerKey[] = ['learn', 'inputs', 'route', 'settings', 'help'];
 
-export function Dock({ ctx, active, setActive, depth, setDepth }: DockProps) {
+export function Dock({ ctx, active, setActive, depth, setDepth, sandwich, setSandwich }: DockProps) {
   const { settings } = useSettings();
   const mono = settings.monochromeIcons;
   const restColour = unfocusedIconCss(settings.unfocusedIconColour);
@@ -192,7 +200,7 @@ export function Dock({ ctx, active, setActive, depth, setDepth }: DockProps) {
         title={s.label}
         onClick={() => {
           setActive(on ? null : key);
-          setDepth('peek');
+          setDepth('condensed');
         }}
         style={{
           position: 'relative',
@@ -230,107 +238,146 @@ export function Dock({ ctx, active, setActive, depth, setDepth }: DockProps) {
     );
   };
 
-  const width = depth === 'expand' ? 520 : 320;
-  const full = depth === 'full';
+  const expanded = depth === 'expanded';
   const section = active ? DRAWERS[active] : null;
 
   return (
     <>
+      {/* Dim backdrop behind the centred modal; click to collapse back. */}
+      {section && expanded && (
+        <div
+          onClick={() => setDepth('condensed')}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 85,
+            background: 'rgba(0,0,0,0.45)',
+            backdropFilter: 'blur(2px)',
+            WebkitBackdropFilter: 'blur(2px)',
+          }}
+        />
+      )}
       {section && (
+        // Shell: positions/sizes the drawer and is the anchor for the left-edge
+        // tab. overflow:visible so the tab (at left:-22) is NOT clipped; the
+        // inner wrapper handles scrolling.
         <aside
           style={
-            full
+            expanded
               ? {
                   position: 'fixed',
-                  inset: 0,
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '80vw',
+                  height: '80vh',
                   zIndex: 90,
                   background: 'var(--glass)',
                   backdropFilter: 'blur(16px)',
                   WebkitBackdropFilter: 'blur(16px)',
-                  padding: 'var(--sp-6)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 'var(--sp-3)',
+                  border: '1px solid var(--glass-line)',
+                  borderRadius: 'var(--r-3)',
+                  boxShadow: 'var(--shadow-2)',
+                  overflow: 'visible',
                 }
               : {
                   position: 'absolute',
                   top: 0,
                   right: 48,
                   bottom: 0,
-                  width,
+                  width: 360,
                   zIndex: 35,
                   background: 'var(--glass)',
                   backdropFilter: 'blur(16px)',
                   WebkitBackdropFilter: 'blur(16px)',
                   borderLeft: '1px solid var(--glass-line)',
                   boxShadow: '-8px 0 24px rgba(0,0,0,0.4)',
-                  padding: 'var(--sp-4)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 'var(--sp-2)',
-                  overflow: 'auto',
+                  overflow: 'visible',
                   animation: 'mfDrawerIn var(--dur-med) var(--ease-console)',
                 }
           }
         >
-          <header
+          {/* Expand/collapse tab — vertically centred on the panel's left edge. */}
+          <button
+            type="button"
+            title={expanded ? 'Condense' : 'Expand'}
+            onClick={() => setDepth(expanded ? 'condensed' : 'expanded')}
             style={{
+              position: 'absolute',
+              left: -22,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 22,
+              height: 56,
+              borderRadius: 'var(--r-2) 0 0 var(--r-2)',
+              border: '1px solid var(--glass-line)',
+              borderRight: 'none',
+              background: 'var(--glass)',
+              backdropFilter: 'blur(14px)',
+              WebkitBackdropFilter: 'blur(14px)',
+              color: 'var(--fg-mute)',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: 'var(--sp-2)',
-              borderBottom: '1px solid var(--glass-line)',
-              paddingBottom: 'var(--sp-2)',
+              justifyContent: 'center',
+              zIndex: 1,
             }}
           >
-            <span style={{ color: 'var(--accent)', display: 'inline-flex' }}>
-              {mono ? section.icon : <span style={{ fontSize: 'var(--fs-md)' }}>{section.glyph}</span>}
-            </span>
-            <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--fg)' }}>{section.label}</h3>
-            <span
-              style={{
-                fontSize: 10,
-                color: 'var(--fg-dim)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                marginLeft: 4,
-              }}
-            >
-              {depth}
-            </span>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-              {!full && (
-                <button
-                  type="button"
-                  title={depth === 'peek' ? 'More' : 'Peek'}
-                  onClick={() => setDepth(depth === 'peek' ? 'expand' : 'peek')}
-                  style={dockMini}
-                >
-                  <ExpandIcon size={12} />
-                </button>
-              )}
-              <button
-                type="button"
-                title="Open full"
-                onClick={() => setDepth(full ? 'peek' : 'full')}
-                style={dockMini}
-              >
-                <ExpandIcon size={12} />
-              </button>
-              <button type="button" title="Close" onClick={() => setActive(null)} style={dockMini}>
-                <CloseIcon size={12} />
-              </button>
-            </div>
-          </header>
+            <ExpandIcon size={12} />
+          </button>
+          {/* Inner scroll wrapper — holds header + content, scrolls independently. */}
           <div
             style={{
+              height: '100%',
+              boxSizing: 'border-box',
+              overflow: 'auto',
+              padding: expanded ? 'var(--sp-6)' : 'var(--sp-4)',
               display: 'flex',
               flexDirection: 'column',
-              gap: 'var(--sp-2)',
-              flex: 1,
-              ...(full ? { maxWidth: 720 } : {}),
+              gap: expanded ? 'var(--sp-3)' : 'var(--sp-2)',
+              borderRadius: 'inherit',
             }}
           >
-            {section.render(ctx, depth)}
+            <header
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--sp-2)',
+                borderBottom: '1px solid var(--glass-line)',
+                paddingBottom: 'var(--sp-2)',
+              }}
+            >
+              <span style={{ color: 'var(--accent)', display: 'inline-flex' }}>
+                {mono ? section.icon : <span style={{ fontSize: 'var(--fs-md)' }}>{section.glyph}</span>}
+              </span>
+              <h3 style={{ margin: 0, fontSize: 'var(--fs-md)', color: 'var(--fg)' }}>{section.label}</h3>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: 'var(--fg-dim)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                  marginLeft: 4,
+                }}
+              >
+                {depth}
+              </span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                <button type="button" title="Close" onClick={() => setActive(null)} style={dockMini}>
+                  <CloseIcon size={12} />
+                </button>
+              </div>
+            </header>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--sp-2)',
+                flex: 1,
+              }}
+            >
+              {section.render(ctx, depth)}
+            </div>
           </div>
         </aside>
       )}
@@ -368,6 +415,27 @@ export function Dock({ ctx, active, setActive, depth, setDepth }: DockProps) {
         >
           {ORDER.map(iconBtn)}
         </div>
+        {/* Sandwich toggle — pinned at the BOTTOM of the rail. */}
+        <button
+          type="button"
+          title="Parameter sandwich (layer view)"
+          onClick={() => setSandwich(!sandwich)}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 'var(--r-2)',
+            cursor: 'pointer',
+            border: `1px solid ${sandwich ? 'var(--accent)' : 'transparent'}`,
+            background: sandwich ? 'rgba(255,106,0,0.14)' : 'transparent',
+            color: sandwich ? 'var(--accent)' : mono ? restColour : 'var(--fg-mute)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background var(--dur-fast), color var(--dur-fast)',
+          }}
+        >
+          {mono ? <SandwichIcon /> : '≣'}
+        </button>
       </nav>
     </>
   );

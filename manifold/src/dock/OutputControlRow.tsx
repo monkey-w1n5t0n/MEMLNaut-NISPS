@@ -8,7 +8,7 @@
  * (ConsoleApp owns it) — never a second data path (dock-spec §3.2, §8).
  */
 import { useRef } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import type { MFParam, ParamStatus } from '../console/model';
 import { CurvePad } from '../console/CurvePad';
 
@@ -288,7 +288,7 @@ export function OutputControlRow({ param, value, onChange, showCurve = false }: 
             value={param.val}
             onChange={(e) => onChange({ val: parseFloat(e.target.value) })}
             className="mf-slider-input"
-            style={{ flex: 1 }}
+            style={{ flex: 1, ['--mf-pct' as string]: `${Math.max(0, Math.min(1, param.val))}` } as CSSProperties}
           />
         </label>
       )}

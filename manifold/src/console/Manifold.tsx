@@ -285,22 +285,8 @@ export function Manifold({
         ctx.stroke();
       }
 
-      if (nc > 0.001) {
-        const breathe = 1 + Math.sin(now / 600) * 0.06;
-        const rCap = nc * Math.min(W, H) * 0.5 * breathe;
-        const rCur = rCap * 0.55;
-        ctx.setLineDash([4, 5]);
-        ctx.strokeStyle = 'rgba(255,106,0,0.4)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(px, py, rCap, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,106,0,0.7)';
-        ctx.beginPath();
-        ctx.arc(px, py, rCur, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+      // Noise-cap exploration rings hidden for now (kept for possible later use).
+      void nc;
 
       ctx.shadowColor = fz ? cyan : accent;
       ctx.shadowBlur = 18;

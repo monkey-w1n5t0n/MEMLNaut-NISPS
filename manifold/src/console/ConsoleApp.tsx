@@ -28,6 +28,7 @@ import { MF_MODES, modeEngineId, seededGradient, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
 import { ParticleStage } from './ParticleStage';
+import { SandwichStage } from './SandwichStage';
 import { SplitStage } from './SplitStage';
 import { OutputStage } from './OutputStage';
 import { InputMini } from './InputMini';
@@ -105,8 +106,10 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [tame, setTame] = useState(0.85);
   const [health, setHealth] = useState(0.8);
   const [rev, setRev] = useState(1);
-  const [active, setActive] = useState<DrawerKey | null>('learn');
-  const [depth, setDepth] = useState<DrawerDepth>('peek');
+  const [active, setActive] = useState<DrawerKey | null>(null);
+  const [depth, setDepth] = useState<DrawerDepth>('condensed');
+  // Sandwich (parameter-landscape) centre-stage toggle — dock-bottom layers icon.
+  const [sandwich, setSandwich] = useState(false);
 
   // Learning-behaviour store (dock-spec §1; rl-feedback-design). Default
   // feedback mode = "Explore and place"; default solo = "Mask gradients".
@@ -219,8 +222,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setFollow(false);
     setPins([]);
     setMarkers([]);
-    setActive('learn');
-    setDepth('peek');
+    setActive(null);
+    setDepth('condensed');
     if (engine) engine.setInput(0.5, 0.5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modeId]);
@@ -409,6 +412,23 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   };
 
   /**
+   * Nudge — a small bounded weight perturbation of the current net (the left
+   * half of the secondary pill). Routes to the scratchpad while exploring,
+   * otherwise nudges the real net directly.
+   */
+  const nudgeNet = () => {
+    const c = controllerRef.current;
+    if (feedbackMode === 'explore-and-place' && c?.getState().exploring) {
+      c.nudge();
+    } else {
+      engine?.feedback.nudge(0.05);
+      engine?.process();
+    }
+    syncController();
+    setRev((r) => r + 1);
+  };
+
+  /**
    * Undo. While exploring (Mode 2) this pops the scratchpad undo ring (reroll /
    * nudge). Otherwise it falls back to the UI snapshot stack (visual A/B seed).
    */
@@ -523,8 +543,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       };
       if (map[e.key]) {
         setActive((a) => (a === map[e.key] ? null : map[e.key]));
-        setDepth('peek');
-      } else if (e.key === '\\') setDepth((d) => (d === 'full' ? 'peek' : 'full'));
+        setDepth('condensed');
+      } else if (e.key === '\\') setDepth((d) => (d === 'expanded' ? 'condensed' : 'expanded'));
       else if (focus === 'composite' && e.key === '[') {
         e.preventDefault();
         setSplit((s) => Math.max(0, s - 0.04));
@@ -771,7 +791,55 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             bottom: 0,
           }}
         >
-          {outputMode === 'particles' ? (
+          {sandwich ? (
+            // Sandwich centre-stage: shrunken input (left) · landscape stack
+            // (centre, fills) · compact outputs (right). Replaces the Mode stage.
+            <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+              <div
+                style={{
+                  width: 'clamp(200px, 24%, 320px)',
+                  flex: '0 0 auto',
+                  position: 'relative',
+                  borderRight: '1px solid var(--line)',
+                }}
+              >
+                <Manifold
+                  pos={pos}
+                  onMove={onMove}
+                  noiseCap={noiseCap}
+                  pins={pins}
+                  markers={markers}
+                  variant={inputMapVariant}
+                  frozen={false}
+                  follow={follow}
+                  onLongPress={addPin}
+                  picking={picking}
+                  onPickLocation={onPickLocation}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                {engine && (
+                  <SandwichStage
+                    engine={engine}
+                    version={version}
+                    pos={pos}
+                    layerCount={Math.min(params.length, 8)}
+                    names={params.map((p) => p.name)}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  width: 'clamp(200px, 24%, 320px)',
+                  flex: '0 0 auto',
+                  position: 'relative',
+                  borderLeft: '1px solid var(--line)',
+                }}
+              >
+                <OutputStage params={params} values={values} onChange={setParam} compact />
+              </div>
+            </div>
+          ) : outputMode === 'particles' ? (
             <ParticleStage pos={pos} onMove={onMove} />
           ) : focus === 'composite' ? (
             <CompositeStage
@@ -852,6 +920,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             onUndo={undo}
             onCommit={commit}
             onReroll={reroll}
+            onNudge={nudgeNet}
+            onRandomise={reroll}
             canUndo={feedbackMode === 'explore-and-place' && exploring ? undoDepth > 0 : snapshots.length > 0}
             ab={ab}
             onToggleAB={toggleAB}
@@ -951,7 +1021,19 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
         </div>
       </div>
 
-      <Dock ctx={ctx} active={active} setActive={setActive} depth={depth} setDepth={setDepth} />
+      <Dock
+        ctx={ctx}
+        active={active}
+        setActive={setActive}
+        depth={depth}
+        setDepth={setDepth}
+        sandwich={sandwich}
+        setSandwich={(v) => {
+          setSandwich(v);
+          // reveal the full 3-zone layout: a drawer would overlay the output zone
+          if (v) setActive(null);
+        }}
+      />
     </div>
   );
 }

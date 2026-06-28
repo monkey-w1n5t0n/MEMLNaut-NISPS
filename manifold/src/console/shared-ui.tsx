@@ -163,7 +163,13 @@ export function CompactAxis({
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="mf-slider-input"
-        style={{ width: 120, ['--mf-axis-accent' as string]: accent } as CSSProperties}
+        style={
+          {
+            width: 120,
+            ['--mf-axis-accent' as string]: accent,
+            ['--mf-pct' as string]: `${Math.max(0, Math.min(1, value))}`,
+          } as CSSProperties
+        }
       />
       <span
         style={{

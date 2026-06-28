@@ -31,6 +31,7 @@
 #include "glue/midi_io.hpp"
 #include "glue/mode_select.hpp"
 #include "glue/output_router.hpp"
+#include "glue/settings_view.hpp"
 
 // ---- Mode selection ----
 // Build script rewrites which line is uncommented.
@@ -142,6 +143,8 @@ void setup() {
     }
 
     MEMLNaut::Instance()->addSystemInfoView();
+    // Settings menu (e.g. Joystick: Dual/Single for the 4-input modes).
+    nisps_firmware::wire_settings(g_mode);
     Serial.println("Finished initialising core 0.");
 }
 

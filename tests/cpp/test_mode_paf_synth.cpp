@@ -88,6 +88,62 @@ NISPS_TEST(paf_synth_mode_input_clamping) {
     m.set_input(99u, 0.5f);
 }
 
+NISPS_TEST(paf_synth_mode_pinned_inputs_neutralized) {
+    // Single-joystick mode pins the second 2D controller's channels (2,3).
+    // A pinned channel must feed the neutral pin value (default 0.5) to the
+    // MLP regardless of its live value, and pinning must not resize the model.
+    PAFSynthMode m;
+    m.setup(48000.f);
+    NISPS_EXPECT(m.pin_value() == 0.5f);
+
+    // Reference: channels 2,3 driven live to 0.5 (the neutral value).
+    m.set_input(0, 0.2f);
+    m.set_input(1, 0.8f);
+    m.set_input(2, 0.5f);
+    m.set_input(3, 0.5f);
+    m.tick_control();
+    std::array<float, 33> ref{};
+    {
+        const auto outs = m.ml().outputs();
+        for (std::size_t i = 0u; i < outs.size(); ++i) ref[i] = outs[i];
+    }
+
+    // Pin channels 2,3, then drive them to arbitrary values. Output must match
+    // the reference (they are neutralized to 0.5).
+    m.set_input_pinned(2, true);
+    m.set_input_pinned(3, true);
+    NISPS_EXPECT(m.is_input_pinned(2));
+    m.set_input(2, 0.0f);
+    m.set_input(3, 1.0f);
+    m.tick_control();
+    for (std::size_t i = 0u; i < 33u; ++i) {
+        NISPS_EXPECT(std::fabs(m.ml().outputs()[i] - ref[i]) < 1e-6f);
+    }
+
+    // The active controller (channels 0,1) still affects the output.
+    m.set_input(0, 0.9f);
+    m.tick_control();
+    bool changed = false;
+    for (std::size_t i = 0u; i < 33u; ++i) {
+        if (std::fabs(m.ml().outputs()[i] - ref[i]) > 1e-6f) { changed = true; break; }
+    }
+    NISPS_EXPECT(changed);
+
+    // Unpinning restores sensitivity on channels 2,3.
+    m.set_input_pinned(2, false);
+    m.set_input_pinned(3, false);
+    m.set_input(0, 0.2f);  // restore active channels to the reference pose
+    m.set_input(1, 0.8f);
+    m.set_input(2, 0.0f);
+    m.set_input(3, 1.0f);
+    m.tick_control();
+    bool differs = false;
+    for (std::size_t i = 0u; i < 33u; ++i) {
+        if (std::fabs(m.ml().outputs()[i] - ref[i]) > 1e-6f) { differs = true; break; }
+    }
+    NISPS_EXPECT(differs);
+}
+
 NISPS_TEST(paf_synth_mode_engine_and_ml_accessors) {
     PAFSynthMode m;
     m.setup(48000.f);

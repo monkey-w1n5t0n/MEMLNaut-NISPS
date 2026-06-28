@@ -41,6 +41,7 @@
 #include "../src/nisps/modes/breakor.hpp"
 #include "../src/nisps/modes/channel_strip.hpp"
 #include "../src/nisps/modes/elysiamorf.hpp"
+#include "../src/nisps/modes/external_synth_midi.hpp"
 #include "../src/nisps/modes/memlcelium.hpp"
 #include "../src/nisps/modes/paf_synth.hpp"
 #include "../src/nisps/modes/sound_analysis_midi.hpp"
@@ -57,6 +58,17 @@ using MEMLNautModeBreakOr           = ::nisps::modes::BreakOrMode;
 using MEMLNautModeVerbFX            = ::nisps::modes::VerbFXMode;
 using MEMLNautModeElysiamorfs       = ::nisps::modes::ElysiamorfMode;
 using MEMLNautModeMEMLCelium        = ::nisps::modes::MEMLCeliumMode;
+
+// ---- External-synth MIDI-CC variants (one flashable variant per device) ----
+// Joystick -> MLP -> MIDI CC for the named external hardware synth. Device
+// templates live in nisps/midi/generated/midi_devices.hpp (source of truth:
+// schemas/midi_devices/). Each drives a curated 8-param subset (pick_cc_slots).
+using MEMLNautModeExtSynthSub37      = ::nisps::modes::ExternalSynthMIDIMode<::nisps::midi::generated::kMoogSub37, 8u>;
+using MEMLNautModeExtSynthSubPhatty  = ::nisps::modes::ExternalSynthMIDIMode<::nisps::midi::generated::kMoogSubPhatty, 8u>;
+using MEMLNautModeExtSynthPro12      = ::nisps::modes::ExternalSynthMIDIMode<::nisps::midi::generated::kCreamwarePro12Asb, 8u>;
+using MEMLNautModeExtSynthAnalogKeys = ::nisps::modes::ExternalSynthMIDIMode<::nisps::midi::generated::kElektronAnalogKeys, 8u>;
+using MEMLNautModeExtSynthHydrasynth = ::nisps::modes::ExternalSynthMIDIMode<::nisps::midi::generated::kAsmHydrasynth, 8u>;
+using MEMLNautModeExtSynthJD800      = ::nisps::modes::ExternalSynthMIDIMode<::nisps::midi::generated::kRolandJd800, 8u>;
 
 // ---- SelfTest pseudo-variant ----
 // A standalone guided hardware self-test (see glue/selftest.hpp). It is NOT a
@@ -78,6 +90,12 @@ using MEMLNautModeSelfTest = ::nisps_firmware::selftest::SelfTestRig;
 #define NISPS_ST_MEMLNautModeVerbFX            0
 #define NISPS_ST_MEMLNautModeElysiamorfs       0
 #define NISPS_ST_MEMLNautModeMEMLCelium        0
+#define NISPS_ST_MEMLNautModeExtSynthSub37      0
+#define NISPS_ST_MEMLNautModeExtSynthSubPhatty  0
+#define NISPS_ST_MEMLNautModeExtSynthPro12      0
+#define NISPS_ST_MEMLNautModeExtSynthAnalogKeys 0
+#define NISPS_ST_MEMLNautModeExtSynthHydrasynth 0
+#define NISPS_ST_MEMLNautModeExtSynthJD800      0
 #define NISPS_ST_MEMLNautModeSelfTest          1
 #define NISPS_ST_CAT_(x) NISPS_ST_##x
 #define NISPS_ST_CAT(x)  NISPS_ST_CAT_(x)

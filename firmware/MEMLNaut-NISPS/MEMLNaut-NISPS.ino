@@ -42,6 +42,13 @@
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeChannelStrip
 #define MEMLNAUT_MODE_TYPE MEMLNautModePAFSynth
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeMEMLCelium
+// ---- External-synth MIDI-CC variants (control an external hardware synth) ----
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthSub37
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthSubPhatty
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthPro12
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthAnalogKeys
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthHydrasynth
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeExtSynthJD800
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeSelfTest
 
 // NISPS_SELFTEST == 1 iff the selected variant is the guided hardware self-test

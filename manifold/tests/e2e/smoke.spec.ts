@@ -47,8 +47,10 @@ test('engine loads, spine propagates, console renders', async ({ page }) => {
   // 3. Feedback runs without throwing.
   await page.evaluate(() => window.__nisps!.thumbsDown());
 
-  // 4. The convertible Console rendered.
-  await expect(page.getByText('MEMLNaut')).toBeVisible();
+  // 4. The convertible Console rendered (assert on the dock drawer rail, which
+  //    is always present — the old "MEMLNaut" wordmark only shows outside
+  //    Particle mode now that the particle top bar is a heatmap strip).
+  await expect(page.getByText('Learning')).toBeVisible();
 
   // 5. No "C15" anywhere in the rendered UI.
   const body = await page.evaluate(() => document.body.innerText);

@@ -137,7 +137,12 @@ export function SandwichStage({ engine, version, pos, layerCount, names }: Sandw
         const lp = project(-0.5, 0.5, H(k, 0, N), k);
         labels.push({ x: lp.x, y: lp.y, hue, name: namesRef.current[k] || `p${k}` });
       }
-      quads.sort((p, q) => q.depth - p.depth);
+      // Painter's algorithm: `depth` (z2) increases TOWARD the camera (the top
+      // layer / front edge have the largest depth in the top-down + tilted-from-
+      // above views). So draw farthest (smallest depth) first, nearest last —
+      // ascending. This puts layer 0 on top in the default top-down view and
+      // makes the stack occlude correctly as you tilt back to see the side.
+      quads.sort((p, q) => p.depth - q.depth);
       for (const Q of quads) {
         ctx.fillStyle = `hsla(${Q.hue},80%,${(26 + Q.L * 44).toFixed(0)}%,0.66)`;
         ctx.strokeStyle = `hsla(${Q.hue},80%,82%,0.18)`; ctx.lineWidth = 0.6;

@@ -5,6 +5,7 @@ import type { MFMode, MFParam } from './model';
 import type { BackendId } from '../dock/output-state';
 import type { FeedbackMode } from '../engine/types';
 import type { BackendStatus } from '../backends/backend';
+import type { UseInputLayer } from '../inputs';
 
 /** The two product feedback modes (dock-spec §1.1; rl-feedback-design §0). */
 export type FeedbackModeUI = 'explore-and-place' | 'geometric-dislike';
@@ -109,6 +110,10 @@ export interface ConsoleCtx {
   // ---- Feedback markers on the 2D map (both polarities) ----
   /** Markers plotted at the input location where each feedback was given. */
   markers: FeedbackMarker[];
+
+  // ---- Modular input layer (workstream F; inputs-spec) ----
+  /** The composed input layer: source enable/config/status + channel layout. */
+  inputs: UseInputLayer;
 
   health: number;
   gradient: number[];

@@ -51,6 +51,7 @@ import { FeedbackController, type ProtoFeedbackMode } from '../feedback';
 import { DEFAULT_OUTPUT_MODE, OUTPUT_MODES, outputModeDescriptor } from './output-mode';
 import { useSettings, resolveInputMap } from '../settings/settings-store';
 import { useBackendManager } from '../backends';
+import { useInputLayer } from '../inputs';
 
 let SNAP_ID = 0;
 
@@ -226,9 +227,17 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   // rAF loop; the Editor serial protocol remains its own panel.
   const setOutputMode = (m: OutputMode) => setOutputModeState(m);
 
-  // Drive a pad/joystick/manifold move through the real engine, then mirror the
-  // raw position into React state for readouts.
+  // Modular input layer (workstream F): composes the active input SOURCE(s)
+  // (XY pad / MIDI / gamepad) into the engine. The XY pad is push-driven via
+  // `pushPad`; MIDI + gamepad are pulled by the layer's own rAF loop.
+  const inputs = useInputLayer(engine);
+
+  // Drive a pad/joystick/manifold move through the input layer's XY-pad source,
+  // then mirror the raw position into React state for readouts. The layer's loop
+  // composes it with any other active sources and writes to the engine; we still
+  // do a direct setInput so the pad feels instant even when it's the sole source.
   const onMove = (x: number, y: number) => {
+    inputs.pushPad(x, y);
     engine?.setInput(x, y);
     setPos([x, y]);
   };
@@ -576,6 +585,7 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setOscSendRaw,
     setParams: (next: MFParam[]) => setParams(next),
     markers,
+    inputs,
     health,
     gradient: gradient.norms,
     gradientStatus: gradient.status,

@@ -545,6 +545,83 @@ export class WasmIML {
     return false;
   }
 
+  // ---- ExploreAndPlace lifecycle (shared C++ core; mode 'explore_and_place') --
+  // The C++ core owns the weight snapshot / scratchpad / undo ring; THIS class
+  // only forwards calls + republishes weights. Example-storage + training stay
+  // with the caller (FeedbackController.ts), preserving the "caller owns
+  // training" contract.
+
+  /** Idle→Exploring: snapshot the real net, randomise a scratchpad. */
+  feedbackEnterExplore(spread: number): void {
+    this.module._nisps_ml_feedback_enter_explore(this.mlHandle, spread);
+    this.publishWeights_();
+  }
+
+  /** Exploring→Idle: restore the real net, discard the scratchpad. */
+  feedbackExitExplore(): void {
+    this.module._nisps_ml_feedback_exit_explore(this.mlHandle);
+    this.publishWeights_();
+  }
+
+  /** Exploring scratchpad op: re-randomise (undoable). */
+  feedbackReroll(spread: number): void {
+    this.module._nisps_ml_feedback_reroll(this.mlHandle, spread);
+    this.publishWeights_();
+  }
+
+  /** Exploring scratchpad op: small bounded perturbation (undoable). */
+  feedbackNudge(amount: number): void {
+    this.module._nisps_ml_feedback_nudge(this.mlHandle, amount);
+    this.publishWeights_();
+  }
+
+  /** Exploring scratchpad op: undo the last reroll/nudge. */
+  feedbackUndo(): void {
+    this.module._nisps_ml_feedback_undo(this.mlHandle);
+    this.publishWeights_();
+  }
+
+  /** Exploring→Placing: freeze the scratchpad output at its current input. */
+  feedbackLike(): void {
+    this.module._nisps_ml_feedback_like(this.mlHandle);
+  }
+
+  /** Placing→Idle: restore the real net. Caller then stores +1 + trains. */
+  feedbackCommitPlace(): void {
+    this.module._nisps_ml_feedback_commit_place(this.mlHandle);
+    this.publishWeights_();
+  }
+
+  /** Placing→Exploring: back out without storing. */
+  feedbackCancelPlace(): void {
+    this.module._nisps_ml_feedback_cancel_place(this.mlHandle);
+  }
+
+  feedbackPlacing(): boolean {
+    return this.module._nisps_ml_feedback_placing(this.mlHandle) === 1;
+  }
+
+  /** ExploreState: 0=Idle 1=Exploring 2=Placing. */
+  feedbackState(): number {
+    return this.module._nisps_ml_feedback_state(this.mlHandle);
+  }
+
+  feedbackUndoDepth(): number {
+    return this.module._nisps_ml_feedback_undo_depth(this.mlHandle);
+  }
+
+  /**
+   * The frozen placed output (while Placing) or the just-committed output
+   * (after commit_place, until the next explore). Returns null if neither is
+   * available. The caller adds this as the +1 example label at the chosen
+   * input after commit.
+   */
+  feedbackPlacedOutput(): Float32Array | null {
+    const ok = this.module._nisps_ml_feedback_placed_output(this.mlHandle, this.feedbackBuf.ptr);
+    if (ok !== 1) return null;
+    return new Float32Array(this.feedbackBuf.view.subarray(0, this.arch_.outputSize));
+  }
+
   // -------------------------------------------------------------------
   // Weights I/O
   // -------------------------------------------------------------------

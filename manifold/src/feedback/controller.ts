@@ -26,6 +26,7 @@
  */
 
 import { SeededRng } from './rng';
+import type { FeedbackMode } from '../engine/types';
 
 /** The two product feedback modes (rl-feedback-design §0). */
 export type ProtoFeedbackMode = 'explore-and-place' | 'geometric-dislike';
@@ -66,6 +67,23 @@ export interface ControllerEngine {
     thumbsUp(): number;
     thumbsDown(speed?: number, spread?: number, pinMask?: Uint8Array): number;
     setFocus(mask: Uint8Array | null): void;
+    // ExploreAndPlace lifecycle — the SHARED C++ core (mode 'explore_and_place').
+    // The controller drives these instead of its own getWeights/setWeights/
+    // randomise scratchpad logic, so explore-and-place runs identically in the
+    // browser and on firmware. See nisps/ml/feedback.hpp.
+    setMode(mode: FeedbackMode): void;
+    enterExplore(spread?: number): void;
+    exitExplore(): void;
+    reroll(spread?: number): void;
+    nudge(amount?: number): void;
+    undo(): void;
+    like(): void;
+    commitPlace(): void;
+    cancelPlace(): void;
+    placing(): boolean;
+    exploreState(): number; // 0=Idle 1=Exploring 2=Placing
+    undoDepth(): number;
+    placedOutput(): Float32Array | null;
   };
 }
 
@@ -109,22 +127,18 @@ export class FeedbackController {
   private mode: ProtoFeedbackMode = 'explore-and-place';
   private soloMode: ProtoSoloMode = 'mask-gradients';
 
-  // ---- Mode-2 scratchpad session state -------------------------------
-  /** The set-aside REAL trained net, restored on finalise/cancel. */
-  private snapshot: Float32Array | null = null;
+  // ---- Mode-2 explore-and-place session state ------------------------
+  // The SHARED C++ core (nisps/ml/feedback.hpp, mode 'explore_and_place') now
+  // owns the set-aside real net, the scratchpad, and the bounded undo ring. This
+  // controller is a thin driver: it forwards transitions to `engine.feedback.*`
+  // and tracks only the per-session ANCHOR LIST (multi-anchor warm-start is a
+  // caller-side feature — the core does one place-commit, the caller accumulates
+  // anchors and trains them all on finalise).
   private exploringFlag = false;
-  /** Undo stack of scratchpad weight snapshots (reroll + nudge are undoable). */
-  private undoStack: Float32Array[] = [];
   /** Anchors placed this session (positives only — NEVER a dislike). */
   private anchors: Anchor[] = [];
   /** True between place() and the manifold location pick. */
   private pickingFlag = false;
-  /**
-   * The scratchpad output vector frozen at place() time, so the heard sound is
-   * held while the user aims at a location (rl-feedback-design §2.2 step 3,
-   * "place_begin freezes the current scratchpad output"). Copied/owned.
-   */
-  private placedOutput: Float32Array | null = null;
 
   // ---- Solo / arm ----------------------------------------------------
   /** Current arm mask (1=armed/soloed). null ⇒ none armed ⇒ train all. */
@@ -160,10 +174,13 @@ export class FeedbackController {
 
   setMode(mode: ProtoFeedbackMode): void {
     if (mode === this.mode) return;
-    // Switching mode aborts any active scratchpad session (mirrors the C++
-    // `set_mode` which aborts active exploration first — findings §2).
+    // Switching mode aborts any active scratchpad session. For explore-and-place
+    // the SHARED C++ core owns the scratchpad, so delegate the teardown to it.
     if (this.exploringFlag) this.cancel();
     this.mode = mode;
+    // Keep the C++ core's feedback mode in lockstep so the shared explore-and-
+    // place lifecycle is active when this mode is selected.
+    this.engine.feedback.setMode(mode === 'explore-and-place' ? 'explore_and_place' : 'avoid');
   }
 
   getMode(): ProtoFeedbackMode {
@@ -194,99 +211,58 @@ export class FeedbackController {
   // Mode 2 — "Explore & place" (DEFAULT, positive-only, NEVER a dislike)
   // ===================================================================
 
+  // The whole lifecycle below now delegates to the SHARED C++ core
+  // (engine.feedback.*) — there is NO TS scratchpad/snapshot/undo logic any
+  // more. The core owns the set-aside real net, the random scratchpad, and the
+  // bounded undo ring; this controller forwards the transitions and tracks only
+  // the per-session anchor list for the multi-anchor warm-start (caller-owned
+  // training). Behaviour matches nisps/ml/feedback.hpp + its ctest + the parity
+  // gate (native ≡ WASM at 1e-5).
+
   /**
-   * ENTER explore (rl-feedback-design §2.2 step 1): snapshot the REAL weights,
-   * set them aside, then randomise() into a scratchpad net. Mark exploring.
-   * Idempotent re-entry while already exploring = a re-roll (step 2).
+   * ENTER explore: the core snapshots the REAL net and randomises a scratchpad.
+   * Re-entry while exploring = a re-roll ("meh, randomise…").
    */
   enterExplore(): void {
     if (this.exploringFlag) {
-      // Re-press while exploring re-rolls ("meh, randomise…" — §2.2 step 2).
       this.reroll();
       return;
     }
-    // Snapshot the real trained net (byte round-trip via get/set weights). This
-    // is the SET-ASIDE net restored on finalise/cancel — it is NOT part of the
-    // scratchpad undo ring (undo stays inside the scratchpad; you leave the
-    // session via cancel/finalise, never by undoing back into the real net).
-    this.snapshot = this.engine.getWeights();
-    this.undoStack = [];
     this.anchors = [];
-    this.placedOutput = null;
     this.pickingFlag = false;
     this.exploringFlag = true;
-    // Randomise into the first scratchpad candidate, then record it as the undo
-    // baseline (the history holds the LIVE candidate AFTER each op).
-    this.engine.randomise(this.spread);
-    this.recordCandidate();
+    this.engine.feedback.enterExplore(this.spread); // core: snapshot + draw scratchpad
+    this.engine.process();
   }
 
-  /**
-   * SCRATCHPAD OP: re-roll the whole net (§2.2 step 2). Undoable. The scratchpad
-   * is NEVER trained — this only generates a fresh candidate sound to audition.
-   */
+  /** SCRATCHPAD OP: re-roll the scratchpad (core, undoable). Never trained. */
   reroll(): void {
     if (!this.exploringFlag) return;
-    this.engine.randomise(this.spread);
-    this.recordCandidate();
+    this.engine.feedback.reroll(this.spread);
+    this.engine.process();
   }
 
-  /**
-   * SCRATCHPAD OP: nudge — a small bounded gaussian weight perturbation (§2.2
-   * step 2). Undoable. Deterministic via the seeded RNG (NO Math.random).
-   *
-   * --- C++ GAP -----------------------------------------------------------
-   * The firmware does this with `move_weights(speed, spread)` on its own
-   * `nisps::Rng`. Here we read the weights, add a small seeded gaussian, and
-   * write them back — the TS-achievable equivalent. Becomes
-   * `nisps_ml_feedback_nudge` driving the engine's Rng (rl-feedback-design §4).
-   * ----------------------------------------------------------------------
-   */
+  /** SCRATCHPAD OP: nudge — small bounded perturbation (core Rng, undoable). */
   nudge(): void {
     if (!this.exploringFlag) return;
-    const w = this.engine.getWeights();
-    // Bounded gaussian perturbation. No per-call allocation beyond the weights
-    // buffer the engine already returns (we mutate it in place then write back).
-    for (let i = 0; i < w.length; i++) {
-      w[i] += this.rng.nextGaussian(this.nudgeStddev);
-    }
-    this.engine.setWeights(w);
+    this.engine.feedback.nudge(this.nudgeStddev);
     this.engine.process();
-    this.recordCandidate();
   }
 
-  /**
-   * UNDO the last scratchpad op (reroll or nudge). Both are undoable (§2.2). The
-   * undo ring holds the live scratchpad candidate after each op; undo discards
-   * the current candidate and restores the previous one. The baseline (first
-   * candidate after enter) is kept so undo never leaves the scratchpad.
-   */
+  /** UNDO the last scratchpad op (core bounded undo ring). */
   undo(): void {
     if (!this.exploringFlag) return;
-    if (this.undoStack.length <= 1) return; // already at the baseline candidate
-    this.undoStack.pop(); // discard current candidate
-    const prev = this.undoStack[this.undoStack.length - 1];
-    this.engine.setWeights(prev);
+    this.engine.feedback.undo();
     this.engine.process();
   }
 
-  /** Record the CURRENT live scratchpad weights as a new undo-ring entry. */
-  private recordCandidate(): void {
-    this.undoStack.push(this.engine.getWeights());
-    // Bound the ring to maxUndo+1 (the +1 is the kept baseline at index 0).
-    if (this.undoStack.length > this.maxUndo + 1) {
-      this.undoStack.splice(1, 1);
-    }
-  }
-
   /**
-   * PLACE begin (§2.2 step 3): the user likes the current candidate. Freeze the
-   * scratchpad output so the heard sound is held while they aim, and enter the
-   * PICK-LOCATION state — the next manifold pointer-down chooses the location.
+   * PLACE begin: the user likes the current candidate. The core freezes the
+   * scratchpad output (held while aiming) and we enter the PICK-LOCATION state.
    */
   place(): void {
     if (!this.exploringFlag) return;
-    this.placedOutput = new Float32Array(this.engine.getOutputs());
+    this.engine.feedback.like(); // core: Exploring→Placing, freeze output
     this.pickingFlag = true;
   }
 
@@ -295,64 +271,58 @@ export class FeedbackController {
     return this.pickingFlag;
   }
 
-  /** The frozen scratchpad output held during aiming (read-only; may be null). */
+  /** The frozen scratchpad output held during aiming (from the core; may be null). */
   getPlacedOutput(): Float32Array | null {
-    return this.placedOutput;
+    return this.engine.feedback.placedOutput();
   }
 
   /**
-   * PLACE commit (§2.2 step 3): the user picked a location on the manifold. We
-   * move the scratchpad input there, run inference, capture the output the
-   * scratchpad produces AT THAT LOCATION, and store it as a positive anchor.
-   *
-   * Per the spec the captured output is "the output the scratchpad produces at
-   * the chosen location" (getOutputs() after setting the input there) — NOT the
-   * frozen audition vector. The frozen vector only kept the *audio* steady while
-   * aiming. Returns the new anchor count.
+   * PLACE commit: the user picked a location. We capture the output the
+   * scratchpad produces AT THAT LOCATION (the scratchpad net is still live while
+   * Placing), store it as a positive anchor, then commit the place — the core
+   * restores the real net. We immediately re-enter explore so the felt loop
+   * "place → randomise → place again" keeps going; finalise trains all anchors.
    */
   placeCommit(x: number, y: number): number {
     if (!this.exploringFlag || !this.pickingFlag) return this.anchors.length;
+    // The scratchpad net is still live during Placing — read its output at the
+    // chosen location (per the spec, "the output the scratchpad produces at the
+    // chosen location", not the frozen audition vector).
     this.engine.setInput(x, y);
     this.engine.process();
     const out = new Float32Array(this.engine.getOutputs());
-    // Solo/arm respected at the EXAMPLE level: capture the arm mask so warm-start
-    // only asserts armed outputs ("don't-care on others" — §3.3 approximation).
     const mask = this.armMask ? new Uint8Array(this.armMask) : null;
     this.anchors.push({ input: [x, y], output: out, mask });
     this.pickingFlag = false;
-    this.placedOutput = null;
+    // Commit the place in the core (restores the real net), then re-enter
+    // explore for the next sound in the same session.
+    this.engine.feedback.commitPlace();
+    this.engine.feedback.enterExplore(this.spread);
+    this.engine.process();
     return this.anchors.length;
   }
 
-  /** Cancel a pending place() without storing an anchor (back to auditioning). */
+  /** Cancel a pending place() without storing (core: Placing→Exploring). */
   cancelPlace(): void {
+    if (this.pickingFlag) this.engine.feedback.cancelPlace();
     this.pickingFlag = false;
-    this.placedOutput = null;
   }
 
   /**
-   * RESOLVE / warm-start (§2.2 step 4): restore the set-aside REAL net, then
-   * warm-start it to interpolate ALL placed anchors by re-adding each as an
-   * example and training. ADDITIVE — anchors are added to the existing dataset
-   * (the user's prior thumbs-up likes are NOT clobbered). Exits exploring.
+   * RESOLVE / warm-start: exit explore (the core restores the set-aside REAL
+   * net), then warm-start it to interpolate ALL placed anchors by re-adding each
+   * as an example and training. ADDITIVE — prior likes are not clobbered.
    *
-   * --- C++ GAP -----------------------------------------------------------
-   * The firmware warm-start trains anchors only on soloed dims via a gradient
-   * column-freeze (`train_masked`). Here we approximate that at the example
-   * level: when an anchor carries an arm mask we still add the FULL output
-   * vector (the engine's addExample takes a full label row), but we forward the
-   * mask to the engine's setFocus so move_weights/training freezes unarmed
-   * final-layer columns. True per-example gradient masking (`train_masked`
-   * consuming `Anchor.mask`) is the C++ step (rl-feedback-design §3.3).
-   * ----------------------------------------------------------------------
+   * NOTE: per-anchor solo masking is still approximated at the example level
+   * (the engine's addExample takes a full label row); we forward the arm mask to
+   * the core's setFocus so training honours soloed columns. True per-example
+   * gradient masking is the future C++ `train_masked` step (rl-feedback §3.3).
    */
   finalise(): number {
     if (!this.exploringFlag) return 0;
-    if (this.snapshot) {
-      this.engine.setWeights(this.snapshot); // restore the real net (warm start)
-    }
+    if (this.pickingFlag) this.engine.feedback.cancelPlace();
+    this.engine.feedback.exitExplore(); // core: restore the real net (warm start)
     const placed = this.anchors.length;
-    // Re-assert the arm focus so training honours any soloed columns.
     this.engine.feedback.setFocus(this.armMask);
     for (const a of this.anchors) {
       this.engine.addExample([a.input[0], a.input[1]], Array.from(a.output));
@@ -366,24 +336,20 @@ export class FeedbackController {
   }
 
   /**
-   * CANCEL / undo whole session (§2.2 step 5): discard scratchpad + anchors,
-   * restore the set-aside real net. No anchor stored.
+   * CANCEL the whole session: the core restores the set-aside real net; we
+   * discard the anchors. No example stored.
    */
   cancel(): void {
     if (!this.exploringFlag) return;
-    if (this.snapshot) {
-      this.engine.setWeights(this.snapshot);
-      this.engine.process();
-    }
+    if (this.pickingFlag) this.engine.feedback.cancelPlace();
+    this.engine.feedback.exitExplore(); // core: restore the real net
+    this.engine.process();
     this.endSession();
   }
 
   private endSession(): void {
     this.exploringFlag = false;
     this.pickingFlag = false;
-    this.placedOutput = null;
-    this.snapshot = null;
-    this.undoStack = [];
     this.anchors = [];
   }
 
@@ -509,8 +475,8 @@ export class FeedbackController {
       exploring: this.exploringFlag,
       picking: this.pickingFlag,
       anchorCount: this.anchors.length,
-      // -1 for the entry-state baseline kept at index 0.
-      undoDepth: Math.max(0, this.undoStack.length - 1),
+      // Scratchpad undo depth now comes from the shared C++ core's undo ring.
+      undoDepth: this.exploringFlag ? this.engine.feedback.undoDepth() : 0,
       armedCount: armed,
     };
   }

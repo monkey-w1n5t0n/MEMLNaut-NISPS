@@ -10,8 +10,10 @@
  *    `useEngineVersion` and re-derive `values` imperatively on render.
  *  - Verdicts wire to the engine: commit → feedback.thumbsUp(); perturb →
  *    feedback.thumbsDown(); reroll → randomise(); each followed by process().
- *  - The default feedback mode is "Explore and place" → randomise_mlp (set on
- *    mount; per docs/redesign/rl-feedback-design.md).
+ *  - The default feedback mode is "Explore and place" → the shared C++ core's
+ *    FeedbackMode::ExploreAndPlace (set on mount; the controller forwards the
+ *    Idle→Exploring→Placing lifecycle to engine.feedback.* — nisps/ml/feedback.hpp,
+ *    per docs/redesign/rl-feedback-design.md).
  *  - AltitudeNav switches `focus` via React state (in|split|out|composite), not
  *    by navigating to separate HTML files.
  *  - `c15` is labelled "Powerful Synth Engine" (in model.ts) — "C15" never shows.
@@ -28,6 +30,7 @@ import { CompositeStage } from './CompositeStage';
 import { SplitStage } from './SplitStage';
 import { OutputStage } from './OutputStage';
 import { InputMini } from './InputMini';
+import { ParticleStage } from './ParticleStage';
 import { Manifold } from './Manifold';
 import { ReadoutStrip } from './ReadoutStrip';
 import { VerdictCluster } from './VerdictCluster';
@@ -676,7 +679,14 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             bottom: 0,
           }}
         >
-          {focus === 'composite' ? (
+          {outputMode === 'particles' ? (
+            <ParticleStage
+              pos={pos}
+              onMove={onMove}
+              axes={axes}
+              setAxis={(k, v) => setAxes((s) => ({ ...s, [k]: v }))}
+            />
+          ) : focus === 'composite' ? (
             <CompositeStage
               split={split}
               onSplit={setSplit}
@@ -735,18 +745,20 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             />
           )}
 
-          {/* corner overlay */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 12,
-              left: 14,
-              zIndex: 20,
-              pointerEvents: 'none',
-            }}
-          >
-            <strong style={{ color: 'var(--accent)', fontSize: 'var(--fs-md)' }}>MEMLNaut</strong>
-          </div>
+          {/* corner overlay — hidden in Particle mode (top axis bar owns that row) */}
+          {outputMode !== 'particles' && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: 14,
+                zIndex: 20,
+                pointerEvents: 'none',
+              }}
+            >
+              <strong style={{ color: 'var(--accent)', fontSize: 'var(--fs-md)' }}>MEMLNaut</strong>
+            </div>
+          )}
 
           <VerdictCluster
             onPerturb={perturb}

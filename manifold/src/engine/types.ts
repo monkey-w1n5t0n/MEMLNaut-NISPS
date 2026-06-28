@@ -76,6 +76,24 @@ export interface NispsModule {
   // Returns 1 if `out` holds a static-bypass vector (skip process()); else 0.
   _nisps_ml_feedback_static_output(ml: number, out_ptr: number): number;
 
+  // ExploreAndPlace lifecycle (mode 3). Idle → Exploring → Placing → Idle.
+  // The shared C++ core owns the weight snapshot/scratchpad/undo; the CALLER
+  // owns example-storage + training (read placed_output post-commit, addExample
+  // at the chosen input, then train). See nisps/ml/feedback.hpp.
+  _nisps_ml_feedback_enter_explore(ml: number, spread: number): void;
+  _nisps_ml_feedback_exit_explore(ml: number): void;
+  _nisps_ml_feedback_reroll(ml: number, spread: number): void;
+  _nisps_ml_feedback_nudge(ml: number, amount: number): void;
+  _nisps_ml_feedback_undo(ml: number): void;
+  _nisps_ml_feedback_like(ml: number): void; // Exploring→Placing (freeze output)
+  _nisps_ml_feedback_commit_place(ml: number): void; // Placing→Idle (restore real net)
+  _nisps_ml_feedback_cancel_place(ml: number): void; // Placing→Exploring
+  _nisps_ml_feedback_placing(ml: number): number; // 1 = Placing
+  _nisps_ml_feedback_state(ml: number): number; // 0=Idle 1=Exploring 2=Placing
+  _nisps_ml_feedback_undo_depth(ml: number): number;
+  // Writes placed/committed output (outputSize floats) into out; returns 1 if written.
+  _nisps_ml_feedback_placed_output(ml: number, out_ptr: number): number;
+
   // Engines.
   _nisps_engine_create(id_ptr: number, sample_rate: number): number;
   _nisps_engine_destroy(engine: number): void;
@@ -125,18 +143,29 @@ export type EngineId =
   | 'analysis';
 
 /** Feedback "Down Action" mode. Mirrors `nisps::ml::FeedbackMode`. */
-export type FeedbackMode = 'avoid' | 'randomise_outputs' | 'randomise_mlp';
+export type FeedbackMode = 'avoid' | 'randomise_outputs' | 'randomise_mlp' | 'explore_and_place';
 
 export const FEEDBACK_MODE_TO_INT: Record<FeedbackMode, number> = {
   avoid: 0,
   randomise_outputs: 1,
   randomise_mlp: 2,
+  explore_and_place: 3,
 };
 
 export const FEEDBACK_MODE_FROM_INT: ReadonlyArray<FeedbackMode> = [
   'avoid',
   'randomise_outputs',
   'randomise_mlp',
+  'explore_and_place',
+];
+
+/** ExploreAndPlace lifecycle state. Mirrors `nisps::ml::ExploreState`. */
+export type ExploreState = 'idle' | 'exploring' | 'placing';
+
+export const EXPLORE_STATE_FROM_INT: ReadonlyArray<ExploreState> = [
+  'idle',
+  'exploring',
+  'placing',
 ];
 
 /** Message protocol between main thread and `wasm-worker.ts`. */

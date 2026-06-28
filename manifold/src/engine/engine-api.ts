@@ -35,6 +35,32 @@ export interface EngineFeedbackApi {
   exploring(): boolean;
   /** True while the controller has paused learning. */
   learningPaused(): boolean;
+
+  // ---- ExploreAndPlace lifecycle (shared C++ core; mode 'explore_and_place') --
+  /** Idle→Exploring: snapshot the real net, randomise a scratchpad. */
+  enterExplore(spread?: number): void;
+  /** Exploring→Idle: restore the real net, discard the scratchpad. */
+  exitExplore(): void;
+  /** Exploring scratchpad op: re-randomise (undoable). */
+  reroll(spread?: number): void;
+  /** Exploring scratchpad op: small bounded perturbation (undoable). */
+  nudge(amount?: number): void;
+  /** Exploring scratchpad op: undo the last reroll/nudge. */
+  undo(): void;
+  /** Exploring→Placing: freeze the scratchpad output at its current input. */
+  like(): void;
+  /** Placing→Idle: restore the real net (caller then stores +1 + trains). */
+  commitPlace(): void;
+  /** Placing→Exploring: back out without storing. */
+  cancelPlace(): void;
+  /** True while Placing (the frozen output is held). */
+  placing(): boolean;
+  /** ExploreState int: 0=Idle 1=Exploring 2=Placing. */
+  exploreState(): number;
+  /** Scratchpad undo-ring depth available to pop. */
+  undoDepth(): number;
+  /** The frozen placed / just-committed output (null if none). */
+  placedOutput(): Float32Array | null;
 }
 
 export interface EngineAudioApi {
@@ -93,6 +119,18 @@ export class EngineApi {
       setFocus: (mask) => this.iml.feedbackSetFocus(mask),
       exploring: () => this.iml.feedbackExploring(),
       learningPaused: () => this.iml.feedbackLearningPaused(),
+      enterExplore: (spread = this.spread_) => this.iml.feedbackEnterExplore(spread),
+      exitExplore: () => this.iml.feedbackExitExplore(),
+      reroll: (spread = this.spread_) => this.iml.feedbackReroll(spread),
+      nudge: (amount = 0.05) => this.iml.feedbackNudge(amount),
+      undo: () => this.iml.feedbackUndo(),
+      like: () => this.iml.feedbackLike(),
+      commitPlace: () => this.iml.feedbackCommitPlace(),
+      cancelPlace: () => this.iml.feedbackCancelPlace(),
+      placing: () => this.iml.feedbackPlacing(),
+      exploreState: () => this.iml.feedbackState(),
+      undoDepth: () => this.iml.feedbackUndoDepth(),
+      placedOutput: () => this.iml.feedbackPlacedOutput(),
     };
 
     this.audio = {

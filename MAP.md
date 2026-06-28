@@ -6,7 +6,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 
 ### `nisps/` — platform-agnostic C++20 library (the only ML/DSP/engine code)
 - `nisps/core/` — `perf.hpp` (memory section attrs), `types.hpp`, `concepts.hpp` (`MLEngine`, `AudioEngine`, `Mode`), `fixed_buffer.hpp`, `ring_buffer.hpp` (SPSC lock-free, replaces pico/util/queue), `rng.hpp` (xoshiro256+ deterministic), `math.hpp` (fast_sigmoid, `Curve` enum + `apply_curve`).
-- `nisps/ml/` — MLP class template `MLP<NIn, NH1, NH2, NH3, NOut>`. Files: `mlp.hpp`, `activations.hpp`, `loss.hpp` (MSE, no double-scaling), `training.hpp` (SGD + grad clipping), `init.hpp` (spread-aware uniform↔Xavier), `rl.hpp` (`move_weights` with output pin mask + per-layer scaling + weight decay), `stats.hpp`.
+- `nisps/ml/` — MLP class template `MLP<NIn, NH1, NH2, NH3, NOut>`. Files: `mlp.hpp`, `activations.hpp`, `loss.hpp` (MSE, no double-scaling), `training.hpp` (SGD + grad clipping), `init.hpp` (spread-aware uniform↔Xavier), `rl.hpp` (`move_weights` with output pin mask + per-layer scaling + weight decay), `feedback.hpp` (`FeedbackController<MLP_T>` — the 3-mode "Down Action" negative-feedback state machine: Avoid / RandomiseOutputs / RandomiseMlp; header-only, zero-heap, own deterministic RNG, exposed via `nisps_ml_feedback_*` C API), `stats.hpp`.
 - `nisps/dsp/` — `biquad.hpp`, `delay.hpp`, `reverb.hpp`, `filter.hpp`, `env.hpp`, `osc.hpp`, `pitch_shift.hpp`, `dc_blocker.hpp`. Lean primitives extracted from maximilian; daisysp PitchShifter replaced with custom granular impl.
 - `nisps/engines/` — eight audio engines, each satisfying `AudioEngine`: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp` (sequencer, NoOp audio), `elysiamorf.hpp` (sequencer, NoOp audio), `analysis.hpp` (input-side spectral features). Plus `base.hpp` (`NoOpEngine`, engine_id "thru").
 - `nisps/modes/` — eight platform-agnostic modes binding `{ML config, engine, voice space lambdas, abstract I/O channels}`. Files: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp`, `elysiamorf.hpp`, `sound_analysis_midi.hpp`. `base.hpp` provides a CRTP scaffold eliminating the duplication that previously plagued firmware modes. `voice_space.hpp` holds engine-side voice space dispatch helpers. `generated/` contains codegen output (do not edit by hand).
@@ -14,12 +14,13 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `nisps/CMakeLists.txt` + `nisps/build/` — host-target builds + ctest.
 
 ### `firmware/` — Arduino sketch + hardware glue
-- `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` — entry point. Selects active mode at compile time via `#define MEMLNAUT_MODE_TYPE`.
+- `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` — entry point. Selects active mode at compile time via `#define MEMLNAUT_MODE_TYPE`. Forks on `NISPS_SELFTEST`: normal modes run the engine/ML path; the `SelfTest` variant delegates all four entry points to `glue/selftest.hpp`.
 - `firmware/MEMLNaut-NISPS/glue/` — hardware bindings:
   - `audio_driver.hpp` — bridges memllib `AudioDriver` callback → `Mode::process(stereosample_t)`.
   - `peripherals.hpp` — joystick / pots / buttons → `Mode::set_input` and ML primitives.
   - `midi_io.hpp` — MIDI in → mode `note_on`/`update_bpm`/`set_playing`; drains `ControlEvent` ring → MIDI UART.
-  - `mode_select.hpp` — type aliases mapping firmware mode identifiers to `nisps::modes::*Mode` C++ types. Build script rewrites the active line.
+  - `mode_select.hpp` — type aliases mapping firmware mode identifiers to `nisps::modes::*Mode` C++ types. Build script rewrites the active line. Also defines the `MEMLNautModeSelfTest` pseudo-variant (tag type) + the `NISPS_ST_*`/`NISPS_ST_CAT` token-paste macros the `.ino` uses to compute `NISPS_SELFTEST`.
+  - `selftest.hpp` — standalone guided hardware self-test rig (`SelfTest` variant; no engine/ML). Step-driven state machine on a `SelfTestView`: TFT prompts the operator through every control, auto-advances on detection, encoder-press skips. Ends with optional L/R/BOTH sine-sweep headphone check (core 1 block callback) + MIDI loopback-cable test. Lives firmware-side (touches TFT + raw pins) so it stays out of platform-agnostic `nisps/`.
   - `input_router.hpp`, `output_router.hpp` — top-level `wire_inputs()` / `drain_outputs()` entry points.
 - `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks (Arduino-CLI requires sketch-tree includes; preprocessor refuses `..` in headers).
 - `firmware/README.md` — structure + build instructions.
@@ -38,6 +39,42 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `playground/public/nisps.{wasm,js}`, `c15.wasm`, `c15-glue.js` — compiled WASM artifacts (built by `scripts/build-wasm.sh`).
 - `playground/tests/e2e/` — Playwright specs (`ml-engine`, `modes`, `persistence`, `ui-interactions`) + `helpers.ts`.
 - `playground/playwright.config.ts` — Vite preview server setup.
+
+### `manifold/` — Vite + React + TS convertible-mode app (the NEW front-end, WIP)
+The Manifold "convertible" Console on the real engine, deployed at `meml.lnfinitemonkeys.org/next` (staging,
+alongside the live vanilla a-immersive at `/`). Built 2026-06-27/28; see `docs/redesign/BUILD-PLAN.md` (resume
+anchor + locked decisions) and the `docs/redesign/*-spec.md` set.
+- `manifold/src/engine/` — the parity-tested TS engine LIFTED from `playground/src` (same `nisps.wasm`), made
+  framework-neutral: `wasm-iml.ts` (rewired off Solid stores onto an injected `EngineSink`), `engine-host.ts` +
+  `worklet/nisps-processor.ts` (audio), `input-pipeline.ts`/`output-pipeline.ts`/`curves.ts`, `wasm-worker.ts`,
+  `spine.ts` (the reactive spine BELOW React — `setInput` derives processed→ml→routed eagerly off-render),
+  `engine-api.ts` (`EngineApi` façade incl. `feedback.*` wrappers over the `nisps_ml_feedback_*` C ABI),
+  `EngineProvider.tsx`/`useEngine.ts` (React binding via `useSyncExternalStore` version counter). nisps.js is
+  loaded via fetch+indirect-eval (Emscripten MODULARIZE glue has no ES exports), base-aware via `document.baseURI`
+  for the `/next` sub-path.
+- `manifold/src/primitives/` — the 12 design primitives as typed React.
+- `manifold/src/console/` — the convertible Console: `ConsoleApp`, `CompositeStage` (single-divider convertible
+  with snap/magnetism/minimap-demotion), `SplitStage`/`OutputStage`/`InputMini`/`Manifold` (canvas, rect↔circular
+  + feedback markers), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers` (Learning/Inputs/
+  Outputs/Settings/Help), `VerdictCluster` (mode-aware), `ReadoutStrip`, `OutputEditor`/`CurvePad`, `icons.tsx`
+  (monochrome currentColor SVG), `model.ts`, `output-mode.ts`.
+- `manifold/src/dock/` — `OutputControlRow` (off/fixed/live + mute + solo/arm + min/max/curve), `output-state.ts`,
+  `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel), `BackendAdvanced.tsx`.
+- `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
+  (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `presets.ts` (named presets), `manager.ts`.
+- `manifold/src/feedback/` — `controller.ts` (Explore-and-place scratchpad + geometric-dislike + solo, TS
+  prototype), `rng.ts` (seeded).
+- `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius).
+- `manifold/src/serial/` — `memlnaut-serial.ts` Web Serial scaffold + `EditorPanel.tsx` (MEMLNaut Editor mode).
+- `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/smoke.spec.ts`. E2E on the
+  VPS runs via non-snap node (see BUILD-PLAN). `manifold/osc-bridge/` — Deno WS↔UDP-OSC bridge.
+
+### `vcv/` — VCV Rack 2 plugin (MEMLNaut module, WIP)
+Native C++ Rack module: ML CV-mapper with RL feedback + a browser bridge. Currently 2→12 (being evolved to
+**8 inputs × 16 outputs + per-output LED rings**, palette from the frontend tokens, WS↔OSC browser bridge — see
+the "BUILD DELTAS" block at the top of `vcv/SPEC.md`). `src/MEMLNaut.cpp` (module), `src/osc_server.hpp` (bridge),
+`src/plugin.{hpp,cpp}`, `res/*.svg` (panels), `Makefile` (needs `RACK_DIR`). Was built against the retired
+`nisps-core`; the core include path is being repointed.
 
 ### `schemas/` — JSON parameter contracts (firmware/browser source of truth)
 - `schemas/schema.json` — Draft 2020-12 meta-schema validating mode files.

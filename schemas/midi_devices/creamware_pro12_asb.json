@@ -1,0 +1,736 @@
+{
+  "$schema": "../midi_device.schema.json",
+  "device_id": "creamware_pro12_asb",
+  "name": "Creamware Pro-12 ASB",
+  "manufacturer": "Creamware / Sonic Core",
+  "year": 2005,
+  "midi": {
+    "default_channel": 1,
+    "value_range": [
+      0,
+      127
+    ]
+  },
+  "params": [
+    {
+      "id": "bank_select",
+      "cc": 0,
+      "label": "Bank Select",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "modulation",
+      "cc": 1,
+      "label": "Modulation",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "unison_voices",
+      "cc": 2,
+      "label": "Unison Voices",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "unison_detune",
+      "cc": 3,
+      "label": "Unison Detune",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "glide_time",
+      "cc": 5,
+      "label": "Glide Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "data_entry",
+      "cc": 6,
+      "label": "Data Entry",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "device_volume",
+      "cc": 7,
+      "label": "Device Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "lfo_settings_retrig",
+      "cc": 8,
+      "label": "LFO Settings Retrig",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo_settings_phase",
+      "cc": 9,
+      "label": "LFO Settings Phase",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "volume",
+      "cc": 11,
+      "label": "Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "osc_a_frequency",
+      "cc": 12,
+      "label": "Osc A Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_a_shape_saw",
+      "cc": 13,
+      "label": "Osc A Shape Saw",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_a_shape_pulse",
+      "cc": 14,
+      "label": "Osc A Shape Pulse",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_a_pulse_width",
+      "cc": 15,
+      "label": "Osc A Pulse Width",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_a_sync",
+      "cc": 16,
+      "label": "Osc A Sync",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_frequency",
+      "cc": 17,
+      "label": "Osc B Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_fine",
+      "cc": 18,
+      "label": "Osc B Fine",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_shape_saw",
+      "cc": 19,
+      "label": "Osc B Shape Saw",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_shape_triangle",
+      "cc": 20,
+      "label": "Osc B Shape Triangle",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "master_tune",
+      "cc": 21,
+      "label": "Master Tune",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_shape_pulse",
+      "cc": 22,
+      "label": "Osc B Shape Pulse",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "aftertouch_pitch",
+      "cc": 23,
+      "label": "Aftertouch Pitch",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "bend_range",
+      "cc": 24,
+      "label": "Bend Range",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "osc_a_volume",
+      "cc": 25,
+      "label": "Osc A Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_volume",
+      "cc": 26,
+      "label": "Osc B Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_pulse_width",
+      "cc": 27,
+      "label": "Osc B Pulse Width",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_lo_freq",
+      "cc": 28,
+      "label": "Osc B Lo Freq",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_b_keyboard",
+      "cc": 29,
+      "label": "Osc B Keyboard",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "aftertouch_dest_freq_a",
+      "cc": 30,
+      "label": "Aftertouch Dest Freq A",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "aftertouch_dest_freq_b",
+      "cc": 31,
+      "label": "Aftertouch Dest Freq B",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "bank_select_cc32",
+      "cc": 32,
+      "label": "Bank Select",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "noise_volume",
+      "cc": 33,
+      "label": "Noise Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "aftertouch_pw",
+      "cc": 34,
+      "label": "Aftertouch PW",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "aftertouch_mw",
+      "cc": 35,
+      "label": "Aftertouch MW",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "external_volume",
+      "cc": 36,
+      "label": "External Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "aftertouch_dest_pw",
+      "cc": 37,
+      "label": "Aftertouch Dest PW",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "aftertouch_dest_pw_cc38",
+      "cc": 38,
+      "label": "Aftertouch Dest PW",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "keyboard_amount",
+      "cc": 39,
+      "label": "Keyboard Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "cutoff",
+      "cc": 40,
+      "label": "Cutoff",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "resonance",
+      "cc": 41,
+      "label": "Resonance",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "envelope_amount",
+      "cc": 42,
+      "label": "Envelope Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_attack",
+      "cc": 43,
+      "label": "Filter Env Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_decay",
+      "cc": 44,
+      "label": "Filter Env Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_sustain",
+      "cc": 45,
+      "label": "Filter Env Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_velocity",
+      "cc": 46,
+      "label": "Filter Env Velocity",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_release",
+      "cc": 47,
+      "label": "Filter Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aftertouch_lfo_freq",
+      "cc": 48,
+      "label": "Aftertouch LFO Freq",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "release",
+      "cc": 49,
+      "label": "Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aftertouch_filter",
+      "cc": 50,
+      "label": "Aftertouch Filter",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "aftertouch_amp",
+      "cc": 51,
+      "label": "Aftertouch Amp",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "amp_env_attack",
+      "cc": 52,
+      "label": "Amp Env Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_decay",
+      "cc": 53,
+      "label": "Amp Env Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_sustain",
+      "cc": 54,
+      "label": "Amp Env Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_velocity",
+      "cc": 55,
+      "label": "Amp Env Velocity",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "mw_intensity",
+      "cc": 56,
+      "label": "MW Intensity",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "mw_offset",
+      "cc": 57,
+      "label": "MW Offset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "poly_mod_osc_b",
+      "cc": 58,
+      "label": "Poly Mod OSC B",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "adr",
+      "cc": 59,
+      "label": "ADR",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "keyb_mode_retrig",
+      "cc": 60,
+      "label": "Keyb Mode Retrig",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "low_note",
+      "cc": 61,
+      "label": "Low Note",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "amp_env_release",
+      "cc": 62,
+      "label": "Amp Env Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "poly_mod_filter_env",
+      "cc": 63,
+      "label": "Poly Mod Filter Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "poly_mod_destination_freq_a",
+      "cc": 75,
+      "label": "Poly Mod Destination Freq A",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "poly_mod_destination_freq_b",
+      "cc": 76,
+      "label": "Poly Mod Destination Freq B",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "poly_mod_destination_pw",
+      "cc": 77,
+      "label": "Poly Mod Destination PW",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "poly_mod_destination_pw_cc78",
+      "cc": 78,
+      "label": "Poly Mod Destination PW",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "poly_mod_destination_filter",
+      "cc": 79,
+      "label": "Poly Mod Destination Filter",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amt",
+      "cc": 98,
+      "label": "Amt",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "wheel_mod_source_mix",
+      "cc": 108,
+      "label": "Wheel Mod Source Mix",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "time_velocity_attack_filter_env",
+      "cc": 113,
+      "label": "Time Velocity Attack Filter Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "time_velocity_dec_rel_filter_env",
+      "cc": 114,
+      "label": "Time Velocity Dec/Rel Filter Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "time_velocity_dec_rel_amp_env",
+      "cc": 116,
+      "label": "Time Velocity Dec/Rel Amp Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "time_velocity_attack_amp_env",
+      "cc": 117,
+      "label": "Time Velocity Attack Amp Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "all_sounds_off",
+      "cc": 120,
+      "label": "All Sounds Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "local_control_off",
+      "cc": 121,
+      "label": "Local Control Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "all_notes_off",
+      "cc": 122,
+      "label": "All Notes Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "omni_off",
+      "cc": 124,
+      "label": "Omni Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "omni_on",
+      "cc": 125,
+      "label": "Omni On",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "mono_on",
+      "cc": 126,
+      "label": "Mono On",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "poly_on",
+      "cc": 127,
+      "label": "Poly On",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    }
+  ]
+}

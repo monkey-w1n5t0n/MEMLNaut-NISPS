@@ -11,6 +11,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `nisps/engines/` — eight audio engines, each satisfying `AudioEngine`: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp` (sequencer, NoOp audio), `elysiamorf.hpp` (sequencer, NoOp audio), `analysis.hpp` (input-side spectral features). Plus `base.hpp` (`NoOpEngine`, engine_id "thru").
 - `nisps/modes/` — eight platform-agnostic modes binding `{ML config, engine, voice space lambdas, abstract I/O channels}`. Files: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp`, `elysiamorf.hpp`, `sound_analysis_midi.hpp`. `base.hpp` provides a CRTP scaffold eliminating the duplication that previously plagued firmware modes. `voice_space.hpp` holds engine-side voice space dispatch helpers. `generated/` contains codegen output (do not edit by hand).
 - `nisps/wasm/bindings.cpp` — flat C API exported to WASM (Emscripten target only).
+- `nisps/midi/generated/midi_devices.hpp` — codegen output: no-heap `constexpr` external-MIDI-synth templates (`nisps::midi::generated`; `MidiParam`/`MidiDevice` + `kMidiDevices` registry). Source = `schemas/midi_devices/`; do not edit by hand.
 - `nisps/CMakeLists.txt` + `nisps/build/` — host-target builds + ctest.
 
 ### `firmware/` — Arduino sketch + hardware glue
@@ -62,6 +63,9 @@ anchor + locked decisions) and the `docs/redesign/*-spec.md` set.
   `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel), `BackendAdvanced.tsx`.
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
   (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `presets.ts` (named presets), `manager.ts`.
+- `manifold/src/midi-devices/` — external-synth device templates. `generated/` is codegen output from
+  `schemas/midi_devices/` (`MIDI_DEVICES` catalogue + `MIDI_DEVICES_BY_ID`, params by name+CC). The MIDI Outputs
+  config (`dock/OutputsBackendConfig.tsx`) reads it for the device picker + param-select that fills the CC table.
 - `manifold/src/feedback/` — `controller.ts` (Explore-and-place scratchpad + geometric-dislike + solo, TS
   prototype), `rng.ts` (seeded).
 - `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius).
@@ -80,9 +84,13 @@ the "BUILD DELTAS" block at the top of `vcv/SPEC.md`). `src/MEMLNaut.cpp` (modul
 - `schemas/schema.json` — Draft 2020-12 meta-schema validating mode files.
 - `schemas/modes/<mode>.json` (×8) — each mode's params, ranges, defaults, curves, voice spaces, ML config.
 - `schemas/modes/params_notes.md` — provenance notes and judgement calls per mode.
+- `schemas/midi_device.schema.json` — Draft 2020-12 meta-schema for external-MIDI-synth templates.
+- `schemas/midi_devices/<device>.json` (×6) — CC-controllable external synths (Moog Sub 37 / Sub Phatty, Creamware Pro-12 ASB, Elektron Analog Keys, ASM Hydrasynth, Roland JD-800). Each param: `{id, cc, label, min, max, default, group}`. Canonical source for both firmware + browser device pickers. Verified-CC provenance + sources live in `synth-midi-cc.json` (repo root).
 
 ### `codegen/` — schema → C++/TS code
 - `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`) and `playground/src/modes/generated/<mode>_schema.ts`. Idempotent.
+- `codegen/generate-midi-devices.ts` — separate Bun script (isolated from the mode golden test): validates `schemas/midi_devices/` via ajv, emits `nisps/midi/generated/midi_devices.hpp` (no-heap `constexpr`) and `manifold/src/midi-devices/generated/{types,devices,index}.ts`. Idempotent.
+- `codegen/seed-midi-devices.ts` — one-time/idempotent seed deriving `schemas/midi_devices/*.json` from the `synth-midi-cc.json` research artifact (slugifies labels → ids, heuristic groups).
 - `codegen/templates/`, `codegen/tests/golden/` — reference templates + golden snapshot for paf_synth.
 
 ### `tests/cpp/` — host C++ tests

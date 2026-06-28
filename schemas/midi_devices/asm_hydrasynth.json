@@ -1,0 +1,1069 @@
+{
+  "$schema": "../midi_device.schema.json",
+  "device_id": "asm_hydrasynth",
+  "name": "ASM Hydrasynth",
+  "manufacturer": "Ashun Sound Machines (ASM)",
+  "year": 2019,
+  "midi": {
+    "default_channel": 1,
+    "value_range": [
+      0,
+      127
+    ]
+  },
+  "params": [
+    {
+      "id": "bank_select_msb",
+      "cc": 0,
+      "label": "Bank Select MSB",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "mod_wheel",
+      "cc": 1,
+      "label": "Mod Wheel",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "noise_vol",
+      "cc": 3,
+      "label": "Noise Vol",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "glide_time",
+      "cc": 5,
+      "label": "Glide Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "master_volume",
+      "cc": 7,
+      "label": "Master Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "noise_pan",
+      "cc": 8,
+      "label": "Noise Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "ring_mod_vol",
+      "cc": 9,
+      "label": "Ring Mod Vol",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "ring_mod_pan",
+      "cc": 10,
+      "label": "Ring Mod Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "expression_pedal",
+      "cc": 11,
+      "label": "Expression Pedal",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "pre_fx_param1",
+      "cc": 12,
+      "label": "PRE-FX Param1",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "pre_fx_param2",
+      "cc": 13,
+      "label": "PRE-FX Param2",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "delay_feedback",
+      "cc": 14,
+      "label": "Delay Feedback",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "delay_time",
+      "cc": 15,
+      "label": "Delay Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "macro_1",
+      "cc": 16,
+      "label": "Macro 1",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_2",
+      "cc": 17,
+      "label": "Macro 2",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_3",
+      "cc": 18,
+      "label": "Macro 3",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_4",
+      "cc": 19,
+      "label": "Macro 4",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_5",
+      "cc": 20,
+      "label": "Macro 5",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_6",
+      "cc": 21,
+      "label": "Macro 6",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_7",
+      "cc": 22,
+      "label": "Macro 7",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "macro_8",
+      "cc": 23,
+      "label": "Macro 8",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "osc1_wavscan",
+      "cc": 24,
+      "label": "OSC1 WavScan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "env4_attack",
+      "cc": 25,
+      "label": "ENV4 Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "osc2_wavscan",
+      "cc": 26,
+      "label": "OSC2 WavScan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "env4_decay",
+      "cc": 27,
+      "label": "ENV4 Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "lfo2_gain",
+      "cc": 28,
+      "label": "LFO2 Gain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "mutator1_ratio",
+      "cc": 29,
+      "label": "Mutator1 Ratio",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator1_depth",
+      "cc": 30,
+      "label": "Mutator1 Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator1_dry_wet",
+      "cc": 31,
+      "label": "Mutator1 Dry/Wet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "bank_select_lsb",
+      "cc": 32,
+      "label": "Bank Select LSB",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "mutator2_ratio",
+      "cc": 33,
+      "label": "Mutator2 Ratio",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator2_depth",
+      "cc": 34,
+      "label": "Mutator2 Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator2_dry_wet",
+      "cc": 35,
+      "label": "Mutator2 Dry/Wet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "mutator3_ratio",
+      "cc": 36,
+      "label": "Mutator3 Ratio",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator3_depth",
+      "cc": 37,
+      "label": "Mutator3 Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator3_dry_wet",
+      "cc": 39,
+      "label": "Mutator3 Dry/Wet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "mutator4_ratio",
+      "cc": 40,
+      "label": "Mutator4 Ratio",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator4_depth",
+      "cc": 41,
+      "label": "Mutator4 Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mutator4_dry_wet",
+      "cc": 42,
+      "label": "Mutator4 Dry/Wet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "rm12_depth",
+      "cc": 43,
+      "label": "RM12 Depth (Ring Mod Depth)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "osc1_vol",
+      "cc": 44,
+      "label": "OSC1 Vol",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc1_pan",
+      "cc": 45,
+      "label": "OSC1 Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_vol",
+      "cc": 46,
+      "label": "OSC2 Vol",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_pan",
+      "cc": 47,
+      "label": "OSC2 Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc3_vol",
+      "cc": 48,
+      "label": "OSC3 Vol",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc3_pan",
+      "cc": 49,
+      "label": "OSC3 Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter1_drive",
+      "cc": 50,
+      "label": "Filter1 Drive",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter1_keytrack",
+      "cc": 51,
+      "label": "Filter1 Keytrack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter1_lfo1_amt",
+      "cc": 52,
+      "label": "Filter1 LFO1 Amt",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter1_vel_env",
+      "cc": 53,
+      "label": "Filter1 Vel Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter1_env1_amt",
+      "cc": 54,
+      "label": "Filter1 ENV1 Amt",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter2_cutoff",
+      "cc": 55,
+      "label": "Filter2 Cutoff",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter2_res",
+      "cc": 56,
+      "label": "Filter2 Res",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter2_type_morph",
+      "cc": 57,
+      "label": "Filter2 Type/Morph",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter2_keytrack",
+      "cc": 58,
+      "label": "Filter2 Keytrack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter2_lfo1_amt",
+      "cc": 59,
+      "label": "Filter2 LFO1 Amt",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter2_vel_env",
+      "cc": 60,
+      "label": "Filter2 Vel Env",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter2_env1_amt",
+      "cc": 61,
+      "label": "Filter2 ENV1 Amt",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_lfo2_amt",
+      "cc": 62,
+      "label": "Amp LFO2 Amt",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "delay_wet_tone",
+      "cc": 63,
+      "label": "Delay Wet Tone",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "sustain_pedal",
+      "cc": 64,
+      "label": "Sustain Pedal",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "reverb_time",
+      "cc": 65,
+      "label": "Reverb Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "glide_on_off",
+      "cc": 66,
+      "label": "Glide On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "reverb_tone",
+      "cc": 67,
+      "label": "Reverb Tone",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "post_fx_param1",
+      "cc": 68,
+      "label": "POST-FX Param1",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "post_fx_param2",
+      "cc": 69,
+      "label": "POST-FX Param2",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "lfo1_gain",
+      "cc": 70,
+      "label": "LFO1 Gain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter1_res",
+      "cc": 71,
+      "label": "Filter1 Res",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "lfo1_rate",
+      "cc": 72,
+      "label": "LFO1 Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_rate",
+      "cc": 73,
+      "label": "LFO2 Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter1_cutoff",
+      "cc": 74,
+      "label": "Filter1 Cutoff",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "lfo3_gain",
+      "cc": 75,
+      "label": "LFO3 Gain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo3_rate",
+      "cc": 76,
+      "label": "LFO3 Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo4_gain",
+      "cc": 77,
+      "label": "LFO4 Gain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo4_rate",
+      "cc": 78,
+      "label": "LFO4 Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo5_gain",
+      "cc": 79,
+      "label": "LFO5 Gain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo5_rate",
+      "cc": 80,
+      "label": "LFO5 Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "env1_attack",
+      "cc": 81,
+      "label": "ENV1 Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env1_decay",
+      "cc": 82,
+      "label": "ENV1 Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env1_sustain",
+      "cc": 83,
+      "label": "ENV1 Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env1_release",
+      "cc": 84,
+      "label": "ENV1 Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env2_attack",
+      "cc": 85,
+      "label": "ENV2 Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env2_decay",
+      "cc": 86,
+      "label": "ENV2 Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env2_sustain",
+      "cc": 87,
+      "label": "ENV2 Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env2_release",
+      "cc": 88,
+      "label": "ENV2 Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env3_attack",
+      "cc": 89,
+      "label": "ENV3 Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env3_decay",
+      "cc": 90,
+      "label": "ENV3 Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "reverb_dry_wet",
+      "cc": 91,
+      "label": "Reverb Dry/Wet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "delay_dry_wet",
+      "cc": 92,
+      "label": "Delay Dry/Wet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "pre_fx_mix",
+      "cc": 93,
+      "label": "PRE-FX Mix",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "post_fx_mix",
+      "cc": 94,
+      "label": "POST-FX Mix",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "detune",
+      "cc": 95,
+      "label": "Detune",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "env3_sustain",
+      "cc": 96,
+      "label": "ENV3 Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env3_release",
+      "cc": 97,
+      "label": "ENV3 Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env5_attack",
+      "cc": 102,
+      "label": "ENV5 Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env5_decay",
+      "cc": 103,
+      "label": "ENV5 Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env5_sustain",
+      "cc": 104,
+      "label": "ENV5 Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env5_release",
+      "cc": 105,
+      "label": "ENV5 Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "arp_division",
+      "cc": 106,
+      "label": "ARP Division",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "arp_gate",
+      "cc": 107,
+      "label": "ARP Gate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "arp_mode",
+      "cc": 108,
+      "label": "ARP Mode",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "arp_ratchet",
+      "cc": 109,
+      "label": "ARP Ratchet",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "arp_chance",
+      "cc": 110,
+      "label": "ARP Chance",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "osc1_cent",
+      "cc": 111,
+      "label": "OSC1 Cent",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_cent",
+      "cc": 112,
+      "label": "OSC2 Cent",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc3_cent",
+      "cc": 113,
+      "label": "OSC3 Cent",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc3_f_rate",
+      "cc": 114,
+      "label": "OSC3 F Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "noise_f_rate",
+      "cc": 115,
+      "label": "Noise F Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "ring_mod_f_rate",
+      "cc": 116,
+      "label": "Ring Mod F Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "stereo_width",
+      "cc": 117,
+      "label": "Stereo Width",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "osc1_f_rate",
+      "cc": 118,
+      "label": "OSC1 F Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_f_rate",
+      "cc": 119,
+      "label": "OSC2 F Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "arp_octave",
+      "cc": 120,
+      "label": "ARP Octave (repurposed from standard 'All Sounds Off')",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "arp_length",
+      "cc": 122,
+      "label": "ARP Length",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "all_notes_off",
+      "cc": 123,
+      "label": "All Notes Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "env4_release",
+      "cc": 124,
+      "label": "ENV4 Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "env4_sustain",
+      "cc": 125,
+      "label": "ENV4 Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    }
+  ]
+}

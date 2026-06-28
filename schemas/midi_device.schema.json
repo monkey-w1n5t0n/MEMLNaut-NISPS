@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memlnaut/schemas/midi_device.schema.json",
+  "title": "MEMLNaut MIDI Device Template Schema",
+  "description": "Describes one external MIDI synth/device as a template of named, CC-addressable parameters. Used by NISPS to let a performer pick a device, see its parameters by name, and select which ones the ML drives via MIDI CC. Codegen (codegen/generate-midi-devices.ts) consumes these to emit a no-heap C++ header (nisps/midi/generated/midi_devices.hpp) and a typed TS module (manifold/src/midi-devices/generated/). Provenance + sources for the CC numbers live in synth-midi-cc.json.",
+  "type": "object",
+  "required": ["device_id", "name", "manufacturer", "midi", "params"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "_note": { "type": "string", "description": "Free-text author note." },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "snake_case unique identifier for the device."
+    },
+    "name": { "type": "string", "description": "Human-readable device name shown in the picker." },
+    "manufacturer": { "type": "string" },
+    "year": { "type": "integer" },
+    "midi": {
+      "type": "object",
+      "required": ["default_channel", "value_range"],
+      "additionalProperties": false,
+      "properties": {
+        "default_channel": { "type": "integer", "minimum": 1, "maximum": 16, "description": "Default MIDI channel (1-16)." },
+        "value_range": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[min, max] CC value range; almost always [0, 127]."
+        },
+        "notes": { "type": "string", "description": "How to enable CC on this device, channel quirks, etc." }
+      }
+    },
+    "params": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "cc", "label", "min", "max", "default", "group"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "snake_case unique-within-device identifier, derived from the label."
+          },
+          "cc": { "type": "integer", "minimum": 0, "maximum": 127, "description": "MIDI Control Change number." },
+          "label": { "type": "string", "description": "Human-readable parameter name shown in the UI." },
+          "min": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "max": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "default": { "type": "integer", "minimum": 0, "maximum": 127, "description": "Value sent when the param is fixed (not ML-driven)." },
+          "group": { "type": "string", "description": "Coarse section for UI grouping (osc, filter, env, lfo, mod, fx, arp, mix, global)." },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

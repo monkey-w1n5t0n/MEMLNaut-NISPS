@@ -1,0 +1,781 @@
+{
+  "$schema": "../midi_device.schema.json",
+  "device_id": "elektron_analog_keys",
+  "name": "Elektron Analog Keys",
+  "manufacturer": "Elektron",
+  "year": 2014,
+  "midi": {
+    "default_channel": 1,
+    "value_range": [
+      0,
+      127
+    ]
+  },
+  "params": [
+    {
+      "id": "modulation_modwheel",
+      "cc": 1,
+      "label": "Modulation: Modwheel (MSB, 14-bit pair with CC 33)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "modulation_breath",
+      "cc": 2,
+      "label": "Modulation: Breath (MSB, 14-bit pair with CC 34)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "performance_parameter_a",
+      "cc": 3,
+      "label": "Performance: Parameter A",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "performance_parameter_b",
+      "cc": 4,
+      "label": "Performance: Parameter B",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "osc_slide_time",
+      "cc": 5,
+      "label": "OSC: Slide Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "amp_volume",
+      "cc": 7,
+      "label": "Amp: Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "performance_parameter_c",
+      "cc": 8,
+      "label": "Performance: Parameter C",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "performance_parameter_d",
+      "cc": 9,
+      "label": "Performance: Parameter D",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "amp_pan",
+      "cc": 10,
+      "label": "Amp: Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "performance_parameter_e",
+      "cc": 11,
+      "label": "Performance: Parameter E",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "osc1_pitch",
+      "cc": 16,
+      "label": "OSC1: Pitch (MSB, 14-bit pair with CC 48)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_pitch",
+      "cc": 17,
+      "label": "OSC2: Pitch (MSB, 14-bit pair with CC 49)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_1_frequency",
+      "cc": 18,
+      "label": "Filter 1: Frequency (MSB, 14-bit pair with CC 50)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_2_frequency",
+      "cc": 19,
+      "label": "Filter 2: Frequency (MSB, 14-bit pair with CC 51)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_env_depth_a",
+      "cc": 20,
+      "label": "Filter Env: Depth A (MSB, 14-bit pair with CC 52)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_depth_b",
+      "cc": 21,
+      "label": "Filter Env: Depth B (MSB, 14-bit pair with CC 53)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_depth_a",
+      "cc": 22,
+      "label": "AUX Env: Depth A (MSB, 14-bit pair with CC 54)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_depth_b",
+      "cc": 23,
+      "label": "AUX Env: Depth B (MSB, 14-bit pair with CC 55)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "lfo1_depth_a",
+      "cc": 24,
+      "label": "LFO1: Depth A (MSB, 14-bit pair with CC 56)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo1_depth_b",
+      "cc": 25,
+      "label": "LFO1: Depth B (MSB, 14-bit pair with CC 57)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_depth_a",
+      "cc": 26,
+      "label": "LFO2: Depth A (MSB, 14-bit pair with CC 58)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_depth_b",
+      "cc": 27,
+      "label": "LFO2: Depth B (MSB, 14-bit pair with CC 59)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "modulation_modwheel_cc33",
+      "cc": 33,
+      "label": "Modulation: Modwheel (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "modulation_breath_cc34",
+      "cc": 34,
+      "label": "Modulation: Breath (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "osc1_pitch_cc48",
+      "cc": 48,
+      "label": "OSC1: Pitch (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_pitch_cc49",
+      "cc": 49,
+      "label": "OSC2: Pitch (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_1_frequency_cc50",
+      "cc": 50,
+      "label": "Filter 1: Frequency (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_2_frequency_cc51",
+      "cc": 51,
+      "label": "Filter 2: Frequency (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_env_depth_a_cc52",
+      "cc": 52,
+      "label": "Filter Env: Depth A (LSB; MkI: 'EnvF Gate Length')",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_depth_b_cc53",
+      "cc": 53,
+      "label": "Filter Env: Depth B (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_depth_a_cc54",
+      "cc": 54,
+      "label": "AUX Env: Depth A (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_depth_b_cc55",
+      "cc": 55,
+      "label": "AUX Env: Depth B (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "lfo1_depth_a_cc56",
+      "cc": 56,
+      "label": "LFO1: Depth A (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo1_depth_b_cc57",
+      "cc": 57,
+      "label": "LFO1: Depth B (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_depth_a_cc58",
+      "cc": 58,
+      "label": "LFO2: Depth A (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_depth_b_cc59",
+      "cc": 59,
+      "label": "LFO2: Depth B (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "performance_parameter_f",
+      "cc": 64,
+      "label": "Performance: Parameter F",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "performance_parameter_g",
+      "cc": 65,
+      "label": "Performance: Parameter G",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "performance_parameter_h",
+      "cc": 66,
+      "label": "Performance: Parameter H",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "performance_parameter_i",
+      "cc": 67,
+      "label": "Performance: Parameter I",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "performance_parameter_j",
+      "cc": 68,
+      "label": "Performance: Parameter J",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "osc1_level",
+      "cc": 69,
+      "label": "OSC1: Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc1_waveform",
+      "cc": 70,
+      "label": "OSC1: Waveform",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc1_sub_oscillator",
+      "cc": 71,
+      "label": "OSC1: Sub Oscillator",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc1_pulsewidth",
+      "cc": 72,
+      "label": "OSC1: Pulsewidth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc1_pwm_speed",
+      "cc": 73,
+      "label": "OSC1: PWM Speed",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc1_pwm_depth",
+      "cc": 74,
+      "label": "OSC1: PWM Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "noise_s_h",
+      "cc": 75,
+      "label": "Noise: S&H",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "noise_fade",
+      "cc": 76,
+      "label": "Noise: Fade",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "noise_level",
+      "cc": 77,
+      "label": "Noise: Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_level",
+      "cc": 78,
+      "label": "OSC2: Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_waveform",
+      "cc": 79,
+      "label": "OSC2: Waveform",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_sub_oscillator",
+      "cc": 80,
+      "label": "OSC2: Sub Oscillator",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_pulsewidth",
+      "cc": 81,
+      "label": "OSC2: Pulsewidth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_pwm_speed",
+      "cc": 82,
+      "label": "OSC2: PWM Speed",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc2_pwm_depth",
+      "cc": 83,
+      "label": "OSC2: PWM Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_sync_amount",
+      "cc": 84,
+      "label": "OSC: Sync Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_bend_amount",
+      "cc": 85,
+      "label": "OSC: Bend Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_1_overdrive",
+      "cc": 86,
+      "label": "Filter 1: Overdrive",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "osc_vibrato_speed",
+      "cc": 88,
+      "label": "OSC: Vibrato Speed (Analog Keys/MkI)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_1_resonance",
+      "cc": 89,
+      "label": "Filter 1: Resonance",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_2_resonance",
+      "cc": 90,
+      "label": "Filter 2: Resonance",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_chorus_send",
+      "cc": 91,
+      "label": "Amp: Chorus Send",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "amp_delay_send",
+      "cc": 92,
+      "label": "Amp: Delay Send",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "amp_reverb_send",
+      "cc": 93,
+      "label": "Amp: Reverb Send",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "track_mute",
+      "cc": 94,
+      "label": "Track: Mute",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "track_level",
+      "cc": 95,
+      "label": "Track: Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "filter_1_envelope_depth",
+      "cc": 102,
+      "label": "Filter 1: Envelope Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_2_envelope_depth",
+      "cc": 103,
+      "label": "Filter 2: Envelope Depth",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_attack",
+      "cc": 104,
+      "label": "Amp Env: Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_decay",
+      "cc": 105,
+      "label": "Amp Env: Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_sustain",
+      "cc": 106,
+      "label": "Amp Env: Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_env_release",
+      "cc": 107,
+      "label": "Amp Env: Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_attack",
+      "cc": 108,
+      "label": "Filter Env: Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_decay",
+      "cc": 109,
+      "label": "Filter Env: Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_sustain",
+      "cc": 110,
+      "label": "Filter Env: Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_env_release",
+      "cc": 111,
+      "label": "Filter Env: Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_attack",
+      "cc": 112,
+      "label": "AUX Env: Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_decay",
+      "cc": 113,
+      "label": "AUX Env: Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_sustain",
+      "cc": 114,
+      "label": "AUX Env: Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "aux_env_release",
+      "cc": 115,
+      "label": "AUX Env: Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "lfo1_speed",
+      "cc": 116,
+      "label": "LFO1: Speed",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo1_multiplier",
+      "cc": 117,
+      "label": "LFO1: Multiplier",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_speed",
+      "cc": 118,
+      "label": "LFO2: Speed",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "lfo2_multiplier",
+      "cc": 119,
+      "label": "LFO2: Multiplier",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    }
+  ]
+}

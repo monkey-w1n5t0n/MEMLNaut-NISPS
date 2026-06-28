@@ -1,0 +1,745 @@
+{
+  "$schema": "../midi_device.schema.json",
+  "device_id": "moog_sub37",
+  "name": "Moog Sub 37",
+  "manufacturer": "Moog",
+  "year": 2014,
+  "midi": {
+    "default_channel": 1,
+    "value_range": [
+      0,
+      127
+    ]
+  },
+  "params": [
+    {
+      "id": "bank_select",
+      "cc": 0,
+      "label": "Bank Select",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "mod_wheel",
+      "cc": 1,
+      "label": "Mod Wheel",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "reserved_midi_breath_control",
+      "cc": 2,
+      "label": "Reserved - MIDI Breath Control",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "lfo_1_rate",
+      "cc": 3,
+      "label": "LFO 1 Rate (also LFO 1 Clock Divider)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "mod_1_pitch_amount",
+      "cc": 4,
+      "label": "Mod 1 Pitch Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "glide_time",
+      "cc": 5,
+      "label": "Glide Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "reserved_data_entry",
+      "cc": 6,
+      "label": "Reserved - Data Entry",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "master_volume",
+      "cc": 7,
+      "label": "Master Volume",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "lfo_2_rate",
+      "cc": 8,
+      "label": "LFO 2 Rate (also LFO 2 Clock Divider)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "osc_1_wave",
+      "cc": 9,
+      "label": "Osc 1 Wave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "reserved_midi_pan",
+      "cc": 10,
+      "label": "Reserved - MIDI Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "mod_1_filter_amount",
+      "cc": 11,
+      "label": "Mod 1 Filter Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "osc_2_frequency",
+      "cc": 12,
+      "label": "Osc 2 Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_2_beat_frequency",
+      "cc": 13,
+      "label": "Osc 2 Beat Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_2_wave",
+      "cc": 14,
+      "label": "Osc 2 Wave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "mod_2_pitch_amount",
+      "cc": 15,
+      "label": "Mod 2 Pitch Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mod_2_filter_amount",
+      "cc": 16,
+      "label": "Mod 2 Filter Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "mod_2_pgm_dest_amount",
+      "cc": 17,
+      "label": "Mod 2 Pgm Dest Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "filter_multidrive",
+      "cc": 18,
+      "label": "Filter Multidrive",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_cutoff",
+      "cc": 19,
+      "label": "Filter Cutoff",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "mod_1_pgm_dest_amount",
+      "cc": 20,
+      "label": "Mod 1 Pgm Dest Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "filter_resonance",
+      "cc": 21,
+      "label": "Filter Resonance",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_kb_amount",
+      "cc": 22,
+      "label": "Filter KB Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_eg_attack_time",
+      "cc": 23,
+      "label": "Filter EG Attack Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_decay_time",
+      "cc": 24,
+      "label": "Filter EG Decay Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_sustain_time",
+      "cc": 25,
+      "label": "Filter EG Sustain Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_release_time",
+      "cc": 26,
+      "label": "Filter EG Release Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_amount",
+      "cc": 27,
+      "label": "Filter EG Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_eg_attack_time",
+      "cc": 28,
+      "label": "Amp EG Attack Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_eg_decay_time",
+      "cc": 29,
+      "label": "Amp EG Decay Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_eg_sustain_time",
+      "cc": 30,
+      "label": "Amp EG Sustain Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_eg_release_time",
+      "cc": 31,
+      "label": "Amp EG Release Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "bank_select_cc32",
+      "cc": 32,
+      "label": "Bank Select (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "mod_wheel_cc33",
+      "cc": 33,
+      "label": "Mod Wheel (LSB)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "hold_pedal_sustain",
+      "cc": 64,
+      "label": "Hold Pedal/Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "glide_on",
+      "cc": 65,
+      "label": "Glide On",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "arpeggiator_latch",
+      "cc": 69,
+      "label": "Arpeggiator Latch",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "mod_1_osc_1_2_select",
+      "cc": 70,
+      "label": "Mod 1 Osc 1/2 Select",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mod_1_source",
+      "cc": 71,
+      "label": "Mod 1 Source",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mod_2_source",
+      "cc": 72,
+      "label": "Mod 2 Source",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "arp_on_off",
+      "cc": 73,
+      "label": "Arp On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "arp"
+    },
+    {
+      "id": "osc_1_octave",
+      "cc": 74,
+      "label": "Osc 1 Octave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_2_octave",
+      "cc": 75,
+      "label": "Osc 2 Octave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "lfo_1_range",
+      "cc": 76,
+      "label": "LFO 1 Range",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "osc_2_hard_sync_on_off",
+      "cc": 77,
+      "label": "Osc 2 Hard Sync On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "lfo_2_range",
+      "cc": 78,
+      "label": "LFO 2 Range",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter_eg_kb_amount",
+      "cc": 79,
+      "label": "Filter EG KB Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_eg_kb_amount",
+      "cc": 80,
+      "label": "Amp EG KB Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "osc_kb_reset_on_off",
+      "cc": 81,
+      "label": "Osc KB Reset On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_eg_reset",
+      "cc": 82,
+      "label": "Filter EG Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_eg_reset",
+      "cc": 83,
+      "label": "Amp EG Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "reserved_portamento_control",
+      "cc": 84,
+      "label": "Reserved - Portamento Control",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "glide_type",
+      "cc": 85,
+      "label": "Glide Type",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_eg_velocity_amount",
+      "cc": 86,
+      "label": "Filter EG Velocity Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_eg_velocity_amount",
+      "cc": 87,
+      "label": "Amp EG Velocity Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "mod_2_osc_1_2_select",
+      "cc": 88,
+      "label": "Mod 2 Osc 1/2 Select",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "kb_octave",
+      "cc": 89,
+      "label": "KB Octave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "mod_1_destination",
+      "cc": 91,
+      "label": "Mod 1 Destination",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "mod_2_destination",
+      "cc": 92,
+      "label": "Mod 2 Destination",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "lfo_1_kb_reset",
+      "cc": 93,
+      "label": "LFO 1 KB Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "glide_legato",
+      "cc": 94,
+      "label": "Glide Legato",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "lfo_2_kb_reset",
+      "cc": 95,
+      "label": "LFO 2 KB Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "glide_dest_osc_1_2_both",
+      "cc": 102,
+      "label": "Glide Dest Osc 1/2/Both",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_eg_delay",
+      "cc": 103,
+      "label": "Filter EG Delay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_eg_delay",
+      "cc": 104,
+      "label": "Amp EG Delay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "filter_eg_hold",
+      "cc": 105,
+      "label": "Filter EG Hold",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amp_eg_hold",
+      "cc": 106,
+      "label": "Amp EG Hold",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "pitch_bend_up_amount",
+      "cc": 107,
+      "label": "Pitch Bend Up Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "pitch_bend_down_amount",
+      "cc": 108,
+      "label": "Pitch Bend Down Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_slopes",
+      "cc": 109,
+      "label": "Filter Slopes (Poles)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "osc_duo_mode_on_off",
+      "cc": 110,
+      "label": "Osc Duo Mode On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "kb_ctrl_lo_hi",
+      "cc": 111,
+      "label": "KB Ctrl Lo/Hi",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "filter_eg_multi_trig",
+      "cc": 112,
+      "label": "Filter EG Multi Trig",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amp_eg_multi_trig",
+      "cc": 113,
+      "label": "Amp EG Multi Trig",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "osc_1_level",
+      "cc": 114,
+      "label": "Osc 1 Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_1_sub_level",
+      "cc": 115,
+      "label": "Osc 1 Sub Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "osc_2_level",
+      "cc": 116,
+      "label": "Osc 2 Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "noise_level",
+      "cc": 117,
+      "label": "Noise Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "feedback_ext_level",
+      "cc": 118,
+      "label": "Feedback/Ext Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "kb_transpose",
+      "cc": 119,
+      "label": "KB Transpose (receive only)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "local_control_on_off",
+      "cc": 122,
+      "label": "Local Control On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    }
+  ]
+}

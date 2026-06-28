@@ -1,0 +1,655 @@
+{
+  "$schema": "../midi_device.schema.json",
+  "device_id": "moog_sub_phatty",
+  "name": "Moog Sub Phatty",
+  "manufacturer": "Moog",
+  "year": 2013,
+  "midi": {
+    "default_channel": 1,
+    "value_range": [
+      0,
+      127
+    ]
+  },
+  "params": [
+    {
+      "id": "modulation_wheel",
+      "cc": 1,
+      "label": "Modulation Wheel",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "filter_mod_amount",
+      "cc": 2,
+      "label": "Filter Mod Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "lfo_rate",
+      "cc": 3,
+      "label": "LFO Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "pitch_mod_amount",
+      "cc": 4,
+      "label": "Pitch Mod Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "glide_rate",
+      "cc": 5,
+      "label": "Glide Rate",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "output_level",
+      "cc": 7,
+      "label": "Output Level (Volume)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "noise_level",
+      "cc": 8,
+      "label": "Noise Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_1_wave",
+      "cc": 9,
+      "label": "VCO 1 Wave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_2_frequency",
+      "cc": 12,
+      "label": "VCO 2 Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_2_beat_frequency",
+      "cc": 13,
+      "label": "VCO 2 Beat Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_2_wave",
+      "cc": 14,
+      "label": "VCO 2 Wave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_1_level",
+      "cc": 15,
+      "label": "VCO 1 Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_2_level",
+      "cc": 16,
+      "label": "VCO 2 Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_1_sub_level",
+      "cc": 17,
+      "label": "VCO 1 Sub Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "multidrive_amount",
+      "cc": 18,
+      "label": "Multidrive Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_cutoff_frequency",
+      "cc": 19,
+      "label": "Filter Cutoff Frequency",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "wave_mod_amount",
+      "cc": 20,
+      "label": "Wave Mod Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "filter_resonance",
+      "cc": 21,
+      "label": "Filter Resonance",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_eg_amount",
+      "cc": 22,
+      "label": "Filter EG Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_eg_attack",
+      "cc": 23,
+      "label": "Filter EG Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_decay",
+      "cc": 24,
+      "label": "Filter EG Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_sustain",
+      "cc": 25,
+      "label": "Filter EG Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_eg_release",
+      "cc": 26,
+      "label": "Filter EG Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "filter_kb_tracking_amount",
+      "cc": 27,
+      "label": "Filter KB Tracking Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amplifier_eg_attack",
+      "cc": 28,
+      "label": "Amplifier EG Attack",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amplifier_eg_decay",
+      "cc": 29,
+      "label": "Amplifier EG Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amplifier_eg_sustain",
+      "cc": 30,
+      "label": "Amplifier EG Sustain",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amplifier_eg_release",
+      "cc": 31,
+      "label": "Amplifier EG Release",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "glide_on_off",
+      "cc": 65,
+      "label": "Glide On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "legato",
+      "cc": 68,
+      "label": "Legato",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "pitch_mod_osc_2_only",
+      "cc": 70,
+      "label": "Pitch Mod OSC 2 Only",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "modulation_source",
+      "cc": 71,
+      "label": "Modulation Source",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "wave_mod_destination",
+      "cc": 72,
+      "label": "Wave Mod Destination",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "gated_glide",
+      "cc": 73,
+      "label": "Gated Glide",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_1_octave",
+      "cc": 74,
+      "label": "VCO 1 Octave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "vco_2_octave",
+      "cc": 75,
+      "label": "VCO 2 Octave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "lfo_range",
+      "cc": 76,
+      "label": "LFO Range",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "vco_hard_sync",
+      "cc": 77,
+      "label": "VCO Hard Sync",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "lfo_kb_tracking_amount",
+      "cc": 78,
+      "label": "LFO KB Tracking Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter_eg_velocity_to_time",
+      "cc": 79,
+      "label": "Filter EG Velocity to Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amplifier_eg_velocity_to_time",
+      "cc": 80,
+      "label": "Amplifier EG Velocity to Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "vco_gate_reset",
+      "cc": 81,
+      "label": "VCO Gate Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_eg_reset",
+      "cc": 82,
+      "label": "Filter EG Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amplifier_eg_reset",
+      "cc": 83,
+      "label": "Amplifier EG Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "glide_type",
+      "cc": 85,
+      "label": "Glide Type",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_eg_repeat",
+      "cc": 86,
+      "label": "Filter EG Repeat",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amplifier_eg_repeat",
+      "cc": 87,
+      "label": "Amplifier EG Repeat",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "release_on_off",
+      "cc": 88,
+      "label": "Release On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "keyboard_octave",
+      "cc": 89,
+      "label": "Keyboard Octave",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_eg_kb_amount",
+      "cc": 90,
+      "label": "Filter EG KB Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amplifier_eg_kb_amount",
+      "cc": 91,
+      "label": "Amplifier EG KB Amount",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "amplifier_eg_velocity_to_amplitude",
+      "cc": 92,
+      "label": "Amplifier EG Velocity to Amplitude",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "lfo_gate_reset",
+      "cc": 93,
+      "label": "LFO Gate Reset",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "glide_legato",
+      "cc": 94,
+      "label": "Glide Legato",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "lfo_midi_sync",
+      "cc": 102,
+      "label": "LFO MIDI Sync",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "lfo"
+    },
+    {
+      "id": "filter_eg_delay",
+      "cc": 103,
+      "label": "Filter EG Delay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "amplifier_eg_delay",
+      "cc": 104,
+      "label": "Amplifier EG Delay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "fx"
+    },
+    {
+      "id": "filter_eg_hold",
+      "cc": 105,
+      "label": "Filter EG Hold",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amplifier_eg_hold",
+      "cc": 106,
+      "label": "Amplifier EG Hold",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "pitch_bend_up",
+      "cc": 107,
+      "label": "Pitch Bend Up",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "pitch_bend_down",
+      "cc": 108,
+      "label": "Pitch Bend Down",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "filter_poles",
+      "cc": 109,
+      "label": "Filter Poles",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "filter_eg_velocity_to_amplitude",
+      "cc": 110,
+      "label": "Filter EG Velocity to Amplitude",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "note_priority",
+      "cc": 111,
+      "label": "Note Priority",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "filter_eg_gate_source",
+      "cc": 113,
+      "label": "Filter EG Gate Source",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "volume_eg_gate_source",
+      "cc": 114,
+      "label": "Volume (Amplifier) EG Gate Source",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "filter_eg_trigger_mode",
+      "cc": 115,
+      "label": "Filter EG Trigger Mode",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "filter"
+    },
+    {
+      "id": "external_input_level",
+      "cc": 116,
+      "label": "External Input Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "filter_eg_fast_decay",
+      "cc": 117,
+      "label": "Filter EG Fast Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "amplifier_eg_fast_decay",
+      "cc": 118,
+      "label": "Amplifier EG Fast Decay",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "keyboard_transpose",
+      "cc": 119,
+      "label": "Keyboard Transpose",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "$schema": "../midi_device.schema.json",
+  "device_id": "roland_jd800",
+  "name": "Roland JD-800",
+  "manufacturer": "Roland",
+  "year": 1991,
+  "midi": {
+    "default_channel": 1,
+    "value_range": [
+      0,
+      127
+    ]
+  },
+  "params": [
+    {
+      "id": "modulation",
+      "cc": 1,
+      "label": "Modulation",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mod"
+    },
+    {
+      "id": "breath_controller",
+      "cc": 2,
+      "label": "Breath Controller",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "portamento_time",
+      "cc": 5,
+      "label": "Portamento Time",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "data_entry_msb",
+      "cc": 6,
+      "label": "Data Entry MSB (RPN; receive only)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "volume_part_level",
+      "cc": 7,
+      "label": "Volume / Part Level",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "pan",
+      "cc": 10,
+      "label": "Pan",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "mix"
+    },
+    {
+      "id": "expression",
+      "cc": 11,
+      "label": "Expression",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "hold_sustain_pedal",
+      "cc": 64,
+      "label": "Hold / Sustain Pedal",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "env"
+    },
+    {
+      "id": "portamento_on_off",
+      "cc": 65,
+      "label": "Portamento On/Off",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "osc"
+    },
+    {
+      "id": "rpn_lsb",
+      "cc": 100,
+      "label": "RPN LSB (receive only)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "rpn_msb",
+      "cc": 101,
+      "label": "RPN MSB (receive only)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "reset_all_controllers",
+      "cc": 121,
+      "label": "Reset All Controllers (receive only)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    },
+    {
+      "id": "all_notes_off",
+      "cc": 123,
+      "label": "All Notes Off (receive only)",
+      "min": 0,
+      "max": 127,
+      "default": 64,
+      "group": "global"
+    }
+  ]
+}

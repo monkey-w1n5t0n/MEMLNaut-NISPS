@@ -1,0 +1,46 @@
+/**
+ * Manifold — typography tokens
+ * Monospace is the hero (terminal vibe). Sans is a quiet system fallback,
+ * used rarely for long-form prose.
+ */
+
+:root {
+  /* ---- Families ---- */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  /* Hero family alias — Manifold reads almost entirely in mono. */
+  --font-display: var(--font-mono);
+  --font-body:    var(--font-mono);
+  --font-prose:   var(--font-sans);
+
+  /* ---- Sizes (px, fixed scale from the playground) ---- */
+  --fs-xs: 11px;  /* labels, captions, status */
+  --fs-sm: 13px;  /* secondary UI text */
+  --fs-md: 15px;  /* body / default */
+  --fs-lg: 18px;  /* mode titles, emphasis */
+  --fs-xl: 24px;  /* page titles */
+  --fs-2xl: 34px; /* hero / display (specimen / marketing) */
+  --fs-3xl: 48px;
+
+  /* ---- Weights ---- */
+  --fw-regular: 400; /* @kind font */
+  --fw-medium:  500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:    700; /* @kind font */
+
+  /* ---- Line heights ---- */
+  --lh-tight: 1.1; /* @kind other */
+  --lh-snug:  1.3; /* @kind other */
+  --lh-normal: 1.5; /* @kind other */
+
+  /* ---- Letter spacing ---- */
+  --ls-tight:  -0.01em; /* @kind other */
+  --ls-normal: 0; /* @kind other */
+  --ls-label:  0.08em; /* @kind other */
+  --ls-wide:   0.12em; /* @kind other */
+
+  /* ---- Semantic label style ---- */
+  --label-transform: uppercase; /* @kind other */
+  --label-spacing: var(--ls-label); /* @kind other */
+}

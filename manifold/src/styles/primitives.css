@@ -1,0 +1,93 @@
+/**
+ * Manifold — primitive component styles.
+ *
+ * Range-input pseudo-elements (track + thumb) can't be expressed via React
+ * inline styles, so the Slider and ControlAxis primitives rely on these
+ * className hooks. The dynamic bits are passed as inline CSS custom properties:
+ *   - Slider:      `--mf-pct`        (0..1 fill ratio for the track gradient)
+ *   - ControlAxis: `--mf-axis-accent` (per-axis track/thumb accent colour)
+ *
+ * Import this once at the app root (it is re-exported as a side-effect from
+ * `primitives/index.ts`, so importing the barrel is enough), or add it to your
+ * global stylesheet manifest alongside the design tokens.
+ */
+
+/* ---- Slider (.mf-slider-input) ---- */
+.mf-slider-input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) calc(var(--mf-pct) * 100%),
+    var(--bg-3) 0%
+  );
+}
+.mf-slider-input::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-3);
+}
+.mf-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: -6px;
+  box-shadow: 0 0 8px var(--glow-accent);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.mf-slider-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  box-shadow: 0 0 8px var(--glow-accent);
+}
+.mf-slider-input:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.mf-slider-input:focus {
+  outline: none;
+}
+.mf-slider-input:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--glow-focus);
+}
+
+/* ---- ControlAxis (.mf-axis-input) ---- */
+.mf-axis-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+}
+.mf-axis-input::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+}
+.mf-axis-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--mf-axis-accent, var(--accent));
+  margin-top: -6px;
+  box-shadow: 0 0 10px var(--mf-axis-accent, var(--accent));
+  cursor: pointer;
+}
+.mf-axis-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--mf-axis-accent, var(--accent));
+  border: none;
+  box-shadow: 0 0 10px var(--mf-axis-accent, var(--accent));
+}
+.mf-axis-input:focus {
+  outline: none;
+}

@@ -1,0 +1,72 @@
+/**
+ * Manifold — color tokens
+ * Dark terminal canvas, warm-orange primary, cool-cyan secondary.
+ * Ported from the MEMLNaut playground (src/styles/tokens.css) and extended
+ * with semantic aliases.
+ */
+
+:root {
+  /* ---- Surfaces (dark, layered) ---- */
+  --bg:    #0d0d0d;   /* app canvas */
+  --bg-1:  #141414;   /* panel / card */
+  --bg-2:  #1c1c1c;   /* raised control */
+  --bg-3:  #242424;   /* hover / track */
+
+  /* ---- Foreground / text ---- */
+  --fg:      #e8e8e8; /* primary text */
+  --fg-mute: #9a9a9a; /* secondary text / labels */
+  --fg-dim:  #5a5a5a; /* tertiary / disabled */
+
+  /* ---- Lines / borders ---- */
+  --line:        #2a2a2a; /* default 1px hairline */
+  --line-strong: #3a3a3a; /* grid lines, dashed guides */
+
+  /* ---- Accents ---- */
+  --accent:   #ff6a00;  /* warm primary — actions, focus, the live dot */
+  --accent-2: #00ccff;  /* cool secondary — data, plots, secondary dot */
+  --accent-3: #ffa860;  /* warm hover / tint */
+
+  /* ---- Semantic ---- */
+  --good: #6bc26b;
+  --warn: #f5c45e;
+  --bad:  #ef5b5b;
+  --info: #5b9eef;
+
+  /* ---- Console 2.0 surface language ---- */
+  --danger: #ff4466;                    /* the 2.0 verdict-perturb / destructive red */
+  --glass:  rgba(13, 13, 13, 0.65);     /* frosted chrome over the manifold */
+  --glass-line: rgba(255, 255, 255, 0.07); /* hairline on glass */
+
+  /* ---- Region pins (translucent map markers) ---- */
+  --pin-1: rgba(255, 106, 0, 0.25);
+  --pin-2: rgba(0, 204, 255, 0.25);
+  --pin-3: rgba(180, 100, 255, 0.25);
+  --pin-4: rgba(80, 200, 120, 0.25);
+  --pin-5: rgba(255, 200, 80, 0.25);
+
+  /* ---- Glow alphas (for box-shadow halos on live controls) ---- */
+  --glow-accent:   rgba(255, 106, 0, 0.45);
+  --glow-accent-2: rgba(0, 204, 255, 0.45);
+  --glow-focus:    rgba(255, 106, 0, 0.30);
+
+  /* ============ Semantic aliases ============ */
+  --surface-app:    var(--bg);
+  --surface-panel:  var(--bg-1);
+  --surface-raised: var(--bg-2);
+  --surface-track:  var(--bg-3);
+
+  --text-primary:   var(--fg);
+  --text-secondary: var(--fg-mute);
+  --text-tertiary:  var(--fg-dim);
+  --text-accent:    var(--accent);
+  --text-link:      var(--accent-2);
+
+  --border-default: var(--line);
+  --border-strong:  var(--line-strong);
+  --border-focus:   var(--accent);
+
+  --action-primary:       var(--accent);
+  --action-primary-text:  var(--bg);
+  --selection-bg:         var(--accent);
+  --selection-text:       var(--bg);
+}

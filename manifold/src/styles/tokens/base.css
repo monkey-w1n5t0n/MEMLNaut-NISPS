@@ -1,0 +1,51 @@
+/**
+ * Manifold — base element styles.
+ * Mirrors the playground's global resets so specimen cards and UI kits read
+ * like the real product even before a single component mounts.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+code, kbd {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: var(--selection-bg);
+  color: var(--selection-text);
+}
+
+/* Uppercase micro-label helper used across the system. */
+.mf-label {
+  font-size: var(--fs-xs);
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+
+/* Tabular numerals for any live readout. */
+.mf-num {
+  font-variant-numeric: tabular-nums;
+}

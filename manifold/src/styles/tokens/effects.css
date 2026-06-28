@@ -1,0 +1,31 @@
+/**
+ * Manifold — motion, shadow & glow tokens
+ * Manifold rarely uses drop shadows for depth; instead it uses *glow halos*
+ * on live, interactive elements (the dot on an XY pad, a slider thumb).
+ */
+
+:root {
+  /* ---- Motion ---- */
+  --ease: cubic-bezier(.25, .8, .35, 1); /* @kind other */
+  --ease-out: cubic-bezier(.16, 1, .3, 1); /* @kind other */
+  --ease-console: cubic-bezier(0.22, 1, 0.36, 1); /* @kind other */ /* the 2.0 Console drawer/chrome easing */
+  --dur-fast: 120ms; /* @kind other */
+  --dur-med:  220ms; /* @kind other */
+  --dur-slow: 360ms; /* @kind other */
+
+  /* ---- Glow halos (the signature) ---- */
+  --glow-sm: 0 0 8px var(--glow-accent);
+  --glow-md: 0 0 12px var(--glow-accent);
+  --glow-lg: 0 0 18px var(--glow-accent);
+  --glow-cyan: 0 0 10px var(--glow-accent-2);
+  --focus-ring: 0 0 0 3px var(--glow-focus);
+
+  /* ---- Shadows (used sparingly: drawers, popovers) ---- */
+  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* ---- Borders ---- */
+  --bw: 1px;                     /* default hairline */
+  --border: var(--bw) solid var(--line);
+  --border-strong-rule: var(--bw) solid var(--line-strong);
+}

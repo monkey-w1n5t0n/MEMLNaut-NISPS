@@ -25,6 +25,7 @@ import { useEngine, useEngineVersion } from '../engine';
 import { MF_MODES, modeEngineId, seededGradient, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
+import { ParticleStage } from './ParticleStage';
 import { SplitStage } from './SplitStage';
 import { OutputStage } from './OutputStage';
 import { InputMini } from './InputMini';
@@ -676,7 +677,14 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             bottom: 0,
           }}
         >
-          {focus === 'composite' ? (
+          {outputMode === 'particles' ? (
+            <ParticleStage
+              pos={pos}
+              onMove={onMove}
+              axes={axes}
+              setAxis={(k, v) => setAxes((s) => ({ ...s, [k]: v }))}
+            />
+          ) : focus === 'composite' ? (
             <CompositeStage
               split={split}
               onSplit={setSplit}
@@ -735,18 +743,20 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             />
           )}
 
-          {/* corner overlay */}
-          <div
-            style={{
-              position: 'absolute',
-              top: 12,
-              left: 14,
-              zIndex: 20,
-              pointerEvents: 'none',
-            }}
-          >
-            <strong style={{ color: 'var(--accent)', fontSize: 'var(--fs-md)' }}>MEMLNaut</strong>
-          </div>
+          {/* corner overlay — hidden in Particle mode (top axis bar owns that row) */}
+          {outputMode !== 'particles' && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: 14,
+                zIndex: 20,
+                pointerEvents: 'none',
+              }}
+            >
+              <strong style={{ color: 'var(--accent)', fontSize: 'var(--fs-md)' }}>MEMLNaut</strong>
+            </div>
+          )}
 
           <VerdictCluster
             onPerturb={perturb}

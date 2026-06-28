@@ -225,37 +225,175 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
 }
 
 // ===========================================================================
-// 2. INPUTS (dock-spec §2 — workstream F territory, referenced)
+// 2. INPUTS (workstream F; inputs-spec — modular input layer)
 // ===========================================================================
 
+const STATUS_TONE: Record<string, string> = {
+  ready: 'var(--accent)',
+  connecting: 'var(--warn)',
+  unavailable: 'var(--fg-dim)',
+  error: 'var(--danger)',
+  idle: 'var(--fg-dim)',
+};
+
 function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
-  const src =
-    ctx.mode.input === 'joystick' ? 'Joystick' : ctx.mode.input === 'audio_in' ? 'Mic (1-input)' : 'XY pad';
+  const inp = ctx.inputs;
+  const enabledCount = inp.sources.filter((s) => s.enabled).length;
+  const reshaping = inp.axisCount > inp.engineInputSize;
+
   return (
     <>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <Badge tone="info">{src}</Badge>
-        <Chip>2 inputs</Chip>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Badge tone="info">
+          {enabledCount === 0 ? 'no source' : `${enabledCount} source${enabledCount > 1 ? 's' : ''}`}
+        </Badge>
+        <Chip tone="var(--accent)">{inp.axisCount} axes</Chip>
+        <Chip>engine: {inp.engineInputSize}-in</Chip>
+        {reshaping && <Chip tone="var(--warn)">blended → {inp.engineInputSize}</Chip>}
       </div>
-      <SectionLabel>Source</SectionLabel>
-      <Segmented
-        value={ctx.mode.input}
-        onChange={() => {
-          /* TODO(workstream F, inputs-spec): MIDI / gamepad / hands sources land here; the
-             input source is currently fixed by the mode. engine.setInput(x,y) is the only door. */
-        }}
-        options={[
-          { value: 'xy', label: 'XY pad' },
-          { value: 'joystick', label: 'Joystick' },
-          { value: 'audio_in', label: 'Mic' },
-        ]}
-      />
+
+      <SectionLabel>Sources</SectionLabel>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {inp.sources.map((s) => (
+          <div
+            key={s.kind}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              padding: '4px 8px',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--line)',
+              borderRadius: 'var(--r-1)',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-mute)' }}>
+                {s.label}
+                {s.enabled ? ` · ${s.axisCount} ax` : ''}
+              </span>
+              {depth !== 'peek' && (
+                <span style={{ fontSize: 9, color: STATUS_TONE[s.status.state] ?? 'var(--fg-dim)' }}>
+                  {s.status.message}
+                </span>
+              )}
+            </div>
+            <Switch checked={s.enabled} onChange={(v) => inp.setEnabled(s.kind, v)} label="" />
+          </div>
+        ))}
+      </div>
+
       {depth !== 'peek' && (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          v1 browser is fixed-2-input ({`MLP<2,…>`}). The modular N×M input matrix, per-axis pipeline
-          (deadzone → zoom → curve → smoothing → momentum) and MIDI / gamepad sources are owned by
-          workstream F (inputs-spec); this drawer fixes the dock shape only.
-        </p>
+        <>
+          {/* ---- Gamepad config ---- */}
+          {inp.sources.find((s) => s.kind === 'gamepad')?.enabled && (
+            <>
+              <SectionLabel>Gamepad · sticks</SectionLabel>
+              <Segmented
+                value={inp.gamepadStickMode}
+                onChange={inp.setGamepadStickMode}
+                options={[
+                  { value: 'single', label: 'Single (2 ax)' },
+                  { value: 'double', label: 'Double (4 ax)' },
+                ]}
+              />
+            </>
+          )}
+
+          {/* ---- MIDI learn-map ---- */}
+          {inp.sources.find((s) => s.kind === 'midi')?.enabled && (
+            <>
+              <SectionLabel>MIDI · learn-map</SectionLabel>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Button
+                  size="sm"
+                  variant={inp.midiLearnArmed ? 'primary' : 'secondary'}
+                  onClick={() => inp.armMidiLearn(!inp.midiLearnArmed)}
+                >
+                  {inp.midiLearnArmed ? 'learning… (move a control)' : 'Learn axis'}
+                </Button>
+                {inp.midiBindings.length > 0 && (
+                  <Button size="sm" variant="secondary" onClick={inp.clearMidiBindings}>
+                    Clear all
+                  </Button>
+                )}
+              </div>
+              {inp.midiBindings.length === 0 ? (
+                <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
+                  No axes learned yet — arm Learn, then wiggle a knob or hit a pad. CCs map to a
+                  continuous axis; notes map to a gate (1 while held).
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {inp.midiBindings.map((b, i) => (
+                    <div
+                      key={`${b.kind}-${b.number}-${b.channel}`}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: 'var(--fs-xs)',
+                        color: 'var(--fg-mute)',
+                      }}
+                    >
+                      <span>
+                        {b.label} · {b.value.toFixed(2)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => inp.clearMidiBinding(i)}
+                        style={{
+                          background: 'transparent',
+                          border: 0,
+                          color: 'var(--danger)',
+                          cursor: 'pointer',
+                          fontSize: 'var(--fs-xs)',
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {inp.midiInputs.length > 0 && (
+                <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
+                  Listening on: {inp.midiInputs.map((p) => p.name).join(', ')}
+                </p>
+              )}
+            </>
+          )}
+
+          {/* ---- Channel layout ---- */}
+          <SectionLabel>Channel layout</SectionLabel>
+          {inp.channelLayout.length === 0 ? (
+            <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
+              No active axes. Enable a source above.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {inp.channelLayout.map((c, i) => (
+                <Chip key={i}>
+                  {i}: {c.source}·{c.label}
+                </Chip>
+              ))}
+            </div>
+          )}
+
+          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+            The active sources concatenate into one input vector at the head of the spine.
+            {reshaping
+              ? ` The browser WASM is a fixed ${inp.engineInputSize}-input head (MLP<2,…>), so the
+                 ${inp.axisCount} axes are blended down to ${inp.engineInputSize} (even→X / odd→Y mean).`
+              : ''}{' '}
+            {/* TODO(workstream F, docs/redesign/inputs-spec.md — "multiple WASM modules +
+                warm-start"): give every axis its own genuine input dimension by (re)loading a
+                WASM module whose MLP arity matches axisCount and warm-starting from the prior
+                net. Deferred — the reduction lives in InputLayer.compose(). */}
+            True per-axis dimensions land with the multi-WASM reshape (inputs-spec).
+          </p>
+        </>
       )}
     </>
   );

@@ -28,6 +28,7 @@ import {
   OscIcon,
   SynthIcon,
   EditorIcon,
+  SandwichIcon,
   CloseIcon,
   ExpandIcon,
   GLYPH_FALLBACK,
@@ -173,11 +174,14 @@ export interface DockProps {
   setActive: (k: DrawerKey | null) => void;
   depth: DrawerDepth;
   setDepth: (d: DrawerDepth) => void;
+  /** Sandwich (parameter-landscape) centre-stage toggle. */
+  sandwich: boolean;
+  setSandwich: (v: boolean) => void;
 }
 
 const ORDER: DrawerKey[] = ['learn', 'inputs', 'route', 'settings', 'help'];
 
-export function Dock({ ctx, active, setActive, depth, setDepth }: DockProps) {
+export function Dock({ ctx, active, setActive, depth, setDepth, sandwich, setSandwich }: DockProps) {
   const { settings } = useSettings();
   const mono = settings.monochromeIcons;
   const restColour = unfocusedIconCss(settings.unfocusedIconColour);
@@ -368,6 +372,27 @@ export function Dock({ ctx, active, setActive, depth, setDepth }: DockProps) {
         >
           {ORDER.map(iconBtn)}
         </div>
+        {/* Sandwich toggle — pinned at the BOTTOM of the rail. */}
+        <button
+          type="button"
+          title="Parameter sandwich (layer view)"
+          onClick={() => setSandwich(!sandwich)}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 'var(--r-2)',
+            cursor: 'pointer',
+            border: `1px solid ${sandwich ? 'var(--accent)' : 'transparent'}`,
+            background: sandwich ? 'rgba(255,106,0,0.14)' : 'transparent',
+            color: sandwich ? 'var(--accent)' : mono ? restColour : 'var(--fg-mute)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'background var(--dur-fast), color var(--dur-fast)',
+          }}
+        >
+          {mono ? <SandwichIcon /> : '≣'}
+        </button>
       </nav>
     </>
   );

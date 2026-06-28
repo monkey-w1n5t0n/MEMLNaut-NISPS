@@ -28,6 +28,7 @@ import { MF_MODES, modeEngineId, seededGradient, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
 import { ParticleStage } from './ParticleStage';
+import { SandwichStage } from './SandwichStage';
 import { SplitStage } from './SplitStage';
 import { OutputStage } from './OutputStage';
 import { InputMini } from './InputMini';
@@ -107,6 +108,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [rev, setRev] = useState(1);
   const [active, setActive] = useState<DrawerKey | null>('learn');
   const [depth, setDepth] = useState<DrawerDepth>('peek');
+  // Sandwich (parameter-landscape) centre-stage toggle — dock-bottom layers icon.
+  const [sandwich, setSandwich] = useState(false);
 
   // Learning-behaviour store (dock-spec §1; rl-feedback-design). Default
   // feedback mode = "Explore and place"; default solo = "Mask gradients".
@@ -771,7 +774,55 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             bottom: 0,
           }}
         >
-          {outputMode === 'particles' ? (
+          {sandwich ? (
+            // Sandwich centre-stage: shrunken input (left) · landscape stack
+            // (centre, fills) · compact outputs (right). Replaces the Mode stage.
+            <div style={{ position: 'absolute', inset: 0, display: 'flex' }}>
+              <div
+                style={{
+                  width: 'clamp(200px, 24%, 320px)',
+                  flex: '0 0 auto',
+                  position: 'relative',
+                  borderRight: '1px solid var(--line)',
+                }}
+              >
+                <Manifold
+                  pos={pos}
+                  onMove={onMove}
+                  noiseCap={noiseCap}
+                  pins={pins}
+                  markers={markers}
+                  variant={inputMapVariant}
+                  frozen={false}
+                  follow={follow}
+                  onLongPress={addPin}
+                  picking={picking}
+                  onPickLocation={onPickLocation}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                {engine && (
+                  <SandwichStage
+                    engine={engine}
+                    version={version}
+                    pos={pos}
+                    layerCount={Math.min(params.length, 8)}
+                    names={params.map((p) => p.name)}
+                  />
+                )}
+              </div>
+              <div
+                style={{
+                  width: 'clamp(200px, 24%, 320px)',
+                  flex: '0 0 auto',
+                  position: 'relative',
+                  borderLeft: '1px solid var(--line)',
+                }}
+              >
+                <OutputStage params={params} values={values} onChange={setParam} compact />
+              </div>
+            </div>
+          ) : outputMode === 'particles' ? (
             <ParticleStage pos={pos} onMove={onMove} />
           ) : focus === 'composite' ? (
             <CompositeStage
@@ -951,7 +1002,19 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
         </div>
       </div>
 
-      <Dock ctx={ctx} active={active} setActive={setActive} depth={depth} setDepth={setDepth} />
+      <Dock
+        ctx={ctx}
+        active={active}
+        setActive={setActive}
+        depth={depth}
+        setDepth={setDepth}
+        sandwich={sandwich}
+        setSandwich={(v) => {
+          setSandwich(v);
+          // reveal the full 3-zone layout: a drawer would overlay the output zone
+          if (v) setActive(null);
+        }}
+      />
     </div>
   );
 }

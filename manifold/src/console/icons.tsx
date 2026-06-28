@@ -50,6 +50,19 @@ export function ModeIcon({ size = 18, style }: IconProps) {
   );
 }
 
+/** Sandwich — stacked parameter-landscape slabs (the layer toggle). */
+export function SandwichIcon({ size = 18, style }: IconProps) {
+  return svg(
+    size,
+    style,
+    <>
+      <path d="M3 6.5 12 3l9 3.5L12 10 3 6.5Z" />
+      <path d="M3 12 12 15.5 21 12" />
+      <path d="M3 17 12 20.5 21 17" />
+    </>,
+  );
+}
+
 /** Learning — a brain-ish node graph. */
 export function LearningIcon({ size = 18, style }: IconProps) {
   return svg(

@@ -128,7 +128,7 @@ The WASM target is fixed at `MLP<2, 10, 14, 18, 126>`. Modes with smaller `outpu
 - Engine MLP architecture is fixed at compile time — supporting per-mode hidden-layer shapes would need either multiple WASM modules or runtime variation.
 - Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired; UI scaffolds render but feature is TODO.
 - C15 voice space integration in C15Mode is a placeholder.
-- Jolt + OU-explore learning gestures are wired in firmware (`ModeBase`, surfaced on TogB1 / RVX1) and the SLP-Workshop mode runs in the browser, but the *interactive* browser controls for Jolt/OU are not yet wired into the playground UI (the WASM weight bindings exist; the runtime/output-stage hooks are the remaining work).
+- The browser Jolt/OU controls (`playground/src/ml/jolt.ts`, `playground/src/output/ou-explore.ts`) reimplement the gesture math in TS rather than calling the C++ `ml::Jolt`/`ml::OUNoise` through WASM. They drive weights via the existing `nisps_ml_get/set_weights` bindings and use `Math.random()` (not the deterministic `Rng`) — fine for stochastic exploration aids, but firmware↔browser bit-parity of the noise itself is intentionally not guaranteed.
 
 ## URL parameters (playground)
 

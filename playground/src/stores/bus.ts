@@ -100,7 +100,7 @@ export function createBus<E extends EventMap>(): Bus<E> {
 export type CoreEvents = {
   // ML
   'ml.trained': { loss: number };
-  'ml.delta_update': { reason: 'thumbs_up' | 'thumbs_down' | 'randomize' | 'undo' };
+  'ml.delta_update': { reason: 'thumbs_up' | 'thumbs_down' | 'randomize' | 'undo' | 'jolt' };
   'ml.example_added': { count: number };
   'ml.examples_cleared': void;
 

@@ -42,6 +42,8 @@ import type { ModeSchema } from './generated';
 
 import { applyOverrides, buildPinMask } from '../features/overrides';
 import { applyControlRouting } from '../features/control-routing';
+import { Jolt } from '../ml/jolt';
+import { OUExplore } from '../output/ou-explore';
 import { createTrailRing, type TrailPoint } from '../features/trail';
 import { autoSnapshot, undoLastSnapshot } from '../features/snapshots';
 import { HeatmapSampler, type HeatmapColorMode } from '../features/heatmap-sampler';
@@ -137,6 +139,32 @@ export interface ModeRuntime {
 
   /** Region pin: pin the current zoom window (long-press handler). */
   pinCurrentRegion: () => void;
+
+  /**
+   * Jolt — held-button continuous weight morph (port of nisps/ml/jolt.hpp).
+   * `press()` starts morphing the network's weights; a control-rate timer
+   * glides them while held; `release()` freezes them in place. Inert until
+   * pressed; modes that never call `press()` are unaffected.
+   */
+  jolt: {
+    /** Begin the jolt (button press / toggle on). */
+    press: () => void;
+    /** Freeze the jolt (button release / toggle off). */
+    release: () => void;
+    /** Whether the jolt is currently active. */
+    active: () => boolean;
+  };
+
+  /**
+   * Explore — OU random-walk exploration intensity in [0,1] (port of
+   * nisps/ml/ou_noise.hpp). Added to the mode's output vector before audio.
+   * Intensity 0 = disabled passthrough; modes that never set it are
+   * unaffected.
+   */
+  explore: {
+    setIntensity: (level: number) => void;
+    intensity: () => number;
+  };
 }
 
 interface RuntimeOptions {
@@ -253,6 +281,14 @@ export function useModeRuntime(
     { equals: false },
   );
 
+  // ----- Explore (OU exploration noise) ----------------------------------
+  // Inert by default (intensity 0). Applied to the processed slice below,
+  // after the output pipeline and before override application, so it rides
+  // on top of the mode's mapping output. Modes that never set an intensity
+  // leave the output untouched (parity-safe).
+  const ouExplore = new OUExplore();
+  const [exploreIntensity, setExploreIntensitySig] = createSignal(0);
+
   // Run the output pipeline whenever raw outputs change.
   const rawOutputsAccessor = mlStore.outputs;
   let lastOutFrameMs = performance.now();
@@ -267,6 +303,9 @@ export function useModeRuntime(
     const slice = raw.length === sliceLen ? raw : raw.subarray(0, sliceLen);
     const result = processOutput(slice as Float32Array, outputStore.config, outputState, dtMs);
     outputState = result.state;
+    // Explore (OU) noise: temporally-correlated random walk added on top of
+    // the processed output, clamped to [0,1]. No-op when intensity is 0.
+    ouExplore.apply(result.processed);
     setProcessedOutputs(result.processed);
 
     // Apply per-param overrides for the per-param consumer (engine, sliders).
@@ -487,6 +526,80 @@ export function useModeRuntime(
     }
   });
 
+  // ----- Jolt (held-button continuous weight morph) ----------------------
+  // Inert until press(). While active, a ~200Hz control-rate timer glides a
+  // scatter of the network's weights toward random targets (port of
+  // nisps/ml/jolt.hpp). release() freezes them where they landed.
+  const jolt = new Jolt();
+  let joltTimer: number | null = null;
+  // ~200Hz to match the upstream firmware control rate the constants assume.
+  const JOLT_TICK_MS = 5;
+
+  const tickJolt = () => {
+    if (!ready() || !jolt.active()) return;
+    const w = mlStore.getWeights();
+    if (w.length === 0) return;
+    jolt.step(w);
+    mlStore.setWeights(w);
+    coreBus.emit('ml.delta_update', { reason: 'jolt' });
+    // Re-run inference so the audio + visuals reflect the morphed weights.
+    const [x, y] = pipedInput();
+    setInput(x, y);
+  };
+
+  const joltPress = () => {
+    if (!ready()) return;
+    autoSnapshot('before jolt');
+    jolt.press(mlStore.iml?.weightCount ?? mlStore.getWeights().length);
+    if (joltTimer === null) {
+      joltTimer = window.setInterval(tickJolt, JOLT_TICK_MS);
+    }
+  };
+
+  const joltRelease = () => {
+    jolt.release();
+    if (joltTimer !== null) {
+      window.clearInterval(joltTimer);
+      joltTimer = null;
+    }
+  };
+  onCleanup(() => {
+    if (joltTimer !== null) {
+      window.clearInterval(joltTimer);
+      joltTimer = null;
+    }
+  });
+
+  // ----- Explore (OU) control-rate driver --------------------------------
+  // The OU walk advances inside recomputeOutputs (driven by setInput). When
+  // the input is static the walk would stall, so while Explore is active we
+  // keep ticking so the sound keeps roaming. Inert when intensity is 0.
+  let exploreTimer: number | null = null;
+  const EXPLORE_TICK_MS = 30;
+  const setExploreIntensity = (level: number) => {
+    ouExplore.setIntensity(level);
+    setExploreIntensitySig(ouExplore.intensity());
+    if (ouExplore.enabled() && exploreTimer === null) {
+      exploreTimer = window.setInterval(() => {
+        untrack(() => {
+          if (!ready()) return;
+          // Re-run the output pipeline (advances the OU state) and reship.
+          recomputeOutputs();
+        });
+      }, EXPLORE_TICK_MS);
+    } else if (!ouExplore.enabled() && exploreTimer !== null) {
+      window.clearInterval(exploreTimer);
+      exploreTimer = null;
+      ouExplore.reset();
+    }
+  };
+  onCleanup(() => {
+    if (exploreTimer !== null) {
+      window.clearInterval(exploreTimer);
+      exploreTimer = null;
+    }
+  });
+
   // ----- Touch / pressure feedback ---------------------------------------
   const onPointerDown = (e: PointerEvent) => {
     pressDownAt = performance.now();
@@ -649,6 +762,15 @@ export function useModeRuntime(
       resolution: () => sampler.resolution,
     },
     pinCurrentRegion,
+    jolt: {
+      press: joltPress,
+      release: joltRelease,
+      active: () => jolt.active(),
+    },
+    explore: {
+      setIntensity: setExploreIntensity,
+      intensity: exploreIntensity,
+    },
   };
 }
 

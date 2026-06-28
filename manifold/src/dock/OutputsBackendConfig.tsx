@@ -28,6 +28,7 @@ import {
   savePreset,
   type OutputPreset,
 } from '../backends/presets';
+import { MIDI_DEVICES, MIDI_DEVICES_BY_ID, type MidiDeviceParam } from '../midi-devices';
 
 function num(s: string, fallback: number): number {
   const v = parseFloat(s);
@@ -205,6 +206,129 @@ function PresetBar({ ctx, backend }: { ctx: ConsoleCtx; backend: BackendId }) {
   );
 }
 
+// ---- Device template picker (synth-midi-cc templates) ----------------------
+
+/**
+ * Pick an external synth (e.g. Moog Sub 37), see its parameters BY NAME, tick the
+ * ones to control, and "Apply" — this fills the per-output CC table (CC#, channel,
+ * name) from the device template and sets the CC count. Pure local state + the
+ * existing setParam/setMidiCcCount; the applied result lives in the shared params
+ * store, so it is saved/restored by the named-preset bar like any other config.
+ */
+function DeviceTemplatePicker({ ctx }: { ctx: ConsoleCtx }) {
+  const [deviceId, setDeviceId] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const device = deviceId ? MIDI_DEVICES_BY_ID[deviceId] : undefined;
+  const limit = ctx.params.length; // engine output count caps how many CCs we can drive
+
+  const pickDevice = (id: string) => {
+    setDeviceId(id);
+    setSelected(new Set());
+  };
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const selectFirst = (n: number) => {
+    if (!device) return;
+    setSelected(new Set(device.params.slice(0, n).map((p) => p.id)));
+  };
+
+  const apply = () => {
+    if (!device) return;
+    const chosen = device.params.filter((p) => selected.has(p.id)).slice(0, limit);
+    if (chosen.length === 0) return;
+    ctx.setMidiCcCount(chosen.length);
+    chosen.forEach((p, i) =>
+      ctx.setParam(i, {
+        name: p.label,
+        midi: { cc: p.cc, channel: device.default_channel, name: p.label, value: 0 },
+      }),
+    );
+  };
+
+  // Stable, first-seen-order grouping for the checklist.
+  const groups: { group: string; params: MidiDeviceParam[] }[] = [];
+  if (device) {
+    const byGroup = new Map<string, MidiDeviceParam[]>();
+    for (const p of device.params) {
+      if (!byGroup.has(p.group)) {
+        const arr: MidiDeviceParam[] = [];
+        byGroup.set(p.group, arr);
+        groups.push({ group: p.group, params: arr });
+      }
+      byGroup.get(p.group)!.push(p);
+    }
+  }
+
+  const willApply = device ? Math.min(selected.size, limit) : 0;
+  const overflow = selected.size > limit;
+
+  return (
+    <>
+      <SectionLabel>Device template</SectionLabel>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          value={deviceId}
+          onChange={(e) => pickDevice(e.target.value)}
+          style={{ ...cellInput, width: 'auto', cursor: 'pointer' }}
+        >
+          <option value="">— manual (no template) —</option>
+          {MIDI_DEVICES.map((d) => (
+            <option key={d.device_id} value={d.device_id}>
+              {d.name} · {d.params.length} params
+            </option>
+          ))}
+        </select>
+        {device && (
+          <>
+            <button type="button" style={btn('var(--fg-mute)')} onClick={() => selectFirst(Math.min(limit, device.params.length))}>
+              Select first {Math.min(limit, device.params.length)}
+            </button>
+            <button type="button" style={btn('var(--fg-mute)')} onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+            <button type="button" style={btn('var(--accent)')} onClick={apply} disabled={willApply === 0}>
+              Apply {willApply} → outputs
+            </button>
+          </>
+        )}
+      </div>
+      {device && (
+        <>
+          <p style={{ fontSize: 9, color: overflow ? 'var(--warn)' : 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+            {device.manufacturer} · default ch {device.default_channel} · {selected.size} selected
+            {overflow ? ` (only the first ${limit} will map — engine has ${limit} outputs)` : ''}. Tick the parameters
+            the model should drive, then Apply. You can still tweak CC#/channel below.
+          </p>
+          <div style={{ maxHeight: 240, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 'var(--r-1)', padding: '4px 6px' }}>
+            {groups.map(({ group, params }) => (
+              <div key={group} style={{ marginBottom: 4 }}>
+                <div style={{ fontSize: 9, color: 'var(--fg-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 2px' }}>
+                  {group}
+                </div>
+                {params.map((p) => (
+                  <label
+                    key={p.id}
+                    style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)', padding: '1px 0', cursor: 'pointer' }}
+                  >
+                    <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)} />
+                    <span style={{ flex: 1 }}>{p.label}</span>
+                    <span style={{ color: 'var(--fg-mute)', fontFamily: 'var(--font-mono)' }}>CC {p.cc}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 // ---- MIDI config (backends-spec §2.3 / §4.1) -------------------------------
 
 function MidiConfig({ ctx }: { ctx: ConsoleCtx }) {
@@ -243,6 +367,8 @@ function MidiConfig({ ctx }: { ctx: ConsoleCtx }) {
         </label>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
+
+      <DeviceTemplatePicker ctx={ctx} />
 
       <SectionLabel>Per-output CC · name · channel</SectionLabel>
       <div style={{ maxHeight: 320, overflow: 'auto' }}>

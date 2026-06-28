@@ -136,6 +136,7 @@ inline std::vector<uint8_t> messageString(const std::string& address,
 class OscServer {
 public:
     using StringCallback = std::function<void(const std::string&)>;
+    using FloatVecCallback = std::function<void(const std::vector<float>&)>;
 
     OscServer() = default;
     ~OscServer() { stop(); }
@@ -144,9 +145,15 @@ public:
     OscServer(const OscServer&) = delete;
     OscServer& operator=(const OscServer&) = delete;
 
-    // Register handlers before starting
+    // Register handlers before starting.
+    //   onState   — full JSON state snapshot   (/nisps/state    <s>)
+    //   onWeights — weights-only JSON           (/nisps/weights  <s>)
+    //   onInput   — live input vector (browser drives the model) (/nisps/input <f…f>)
+    //   onFeedback— verdict op JSON (thumbs/place/rand/clear)     (/nisps/feedback <s>)
     void onState(StringCallback cb) { stateCallback_ = std::move(cb); }
     void onWeights(StringCallback cb) { weightsCallback_ = std::move(cb); }
+    void onInput(FloatVecCallback cb) { inputCallback_ = std::move(cb); }
+    void onFeedback(StringCallback cb) { feedbackCallback_ = std::move(cb); }
 
     // Set the target address for sending (where the webapp bridge listens).
     // Default: 127.0.0.1:9001
@@ -240,9 +247,21 @@ public:
         sendPacket(msg);
     }
 
-    // Send current input values (2 floats)
+    // Send current input values (N floats)
     void sendInputs(const float* values, size_t count) {
         auto msg = osc::messageFloats("/nisps/input", values, count);
+        sendPacket(msg);
+    }
+
+    // Send a full JSON state snapshot (module → browser).
+    void sendState(const std::string& json) {
+        auto msg = osc::messageString("/nisps/state", json);
+        sendPacket(msg);
+    }
+
+    // Send weights-only JSON (module → browser).
+    void sendWeights(const std::string& json) {
+        auto msg = osc::messageString("/nisps/weights", json);
         sendPacket(msg);
     }
 
@@ -291,6 +310,21 @@ private:
                 std::string payload = osc::readString(buf, len, offset);
                 if (weightsCallback_) weightsCallback_(payload);
             }
+        } else if (address == "/nisps/feedback") {
+            // Verdict op as a JSON string:
+            //   {"op":"up|down|rand|clear","spread":f,"input":[…],"output":[…]}
+            if (tags.size() >= 2 && tags[1] == 's') {
+                std::string payload = osc::readString(buf, len, offset);
+                if (feedbackCallback_) feedbackCallback_(payload);
+            }
+        } else if (address == "/nisps/input") {
+            // Live input vector from the browser → drive the model inputs.
+            std::vector<float> values;
+            for (size_t i = 1; i < tags.size(); ++i) {
+                if (tags[i] == 'f') values.push_back(osc::readFloat(buf, len, offset));
+                else break;
+            }
+            if (!values.empty() && inputCallback_) inputCallback_(values);
         }
         // Unknown addresses are silently ignored
     }
@@ -337,6 +371,8 @@ private:
     // Callbacks
     StringCallback stateCallback_;
     StringCallback weightsCallback_;
+    StringCallback feedbackCallback_;
+    FloatVecCallback inputCallback_;
 
     // Send target
     std::mutex sendMutex_;

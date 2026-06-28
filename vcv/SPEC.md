@@ -1,5 +1,51 @@
 # MEMLNaut VCV Rack Module — Specification
 
+---
+
+## ⚠️ BUILD DELTAS (2026-06-28) — AUTHORITATIVE OVERRIDES
+
+These supersede any conflicting detail below. They reflect the Manifold mission + the locked decisions in
+`docs/redesign/BUILD-PLAN.md` and `docs/redesign/backends-spec.md`. Build to THESE.
+
+1. **I/O = 8 inputs × 16 outputs** (was 2→12). `NUM_ML_INPUTS = 8`, `NUM_ML_OUTPUTS = 16`. The IML is sized
+   8→16 (a runtime-shaped native MLP is fine here — the module is C++, not the fixed WASM target). The 8 CV
+   inputs feed the model's input dims; the 16 CV outputs are the model's inference outputs (the modular N×M
+   envelope). Keep the control inputs (Spread CV, Learn gate, + / − triggers).
+2. **LED RING around EACH of the 16 outputs** — a custom ring widget encircling each output jack whose arc
+   fills in proportion to that output's value (0..1 → 0..2π). Draw on `drawLayer()` layer 1 with `nvgArc` for
+   the proportional fill + a dim track ring. Each ring is COLOURED from a palette that MATCHES the frontend
+   design tokens.
+3. **Palette from the frontend tokens** — generate `vcv/src/palette.hpp` from
+   `docs/redesign/manifold-export/tokens/colors.css`: `--accent #ff6a00` (orange), `--accent-2 #00ccff` (cyan),
+   and the group colours (formant→accent, pitch→accent-2, amp→`--good #6bc26b`, filter→`--warn #f5c45e`,
+   fx→`--info #5b9eef`, mod→`--accent-3 #ffa860`). Assign the 16 rings across these group colours (or a clean
+   16-step ramp between orange and cyan) so the module reads as the same instrument as the browser. A tiny
+   hand-written `palette.hpp` is acceptable (no build-time codegen needed).
+4. **Browser ↔ VCV bridge = WS↔OSC** (locked transport). The module runs its OSC server (`src/osc_server.hpp`
+   already exists — evolve it). The browser's OSC backend (`manifold/src/backends/osc-backend.ts`) sends over a
+   WebSocket to the Deno bridge (`manifold/osc-bridge/`), which relays UDP-OSC to the module. **Bidirectional
+   training**: drive + train the module FROM the browser (the verdict loop + example-placing over the bridge)
+   AND from the module's own panel (+/− buttons, Learn gate, triggers). OSC verbs to support both directions:
+   `/nisps/input` (drive), `/nisps/output` (module→browser viz), `/nisps/feedback` (thumbs up/down + place),
+   `/nisps/weights`, `/nisps/examples`, `/nisps/state`. Pick a fixed default UDP port (e.g. 7001) + per-instance
+   offset; the Deno bridge maps `ws://localhost:8765` ↔ that UDP port.
+5. **Core include path** — the Makefile's `-I../nisps-core/include` points at the RETIRED `nisps-core`. Repoint
+   to the current core (`../nisps/`) OR vendor a minimal runtime IML inside `vcv/src/`. Goal: get it COMPILING
+   with an 8→16 runtime MLP that shares the firmware/browser training semantics (spread-aware draw/move_weights,
+   deterministic RNG) as closely as the native runtime-shaped form allows. If full nisps/ml reuse is blocked by
+   the templated fixed-size API, keep a self-contained IML in the module and note the alignment as a follow-up.
+6. **Derived outputs** (Mean/Std/Delta/Novelty/Confidence) → move to the optional EXPANDER or a context-menu
+   toggle; the headline is 16 raw outputs + their LED rings. Do not let them crowd the 16-jack panel.
+7. **Build** needs the VCV Rack 2 SDK (`RACK_DIR`, default `$HOME/.local/share/Rack2/Rack-SDK`, NOT installed).
+   The build step must fetch the Linux Rack-SDK zip from vcvrack.com, set `RACK_DIR`, and `make` to verify the
+   plugin compiles. Panel SVGs in `vcv/res/` exist (MEMLNaut.svg / -wide / -expander) — widen/relayout for 16
+   outputs + rings as needed.
+
+The rest of this document is the prior (2→12) design — useful for threading, persistence, RL workflow, and
+panel/build mechanics, but the I/O counts, LED rings, palette, bridge, and core path above WIN.
+
+---
+
 ## Overview
 
 A VCV Rack module that embeds the NISPS interactive ML engine (nisps-core C++ library) as a CV-to-CV mapper. Users explore high-dimensional parameter spaces via reinforcement learning feedback, producing 12 raw CV outputs and 5 derived meta-signals from configurable CV inputs.

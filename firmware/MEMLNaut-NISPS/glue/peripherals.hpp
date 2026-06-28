@@ -25,9 +25,17 @@
 //                       inputs+outputs as a training pair)
 //   TogB2            : train (rising-edge → call ml.train())
 //
-// This is a sparse subset of the legacy InterfaceRL — full RL UX comes back
-// in stream 9 (browser) and stream 12 (firmware UI). Goal here: hardware
-// can express the *abstract* RL primitives so the mode keeps moving.
+// The button block below wires the SHARED ExploreAndPlace lifecycle
+// (nisps/ml/feedback.hpp, the same core the browser drives via WASM) to the
+// hardware buttons. See the per-button mapping at the binding site.
+//
+// FOLLOW-UP (needs a firmware build to verify — no arduino-cli here): while the
+// controller is PLACING, the audition should hold feedback.static_output()
+// (the frozen vector) instead of running fresh inference. That requires a hook
+// in the control path (tick_control / audio_driver) to consult
+// feedback.static_output() before ml().process() — not yet wired here because
+// the controller lives in this translation unit. Wiring the buttons is the
+// deliverable; the audition-hold is a small follow-up.
 
 #pragma once
 
@@ -38,9 +46,19 @@
 #include <cstdint>
 
 #include "../src/nisps/core/perf.hpp"
+#include "../src/nisps/ml/feedback.hpp"
 #include "../src/memllib/hardware/memlnaut/MEMLNaut.hpp"
 
 namespace nisps_firmware {
+
+// Salt matching nisps/wasm/bindings.cpp so the firmware FeedbackController's
+// per-instance Rng stream is independent of (and reproducible against) the
+// MLP's inference/move RNG — same discipline as the browser.
+inline constexpr std::uint64_t kFeedbackSalt = 0xFEEDBACC0DEull;
+
+// Firmware undo-ring depth for ExploreAndPlace (rl-feedback-design §2.2: WASM
+// D=4, firmware D=2 — SRAM budget).
+inline constexpr std::size_t kFirmwareUndoDepth = 2u;
 
 // Number of analog input channels we forward to the mode. Modes with fewer
 // inputs ignore the surplus (set_input(idx, ...) silently rejects out-of-
@@ -79,35 +97,77 @@ inline void bind_peripherals(Mode& mode) {
         AudioDriver::SetMasterVolume(v);
     });
 
-    // ---- Buttons / toggles → ML primitives ----
-    // Button presses are momentary (rising edge only). Toggles fire on
-    // both edges with the new state.
+    // ---- Buttons / toggles → ExploreAndPlace lifecycle (SHARED C++ core) ----
+    //
+    // The same nisps::ml::FeedbackController that runs in the browser (via
+    // WASM) drives the Idle → Exploring → Placing → Idle state machine here.
+    // The HARDWARE button mapping differs from the browser's on_down/on_up
+    // default policy — firmware maps its buttons to the GRANULAR core methods:
+    //
+    //   MomA1 (TA up)   : down  — enter explore (Idle→Exploring) /
+    //                             exit explore (Exploring→Idle) TOGGLE
+    //   MomB1 (MA up)   : randomise — reroll the scratchpad (Exploring)
+    //   MomB2 (MA down) : nudge — small bounded perturbation (Exploring)
+    //   MomA2 (TA down) : like — begin place (Exploring→Placing, freeze output)
+    //   TogB2 (rising)  : up   — commit place (Placing→Idle) at the CURRENT
+    //                            joystick input, then store the +1 example and
+    //                            train (caller owns training). Outside Placing,
+    //                            a plain train().
+    //
+    // The controller is a function-local static so it lives for the whole
+    // program (like the mode). It is seeded off the same salt as the browser.
+    using FB = nisps::ml::FeedbackController<typename Mode::ML, kFirmwareUndoDepth>;
+    static FB feedback(static_cast<std::uint64_t>(0xC0FFEEu) ^ kFeedbackSalt);
+    feedback.set_mode(nisps::ml::FeedbackMode::ExploreAndPlace, mode.ml());
 
-    // Randomise weights (large draw)
+    const float spread = mode.param_schema().default_spread;
+
+    // MomA1: enter/exit explore toggle.
     meml->setMomA1Callback([&mode]() {
-        mode.ml().draw_weights(mode.param_schema().default_spread);
+        if (feedback.explore_state() == nisps::ml::ExploreState::Idle) {
+            feedback.enter_explore(mode.ml(), mode.param_schema().default_spread);
+        } else {
+            feedback.exit_explore(mode.ml());
+        }
     });
 
-    // Clear training dataset (best-effort: if the MLP exposes reset()
-    // we use it; otherwise we draw new weights as a degraded fallback).
-    meml->setMomA2Callback([&mode]() {
-        mode.ml().reset();
-    });
-
-    // Jolt / move_weights (positive direction)
+    // MomB1: reroll the scratchpad (only in Exploring; no-op otherwise).
     meml->setMomB1Callback([&mode]() {
-        mode.ml().move_weights(0.5f, mode.param_schema().default_spread);
+        feedback.reroll(mode.ml(), mode.param_schema().default_spread);
     });
 
-    // Move weights (negative-feedback jolt — same call, different speed sign
-    // would flip exploration direction; the MLP API takes magnitude).
+    // MomB2: nudge the scratchpad (small bounded perturbation; undoable).
     meml->setMomB2Callback([&mode]() {
-        mode.ml().move_weights(0.25f, mode.param_schema().default_spread);
+        feedback.nudge(mode.ml(), 0.05f);
     });
 
-    // Toggle B2: rising edge → train.
+    // MomA2: like → begin place. Freezes the current scratchpad output so the
+    // user can move the joystick to choose WHERE to place it.
+    meml->setMomA2Callback([&mode]() {
+        feedback.begin_place(mode.ml());
+    });
+
+    // TogB2 (rising): up → commit place at the current joystick input, then
+    // store the +1 example (input → placed output) and train. Outside Placing,
+    // just train (legacy behaviour).
     meml->setTogB2Callback([&mode](bool state) {
-        if (state) {
+        if (!state) return;
+        if (feedback.placing()) {
+            // Capture the current joystick input BEFORE the restore.
+            const auto in = mode.input_channels();
+            std::array<float, Mode::ML::kInput> features{};
+            for (std::size_t i = 0; i < Mode::ML::kInput; ++i) {
+                features[i] = (i < in.size()) ? in[i] : 0.f;
+            }
+            feedback.commit_place(mode.ml());  // restores the real net
+            // CALLER owns training: add the +1 example then warm-start train.
+            const auto label = feedback.committed_output();  // valid post-commit
+            if (!label.empty()) {
+                mode.ml().add_example(
+                    std::span<const float>(features.data(), Mode::ML::kInput), label);
+                (void)mode.ml().train();
+            }
+        } else {
             (void)mode.ml().train();
         }
     });

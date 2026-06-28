@@ -42,8 +42,28 @@
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeChannelStrip
 #define MEMLNAUT_MODE_TYPE MEMLNautModePAFSynth
 // #define MEMLNAUT_MODE_TYPE MEMLNautModeMEMLCelium
+// #define MEMLNAUT_MODE_TYPE MEMLNautModeSelfTest
+
+// NISPS_SELFTEST == 1 iff the selected variant is the guided hardware self-test
+// (see glue/mode_select.hpp). Must be computed AFTER the mode #define above so
+// MEMLNAUT_MODE_TYPE is in scope for the token paste.
+#define NISPS_SELFTEST NISPS_ST_CAT(MEMLNAUT_MODE_TYPE)
 
 #include <memory>
+
+// Inter-core handshake flags + stack flag — shared by BOTH the normal-mode and
+// self-test build paths, so they live outside the fork below.
+volatile bool APP_SRAM g_core0_ready  = false;
+volatile bool APP_SRAM g_core1_ready  = false;
+volatile bool APP_SRAM g_serial_ready = false;
+volatile bool APP_SRAM g_iface_ready  = false;
+
+bool core1_separate_stack = true;
+
+#if !NISPS_SELFTEST
+// =====================================================================
+// Normal-mode build path (an engine + ML mode runs the device).
+// =====================================================================
 
 using ActiveMode = MEMLNAUT_MODE_TYPE;
 
@@ -56,14 +76,6 @@ volatile nisps_firmware::ActiveModeBridge AUDIO_MEM nisps_firmware::g_active_mod
 
 // Global MIDI handle (shared across cores like the legacy entry point did).
 std::shared_ptr<MIDIInOut> APP_SRAM g_midi;
-
-// Inter-core handshake flags (mirror legacy semantics).
-volatile bool APP_SRAM g_core0_ready  = false;
-volatile bool APP_SRAM g_core1_ready  = false;
-volatile bool APP_SRAM g_serial_ready = false;
-volatile bool APP_SRAM g_iface_ready  = false;
-
-bool core1_separate_stack = true;
 
 // Audio block callback — placed in SRAM via __not_in_flash_func so the audio
 // ISR avoids XIP latency. Forwards into the (header-inline) dispatch helper.
@@ -187,3 +199,18 @@ void loop1() {
         if (g_midi) g_midi->Poll();
     }, 1000)
 }
+
+#else
+// =====================================================================
+// SelfTest build path — guided hardware self-test rig (no engine / no ML).
+// All four entry points delegate into glue/selftest.hpp.
+// =====================================================================
+
+#include "glue/selftest.hpp"
+
+void setup()  { nisps_firmware::selftest::setup();  }
+void loop()   { nisps_firmware::selftest::loop();   }
+void setup1() { nisps_firmware::selftest::setup1(); }
+void loop1()  { nisps_firmware::selftest::loop1();  }
+
+#endif  // NISPS_SELFTEST

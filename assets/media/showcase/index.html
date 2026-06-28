@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Manifold — How it works</title>
+<style>
+  :root{
+    --bg:#0d0d0d; --bg-1:#141414; --bg-2:#1c1c1c; --bg-3:#242424;
+    --fg:#e8e8e8; --fg-mute:#9a9a9a; --fg-dim:#5a5a5a;
+    --line:#2a2a2a; --line-strong:#3a3a3a;
+    --accent:#ff6a00; --accent-2:#00ccff; --good:#6bc26b;
+    --font-mono:'JetBrains Mono','Fira Code','SF Mono',Menlo,Consolas,monospace;
+    --glow:0 0 14px rgba(255,106,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-mono);
+    font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent-2);text-decoration:none}
+  .wrap{max-width:960px;margin:0 auto;padding:48px 24px 96px}
+  header h1{font-size:34px;margin:0 0 6px;letter-spacing:-.01em}
+  header h1 b{color:var(--accent)}
+  header p{color:var(--fg-mute);margin:0 0 8px}
+  .crumb{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-dim)}
+  section{margin-top:56px}
+  .lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:10px}
+  h2{font-size:22px;margin:0 0 6px}
+  .cap{color:var(--fg-mute);margin:0 0 16px;max-width:70ch}
+  video{width:100%;border:1px solid var(--line);border-radius:8px;background:#000;display:block}
+  .tag{display:inline-block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    border:1px solid var(--line-strong);border-radius:999px;padding:2px 9px;color:var(--fg-mute);margin-left:8px}
+  .tag.live{color:var(--good);border-color:var(--good)}
+  .demo{border:1px solid var(--line);border-radius:10px;background:var(--bg-1);padding:22px;display:flex;
+    gap:28px;flex-wrap:wrap;align-items:center;justify-content:center}
+  canvas{touch-action:none;cursor:pointer}
+  .readouts{display:flex;flex-direction:column;gap:14px;min-width:220px}
+  .ro{display:flex;align-items:center;gap:12px}
+  .ro span{width:54px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-mute)}
+  .bar{flex:1;height:8px;background:var(--bg-3);border:1px solid var(--line);border-radius:999px;overflow:hidden;position:relative}
+  .bar i{position:absolute;left:0;top:0;bottom:0;display:block;border-radius:999px}
+  .num{width:4ch;text-align:right;font-variant-numeric:tabular-nums;color:var(--fg)}
+  .hint{color:var(--fg-dim);font-size:12px;margin-top:10px}
+  footer{margin-top:72px;color:var(--fg-dim);font-size:12px;border-top:1px solid var(--line);padding-top:18px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="crumb">Manifold · meml.lnfinitemonkeys.org/next</div>
+    <h1><b>Manifold</b> — how it works</h1>
+    <p>A few short explainers of the core idea: a control is just a number; a network in the middle turns a few input numbers into many output numbers; and your thumbs-up/down shapes that mapping live.</p>
+    <p class="crumb">← <a href="../">back to the instrument</a></p>
+  </header>
+
+  <!-- Interactive 1 -->
+  <section>
+    <div class="lbl">Try it · interactive</div>
+    <h2>A control is just a number<span class="tag live">live</span></h2>
+    <p class="cap">Drag the knob. The number is the knob — one value in [0,1]. Every control in Manifold is, underneath, exactly this.</p>
+    <div class="demo">
+      <canvas id="knob" width="200" height="200"></canvas>
+      <div class="readouts">
+        <div class="ro"><span>value</span><div class="bar"><i id="kbar" style="background:var(--accent);box-shadow:var(--glow)"></i></div><div class="num" id="knum">0.50</div></div>
+        <div class="hint">drag up/down or around the knob</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Video 1 -->
+  <section>
+    <div class="lbl">01 · Knob = 1:1 mapping</div>
+    <h2>Knob → one number</h2>
+    <p class="cap">A knob rotates while a paired 0–1 number rises and falls in lockstep — a control is a readout of one number.</p>
+    <video controls preload="metadata" src="01-knob-mapping.mp4"></video>
+  </section>
+
+  <!-- Interactive 2 -->
+  <section>
+    <div class="lbl">Try it · interactive</div>
+    <h2>An XY pad is two numbers<span class="tag live">live</span></h2>
+    <p class="cap">Move the dot. The pad projects to two independent values A (X) and B (Y). Two inputs — the smallest manifold.</p>
+    <div class="demo">
+      <canvas id="pad" width="220" height="220"></canvas>
+      <div class="readouts">
+        <div class="ro"><span>A · x</span><div class="bar"><i id="abar" style="background:var(--accent);box-shadow:var(--glow)"></i></div><div class="num" id="anum">0.50</div></div>
+        <div class="ro"><span>B · y</span><div class="bar"><i id="bbar" style="background:var(--accent-2);box-shadow:0 0 14px rgba(0,204,255,.35)"></i></div><div class="num" id="bnum">0.50</div></div>
+        <div class="hint">drag anywhere in the pad</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Video 2 -->
+  <section>
+    <div class="lbl">02 · XY pad → two numbers</div>
+    <h2>XY pad → A and B</h2>
+    <p class="cap">A 2-D pad projects to two independent 0–1 values, each shown as a slider, as the dot moves.</p>
+    <video controls preload="metadata" src="02-xy-pad.mp4"></video>
+  </section>
+
+  <!-- Video 3 -->
+  <section>
+    <div class="lbl">03 · Dimensionality fan-out</div>
+    <h2>A few inputs → many outputs</h2>
+    <p class="cap">The same 2-D control driving 3 → 4 → 5 outputs, then the control type cycled across knob, fader, touchpad, and 2-D / 3-D joysticks. A few input dimensions map to many outputs through the learned mapping.</p>
+    <video controls preload="metadata" src="03-fanout.mp4"></video>
+  </section>
+
+  <!-- Video 4 -->
+  <section>
+    <div class="lbl">04 · Feedback &amp; training</div>
+    <h2>How your verdicts reshape the mapping</h2>
+    <p class="cap">Training on the mapping surface, and how a verdict reshapes it — contrasting the two feedback modes: <b style="color:var(--fg)">geometric push-away</b> (directed repulsion from what you like) versus <b style="color:var(--fg)">explore-and-place</b> (randomise → audition → place → interpolate, the recommended default).</p>
+    <video controls preload="metadata" src="04-feedback.mp4"></video>
+  </section>
+
+  <footer>
+    Videos rendered with Manim CE (1920×1080 · H.264). The two “live” demos above are interactive; the
+    same idea drives the real instrument at <a href="../">/next</a>. Sources in <code>assets/media/src/</code>.
+  </footer>
+</div>
+
+<script>
+(() => {
+  const TAU = Math.PI * 2;
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const accent = css('--accent') || '#ff6a00', cyan = css('--accent-2') || '#00ccff',
+        line = css('--line-strong') || '#3a3a3a', bg3 = css('--bg-3') || '#242424';
+
+  // ---- Interactive 1: knob -> number ----
+  const kc = document.getElementById('knob'), kx = kc.getContext('2d');
+  const kbar = document.getElementById('kbar'), knum = document.getElementById('knum');
+  let kv = 0.5, kdrag = false, kref = 0.5, ky0 = 0;
+  const A0 = Math.PI * 0.75, A1 = Math.PI * 2.25; // 270° sweep from lower-left
+  function drawKnob() {
+    const w = kc.width, h = kc.height, cx = w/2, cy = h/2, r = 74;
+    kx.clearRect(0,0,w,h);
+    kx.lineWidth = 10; kx.lineCap = 'round';
+    kx.strokeStyle = bg3; kx.beginPath(); kx.arc(cx,cy,r,A0,A1); kx.stroke();
+    kx.strokeStyle = accent; kx.shadowColor = accent; kx.shadowBlur = 12;
+    kx.beginPath(); kx.arc(cx,cy,r,A0,A0 + (A1-A0)*kv); kx.stroke(); kx.shadowBlur = 0;
+    const a = A0 + (A1-A0)*kv;
+    kx.strokeStyle = '#0d0d0d'; kx.lineWidth = 4;
+    kx.beginPath(); kx.moveTo(cx + Math.cos(a)*(r-22), cy + Math.sin(a)*(r-22));
+    kx.lineTo(cx + Math.cos(a)*(r+2), cy + Math.sin(a)*(r+2)); kx.stroke();
+    kx.fillStyle = accent; kx.font = '600 26px ' + css('--font-mono');
+    kx.textAlign = 'center'; kx.textBaseline = 'middle';
+    kx.fillText(kv.toFixed(2), cx, cy);
+    kbar.style.width = (kv*100) + '%'; knum.textContent = kv.toFixed(2);
+  }
+  kc.addEventListener('pointerdown', e => { kdrag = true; kref = kv; ky0 = e.clientY; kc.setPointerCapture(e.pointerId); });
+  kc.addEventListener('pointermove', e => { if (!kdrag) return; kv = clamp(kref - (e.clientY - ky0)/160); drawKnob(); });
+  kc.addEventListener('pointerup', () => kdrag = false);
+  drawKnob();
+
+  // ---- Interactive 2: XY pad -> two sliders ----
+  const pc = document.getElementById('pad'), px = pc.getContext('2d');
+  const abar = document.getElementById('abar'), bbar = document.getElementById('bbar');
+  const anum = document.getElementById('anum'), bnum = document.getElementById('bnum');
+  let ax = 0.5, ay = 0.5, pdrag = false;
+  function drawPad() {
+    const w = pc.width, h = pc.height, pad = 10;
+    px.clearRect(0,0,w,h);
+    px.strokeStyle = 'rgba(255,255,255,0.05)'; px.lineWidth = 1;
+    for (let i=1;i<4;i++){ const t=i/4; px.beginPath(); px.moveTo(pad+t*(w-2*pad),pad); px.lineTo(pad+t*(w-2*pad),h-pad); px.stroke();
+      px.beginPath(); px.moveTo(pad,pad+t*(h-2*pad)); px.lineTo(w-pad,pad+t*(h-2*pad)); px.stroke(); }
+    px.strokeStyle = line; px.strokeRect(pad+0.5,pad+0.5,w-2*pad-1,h-2*pad-1);
+    const dx = pad + ax*(w-2*pad), dy = pad + (1-ay)*(h-2*pad);
+    px.strokeStyle = 'rgba(255,255,255,0.08)';
+    px.beginPath(); px.moveTo(pad,dy); px.lineTo(w-pad,dy); px.moveTo(dx,pad); px.lineTo(dx,h-pad); px.stroke();
+    px.fillStyle = accent; px.shadowColor = accent; px.shadowBlur = 16;
+    px.beginPath(); px.arc(dx,dy,9,0,TAU); px.fill(); px.shadowBlur = 0;
+    px.fillStyle = '#0d0d0d'; px.beginPath(); px.arc(dx,dy,3,0,TAU); px.fill();
+    abar.style.width = (ax*100)+'%'; bbar.style.width = (ay*100)+'%';
+    anum.textContent = ax.toFixed(2); bnum.textContent = ay.toFixed(2);
+  }
+  function padSet(e){ const r = pc.getBoundingClientRect(), pad = 10;
+    ax = clamp((e.clientX - r.left - pad)/(pc.width-2*pad));
+    ay = clamp(1 - (e.clientY - r.top - pad)/(pc.height-2*pad)); drawPad(); }
+  pc.addEventListener('pointerdown', e => { pdrag = true; pc.setPointerCapture(e.pointerId); padSet(e); });
+  pc.addEventListener('pointermove', e => { if (pdrag) padSet(e); });
+  pc.addEventListener('pointerup', () => pdrag = false);
+  drawPad();
+})();
+</script>
+</body>
+</html>

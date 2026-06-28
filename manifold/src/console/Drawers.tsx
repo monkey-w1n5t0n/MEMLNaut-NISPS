@@ -668,6 +668,26 @@ function HelpDrawer() {
         re-roll (set the behaviour in the Learning drawer). Went too far → undo. The dock reveals
         exactly as much machinery as you reach for.
       </p>
+      <SectionLabel>Learn more</SectionLabel>
+      <a
+        href="animations/"
+        target="_blank"
+        rel="noopener"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          fontSize: 'var(--fs-xs)',
+          color: 'var(--accent-2)',
+          border: '1px solid var(--line)',
+          borderRadius: 'var(--r-1)',
+          padding: '5px 10px',
+          width: 'fit-content',
+          textDecoration: 'none',
+        }}
+      >
+        ▶ Watch the explainers + interactive demos
+      </a>
     </>
   );
 }

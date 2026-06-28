@@ -2,6 +2,7 @@
  * OutputEditor — the per-output menu (state · min · max · static value · curve).
  * Opens on hover over an output column/cell. Ported from `OutputEditor.jsx`.
  */
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CurvePad } from './CurvePad';
 import type { MFParam, ParamStatus } from './model';
@@ -67,8 +68,35 @@ export interface OutputEditorProps {
 
 export function OutputEditor({ param, onChange, onHold, onLeave, place }: OutputEditorProps) {
   const isLive = param.status === 'live';
+  const ref = useRef<HTMLDivElement>(null);
+  // After the popover lands at its anchored spot, nudge it back on-screen so it
+  // never clips the viewport edges (matters when the window isn't full-screen).
+  const [shift, setShift] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      const r = el.getBoundingClientRect();
+      // r already includes the current shift — back it out to get the natural
+      // anchored box, then derive the shift that pulls it inside the viewport.
+      const left = r.left - shift.dx;
+      const top = r.top - shift.dy;
+      const M = 8; // keep an 8px gutter from each edge
+      let dx = 0;
+      let dy = 0;
+      if (left + r.width > window.innerWidth - M) dx = window.innerWidth - M - (left + r.width);
+      if (left + dx < M) dx = M - left;
+      if (top + r.height > window.innerHeight - M) dy = window.innerHeight - M - (top + r.height);
+      if (top + dy < M) dy = M - top; // if too tall, prefer pinning the top
+      if (dx !== shift.dx || dy !== shift.dy) setShift({ dx, dy });
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
   return (
     <div
+      ref={ref}
       onPointerEnter={onHold}
       onPointerLeave={onLeave}
       style={{
@@ -76,6 +104,7 @@ export function OutputEditor({ param, onChange, onHold, onLeave, place }: Output
         width: 196,
         zIndex: 80,
         ...place,
+        transform: `translate(${shift.dx}px, ${shift.dy}px)`,
         background: 'var(--glass)',
         backdropFilter: 'blur(14px)',
         WebkitBackdropFilter: 'blur(14px)',

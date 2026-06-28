@@ -1,0 +1,162 @@
+/**
+ * GamepadSource — physical gamepad via the Gamepad API.
+ *
+ * Stick mode:
+ *  - 'single' → 2 axes  (left stick X/Y)
+ *  - 'double' → 4 axes  (left stick X/Y + right stick X/Y)
+ *
+ * Standard-mapping gamepad axes are [-1,1]; we remap to [0,1] for the ML head
+ * and apply a small radial deadzone (sticks rarely rest at exact centre). A
+ * y-axis flip makes "stick up" = 1 (the API has up = -1).
+ *
+ * Pull-based: the Gamepad API is itself a poll-based snapshot
+ * (`navigator.getGamepads()`), so `sample()` reads the live snapshot directly —
+ * no event latching needed for axes. Buttons ARE edge-detected each frame (in
+ * `poll()`, driven by the InputLayer loop) and surfaced as discrete actions.
+ *
+ * Graceful degrade: if the Gamepad API is missing OR no pad is connected, the
+ * source reports `unavailable`/`connecting` and contributes its axes as 0.5
+ * (centre) so it never destabilises the composed vector.
+ */
+import { BaseSource } from './base-source';
+import type { InputSourceKind } from './types';
+
+export type StickMode = 'single' | 'double';
+
+const DEADZONE = 0.08;
+
+export class GamepadSource extends BaseSource {
+  readonly kind: InputSourceKind = 'gamepad';
+  readonly label = 'Gamepad';
+
+  private stickMode: StickMode = 'single';
+  private padIndex: number | null = null;
+  private running = false;
+  /** Per-button last pressed-state for edge detection. */
+  private buttonsDown: boolean[] = [];
+
+  private onConnect = (e: GamepadEvent) => {
+    if (this.padIndex === null) this.padIndex = e.gamepad.index;
+    this.setStatus({ state: 'ready', message: `Gamepad: ${e.gamepad.id}` });
+  };
+  private onDisconnect = (e: GamepadEvent) => {
+    if (e.gamepad.index === this.padIndex) {
+      this.padIndex = null;
+      this.setStatus({ state: 'connecting', message: 'Gamepad disconnected — press a button' });
+    }
+  };
+
+  isAvailable(): boolean {
+    return typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function';
+  }
+
+  setStickMode(mode: StickMode): void {
+    this.stickMode = mode;
+  }
+
+  getStickMode(): StickMode {
+    return this.stickMode;
+  }
+
+  axisCount(): number {
+    return this.stickMode === 'double' ? 4 : 2;
+  }
+
+  axisLabels(): string[] {
+    return this.stickMode === 'double'
+      ? ['L-X', 'L-Y', 'R-X', 'R-Y']
+      : ['L-X', 'L-Y'];
+  }
+
+  private activePad(): Gamepad | null {
+    if (!this.isAvailable()) return null;
+    const pads = navigator.getGamepads();
+    if (this.padIndex !== null) {
+      const p = pads[this.padIndex];
+      if (p) return p;
+    }
+    // Fall back to the first connected pad.
+    for (const p of pads) {
+      if (p) {
+        this.padIndex = p.index;
+        return p;
+      }
+    }
+    return null;
+  }
+
+  sample(out: Float32Array, offset: number): number {
+    const n = this.axisCount();
+    const pad = this.activePad();
+    if (!pad) {
+      for (let i = 0; i < n; i++) out[offset + i] = 0.5; // centre when absent
+      return n;
+    }
+    // Left stick = axes 0,1; right stick = axes 2,3 (standard mapping).
+    out[offset] = remap(pad.axes[0] ?? 0);
+    out[offset + 1] = remap(-(pad.axes[1] ?? 0)); // flip: up = 1
+    if (n === 4) {
+      out[offset + 2] = remap(pad.axes[2] ?? 0);
+      out[offset + 3] = remap(-(pad.axes[3] ?? 0));
+    }
+    return n;
+  }
+
+  /** Edge-detect button presses → discrete actions. Driven by InputLayer loop. */
+  poll(): void {
+    if (!this.running) return;
+    const pad = this.activePad();
+    if (!pad) return;
+    if (this.buttonsDown.length !== pad.buttons.length) {
+      this.buttonsDown = pad.buttons.map((b) => b.pressed);
+      return; // first frame after (re)connect: prime, don't fire
+    }
+    for (let i = 0; i < pad.buttons.length; i++) {
+      const pressed = pad.buttons[i].pressed;
+      if (pressed && !this.buttonsDown[i]) {
+        this.emitAction({
+          source: this.kind,
+          id: `button:${i}`,
+          label: `Button ${i}`,
+          value: pad.buttons[i].value || 1,
+        });
+      }
+      this.buttonsDown[i] = pressed;
+    }
+  }
+
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    if (!this.isAvailable()) {
+      this.setStatus({ state: 'unavailable', message: 'Gamepad API not supported in this browser' });
+      return;
+    }
+    window.addEventListener('gamepadconnected', this.onConnect);
+    window.addEventListener('gamepaddisconnected', this.onDisconnect);
+    if (this.activePad()) {
+      this.setStatus({ state: 'ready', message: 'Gamepad ready' });
+    } else {
+      this.setStatus({ state: 'connecting', message: 'Press a button on your gamepad to connect' });
+    }
+  }
+
+  stop(): void {
+    this.running = false;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('gamepadconnected', this.onConnect);
+      window.removeEventListener('gamepaddisconnected', this.onDisconnect);
+    }
+    this.buttonsDown = [];
+    this.setStatus({ state: 'idle', message: 'Gamepad off' });
+  }
+}
+
+/** Map a [-1,1] stick axis (with radial deadzone) to [0,1]. */
+function remap(v: number): number {
+  let x = v;
+  if (x > -DEADZONE && x < DEADZONE) x = 0;
+  else x = x > 0 ? (x - DEADZONE) / (1 - DEADZONE) : (x + DEADZONE) / (1 - DEADZONE);
+  const out = (x + 1) / 2;
+  return out < 0 ? 0 : out > 1 ? 1 : out;
+}

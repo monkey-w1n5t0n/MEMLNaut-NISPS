@@ -47,19 +47,11 @@ Pick A. Update perf.hpp + every `nisps/` use site.
 
 ### 5. RMSProp deferred from `nisps/ml/` (2026-04-29)
 
-**What.** The legacy MLP supported both SGD and RMSProp paths. Stream 2 shipped only SGD as MVP. The architecture spec called for both. Documented as "follow-up bd issue when needed".
+**What.** The legacy MLP supported both SGD and RMSProp paths. Stream 2 shipped only SGD as MVP. The architecture spec called for both. Documented as a follow-up Ergo task when needed.
 
 **Why it blocks the mission.** Optimizer choice is one of the things research wants to vary. Not blocking for the current XOR-style fits, but as soon as we tune for harder loss landscapes, RMSProp will matter.
 
 **Rough cost.** A day. Port the firmware's RMSProp from `src/memlp/MLP.cpp:415-543` (decay 0.9, epsilon 1e-6, gradient accumulation, batch size). Add tests for batch training convergence.
-
-### 6. bd Dolt remote sync flaky (2026-04-29)
-
-**What.** During the rewrite, `bd close` repeatedly failed with "database `beads_meml` not found on Dolt server" or similar lock conflicts. Several agent-side bd closures could not be performed and have orchestrator-side closure notes instead. May leave stream issues in inconsistent states.
-
-**Why it blocks the mission.** Beads is the canonical task tracker; if it can't reliably sync, future agents lose visibility into what's done vs in-progress.
-
-**Rough cost.** Investigate Dolt server config + lock semantics. Out of scope for the rewrite itself.
 
 ## Open mission questions
 

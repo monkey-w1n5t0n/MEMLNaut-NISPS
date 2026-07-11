@@ -131,7 +131,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - `MAP.md` — this file.
 - `ALIGNMENT.md` — strategic gaps + open mission questions, dated, opinionated.
 - `README.md` — short quickstart.
-- `AGENTS.md` — beads/bd conventions.
+- `AGENTS.md` — canonical agent contract: architecture, build/test, scope, and Ergo workflow.
 
 ## Entry points
 

@@ -27,7 +27,7 @@ T2  Architecture & Contracts
      ├ playground architecture
      └ backends architecture
 T3  Component Design   →  core | playground | firmware | backends   (branches per product)
-T4  Implementation specifics  →  (same branches)  →  spawn bd issues/epics
+T4  Implementation specifics  →  (same branches)  →  spawn Ergo tasks/epics
 ```
 
 Files:
@@ -38,7 +38,7 @@ Files:
 | T1 | `T1-capabilities-and-principles.md` | **draft — awaiting audit** |
 | T2 | `T2-architecture-and-contracts.md` (+ per-product sections) | not started |
 | T3 | `T3-component-design/{core,playground,firmware,backends}.md` | not started |
-| T4 | `T4-implementation/{core,playground,firmware,backends}.md` → beads | not started |
+| T4 | `T4-implementation/{core,playground,firmware,backends}.md` → Ergo | not started |
 | — | `00-decisions-log.md` | the interview outcomes that seed these tiers |
 | ref | `slp-workshop-firmware.md` | **evolving** — SLP-Workshop: Part I shipped (mode + Jolt / OU-explore gestures), Part II planned (output modes, gate sequences, Manifold config UX) |
 
@@ -49,7 +49,7 @@ only made *downstream* of a tier when that tier itself got something wrong. So:
 
 1. T0 + T1 are reviewed and approved first (they constrain everything).
 2. Only then is T2 authored; reviewed; approved.
-3. Only then T3; then T4 → beads → execution.
+3. Only then T3; then T4 → Ergo → execution.
 
 If review of a lower tier reveals that an upper tier is wrong, **fix the upper tier first**, then propagate.
 Every tier file ends with a "Traces up to" line citing the tier(s) above it that justify its content.

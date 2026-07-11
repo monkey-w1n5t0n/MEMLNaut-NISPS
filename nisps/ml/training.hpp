@@ -14,8 +14,8 @@
 // Optimizer choice: this MVP ships SGD only. RMSProp is planned (the legacy
 // firmware uses it for `TrainBatch`) but the playground was using plain SGD
 // until very recently and the XOR-convergence benchmark in the test suite
-// is the clearer target. RMSProp can land as a follow-up — see the bd
-// issue notes. For now `train()` is SGD with optional sample-weight
+// is the clearer target. RMSProp can land as a follow-up — see the Ergo
+// task notes. For now `train()` is SGD with optional sample-weight
 // scaling and gradient clipping.
 
 #pragma once

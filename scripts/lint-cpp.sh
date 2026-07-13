@@ -16,6 +16,11 @@
 #        - bare `new ` / `new(`
 #        - malloc(
 #      Files matching */tests/* are exempt — they are host-only.
+#      SOLE allowlisted file: nisps/ml/dynamic_storage.hpp — the runtime-shaped
+#      MLP storage (one arena allocation at construction). It is compile-time
+#      excluded from RP2350 builds (#error under NISPS_TARGET_EMBEDDED); a
+#      companion check below FAILS if that guard ever disappears, so heap can
+#      not leak into firmware through the allowlist.
 #
 #   3. FAIL: `#include <Arduino.h>` anywhere under nisps/. The C++ core MUST
 #      NOT pull in Arduino headers — those break the WASM build.
@@ -119,12 +124,21 @@ audit_heap_alloc() {
     hits=$(grep -REn "$pat" \
         --include='*.hpp' --include='*.cpp' \
         --exclude-dir=build --exclude-dir=tests \
+        --exclude='dynamic_storage.hpp' \
         "${subdirs[@]}" 2>/dev/null \
         | grep -v ' *//' \
         || true)
     if [[ -n "$hits" ]]; then
         echo "[lint-cpp] FAIL: heap allocation in audio path:"
         echo "$hits" | sed 's/^/  /'
+        fails=$((fails + 1))
+    fi
+
+    # The allowlist above is only sound while dynamic_storage.hpp is
+    # structurally excluded from embedded builds. Fail hard if the guard goes.
+    local dyn="$NISPS_DIR/ml/dynamic_storage.hpp"
+    if [[ -f "$dyn" ]] && ! grep -q 'NISPS_TARGET_EMBEDDED' "$dyn"; then
+        echo "[lint-cpp] FAIL: $dyn lost its NISPS_TARGET_EMBEDDED #error guard"
         fails=$((fails + 1))
     fi
 }

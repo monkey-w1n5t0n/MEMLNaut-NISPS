@@ -56,6 +56,7 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mlp_training.cpp
         ${NISPS_TEST_DIR}/test_mlp_loss.cpp
         ${NISPS_TEST_DIR}/test_mlp_rl.cpp
+        ${NISPS_TEST_DIR}/test_mlp_storage_parity.cpp
         ${NISPS_TEST_DIR}/test_mlp_jolt.cpp
         ${NISPS_TEST_DIR}/test_mlp_ou_noise.cpp
         ${NISPS_TEST_DIR}/test_mlp_feedback.cpp

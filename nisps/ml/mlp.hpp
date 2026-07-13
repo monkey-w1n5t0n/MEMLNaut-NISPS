@@ -1,9 +1,8 @@
-// nisps/ml/mlp.hpp — fixed-architecture MLP, four layers (three hidden +
-// output). All buffers are template-sized std::array; zero heap allocation
-// in inference, training, and the dataset path.
+// nisps/ml/mlp.hpp — four-layer MLP (three hidden + output), written ONCE
+// against a storage policy (docs/specs/plans/one-core-engine-refactor.md P2).
 //
 // ARCHITECTURE
-//   MLP<NIn, NHidden1, NHidden2, NHidden3, NOut, NMaxExamples = 128>
+//   MLPCore<Storage>
 //   ┌──────┐  Linear+Bias   ┌────────┐  ReLU   ┌────────┐  ReLU   ┌────────┐  Sigmoid
 //   │ NIn  │ ─────────────▶ │ NH1    │ ──────▶ │ NH2    │ ──────▶ │ NH3    │ ──────▶ NOut
 //   └──────┘                └────────┘         └────────┘         └────────┘
@@ -12,46 +11,35 @@
 //   Layer 2 (NH2  → NH3)  ReLU
 //   Layer 3 (NH3  → NOut) Sigmoid
 //
-// We support exactly three hidden layers. The legacy firmware default is
-// [10, 10, 14], so the MVP signature directly matches `MLP<NIn, 10, 10, 14,
-// NOut>`. Variable layer count is deferred — see architecture.md.
+// The topology (4 layers, ReLU×3 + Sigmoid) is fixed; the DIMENSIONS come
+// from the storage policy:
 //
-// MEMORY MODEL
-//   Per layer L_k with fan_in = N_in[k], fan_out = N_out[k]:
-//     std::array<float, fan_in*fan_out> weights        // row-major
-//     std::array<float, fan_out>        biases
-//     std::array<float, fan_out>        pre_activation // cached for backprop
-//     std::array<float, fan_out>        activation     // cached for backprop
-//     std::array<float, fan_in*fan_out> grad_w_accum   // for backprop
-//     std::array<float, fan_out>        grad_b_accum
+//   * `MLP<NIn, NH1, NH2, NH3, NOut, NMaxExamples, NMaxIterTrain>` — alias
+//     over `MLPCore<FixedStorage<...>>`. All buffers template-sized
+//     std::array, zero heap. This is the firmware model and preserves the
+//     pre-P2 class's exact compile-time surface (`kInput`, `kHidden1..3`,
+//     `kOutput`, `kNumLayers`, `weight_count()` — all constexpr).
+//   * `MLPCore<DynamicStorage>` — runtime-shaped (WASM/native-test/VCV
+//     only; heap at construction time, never per-call). Compile-time
+//     excluded from RP2350 builds.
 //
-//   Per MLP:
-//     std::array<float, NIn> input_buffer (current set_input values)
-//     std::array<float, NOut> output (post-final-activation; outputs())
-//     std::array<float, NMaxExamples * NIn>  dataset_features
-//     std::array<float, NMaxExamples * NOut> dataset_labels
-//     std::size_t dataset_count, dataset_head (FIFO ring buffer)
-//     std::array<float, NMaxIter> loss_history (max iters from train())
-//     Rng rng_
-//     std::array<float, NOut> bp_err_buf, bp_delta_buf  (backprop scratch)
+// BIT-PARITY CONTRACT: for identical shapes and seeds the two storage models
+// produce bit-identical results — the algorithm code below is shared and
+// float op order is storage-independent. Enforced by
+// tests/cpp/test_mlp_storage_parity.cpp.
 //
 // FLAT WEIGHT LAYOUT (`get_weights` / `set_weights`)
 //   [layer0_weights ...] [layer1_weights ...] [layer2_weights ...] [layer3_weights ...]
 //   [layer0_biases  ...] [layer1_biases  ...] [layer2_biases  ...] [layer3_biases  ...]
-//   Documented in detail near `weight_count()`.
 //
 // CONCEPT SATISFACTION
-//   The class satisfies `nisps::MLEngine`:
-//     set_input, process, outputs, add_example, train (no-arg overload
-//     returning float), move_weights(speed, spread), draw_weights(spread),
-//     reset, seed.
-//   Plus diagnostics required by the broader API (see Stream 2 brief in
-//   architecture.md): eval_loss, layer_stats, get/set_weights, weight_count,
-//   infer_batch, loss_history.
+//   The class satisfies `nisps::MLEngine`: set_input, process, outputs,
+//   add_example, train (no-arg overload returning float), move_weights,
+//   draw_weights, reset, seed. Plus diagnostics: eval_loss, layer_stats,
+//   get/set_weights, weight_count, infer_batch, loss_history.
 
 #pragma once
 
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -65,133 +53,36 @@
 #include "loss.hpp"
 #include "rl.hpp"
 #include "stats.hpp"
+#include "storage.hpp"
 #include "training.hpp"
 
 namespace nisps::ml {
 
-// Layer<FanIn, FanOut, Act>. Stores its weights, biases, and the work
-// buffers needed for forward + backprop. Header-only, all sizes compile-
-// time. Each method is small; the compiler will inline through.
-template <std::size_t FanIn, std::size_t FanOut, Activation Act>
-struct Layer {
-    static constexpr std::size_t kFanIn  = FanIn;
-    static constexpr std::size_t kFanOut = FanOut;
-    static constexpr Activation  kAct    = Act;
+// Activation of layer L in the fixed 4-layer topology.
+template <std::size_t L>
+inline constexpr Activation kLayerActivation =
+    (L == 3u) ? Activation::Sigmoid : Activation::ReLU;
 
-    std::array<float, FanIn * FanOut> weights{};
-    std::array<float, FanOut>         biases{};
-    // Cached during forward(); consumed during backprop().
-    std::array<float, FanOut>         pre_activation{};
-    std::array<float, FanOut>         activation{};
-    // Gradient accumulators — used per-sample for SGD weight update.
-    std::array<float, FanIn * FanOut> grad_w{};
-    std::array<float, FanOut>         grad_b{};
-
-    NISPS_FORCE_INLINE float& w(std::size_t node, std::size_t in) noexcept {
-        return weights[node * FanIn + in];
-    }
-    NISPS_FORCE_INLINE float w(std::size_t node, std::size_t in) const noexcept {
-        return weights[node * FanIn + in];
-    }
-
-    // Forward: compute pre_activation and activation given an input span.
-    NISPS_HOT NISPS_FORCE_INLINE
-    void forward(std::span<const float, FanIn> input) noexcept {
-        for (std::size_t node = 0; node < FanOut; ++node) {
-            const std::size_t row = node * FanIn;
-            float sum = biases[node];
-            for (std::size_t j = 0; j < FanIn; ++j) {
-                sum += weights[row + j] * input[j];
-            }
-            pre_activation[node] = sum;
-            activation[node]     = activate<Act>(sum);
-        }
-    }
-
-    // Compute incoming-error vector for the previous layer:
-    //   delta_in[j] = sum_node (err_signal[node] * w[node, j])
-    // Where err_signal[node] = upstream_err[node] * d/dpre activation.
-    // Also accumulates per-weight and per-bias gradients (no LR yet).
-    NISPS_HOT NISPS_FORCE_INLINE
-    void backprop_accumulate(std::span<const float, FanIn> input,
-                             std::span<const float, FanOut> upstream_err,
-                             std::span<float, FanIn> delta_in,
-                             float                   sample_weight) noexcept {
-        for (std::size_t j = 0; j < FanIn; ++j) delta_in[j] = 0.f;
-
-        for (std::size_t node = 0; node < FanOut; ++node) {
-            const float err_signal =
-                upstream_err[node] * activate_deriv_pre<Act>(pre_activation[node]) * sample_weight;
-            const std::size_t row = node * FanIn;
-            for (std::size_t j = 0; j < FanIn; ++j) {
-                grad_w[row + j] += err_signal * input[j];
-                delta_in[j]     += err_signal * weights[row + j];
-            }
-            grad_b[node] += err_signal;
-        }
-    }
-
-    // Apply accumulated gradient to weights+biases with clipping. Resets
-    // the accumulators to zero for the next sample/iteration.
-    NISPS_FORCE_INLINE
-    void apply_grad(float lr) noexcept {
-        for (std::size_t i = 0; i < FanIn * FanOut; ++i) {
-            const float g = clip_gradient(grad_w[i]);
-            weights[i] -= lr * g;
-            grad_w[i] = 0.f;
-        }
-        for (std::size_t i = 0; i < FanOut; ++i) {
-            const float g = clip_gradient(grad_b[i]);
-            biases[i] -= lr * g;
-            grad_b[i] = 0.f;
-        }
-    }
-
-    NISPS_FORCE_INLINE
-    void clear_grad() noexcept {
-        for (std::size_t i = 0; i < FanIn * FanOut; ++i) grad_w[i] = 0.f;
-        for (std::size_t i = 0; i < FanOut;          ++i) grad_b[i] = 0.f;
-    }
-};
-
-// MLP<NIn, NHidden1, NHidden2, NHidden3, NOut, NMaxExamples = 128>
-//
-// MaxIterTrain caps the loss-history buffer; if a caller asks for more
-// iterations they will be honored at runtime, but only the first
-// kMaxIterTrain are recorded for inspection. 4096 fits the playground's
-// upper bound and costs 16 KiB.
-template <std::size_t NIn,
-          std::size_t NHidden1,
-          std::size_t NHidden2,
-          std::size_t NHidden3,
-          std::size_t NOut,
-          std::size_t NMaxExamples = 128u,
-          std::size_t NMaxIterTrain = 4096u>
-class MLP {
+template <typename Storage>
+class MLPCore : public Storage {
    public:
-    static constexpr std::size_t kInput          = NIn;
-    static constexpr std::size_t kHidden1        = NHidden1;
-    static constexpr std::size_t kHidden2        = NHidden2;
-    static constexpr std::size_t kHidden3        = NHidden3;
-    static constexpr std::size_t kOutput         = NOut;
-    static constexpr std::size_t kMaxExamples    = NMaxExamples;
-    static constexpr std::size_t kMaxIterTrain   = NMaxIterTrain;
-    static constexpr std::size_t kNumLayers      = 4u;
-
-    using Layer0 = Layer<NIn,      NHidden1, Activation::ReLU>;
-    using Layer1 = Layer<NHidden1, NHidden2, Activation::ReLU>;
-    using Layer2 = Layer<NHidden2, NHidden3, Activation::ReLU>;
-    using Layer3 = Layer<NHidden3, NOut,     Activation::Sigmoid>;
+    static constexpr std::size_t kNumLayers = kMlpNumLayers;
 
     // ---------------------------------------------------------------
-    // Lifecycle
+    // Lifecycle. Extra arguments are forwarded to the storage policy —
+    // FixedStorage takes none (`MLP m(seed)`), DynamicStorage takes its
+    // runtime dimensions (`MLPCore<DynamicStorage> m(seed, n_in, hidden,
+    // n_out, ...)`).
     // ---------------------------------------------------------------
-    explicit MLP(std::uint64_t seed) noexcept : rng_(seed) {
+    template <typename... StorageArgs>
+    explicit MLPCore(std::uint64_t seed, StorageArgs&&... storage_args) noexcept
+        : Storage(static_cast<StorageArgs&&>(storage_args)...), rng_(seed) {
         // Default-init weights with spread=1 (Xavier-like). The IML
-        // interface caller is expected to draw_weights() with the
-        // playground spread before the first inference; this default
-        // simply gives us a non-degenerate starting state for tests
-        // that skip an explicit draw.
+        // interface caller is expected to draw_weights() with its own
+        // spread before the first inference; this default simply gives a
+        // non-degenerate starting state for tests that skip an explicit
+        // draw.
+        if (!storage_ok_()) return;
         draw_weights(1.f);
         clear_dataset_();
         loss_history_count_ = 0u;
@@ -201,48 +92,54 @@ class MLP {
     // Inference API (concept: set_input / process / outputs)
     // ---------------------------------------------------------------
     NISPS_FORCE_INLINE void set_input(std::size_t i, float v) noexcept {
-        if (i < NIn) input_[i] = v;
+        if (!storage_ok_()) return;
+        if (i < this->n_in()) this->input_buf()[i] = v;
     }
 
     NISPS_HOT void process() noexcept {
-        forward_(std::span<const float, NIn>(input_));
+        if (!storage_ok_()) return;
+        forward_(this->input_buf());
         // Mirror final activation into the output buffer so callers can
         // read a stable span.
-        const auto& a = layer3_.activation;
-        for (std::size_t i = 0; i < NOut; ++i) output_[i] = a[i];
+        const auto a   = this->template act_l<3u>();
+        auto       out = this->output_buf();
+        const std::size_t n_out = this->n_out();
+        for (std::size_t i = 0; i < n_out; ++i) out[i] = a[i];
     }
 
     NISPS_FORCE_INLINE std::span<const float> outputs() const noexcept {
-        return std::span<const float>(output_.data(), NOut);
+        return this->output_buf();
     }
 
     // ---------------------------------------------------------------
     // Dataset / Training (concept: add_example / train)
     // ---------------------------------------------------------------
     // FIFO ring buffer; oldest example evicted when full. No allocation.
-    // We don't track logical insertion order during training because SGD
-    // doesn't care — the iteration order over the buffer is arbitrary.
     void add_example(std::span<const float> features,
                      std::span<const float> labels) noexcept {
-        if (features.size() < NIn || labels.size() < NOut) return;
+        if (!storage_ok_()) return;
+        const std::size_t n_in  = this->n_in();
+        const std::size_t n_out = this->n_out();
+        if (features.size() < n_in || labels.size() < n_out) return;
 
         std::size_t slot;
-        if (dataset_count_ < NMaxExamples) {
+        if (dataset_count_ < this->max_examples()) {
             slot = dataset_count_++;
         } else {
             // Buffer full: overwrite the slot pointed at by head_ (oldest)
             // and advance head_ to the next-oldest.
             slot = dataset_head_;
-            dataset_head_ = (dataset_head_ + 1u) % NMaxExamples;
+            dataset_head_ = (dataset_head_ + 1u) % this->max_examples();
         }
-        const std::size_t f_off = slot * NIn;
-        const std::size_t l_off = slot * NOut;
-        for (std::size_t i = 0; i < NIn;  ++i) ds_features_[f_off + i] = features[i];
-        for (std::size_t i = 0; i < NOut; ++i) ds_labels_  [l_off + i] = labels[i];
+        auto dsf = this->ds_features();
+        auto dsl = this->ds_labels();
+        const std::size_t f_off = slot * n_in;
+        const std::size_t l_off = slot * n_out;
+        for (std::size_t i = 0; i < n_in;  ++i) dsf[f_off + i] = features[i];
+        for (std::size_t i = 0; i < n_out; ++i) dsl[l_off + i] = labels[i];
     }
 
-    // Concept-required no-arg overload. Default learning rate matches the
-    // playground's "sane RL training" knob; max_iter and min_err follow.
+    // Concept-required no-arg overload.
     float train() noexcept {
         return train(1.f, 1000u, 0.001f, std::span<const float>{});
     }
@@ -251,17 +148,20 @@ class MLP {
     // current example count and sum to 1.0 (caller's responsibility — we
     // do NOT renormalize).
     //
-    // Returns final epoch loss. Records per-iteration loss in
-    // `loss_history_` (bounded by kMaxIterTrain).
+    // Returns final epoch loss. Records per-iteration loss in the loss
+    // history (bounded by max_iter_train()).
     float train(float lr,
                 std::size_t max_iter,
                 float min_err,
                 std::span<const float> sample_weights = {}) noexcept {
         loss_history_count_ = 0u;
+        if (!storage_ok_()) return 0.f;
         if (dataset_count_ == 0u) return 0.f;
 
-        const bool weighted = !sample_weights.empty();
+        const bool weighted   = !sample_weights.empty();
         const float uniform_w = 1.f / static_cast<float>(dataset_count_);
+
+        auto loss_hist = this->loss_hist_buf();
 
         float epoch_loss = 0.f;
         for (std::size_t iter = 0; iter < max_iter; ++iter) {
@@ -274,31 +174,34 @@ class MLP {
                 const float w = weighted ? sample_weights[s] : uniform_w;
 
                 // Forward pass on sample s.
-                std::span<const float, NIn> x = sample_features_(s);
+                std::span<const float> x = sample_features_(s);
                 forward_(x);
 
                 // Per-sample loss (NOT scaled by 1/N — the meml-ues fix).
-                std::array<float, NOut> deriv{};
+                // The eval scratch of the final layer doubles as the loss-
+                // derivative buffer (mse_per_sample fully overwrites it;
+                // eval_loss never runs concurrently).
+                auto deriv = this->template eval_act_l<3u>();
                 const float sample_loss = mse_per_sample(
                     sample_labels_(s),
-                    std::span<const float>(layer3_.activation.data(), NOut),
-                    std::span<float>(deriv.data(), NOut));
+                    std::span<const float>(this->template act_l<3u>()),
+                    deriv);
 
                 // Aggregate weighted loss.
                 epoch_loss += w * sample_loss;
 
                 // Backprop with the same w as the gradient scaler.
-                backprop_(x, std::span<const float, NOut>(deriv), w);
+                backprop_(x, deriv, w);
 
                 // Apply gradient (per-sample, SGD).
-                layer3_.apply_grad(lr);
-                layer2_.apply_grad(lr);
-                layer1_.apply_grad(lr);
-                layer0_.apply_grad(lr);
+                apply_grad_<3u>(lr);
+                apply_grad_<2u>(lr);
+                apply_grad_<1u>(lr);
+                apply_grad_<0u>(lr);
             }
 
-            if (loss_history_count_ < NMaxIterTrain) {
-                loss_history_[loss_history_count_++] = epoch_loss;
+            if (loss_history_count_ < this->max_iter_train()) {
+                loss_hist[loss_history_count_++] = epoch_loss;
             }
 
             if (epoch_loss < min_err) break;
@@ -311,40 +214,46 @@ class MLP {
     // ---------------------------------------------------------------
     void move_weights(float speed, float spread,
                       std::span<const std::uint8_t> output_pin_mask = {}) noexcept {
-        move_weights_layer(std::span<float>(layer0_.weights), std::span<float>(layer0_.biases),
-                           Layer0::kFanIn, speed, spread, /*final=*/false, {}, rng_);
-        move_weights_layer(std::span<float>(layer1_.weights), std::span<float>(layer1_.biases),
-                           Layer1::kFanIn, speed, spread, /*final=*/false, {}, rng_);
-        move_weights_layer(std::span<float>(layer2_.weights), std::span<float>(layer2_.biases),
-                           Layer2::kFanIn, speed, spread, /*final=*/false, {}, rng_);
-        move_weights_layer(std::span<float>(layer3_.weights), std::span<float>(layer3_.biases),
-                           Layer3::kFanIn, speed, spread, /*final=*/true, output_pin_mask, rng_);
+        if (!storage_ok_()) return;
+        move_weights_layer(this->template weights_l<0u>(), this->template biases_l<0u>(),
+                           this->template fan_in_l<0u>(), speed, spread, /*final=*/false, {}, rng_);
+        move_weights_layer(this->template weights_l<1u>(), this->template biases_l<1u>(),
+                           this->template fan_in_l<1u>(), speed, spread, /*final=*/false, {}, rng_);
+        move_weights_layer(this->template weights_l<2u>(), this->template biases_l<2u>(),
+                           this->template fan_in_l<2u>(), speed, spread, /*final=*/false, {}, rng_);
+        move_weights_layer(this->template weights_l<3u>(), this->template biases_l<3u>(),
+                           this->template fan_in_l<3u>(), speed, spread, /*final=*/true,
+                           output_pin_mask, rng_);
     }
 
     void draw_weights(float spread) noexcept {
-        draw_weights_layer(std::span<float>(layer0_.weights), std::span<float>(layer0_.biases),
-                           Layer0::kFanIn, spread, rng_);
-        draw_weights_layer(std::span<float>(layer1_.weights), std::span<float>(layer1_.biases),
-                           Layer1::kFanIn, spread, rng_);
-        draw_weights_layer(std::span<float>(layer2_.weights), std::span<float>(layer2_.biases),
-                           Layer2::kFanIn, spread, rng_);
-        draw_weights_layer(std::span<float>(layer3_.weights), std::span<float>(layer3_.biases),
-                           Layer3::kFanIn, spread, rng_);
-        layer0_.clear_grad();
-        layer1_.clear_grad();
-        layer2_.clear_grad();
-        layer3_.clear_grad();
+        if (!storage_ok_()) return;
+        draw_weights_layer(this->template weights_l<0u>(), this->template biases_l<0u>(),
+                           this->template fan_in_l<0u>(), spread, rng_);
+        draw_weights_layer(this->template weights_l<1u>(), this->template biases_l<1u>(),
+                           this->template fan_in_l<1u>(), spread, rng_);
+        draw_weights_layer(this->template weights_l<2u>(), this->template biases_l<2u>(),
+                           this->template fan_in_l<2u>(), spread, rng_);
+        draw_weights_layer(this->template weights_l<3u>(), this->template biases_l<3u>(),
+                           this->template fan_in_l<3u>(), spread, rng_);
+        clear_grad_<0u>();
+        clear_grad_<1u>();
+        clear_grad_<2u>();
+        clear_grad_<3u>();
     }
 
     // Concept reset: clear weights, dataset, and loss history. Seed is
     // intentionally NOT reset (use `seed()` for that).
     void reset() noexcept {
+        if (!storage_ok_()) return;
         clear_dataset_();
         loss_history_count_ = 0u;
         // Re-init weights from current rng state with default spread.
         draw_weights(1.f);
-        for (std::size_t i = 0; i < NIn;  ++i) input_[i]  = 0.f;
-        for (std::size_t i = 0; i < NOut; ++i) output_[i] = 0.f;
+        auto in  = this->input_buf();
+        auto out = this->output_buf();
+        for (std::size_t i = 0; i < in.size();  ++i) in[i]  = 0.f;
+        for (std::size_t i = 0; i < out.size(); ++i) out[i] = 0.f;
     }
 
     void seed(std::uint64_t s) noexcept { rng_.seed(s); }
@@ -352,41 +261,28 @@ class MLP {
     // ---------------------------------------------------------------
     // Diagnostics
     // ---------------------------------------------------------------
-    // Forward pass + MSE on a single (input, label) implied by current
-    // input_ and the most recent training labels — i.e. "what would the
-    // loss be on the current input if the label were the current output?"
-    // For now we report the average loss across the training set without
-    // updating weights. Useful for non-destructive evaluation.
+    // Average MSE across the training set without updating weights or the
+    // cached activations (runs through the mutable eval scratch).
     float eval_loss() const noexcept {
+        if (!storage_ok_()) return 0.f;
         if (dataset_count_ == 0u) return 0.f;
         const float inv_n = 1.f / static_cast<float>(dataset_count_);
-        // We need a non-const forward pass to use the cached buffers; since
-        // eval_loss is logically const, fork a local computation that
-        // doesn't touch member buffers. That means recomputing through the
-        // layer weights against scratch arrays — no allocation, just stack.
+        const std::size_t n_out = this->n_out();
+        auto dsl = this->ds_labels();
+
         float total = 0.f;
         for (std::size_t s = 0; s < dataset_count_; ++s) {
-            std::array<float, NHidden1> a1{};
-            std::array<float, NHidden2> a2{};
-            std::array<float, NHidden3> a3{};
-            std::array<float, NOut>     ao{};
+            forward_eval_layer_<0u>(sample_features_(s));
+            forward_eval_layer_<1u>(this->template eval_act_l<0u>());
+            forward_eval_layer_<2u>(this->template eval_act_l<1u>());
+            forward_eval_layer_<3u>(this->template eval_act_l<2u>());
 
-            const std::size_t f_off = s * NIn;
-            forward_const_layer<NIn, NHidden1, Activation::ReLU>(
-                std::span<const float, NIn>(ds_features_.data() + f_off, NIn),
-                layer0_.weights, layer0_.biases, a1);
-            forward_const_layer<NHidden1, NHidden2, Activation::ReLU>(
-                std::span<const float, NHidden1>(a1), layer1_.weights, layer1_.biases, a2);
-            forward_const_layer<NHidden2, NHidden3, Activation::ReLU>(
-                std::span<const float, NHidden2>(a2), layer2_.weights, layer2_.biases, a3);
-            forward_const_layer<NHidden3, NOut, Activation::Sigmoid>(
-                std::span<const float, NHidden3>(a3), layer3_.weights, layer3_.biases, ao);
-
+            const auto ao = this->template eval_act_l<3u>();
             float sse = 0.f;
-            const float inv_o = 1.f / static_cast<float>(NOut);
-            const std::size_t l_off = s * NOut;
-            for (std::size_t j = 0; j < NOut; ++j) {
-                const float d = ds_labels_[l_off + j] - ao[j];
+            const float inv_o = 1.f / static_cast<float>(n_out);
+            const std::size_t l_off = s * n_out;
+            for (std::size_t j = 0; j < n_out; ++j) {
+                const float d = dsl[l_off + j] - ao[j];
                 sse += d * d * inv_o;
             }
             total += sse * inv_n;
@@ -395,73 +291,77 @@ class MLP {
     }
 
     LayerStats layer_stats(std::size_t layer_idx) const noexcept {
+        if (!storage_ok_()) return {};
         switch (layer_idx) {
-            case 0: return compute_layer_stats(layer0_.weights, layer0_.biases);
-            case 1: return compute_layer_stats(layer1_.weights, layer1_.biases);
-            case 2: return compute_layer_stats(layer2_.weights, layer2_.biases);
-            case 3: return compute_layer_stats(layer3_.weights, layer3_.biases);
+            case 0: return compute_layer_stats(this->template weights_l<0u>(),
+                                               this->template biases_l<0u>());
+            case 1: return compute_layer_stats(this->template weights_l<1u>(),
+                                               this->template biases_l<1u>());
+            case 2: return compute_layer_stats(this->template weights_l<2u>(),
+                                               this->template biases_l<2u>());
+            case 3: return compute_layer_stats(this->template weights_l<3u>(),
+                                               this->template biases_l<3u>());
             default: return {};
         }
     }
 
-    // Flat layout: layer0 weights, layer1 weights, layer2 weights, layer3
-    // weights, then layer0..3 biases. The split is `weights first all
-    // layers, then biases all layers` so callers serializing weights can
-    // pre-compute offsets without consulting layer-specific tables.
-    static constexpr std::size_t weight_count() noexcept {
-        return NIn * NHidden1 + NHidden1 * NHidden2 + NHidden2 * NHidden3 + NHidden3 * NOut
-             + NHidden1 + NHidden2 + NHidden3 + NOut;
-    }
-
-    // Returns a span into a member-owned scratch buffer that holds a copy
+    // Returns a span into a storage-owned scratch buffer that holds a copy
     // of the flat weights+biases. The buffer is regenerated on each call,
     // so don't hold onto the span across mutations.
     std::span<const float> get_weights() noexcept {
+        if (!storage_ok_()) return {};
+        auto flat = this->flat_buf();
         std::size_t k = 0u;
         // Weights, layer-major.
-        for (float v : layer0_.weights) flat_weight_buf_[k++] = v;
-        for (float v : layer1_.weights) flat_weight_buf_[k++] = v;
-        for (float v : layer2_.weights) flat_weight_buf_[k++] = v;
-        for (float v : layer3_.weights) flat_weight_buf_[k++] = v;
+        for (float v : this->template weights_l<0u>()) flat[k++] = v;
+        for (float v : this->template weights_l<1u>()) flat[k++] = v;
+        for (float v : this->template weights_l<2u>()) flat[k++] = v;
+        for (float v : this->template weights_l<3u>()) flat[k++] = v;
         // Biases.
-        for (float v : layer0_.biases)  flat_weight_buf_[k++] = v;
-        for (float v : layer1_.biases)  flat_weight_buf_[k++] = v;
-        for (float v : layer2_.biases)  flat_weight_buf_[k++] = v;
-        for (float v : layer3_.biases)  flat_weight_buf_[k++] = v;
-        return std::span<const float>(flat_weight_buf_.data(), weight_count());
+        for (float v : this->template biases_l<0u>()) flat[k++] = v;
+        for (float v : this->template biases_l<1u>()) flat[k++] = v;
+        for (float v : this->template biases_l<2u>()) flat[k++] = v;
+        for (float v : this->template biases_l<3u>()) flat[k++] = v;
+        return std::span<const float>(flat.data(), k);
     }
 
     void set_weights(std::span<const float> w) noexcept {
-        if (w.size() < weight_count()) return;
+        if (!storage_ok_()) return;
+        if (w.size() < this->weight_count()) return;
         std::size_t k = 0u;
-        for (float& v : layer0_.weights) v = w[k++];
-        for (float& v : layer1_.weights) v = w[k++];
-        for (float& v : layer2_.weights) v = w[k++];
-        for (float& v : layer3_.weights) v = w[k++];
-        for (float& v : layer0_.biases)  v = w[k++];
-        for (float& v : layer1_.biases)  v = w[k++];
-        for (float& v : layer2_.biases)  v = w[k++];
-        for (float& v : layer3_.biases)  v = w[k++];
+        for (float& v : this->template weights_l<0u>()) v = w[k++];
+        for (float& v : this->template weights_l<1u>()) v = w[k++];
+        for (float& v : this->template weights_l<2u>()) v = w[k++];
+        for (float& v : this->template weights_l<3u>()) v = w[k++];
+        for (float& v : this->template biases_l<0u>()) v = w[k++];
+        for (float& v : this->template biases_l<1u>()) v = w[k++];
+        for (float& v : this->template biases_l<2u>()) v = w[k++];
+        for (float& v : this->template biases_l<3u>()) v = w[k++];
     }
 
-    // Run inference on N points (each NIn-sized) and write N output vectors
-    // (each NOut-sized) into `outs`. NO heap. Modifies the internal cached
+    // Run inference on N points (each n_in-sized) and write N output vectors
+    // (each n_out-sized) into `outs`. NO heap. Modifies the internal cached
     // activations as a side effect.
     void infer_batch(std::span<const float> points,
                      std::span<float>       outs) noexcept {
-        const std::size_t n = points.size() / NIn;
-        if (outs.size() < n * NOut) return;
+        if (!storage_ok_()) return;
+        const std::size_t n_in  = this->n_in();
+        const std::size_t n_out = this->n_out();
+        const std::size_t n = points.size() / n_in;
+        if (outs.size() < n * n_out) return;
+        auto in  = this->input_buf();
+        auto out = this->output_buf();
         for (std::size_t i = 0; i < n; ++i) {
-            const std::size_t in_off = i * NIn;
-            for (std::size_t j = 0; j < NIn; ++j) input_[j] = points[in_off + j];
+            const std::size_t in_off = i * n_in;
+            for (std::size_t j = 0; j < n_in; ++j) in[j] = points[in_off + j];
             process();
-            const std::size_t out_off = i * NOut;
-            for (std::size_t j = 0; j < NOut; ++j) outs[out_off + j] = output_[j];
+            const std::size_t out_off = i * n_out;
+            for (std::size_t j = 0; j < n_out; ++j) outs[out_off + j] = out[j];
         }
     }
 
     std::span<const float> loss_history() const noexcept {
-        return std::span<const float>(loss_history_.data(), loss_history_count_);
+        return std::span<const float>(this->loss_hist_buf().data(), loss_history_count_);
     }
 
     std::size_t example_count() const noexcept { return dataset_count_; }
@@ -472,68 +372,141 @@ class MLP {
     // ---------------------------------------------------------------
     // Internal helpers
     // ---------------------------------------------------------------
+    // DynamicStorage construction can fail (arena allocation); FixedStorage
+    // cannot. The check is compile-time `true` for storages without a
+    // `valid()` member, so the fixed/firmware path carries no branch.
+    NISPS_FORCE_INLINE bool storage_ok_() const noexcept {
+        if constexpr (requires(const Storage& s) { { s.valid() } -> std::convertible_to<bool>; }) {
+            return this->valid();
+        } else {
+            return true;
+        }
+    }
+
+    template <std::size_t L>
+    NISPS_HOT NISPS_FORCE_INLINE void forward_layer_(std::span<const float> in) noexcept {
+        const std::size_t fan_in  = this->template fan_in_l<L>();
+        const std::size_t fan_out = this->template fan_out_l<L>();
+        auto w  = this->template weights_l<L>();
+        auto b  = this->template biases_l<L>();
+        auto pa = this->template pre_act_l<L>();
+        auto a  = this->template act_l<L>();
+        for (std::size_t node = 0; node < fan_out; ++node) {
+            const std::size_t row = node * fan_in;
+            float sum = b[node];
+            for (std::size_t j = 0; j < fan_in; ++j) {
+                sum += w[row + j] * in[j];
+            }
+            pa[node] = sum;
+            a[node]  = activate<kLayerActivation<L>>(sum);
+        }
+    }
+
     NISPS_HOT NISPS_FORCE_INLINE
-    void forward_(std::span<const float, NIn> in) noexcept {
-        layer0_.forward(in);
-        layer1_.forward(std::span<const float, NHidden1>(layer0_.activation));
-        layer2_.forward(std::span<const float, NHidden2>(layer1_.activation));
-        layer3_.forward(std::span<const float, NHidden3>(layer2_.activation));
+    void forward_(std::span<const float> in) noexcept {
+        forward_layer_<0u>(in);
+        forward_layer_<1u>(this->template act_l<0u>());
+        forward_layer_<2u>(this->template act_l<1u>());
+        forward_layer_<3u>(this->template act_l<2u>());
+    }
+
+    // Backprop one layer: compute the incoming-error vector for the previous
+    // layer into delta_l<L>() and accumulate per-weight/per-bias gradients.
+    template <std::size_t L>
+    NISPS_HOT NISPS_FORCE_INLINE
+    void backprop_layer_(std::span<const float> input,
+                         std::span<const float> upstream_err,
+                         float                  sample_weight) noexcept {
+        const std::size_t fan_in  = this->template fan_in_l<L>();
+        const std::size_t fan_out = this->template fan_out_l<L>();
+        auto w        = this->template weights_l<L>();
+        auto pa       = this->template pre_act_l<L>();
+        auto gw       = this->template grad_w_l<L>();
+        auto gb       = this->template grad_b_l<L>();
+        auto delta_in = this->template delta_l<L>();
+
+        for (std::size_t j = 0; j < fan_in; ++j) delta_in[j] = 0.f;
+
+        for (std::size_t node = 0; node < fan_out; ++node) {
+            const float err_signal =
+                upstream_err[node] *
+                activate_deriv_pre<kLayerActivation<L>>(pa[node]) * sample_weight;
+            const std::size_t row = node * fan_in;
+            for (std::size_t j = 0; j < fan_in; ++j) {
+                gw[row + j] += err_signal * input[j];
+                delta_in[j] += err_signal * w[row + j];
+            }
+            gb[node] += err_signal;
+        }
     }
 
     // Backprop with sample_weight applied to every error signal (so the
     // accumulated gradient is already weighted). No weight update happens
     // here — caller does it after each sample.
     NISPS_HOT NISPS_FORCE_INLINE
-    void backprop_(std::span<const float, NIn> input,
-                   std::span<const float, NOut> output_deriv,
+    void backprop_(std::span<const float> input,
+                   std::span<const float> output_deriv,
                    float sample_weight) noexcept {
-        std::array<float, NHidden3> d3{};
-        std::array<float, NHidden2> d2{};
-        std::array<float, NHidden1> d1{};
-        std::array<float, NIn>      d0{};
-
-        layer3_.backprop_accumulate(
-            std::span<const float, NHidden3>(layer2_.activation),
-            output_deriv,
-            std::span<float, NHidden3>(d3),
-            sample_weight);
-        layer2_.backprop_accumulate(
-            std::span<const float, NHidden2>(layer1_.activation),
-            std::span<const float, NHidden3>(d3),
-            std::span<float, NHidden2>(d2),
-            1.f);  // weight already in d3
-        layer1_.backprop_accumulate(
-            std::span<const float, NHidden1>(layer0_.activation),
-            std::span<const float, NHidden2>(d2),
-            std::span<float, NHidden1>(d1),
-            1.f);
-        layer0_.backprop_accumulate(
-            input,
-            std::span<const float, NHidden1>(d1),
-            std::span<float, NIn>(d0),
-            1.f);
+        backprop_layer_<3u>(this->template act_l<2u>(), output_deriv, sample_weight);
+        backprop_layer_<2u>(this->template act_l<1u>(), this->template delta_l<3u>(), 1.f);
+        backprop_layer_<1u>(this->template act_l<0u>(), this->template delta_l<2u>(), 1.f);
+        backprop_layer_<0u>(input,                       this->template delta_l<1u>(), 1.f);
     }
 
-    // const forward pass for diagnostics. Doesn't touch layer caches.
-    template <std::size_t Fi, std::size_t Fo, Activation A>
-    static NISPS_FORCE_INLINE void forward_const_layer(
-        std::span<const float, Fi>    in,
-        const std::array<float, Fi*Fo>& w,
-        const std::array<float, Fo>&    b,
-        std::array<float, Fo>&          out) noexcept {
-        for (std::size_t node = 0; node < Fo; ++node) {
-            const std::size_t row = node * Fi;
-            float sum = b[node];
-            for (std::size_t j = 0; j < Fi; ++j) sum += w[row + j] * in[j];
-            out[node] = activate<A>(sum);
+    // Apply accumulated gradient to weights+biases with clipping. Resets
+    // the accumulators to zero for the next sample/iteration.
+    template <std::size_t L>
+    NISPS_FORCE_INLINE void apply_grad_(float lr) noexcept {
+        auto w  = this->template weights_l<L>();
+        auto b  = this->template biases_l<L>();
+        auto gw = this->template grad_w_l<L>();
+        auto gb = this->template grad_b_l<L>();
+        const std::size_t nw = gw.size();
+        const std::size_t nb = gb.size();
+        for (std::size_t i = 0; i < nw; ++i) {
+            const float g = clip_gradient(gw[i]);
+            w[i] -= lr * g;
+            gw[i] = 0.f;
+        }
+        for (std::size_t i = 0; i < nb; ++i) {
+            const float g = clip_gradient(gb[i]);
+            b[i] -= lr * g;
+            gb[i] = 0.f;
         }
     }
 
-    NISPS_FORCE_INLINE std::span<const float, NIn> sample_features_(std::size_t s) const noexcept {
-        return std::span<const float, NIn>(ds_features_.data() + s * NIn, NIn);
+    template <std::size_t L>
+    NISPS_FORCE_INLINE void clear_grad_() noexcept {
+        auto gw = this->template grad_w_l<L>();
+        auto gb = this->template grad_b_l<L>();
+        for (std::size_t i = 0; i < gw.size(); ++i) gw[i] = 0.f;
+        for (std::size_t i = 0; i < gb.size(); ++i) gb[i] = 0.f;
+    }
+
+    // const forward pass for diagnostics — writes into the mutable eval
+    // scratch, never the real caches.
+    template <std::size_t L>
+    NISPS_FORCE_INLINE void forward_eval_layer_(std::span<const float> in) const noexcept {
+        const std::size_t fan_in  = this->template fan_in_l<L>();
+        const std::size_t fan_out = this->template fan_out_l<L>();
+        auto w   = this->template weights_l<L>();
+        auto b   = this->template biases_l<L>();
+        auto out = this->template eval_act_l<L>();
+        for (std::size_t node = 0; node < fan_out; ++node) {
+            const std::size_t row = node * fan_in;
+            float sum = b[node];
+            for (std::size_t j = 0; j < fan_in; ++j) sum += w[row + j] * in[j];
+            out[node] = activate<kLayerActivation<L>>(sum);
+        }
+    }
+
+    NISPS_FORCE_INLINE std::span<const float> sample_features_(std::size_t s) const noexcept {
+        const std::size_t n_in = this->n_in();
+        return this->ds_features().subspan(s * n_in, n_in);
     }
     NISPS_FORCE_INLINE std::span<const float> sample_labels_(std::size_t s) const noexcept {
-        return std::span<const float>(ds_labels_.data() + s * NOut, NOut);
+        const std::size_t n_out = this->n_out();
+        return this->ds_labels().subspan(s * n_out, n_out);
     }
 
     void clear_dataset_() noexcept {
@@ -542,27 +515,27 @@ class MLP {
     }
 
     // ---------------------------------------------------------------
-    // Members
+    // Members (shape-independent; everything sized lives in Storage)
     // ---------------------------------------------------------------
-    Layer0 layer0_{};
-    Layer1 layer1_{};
-    Layer2 layer2_{};
-    Layer3 layer3_{};
-
-    std::array<float, NIn>  input_{};
-    std::array<float, NOut> output_{};
-
-    std::array<float, NMaxExamples * NIn>  ds_features_{};
-    std::array<float, NMaxExamples * NOut> ds_labels_{};
-    std::size_t dataset_count_ = 0u;
-    std::size_t dataset_head_  = 0u;
-
-    std::array<float, weight_count()> flat_weight_buf_{};
-    std::array<float, NMaxIterTrain>  loss_history_{};
+    std::size_t dataset_count_      = 0u;
+    std::size_t dataset_head_       = 0u;
     std::size_t loss_history_count_ = 0u;
 
     Rng rng_;
 };
+
+// The classic fixed-architecture MLP — the firmware model and the default
+// everywhere a compile-time shape is known. `MLP<NIn, 10, 10, 14, NOut>`
+// matches the legacy firmware default [10, 10, 14].
+template <std::size_t NIn,
+          std::size_t NHidden1,
+          std::size_t NHidden2,
+          std::size_t NHidden3,
+          std::size_t NOut,
+          std::size_t NMaxExamples  = 128u,
+          std::size_t NMaxIterTrain = 4096u>
+using MLP = MLPCore<
+    FixedStorage<NIn, NHidden1, NHidden2, NHidden3, NOut, NMaxExamples, NMaxIterTrain>>;
 
 // MLP satisfies the MLEngine concept. We keep a static_assert in the test
 // suite (test_mlp_concept_satisfied) — see test_mlp_init.cpp.

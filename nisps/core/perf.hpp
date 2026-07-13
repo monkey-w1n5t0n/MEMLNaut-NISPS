@@ -10,6 +10,15 @@
 
 #pragma once
 
+// NISPS_TARGET_EMBEDDED marks builds for the RP2350 hardware target. Code
+// that is allowed heap allocation at construction time on host/WASM targets
+// (e.g. nisps/ml/dynamic_storage.hpp) is compile-time excluded when this is
+// defined — the zero-heap firmware contract is enforced structurally, not
+// just by lint.
+#if defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_RP2350)
+  #define NISPS_TARGET_EMBEDDED 1
+#endif
+
 #if defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_RP2350)
   // Pico SDK provides __not_in_flash and __not_in_flash_func.
   // __not_in_flash takes a section name string; __not_in_flash_func wraps the

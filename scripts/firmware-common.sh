@@ -300,7 +300,7 @@ set_firmware_variant() {
   local selected
 
   selected="$(choose_firmware_variant "$requested")"
-  python - "$SKETCH_PATH" "$selected" <<'PY'
+  "${PYTHON:-python3}" - "$SKETCH_PATH" "$selected" <<'PY'
 from pathlib import Path
 import re
 import sys

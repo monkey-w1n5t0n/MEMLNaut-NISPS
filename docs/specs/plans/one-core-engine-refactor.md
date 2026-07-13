@@ -101,13 +101,15 @@ Each phase ends green on its test gate and is independently landable. File phase
 
 ### P2 — Storage-policy split: templated hardware, dynamic browser (the structural centre, ≈1 wk)
 
-- Refactor `nisps/ml/` so algorithms (forward, backprop/SGD, init, `move_weights`, jolt, OU, feedback)
-  are written once against a storage concept: `weights()`, `layer_sizes()`, `scratch()`. Two models:
-  - `FixedStorage<NIn,H1,H2,H3,NOut>` — `std::array`, `NISPS_AUDIO_MEM`-able, zero heap. Firmware target;
-    existing `MLP<...>` becomes an alias. **RP2350 performance contract untouched.**
-  - `DynamicStorage` — sizes at construction, single arena allocation, no per-call allocation after
-    construction. Compiled only for WASM/native-test/VCV targets (guarded so `lint-cpp.sh` still fails heap
-    use in firmware paths).
+- ✅ (landed 2026-07-13) Refactor `nisps/ml/` so algorithms (forward, backprop/SGD, init, `move_weights`)
+  are written once against a storage policy (`mlp.hpp` `MLPCore<Storage>`; jolt/OU/feedback already operate
+  on the MLP surface and needed no change). Two models:
+  - `FixedStorage<NIn,H1,H2,H3,NOut>` (`nisps/ml/storage.hpp`) — `std::array`, zero heap; `MLP<...>` is an
+    alias preserving the full compile-time surface. **RP2350 contract verified: PAFSynth `.text`
+    122324→122692 = +0.30% (±1% budget); ctest + golden vectors + WASM parity bit-stable.**
+  - `DynamicStorage` (`nisps/ml/dynamic_storage.hpp`) — sizes at construction, single arena allocation,
+    nothing per-call. `#error`s under `NISPS_TARGET_EMBEDDED`; sole `lint-cpp.sh` heap-allowlist entry, with
+    a lint check that fails if the guard is ever removed.
 - `nisps_ml_create(input, output, hidden[])` honours its arguments. Reshape = new instance + warm-start
   copy of overlapping weights (the BUILD-PLAN warm-start idea, now runtime).
 - Manifold drops input clamping/phantom-channel handling; XIASRI/sound-analysis multi-input modes become

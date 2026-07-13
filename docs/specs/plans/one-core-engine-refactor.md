@@ -74,13 +74,13 @@ skin) still applies inside manifold; this plan adds the vertical one.
 Each phase ends green on its test gate and is independently landable. File phases as **ergo** tasks
 (one per phase, sub-tasks per bullet); do not start a phase before its predecessor's gate is green.
 
-### P0 — Plumbing hygiene (hours, no behaviour change)
+### P0 — Plumbing hygiene (hours, no behaviour change) — ✅ landed 2026-07-13
 
-- `scripts/build-wasm.sh` emits to `manifold/public/` (keep `playground/public/` copy only until P1 lands).
-- `scripts/parity-check.sh` reads the manifold artifact.
-- Fix stale doc: `MAP.md` §WASM still says `MLP<2,…>`; code is `MLP<32u,10u,14u,18u,126u>`.
-- Delete `ml-debug.log`, `graphify-out/` from tree root; gitignore `.claude/worktrees/`.
-- **Gate:** `run-all-tests.sh` green; manifold builds against a freshly-built (not copied) `nisps.wasm`.
+- ✅ `scripts/build-wasm.sh` emits to `manifold/public/` (keep `playground/public/` copy only until P1 lands).
+- ✅ `scripts/parity-check.sh` (and `tests/cpp/parity_wasm.mjs`) read the manifold artifact.
+- ✅ Fix stale doc: the `MLP<2,…>` line was in `docs/AGENT-REFERENCE.md` + `nisps/wasm/README.md` (MAP.md was already correct); both now say `MLP<32u,10u,14u,18u,126u>`.
+- ✅ `ml-debug.log`/`graphify-out/` were already absent from the tree; `.claude/worktrees/` gitignored.
+- **Gate met:** `run-all-tests.sh` green (Playwright leg via the BUILD-PLAN non-snap-node VPS runner); parity PASS reading `manifold/public/` (max delta 2.4e-7); manifold typecheck+build green against the freshly-built artifact.
 
 ### P1 — Retire playground, single TS home (≈1 day)
 

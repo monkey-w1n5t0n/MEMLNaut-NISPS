@@ -4,7 +4,7 @@
  * parity_check.cpp against the WASM build of nisps and writes a binary blob
  * with identical layout. The shell wrapper compares the two blobs.
  *
- * The WASM module is loaded from playground/public/nisps.{js,wasm} —
+ * The WASM module is loaded from manifold/public/nisps.{js,wasm} —
  * scripts/build-wasm.sh must have run first.
  *
  * Output blob format matches parity_check.cpp:
@@ -48,7 +48,7 @@ const SYNTH_FRAMES = 128;
 const PROBE_IDX    = [0, 5, 19, 31, 73, 137, 251, 491, 999, 1583, 2401, 3289];
 
 async function loadWasm() {
-  const wasmGluePath = resolve(repoRoot, 'playground', 'public', 'nisps.js');
+  const wasmGluePath = resolve(repoRoot, 'manifold', 'public', 'nisps.js');
   try {
     await access(wasmGluePath, fsConstants.R_OK);
   } catch {
@@ -59,7 +59,7 @@ async function loadWasm() {
   // The Emscripten glue is generated with MODULARIZE=1, which writes
   //   var createNispsModule = (() => ...)();
   //   if (typeof exports==='object' && typeof module==='object') module.exports = ...;
-  // It lives in playground/public/, which is a sub-package with
+  // It lives in manifold/public/, which is a sub-package with
   // "type":"module" in its parent package.json — so neither `require()` nor
   // `import()` can extract the factory cleanly. We work around this by
   // reading the file as text and evaluating it inside a thin shim that
@@ -77,7 +77,7 @@ async function loadWasm() {
     console.error('[parity_wasm] could not locate createNispsModule in glue');
     process.exit(2);
   }
-  const wasmBinaryPath = resolve(repoRoot, 'playground', 'public', 'nisps.wasm');
+  const wasmBinaryPath = resolve(repoRoot, 'manifold', 'public', 'nisps.wasm');
   const wasmBinary = await readFile(wasmBinaryPath);
   const Module = await factory({ wasmBinary });
   return Module;

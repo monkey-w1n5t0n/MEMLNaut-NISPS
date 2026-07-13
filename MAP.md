@@ -40,7 +40,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `playground/src/input/pipeline.ts`, `playground/src/output/pipeline.ts`, `playground/src/output/curves.ts` — pure-fn pipelines (deadzone→zoom→curve→smoothing→momentum, then global curve→smoothing→slew→freeze).
 - `playground/src/features/` — additional feature modules (heatmap sampling, snapshot stack, A/B compare, region pin, param pin, trail, weight health, etc.).
 - `playground/src/debug/probe.ts` — synchronous `window.__nisps` debug probe for Playwright.
-- `playground/public/nisps.{wasm,js}`, `c15.wasm`, `c15-glue.js` — compiled WASM artifacts (built by `scripts/build-wasm.sh`).
+- `playground/public/nisps.{wasm,js}`, `c15.wasm`, `c15-glue.js` — WASM artifacts. `nisps.*` are a transitional copy from `scripts/build-wasm.sh` (canonical output is `manifold/public/`; copy dies with playground at P1).
 - `playground/tests/e2e/` — Playwright specs (`ml-engine`, `modes`, `persistence`, `ui-interactions`) + `helpers.ts`.
 - `playground/playwright.config.ts` — Vite preview server setup.
 
@@ -113,7 +113,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 
 ### `scripts/` — build + verify entry points
 - `build-firmware.sh`, `flash-firmware.sh`, `build-and-flash-firmware.sh`, `firmware-common.sh` — Arduino-CLI wrapper for RP2350 target with C++20 flag.
-- `build-wasm.sh` — Emscripten compile producing `playground/public/nisps.{wasm,js}`.
+- `build-wasm.sh` — Emscripten compile producing `manifold/public/nisps.{wasm,js}` (+ transitional copy to `playground/public/` until P1).
 - `build-cpp-tests.sh` — CMake configure + build + ctest (Ninja).
 - `parity-check.sh` — runs native + WASM and diffs binary outputs.
 - `lint-cpp.sh` — `.f` literal warn + heap/`Arduino.h` violation fail.

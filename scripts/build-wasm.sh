@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/build-wasm.sh — compile nisps/wasm/bindings.cpp via Emscripten and
-# write the result to playground/public/.
+# write the result to manifold/public/.
 #
 # Requires emcc. Defaults to /usr/lib/emscripten/emcc; override via the EMCC
 # env var. Sample invocation:
@@ -8,14 +8,17 @@
 #     EMCC=$(which emcc) scripts/build-wasm.sh
 #
 # Output:
-#   playground/public/nisps.js     — Emscripten glue, MODULARIZE factory
-#   playground/public/nisps.wasm   — the compiled module
+#   manifold/public/nisps.js     — Emscripten glue, MODULARIZE factory
+#   manifold/public/nisps.wasm   — the compiled module
+#
+# A copy is also written to playground/public/ until P1 of
+# docs/specs/plans/one-core-engine-refactor.md retires the playground.
 
 set -euo pipefail
 
 EMCC="${EMCC:-$(command -v emcc || echo /usr/lib/emscripten/emcc)}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/playground/public"
+OUT="$ROOT/manifold/public"
 SRC="$ROOT/nisps/wasm/bindings.cpp"
 
 if [[ ! -x "$EMCC" && ! -f "$EMCC" ]]; then
@@ -82,3 +85,10 @@ set -x
 
 echo "[build-wasm] wrote $OUT/nisps.js + $OUT/nisps.wasm"
 ls -lh "$OUT/nisps.js" "$OUT/nisps.wasm"
+
+# Transitional copy for the playground; removed when P1 deletes playground/.
+PLAYGROUND_OUT="$ROOT/playground/public"
+if [[ -d "$PLAYGROUND_OUT" ]]; then
+  command cp -f "$OUT/nisps.js" "$OUT/nisps.wasm" "$PLAYGROUND_OUT/"
+  echo "[build-wasm] copied artifacts to $PLAYGROUND_OUT (transitional, until P1)"
+fi

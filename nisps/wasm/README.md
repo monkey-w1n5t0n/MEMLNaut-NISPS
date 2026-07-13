@@ -1,11 +1,13 @@
 # nisps/wasm
 
 Emscripten target that exposes `nisps/ml` (MLP) and `nisps/engines` (audio
-engines) to the SolidJS playground via a flat C ABI.
+engines) to the browser apps via a flat C ABI.
 
 This directory is a leaf — it does not export headers for inclusion by
 other C++ code. The only artifact is `bindings.cpp` plus the build script
-that turns it into `playground/public/nisps.{wasm,js}`.
+that turns it into `manifold/public/nisps.{wasm,js}` (with a transitional
+copy to `playground/public/` until P1 of
+`docs/specs/plans/one-core-engine-refactor.md` retires the playground).
 
 ## Building
 
@@ -18,11 +20,11 @@ Requires `emcc` (Emscripten). The script defaults to
 
 Output:
 
-- `playground/public/nisps.wasm` — the compiled module.
-- `playground/public/nisps.js`  — Emscripten glue (factory function
+- `manifold/public/nisps.wasm` — the compiled module.
+- `manifold/public/nisps.js`  — Emscripten glue (factory function
   `createNispsModule`, MODULARIZE=1).
 
-Both files are committed (so the playground works from a fresh clone
+Both files are committed (so the browser apps work from a fresh clone
 without a C++ toolchain). Re-run `build-wasm.sh` after changes to
 `nisps/{core,ml,engines,wasm}`.
 
@@ -32,9 +34,9 @@ The MLP class template is parametrised on `(input_size, hidden1, hidden2,
 hidden3, output_size)`. WASM cannot recompile templates at runtime, so
 this build instantiates exactly ONE configuration:
 
-    nisps::ml::MLP<2, 10, 14, 18, 126>
+    nisps::ml::MLP<32, 10, 14, 18, 126>
 
-That serves the playground use case (2-D joystick → up to 126 synth
+That serves the browser use case (up to 32 input axes → up to 126 synth
 parameters). `nisps_ml_create()` accepts caller-supplied dimensions for
 forward compatibility but currently ignores them — see comment at the top
 of `bindings.cpp`. The schemas in `schemas/modes/*.json` use up to

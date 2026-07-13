@@ -124,9 +124,9 @@ Two WASM instances at runtime:
 1. **Main thread** (`playground/src/ml/wasm-iml.ts`): ML inference + sync training + RL primitives. Update store after each call. Async training via disposable Web Worker (`wasm-worker.ts`).
 2. **AudioWorklet** (`playground/src/audio/worklet/nisps-processor.ts`): runs engine `process_block` per audio block. Loads `nisps.wasm` directly via `WebAssembly.compile` (no Emscripten glue in worklet). Bytes posted from main thread.
 
-C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `playground/public/`).
+C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `manifold/public/`, transitional copy to `playground/public/` until P1).
 
-The WASM target is fixed at `MLP<2, 10, 14, 18, 126>`. Modes with smaller `output_size` use the first N outputs only.
+The WASM target is fixed at `MLP<32u, 10u, 14u, 18u, 126u>` (`nisps_ml_create` ignores requested dims — see `docs/specs/plans/one-core-engine-refactor.md` P2). Modes with smaller `input_size`/`output_size` use a slice.
 
 ### Known limitations
 

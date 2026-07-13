@@ -4,7 +4,7 @@
 #
 # Prerequisites:
 #   1. scripts/build-cpp-tests.sh has run (need nisps_parity_check binary).
-#   2. scripts/build-wasm.sh has run (need playground/public/nisps.{js,wasm}).
+#   2. scripts/build-wasm.sh has run (need manifold/public/nisps.{js,wasm}).
 #
 # This script can run either step on demand if the artifacts are missing.
 # Skip auto-build with NISPS_PARITY_NO_BUILD=1.
@@ -21,8 +21,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TESTS_DIR="$ROOT/tests/cpp"
 BUILD_DIR="${NISPS_BUILD_DIR:-$ROOT/nisps/build}"
 NATIVE_BIN="$BUILD_DIR/nisps_parity_check"
-WASM_GLUE="$ROOT/playground/public/nisps.js"
-WASM_MOD="$ROOT/playground/public/nisps.wasm"
+WASM_GLUE="$ROOT/manifold/public/nisps.js"
+WASM_MOD="$ROOT/manifold/public/nisps.wasm"
 NATIVE_OUT="$TESTS_DIR/parity_native.bin"
 WASM_OUT="$TESTS_DIR/parity_wasm.bin"
 TOL="${NISPS_PARITY_TOL:-1e-5}"

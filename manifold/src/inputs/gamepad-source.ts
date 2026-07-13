@@ -117,12 +117,17 @@ export class GamepadSource extends BaseSource {
       for (let i = 0; i < n; i++) out[offset + i] = 0.5; // centre when absent
       return n;
     }
-    // Left stick = axes 0,1; right stick = axes 2,3 (standard mapping).
-    out[offset] = remap(pad.axes[0] ?? 0);
-    out[offset + 1] = remap(-(pad.axes[1] ?? 0)); // flip: up = 1
+    // Left stick = axes 0,1; right stick = axes 2,3 (standard mapping). Each
+    // stick is clamped to the unit disc (not per-axis), so a full diagonal push
+    // lands ON the circular boundary rather than the square corner — matching
+    // the on-screen circular input area and the engine's own circular clamp.
+    const [lx, ly] = clampStick(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0)); // flip: up = 1
+    out[offset] = lx;
+    out[offset + 1] = ly;
     if (n === 4) {
-      out[offset + 2] = remap(pad.axes[2] ?? 0);
-      out[offset + 3] = remap(-(pad.axes[3] ?? 0));
+      const [rx, ry] = clampStick(pad.axes[2] ?? 0, -(pad.axes[3] ?? 0));
+      out[offset + 2] = rx;
+      out[offset + 3] = ry;
     }
     return n;
   }
@@ -186,11 +191,26 @@ export class GamepadSource extends BaseSource {
   }
 }
 
-/** Map a [-1,1] stick axis (with radial deadzone) to [0,1]. */
-function remap(v: number): number {
-  let x = v;
-  if (x > -DEADZONE && x < DEADZONE) x = 0;
-  else x = x > 0 ? (x - DEADZONE) / (1 - DEADZONE) : (x + DEADZONE) / (1 - DEADZONE);
-  const out = (x + 1) / 2;
-  return out < 0 ? 0 : out > 1 ? 1 : out;
+/** Apply the per-axis deadzone, returning a signed value in [-1,1]. */
+function deadzoneAxis(v: number): number {
+  if (v > -DEADZONE && v < DEADZONE) return 0;
+  const x = v > 0 ? (v - DEADZONE) / (1 - DEADZONE) : (v + DEADZONE) / (1 - DEADZONE);
+  return x < -1 ? -1 : x > 1 ? 1 : x;
+}
+
+/**
+ * Map a raw stick (rawX, rawY with y already flipped so up = +) to two [0,1]
+ * axes, clamping the stick *vector* to the unit disc first. This keeps full
+ * deflection on the circular boundary in every direction (radially symmetric),
+ * instead of letting a diagonal reach the square corner.
+ */
+function clampStick(rawX: number, rawY: number): [number, number] {
+  let x = deadzoneAxis(rawX);
+  let y = deadzoneAxis(rawY);
+  const mag = Math.hypot(x, y);
+  if (mag > 1) {
+    x /= mag;
+    y /= mag;
+  }
+  return [0.5 + 0.5 * x, 0.5 + 0.5 * y];
 }

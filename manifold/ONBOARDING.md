@@ -94,7 +94,7 @@ decision. Buffers are reused frame-to-frame; never assume a fresh array.
 ### The "convertible" Stages (one renders at a time, chosen by `focus` + `outputMode`)
 | Stage | File | Renders when | What it is |
 |---|---|---|---|
-| Manifold | `Manifold.tsx` | `focus==='in'` (default input view) | Full-bleed 2D input surface; canvas trail + pins + feedback markers; pointer → `onMove`. |
+| Manifold | `Manifold.tsx` | `focus==='in'` (default input view) | Full-bleed 2D input surface; canvas trail + pins + feedback markers; pointer → `onMove`. **Double-click the input mark → follow-mouse mode** (self-contained state; a window `pointermove` listener maps the whole viewport onto this surface's space so the knob tracks the cursor across the entire UI; Esc / second double-click exits). |
 | OutputStage | `OutputStage.tsx` | `focus==='out'` | Full-bleed output columns; drag bars set value; `InputMini` docked in a corner. |
 | SplitStage | `SplitStage.tsx` | `focus==='split'` | Manifold left, OutputStage right, equal width. |
 | CompositeStage | `CompositeStage.tsx` | `focus==='composite'` (**app default / hero**) | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |
@@ -196,9 +196,10 @@ a setting → `--r-*` tokens.
 
 ### Feedback — `src/feedback/`
 - `controller.ts` (**~490 lines**) — `FeedbackController`, framework-neutral, owned by ConsoleApp.
-  Two modes: **explore-and-place** (default, Mode 2, positive-only — drives the C++ core's
-  snapshot/scratchpad/undo lifecycle; caller accumulates anchors and trains on finalise with
-  warm-start) and **geometric-dislike** (Mode 1, selectable). Solo/arm via per-output mask.
+  Two modes: **geometric-dislike** (default, Mode 1, "Push away" — down carves the current sound
+  away from what you like, directed repulsion) and **explore-and-place** (Mode 2, positive-only,
+  selectable — drives the C++ core's snapshot/scratchpad/undo lifecycle; caller accumulates anchors
+  and trains on finalise with warm-start). Solo/arm via per-output mask.
 - `rng.ts` — `SeededRng` (deterministic xorshift32 + gaussian). **Stand-in** until the C++ nudge owns
   the stream — not bit-identical to `nisps::Rng`.
 - **`--- C++ GAP ---` markers** flag behaviour approximated in TS pending C++ port: true geometric

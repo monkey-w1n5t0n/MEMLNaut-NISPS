@@ -168,6 +168,19 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         </p>
       )}
 
+      <SectionLabel>Recorded examples</SectionLabel>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Chip>
+          {ctx.datasetCount} example{ctx.datasetCount === 1 ? '' : 's'}
+        </Chip>
+        <Button size="sm" variant="secondary" onClick={ctx.onClear}>
+          Clear
+        </Button>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
+          forget every example & wipe the on-map marks
+        </span>
+      </div>
+
       {depth === 'expanded' && (
         <>
           <SectionLabel>Solo / arm scope</SectionLabel>
@@ -706,12 +719,15 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
 // ===========================================================================
 
 const KEYS: [string, string][] = [
-  ['1–5', 'open drawers'],
-  ['\\', 'expand drawer'],
+  ['1', 'down − / explore'],
+  ['2', 'commit +'],
   ['space / ↑', 'commit +'],
-  ['↓', 'perturb / down −'],
+  ['↓', 'down − / explore'],
+  ['3–5', 'open drawers'],
+  ['\\', 'expand drawer'],
   ['z', 'undo'],
   ['[ ] =', 'split (composite)'],
+  ['dbl-click mark', 'follow mouse (Esc exits)'],
 ];
 function HelpDrawer() {
   return (

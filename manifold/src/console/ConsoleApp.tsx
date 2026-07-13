@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { useEngine, useEngineVersion } from '../engine';
+import { useEngine, useEngineVersion, ExplorationController } from '../engine';
 import { MF_MODES, modeEngineId, seededGradient, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
@@ -125,6 +125,11 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [learningRate, setLearningRate] = useState(0.00001);
   const [decay, setDecay] = useState(0.97);
   const [spreadLevel, setSpreadLevel] = useState(0.6);
+  // Exploration gestures (Jolt held weight-morph + OU explore-intensity). The
+  // maths lives in the ExplorationController (engine/exploration.ts); these are
+  // the React-visible reflections the Learning drawer renders.
+  const [joltActive, setJoltActive] = useState(false);
+  const [exploreIntensity, setExploreIntensityState] = useState(0);
   // Active output MODE (TOP dock selector) — default Particle System. The dock
   // backend + audio backend derive from this.
   const [outputMode, setOutputModeState] = useState<OutputMode>(DEFAULT_OUTPUT_MODE);
@@ -178,6 +183,34 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setPicking(s.picking);
     setAnchorCount(s.anchorCount);
     setUndoDepth(s.undoDepth);
+  };
+
+  // The exploration controller (Jolt weight-morph + OU explore-intensity). Same
+  // lazy-once-per-engine pattern as the feedback controller; its interim TS
+  // maths becomes WASM calls in P3 (engine/exploration.ts P3 SWAP POINT).
+  const explorationRef = useRef<ExplorationController | null>(null);
+  if (engine && !explorationRef.current) {
+    explorationRef.current = new ExplorationController(engine);
+  }
+  useEffect(
+    () => () => {
+      explorationRef.current?.dispose();
+      explorationRef.current = null;
+    },
+    [],
+  );
+
+  const onJoltPress = () => {
+    explorationRef.current?.joltPress();
+    setJoltActive(explorationRef.current?.joltActive() ?? false);
+  };
+  const onJoltRelease = () => {
+    explorationRef.current?.joltRelease();
+    setJoltActive(false);
+  };
+  const setExploreIntensity = (v: number) => {
+    explorationRef.current?.setExploreIntensity(v);
+    setExploreIntensityState(explorationRef.current?.exploreIntensity() ?? v);
   };
 
   const setFeedbackMode = (m: FeedbackModeUI) => {
@@ -739,6 +772,12 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setDecay,
     spreadLevel,
     setSpreadLevel,
+    // exploration gestures (Jolt + OU explore)
+    joltActive,
+    onJoltPress,
+    onJoltRelease,
+    exploreIntensity,
+    setExploreIntensity,
     // synth
     audioStarted,
     onToggleAudio,

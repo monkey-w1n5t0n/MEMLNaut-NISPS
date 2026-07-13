@@ -168,6 +168,45 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         </p>
       )}
 
+      <SectionLabel>Exploration</SectionLabel>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button
+          size="sm"
+          variant="secondary"
+          active={ctx.joltActive}
+          aria-label="Jolt — hold to morph the network's weights, release to freeze"
+          aria-pressed={ctx.joltActive}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            ctx.onJoltPress();
+          }}
+          onPointerUp={ctx.onJoltRelease}
+          onPointerLeave={ctx.onJoltRelease}
+          onPointerCancel={ctx.onJoltRelease}
+          style={{ touchAction: 'none', userSelect: 'none' }}
+        >
+          Jolt {ctx.joltActive ? '(morphing…)' : '(hold)'}
+        </Button>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
+          hold to morph the whole net live · release to freeze
+        </span>
+      </div>
+      <Slider
+        label="explore · output wander"
+        value={ctx.exploreIntensity}
+        min={0}
+        max={1}
+        step={0.01}
+        onChange={ctx.setExploreIntensity}
+      />
+      {depth === 'expanded' && (
+        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+          Explore adds a slow random walk (Ornstein-Uhlenbeck) on the outputs so the sound roams;
+          likes and dislikes registered mid-wander steer the net toward what you want. 0 = off. Jolt
+          (firmware TogB1) and Explore (RVX1) drive the same core gestures as the MEMLNaut hardware.
+        </p>
+      )}
+
       <SectionLabel>Recorded examples</SectionLabel>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <Chip>

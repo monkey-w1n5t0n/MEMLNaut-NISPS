@@ -82,15 +82,22 @@ Each phase ends green on its test gate and is independently landable. File phase
 - ✅ `ml-debug.log`/`graphify-out/` were already absent from the tree; `.claude/worktrees/` gitignored.
 - **Gate met:** `run-all-tests.sh` green (Playwright leg via the BUILD-PLAN non-snap-node VPS runner); parity PASS reading `manifold/public/` (max delta 2.4e-7); manifold typecheck+build green against the freshly-built artifact.
 
-### P1 — Retire playground, single TS home (≈1 day)
+### P1 — Retire playground, single TS home (≈1 day) — ✅ landed 2026-07-13
 
-- Branch `archive/playground-solidjs` at current main; delete `playground/` from main.
-- Manifold's `src/engine/` is now the only TS spine. Port the two playground-only exploration UIs that
-  manifold lacks (Jolt press gesture, OU explore control) as *UI shells only* — their math arrives in P3;
-  interim they may call the existing `nisps_ml_get/set_weights` route the playground used.
-- Move Playwright specs worth keeping (spine invariant, probe API) into `manifold/tests/`.
-- Retarget every script/doc reference (`CLAUDE.md`, `MAP.md`, deploy script) from playground to manifold.
-- **Gate:** chokepoint E equivalent — full test script green with playground gone; manifold e2e passes.
+- ✅ Branch `archive/playground-solidjs` + tag `playground-solidjs-final`; `playground/` deleted from main.
+  Parity fixtures for P4 captured FIRST: `manifold/tests/fixtures/` (288-event gesture trace, curve
+  goldens, input/output pipeline goldens under 14+8 configs) + drift-guard `pipeline-golden.test.ts`.
+  Note: input pipeline's momentum path reads `performance.now()` — fixtures pin a clock contract (see
+  fixtures README). C15 (stub + c15.wasm) now lives only on the archive branch (ALIGNMENT defect #1).
+- ✅ Jolt press + OU explore UI shells in the Learning drawer; interim TS math via get/set_weights in
+  `manifold/src/engine/{exploration,jolt,ou-explore}.ts`, marked `P3 SWAP POINT`.
+- ✅ Keeper Playwright specs ported: `probe-api.spec.ts` (15 tests), `spine.spec.ts` (4). Playground UI/
+  persistence specs dropped with the playground.
+- ✅ References retargeted: run-all-tests stage 5 → manifold, ci.yml manifold-tests job, osc-bridge.yml
+  (was already broken), codegen TS target removed (returns P5), AGENTS/README/MAP/ALIGNMENT/
+  AGENT-REFERENCE/specs-MAIN. The VPS deploy webhook already built only manifold — no change needed.
+- **Gate met:** full `run-all-tests.sh` green with playground gone (ctest 4/4, parity PASS, lint clean,
+  manifold 9 unit + 20 e2e).
 
 ### P2 — Storage-policy split: templated hardware, dynamic browser (the structural centre, ≈1 wk)
 

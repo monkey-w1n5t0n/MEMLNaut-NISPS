@@ -69,8 +69,14 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   prototype), `rng.ts` (seeded).
 - `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius).
 - `manifold/src/serial/` — `memlnaut-serial.ts` Web Serial scaffold + `EditorPanel.tsx` (MEMLNaut Editor mode).
-- `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/smoke.spec.ts`. E2E on the
-  VPS runs via non-snap node (see BUILD-PLAN). `manifold/osc-bridge/` — Deno WS↔UDP-OSC bridge.
+- `manifold/src/engine/exploration.ts` (+ `jolt.ts`, `ou-explore.ts`) — Jolt press + OU explore gestures
+  (Learning drawer). Interim TS math from the retired playground via get/set-weights + the spine's
+  `setOutputMorph` hook; marked `P3 SWAP POINT` for the WASM bindings.
+- `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/` — `smoke`,
+  `probe-api` (15-test engine-contract port), `spine` (spine invariant + probe-survives-mode-switch).
+  E2E on the VPS runs via non-snap node (see BUILD-PLAN). `manifold/tests/fixtures/` — golden parity
+  fixtures (gesture trace, curves, input/output pipelines) captured 2026-07-13 pre-P4, guarded by
+  `tests/pipeline-golden.test.ts` (in `bun run test`). `manifold/osc-bridge/` — Deno WS↔UDP-OSC bridge.
 
 ### `vcv/` — VCV Rack 2 plugin (MEMLNaut module, WIP)
 Native C++ Rack module: ML CV-mapper with RL feedback + a browser bridge. Currently 2→12 (being evolved to

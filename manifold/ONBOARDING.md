@@ -179,6 +179,11 @@ a setting → `--r-*` tokens.
 - `dataset.ts` — JS-side example store + sample-weight modes (uniform/recency/spatial/combined).
 - `curves.ts` — math primitives. **Must stay lockstep with C++ `nisps/core/math.hpp`** (golden tests
   compare WASM vs TS). `sink.ts` — `EngineSink` framework boundary. `types.ts` — C-ABI surface types.
+- `exploration.ts` — `ExplorationController` adapter for the Jolt press + OU explore gestures
+  (Learning drawer). Interim TS math in `jolt.ts` / `ou-explore.ts` (ported from the retired
+  playground), driven via get/set-weights; OU applies through the spine's inert-by-default
+  `setOutputMorph` hook. The `─── P3 SWAP POINT ───` comment marks where the one-core-engine plan
+  swaps these for `nisps_ml_jolt_press/release` + `nisps_ml_explore_intensity` WASM bindings.
 
 ### Inputs — `src/inputs/`
 - `input-layer.ts` — composition hub. One rAF loop polls sources, pulls all axes into a vector,

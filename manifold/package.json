@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4273",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src",
+    "test": "bun test src tests/pipeline-golden.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },

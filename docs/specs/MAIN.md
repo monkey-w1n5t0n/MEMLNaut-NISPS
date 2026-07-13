@@ -100,6 +100,7 @@ All specs below are stable or evolving (no aspirational ones in shipped features
 |------|--------|---------|
 | `plans/BUILD-PLAN.md` | active | Manifold build resume anchor (dated 2026-06-27). Locked decisions: React app in `manifold/`, parity-tested TS engine from `playground/src`, staging deploy at `meml.lnfinitemonkeys.org/next`, default feedback mode = Explore-and-Place. |
 | `plans/playground-2.0-rewrite-plan.md` | executed | SolidJS clean-room rewrite plan (June 2026). Largely implemented in Manifold + playground foundation: one fullscreen instrument, Console interaction model, right-edge dock with three depths, snapshot DAG, control-point tri-state. |
+| `plans/one-core-engine-refactor.md` | active | Firmware+Manifold core reunification (dated 2026-07-13). Locked: retire `playground/`, all algorithms into `nisps/` C++ (geometric dislike, Jolt, OU, RNG, pipelines, curves), storage-policy MLP (fixed template on RP2350, runtime-shaped in WASM/VCV), codegen serves manifold, VCV last. Supersedes BUILD-PLAN's "multiple WASM modules" MLP decision. |
 
 ---
 

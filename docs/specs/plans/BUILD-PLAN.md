@@ -17,7 +17,7 @@ specs it points to before continuing. Mission: one working browser instrument pu
 | Staging deploy | `meml.lnfinitemonkeys.org/next` (server-scope COOP/COEP already set); live a-immersive stays at `/` |
 | Default FEEDBACK_MODE | **Explore & place** (Mode 2, positive-only); Geometric-dislike selectable |
 | Default SOLO/arm | **Mask-gradients / column-freeze** (variant a); ZeroLoss + DontCareExample selectable |
-| Modular N×M MLP | **Multiple WASM modules + warm-start** ({2,4} then {2,4,8}); NOT runtime-shaped, NOT padded |
+| Modular N×M MLP | ~~**Multiple WASM modules + warm-start** ({2,4} then {2,4,8}); NOT runtime-shaped, NOT padded~~ **SUPERSEDED 2026-07-13** by `one-core-engine-refactor.md` §1: runtime-shaped MLP in browser (warm-start retained), fixed template on hardware |
 | VCV bridge transport | **WS↔OSC bridge server** (reuse existing Deno bridge; bidirectional training) |
 | Synth UI label | **"Powerful Synth Engine"** — the string "C15" must NEVER appear in the UI |
 | Product copy | British spelling (randomise, visualise, colour) |

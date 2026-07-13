@@ -6,7 +6,7 @@ layer: cross-cutting
 
 # MEMLNaut-NISPS Spec Corpus
 
-**Neural Interactive Shaping of Parameter Spaces** — a research platform for interactive ML control of audio. One C++20 codebase compiles to two targets: RP2350 firmware for the MEMLNaut hardware, and WASM in a SolidJS browser playground running the same engines + ML through an AudioWorklet.
+**Neural Interactive Shaping of Parameter Spaces** — a research platform for interactive ML control of audio. One C++20 codebase compiles to two targets: RP2350 firmware for the MEMLNaut hardware, and WASM in the Manifold React browser app running the same engines + ML through an AudioWorklet. (The SolidJS playground was retired 2026-07-13, P1 of plans/one-core-engine-refactor.md; archived on `archive/playground-solidjs`.)
 
 ---
 
@@ -30,8 +30,7 @@ The codebase's most architecturally significant areas referenced by this corpus:
 | **Shared C++20** | `nisps/core/`, `nisps/ml/`, `nisps/dsp/`, `nisps/engines/`, `nisps/modes/` | One audio+ML library compiling to both firmware and WASM |
 | **Schema/Codegen** | `schemas/`, `codegen/` | Parameter contracts + code generation (C++ headers, TS types) |
 | **Firmware** | `firmware/MEMLNaut-NISPS/glue/` | Hardware bindings (audio, peripherals, MIDI, settings) |
-| **Browser** | `playground/src/engine/`, `playground/src/audio/` | Headless TS engine + AudioWorklet, wired to Solid stores |
-| **Manifold** | `manifold/src/engine/`, `manifold/src/console/` | Same TS engine + React wrapper (the new convertible front-end) |
+| **Browser (Manifold)** | `manifold/src/engine/`, `manifold/src/console/` | Headless TS engine + AudioWorklet + the convertible React Console |
 
 ---
 
@@ -40,7 +39,7 @@ The codebase's most architecturally significant areas referenced by this corpus:
 **What it is.** MEMLNaut-NISPS is a single C++20 codebase that compiles once to two distinct targets:
 
 1. **Firmware** — runs on RP2350 hardware (MEMLNaut instrument). Real-time audio engines (8 variants) + interactive ML (4-layer MLP, SGD + RL feedback) with deterministic RNG + dual-core orchestration (audio on core 1, control on core 0).
-2. **Browser (WASM)** — runs in a SolidJS playground (or React Manifold front-end) via AudioWorklet. Same C++20 engines + ML, compiled to WASM; audio engines are a superset of firmware (C15 synth browser-only).
+2. **Browser (WASM)** — runs in the React Manifold front-end via AudioWorklet. Same C++20 engines + ML, compiled to WASM; audio engines are a superset of firmware (C15 synth browser-only).
 
 **The unifying constraint**: one source tree, one ML architecture, cross-platform parity (native ↔ WASM within 1e-5 numerical tolerance). Parameter shapes are JSON schemas with codegen producing both C++ headers and TypeScript types.
 
@@ -65,7 +64,7 @@ The codebase's most architecturally significant areas referenced by this corpus:
 Each firmware mode has a `schemas/modes/<mode>.json` describing parameters (name, label, range, default, curve, group), ML config (input/output sizes, hidden layers), voice spaces (names; bodies are inline lambdas in the engine), and UI config. The meta-schema at `schemas/schema.json` validates these. Codegen (`bun run codegen/generate.ts`) is idempotent and produces:
 
 - `nisps/modes/generated/<mode>_schema.hpp` — `constexpr` C++ data under `nisps::modes::generated`.
-- `playground/src/modes/generated/<mode>_schema.ts` — typed const objects + per-mode params interface.
+- TS schema emission is dormant since P1; it returns at P5 targeting `manifold/src/modes/generated/`.
 
 Regenerate after editing any `schemas/modes/*.json`. Golden test ensures output is byte-identical.
 

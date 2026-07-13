@@ -6,17 +6,17 @@
 
 A research platform for interactive ML control of audio. We're building it to figure out what works and what doesn't — different ergonomics and ergodynamics of parameter sets, modes, ML architectures, audio engines, UI, and UX. Therefore: keep most/all parameters tweakable, ML/engine/UI/UX should each be configurable on their own axis, and the codebase has to enable/assist agentic AI coding patterns (confident changes, verifiable without hardware).
 
-The clean-slate rewrite (2026-04-29) consolidates everything into one C++20 codebase compiling to firmware AND WASM, with SolidJS playground primitives composed into TSX mode components, and JSON schemas as the firmware↔browser parameter contract.
+The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 codebase compiling to firmware AND WASM. Since 2026-07-13 (P1 of `docs/specs/plans/one-core-engine-refactor.md`) the sole browser app is the React Manifold; the SolidJS playground is archived (`archive/playground-solidjs`). JSON schemas remain the firmware↔browser parameter contract.
 
 ## Top defects (ranked by mission impact)
 
-### 1. Browser-only audio engines incomplete (2026-04-29)
+### 1. Browser-only audio engines incomplete (2026-04-29; updated 2026-07-13)
 
-**What.** Stream 9 stubbed `C15Mode` as a placeholder ("C15 mode TODO"). The C15 worklet/bridge from the legacy playground is in `.local/playground-archive/js/synth/` but not wired in. Mic input for XIASRI / SoundAnalysisMIDI is also TODO — the UI renders but doesn't capture audio.
+**What.** C15 never got past a stubbed placeholder mode, and with the playground retired at P1 (2026-07-13) it has NO home on main — the stub UI, `c15.wasm`, and `c15-glue.js` live only on branch `archive/playground-solidjs`. Mic input for XIASRI / SoundAnalysisMIDI is likewise not wired in manifold.
 
-**Why it blocks the mission.** "Browser engines ⊇ firmware engines" was a non-negotiable. Without C15 + mic input, the playground can't fully demonstrate the modes; users can't audition XIASRI or SoundAnalysisMIDI in the browser.
+**Why it blocks the mission.** "Browser engines ⊇ firmware engines" was a non-negotiable. Without C15 + mic input, manifold can't fully demonstrate the modes; users can't audition XIASRI or SoundAnalysisMIDI in the browser.
 
-**Rough cost.** ~1–2 days. C15 wiring is mostly straightforward porting from the archived bridge. Mic input requires the engine-host to expose an input stream to the worklet (small worklet refactor).
+**Rough cost.** ~2 days. Reviving C15 now means porting the archived bridge into manifold's engine host. Mic input requires the engine-host to expose an input stream to the worklet (small worklet refactor).
 
 ### 2. Per-iteration loss curve not plumbed through WASM (2026-04-29)
 
@@ -61,13 +61,13 @@ Schemas currently declare per-mode `hidden_layers` (some `[10, 10, 14]`, some `[
 
 ### Q2: How to express "advanced" features (gradient flow, weight health) without cluttering modes? (2026-04-29)
 
-Current playground reproduces the a-immersive "Advanced" toggle. Power features hide behind it. Is this the right model, or should the mode UI itself decide what's exposed (some modes are "expert-only", some are simpler)?
+The retired playground reproduced the a-immersive "Advanced" toggle; manifold hides power features in drawers instead. Is this the right model, or should the mode UI itself decide what's exposed (some modes are "expert-only", some are simpler)?
 
 ### Q3: Engine event taxonomy (2026-04-29)
 
 `nisps/modes/base.hpp` exposes a `ControlEvent` ring buffer pop_events interface for sequencer modes (BreakOr, Elysiamorf). Currently events are a flat enum. As we add more event-emitting modes (custom MIDI mappings, lighting, networked control), how should the event vocabulary grow? Open question; revisit when we add the third event-emitting mode.
 
-### Q4: Should the playground stay desktop-first? (2026-04-29)
+### Q4: Should the browser app (manifold) stay desktop-first? (2026-04-29)
 
 The original a-immersive was mobile-first ("designed for touch / foldable phone use"). The SolidJS rewrite is desktop-first by default. If the research story is "the user holds a phone and pinches to zoom while a synth runs in their pocket", we'll need a responsive pass. Defer until we have user data.
 

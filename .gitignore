@@ -25,10 +25,6 @@
 *.la
 *.a
 *.lib
-# Exception: Faust shared library files (text source, .lib extension by
-# Faust convention) should be tracked.
-!playground/faust/*.lib
-
 # Executables
 *.exe
 *.out
@@ -38,8 +34,8 @@
 build
 
 # OSC bridge compiled binaries (built via compile.sh or CI)
-playground/osc-bridge/dist/
-playground/osc-bridge/node_modules/
+manifold/osc-bridge/dist/
+manifold/osc-bridge/node_modules/
 
 # Dolt database files (added by bd init)
 .dolt/

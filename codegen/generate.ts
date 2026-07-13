@@ -7,9 +7,11 @@
  *
  * Writes:  nisps/modes/generated/<mode_id>_schema.hpp
  *          nisps/modes/generated/schema_types.hpp
- *          playground/src/modes/generated/<mode_id>_schema.ts
- *          playground/src/modes/generated/types.ts
- *          playground/src/modes/generated/index.ts
+ *
+ * The TS emission target (formerly playground/src/modes/generated/) was
+ * removed with the playground at P1 of
+ * docs/specs/plans/one-core-engine-refactor.md; the TS emitters below are
+ * retained and re-targeted at manifold/src/modes/generated/ in P5.
  *
  * Idempotent: regenerating the same schemas yields byte-identical output.
  * Exits non-zero on validation failure.
@@ -64,7 +66,6 @@ const SCHEMAS_DIR = join(REPO_ROOT, "schemas");
 const MODES_DIR = join(SCHEMAS_DIR, "modes");
 const META_SCHEMA_PATH = join(SCHEMAS_DIR, "schema.json");
 const CPP_OUT_DIR = join(REPO_ROOT, "nisps", "modes", "generated");
-const TS_OUT_DIR = join(REPO_ROOT, "playground", "src", "modes", "generated");
 
 // ----- Helpers --------------------------------------------------------------
 
@@ -374,6 +375,8 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
 }
 
 // ----- Per-mode TS emission -------------------------------------------------
+// Currently unused: the playground TS target was removed at P1; these emitters
+// return in P5 targeting manifold/src/modes/generated/ (one-core-engine plan).
 
 function emitModeTs(schema: ModeSchema, sourceFile: string): string {
   const constName = `${toPascalCase(schema.mode_id)}Schema`;
@@ -545,22 +548,9 @@ function main(): number {
     writeFileSync(out, emitModeHpp(schema, source));
   }
 
-  // 5. Emit TS outputs
-  ensureDir(TS_OUT_DIR);
-  writeFileSync(join(TS_OUT_DIR, "types.ts"), emitSharedTsTypes());
-  for (const { source, schema } of schemas) {
-    const out = join(TS_OUT_DIR, `${schema.mode_id}_schema.ts`);
-    writeFileSync(out, emitModeTs(schema, source));
-  }
-  writeFileSync(
-    join(TS_OUT_DIR, "index.ts"),
-    emitTsIndex(schemas.map(s => s.schema.mode_id).sort())
-  );
-
-  // 6. Report
+  // 5. Report
   console.log(`OK  ${schemas.length} mode schema(s) processed.`);
   console.log(`    C++ -> ${CPP_OUT_DIR}`);
-  console.log(`    TS  -> ${TS_OUT_DIR}`);
   for (const { schema } of schemas) {
     console.log(
       `    - ${schema.mode_id}: ${schema.params.length} params, ` +

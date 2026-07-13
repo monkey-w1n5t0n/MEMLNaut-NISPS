@@ -10,9 +10,9 @@ This file provides guidance to coding agents working with this repository.
 MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. A research platform for interactive ML control of audio. **One C++20 codebase** (`nisps/`) compiles to two targets:
 
 1. **RP2350 firmware** for the MEMLNaut hardware platform (`firmware/`).
-2. **WASM** in a SolidJS browser playground (`playground/`) — same engines + ML, run through an AudioWorklet.
+2. **WASM** in the Manifold React browser app (`manifold/`) — same engines + ML, run through an AudioWorklet.
 
-Browser audio engines are a superset of firmware engines (C15 is browser-only). Parameter contracts are JSON schemas (`schemas/`) with codegen producing both C++ headers and TypeScript types.
+(The former SolidJS playground was retired 2026-07-13 at P1 of `docs/specs/plans/one-core-engine-refactor.md`; archived on branch `archive/playground-solidjs`, tag `playground-solidjs-final`. The browser-only C15 engine currently lives only there.) Parameter contracts are JSON schemas (`schemas/`) with codegen producing the C++ headers (TS emission returns at P5).
 
 Project documentation: https://musicallyembodiedml.github.io/memlnaut/approaches/nisps
 
@@ -76,36 +76,24 @@ Build: `scripts/build-firmware.sh [VARIANT]`. Verified compiling for PAFSynth, C
 - **Core 1**: Real-time audio processing (`Mode::process`), MIDI polling.
 - **Sync**: `nisps::core::ring_buffer` (templated SPSC lock-free, replaces pico/util/queue) + memory barriers (`nisps::core::memory_barrier`, `write_volatile`/`read_volatile`).
 
-## The `playground/` target
+## The `manifold/` target
 
 ```
-playground/                  # Vite + SolidJS + TypeScript
+manifold/                    # Vite + React + TypeScript (the sole browser app)
 ├── src/
-│   ├── primitives/          # 16 UI building blocks (Slider, JoyMap, Heatmap, …) + .demo.tsx for /dev/primitives
-│   ├── modes/               # one TSX per firmware mode + C15Mode (browser-only); ModeShell + ModeSwitcher + mode-runtime
-│   ├── stores/              # Solid stores (ml, input, output, mode, control, session, exploration, bus + persistence)
-│   ├── audio/               # engine-host + AudioWorklet processor (loads nisps.wasm separately on each thread)
-│   ├── ml/                  # WasmIML class + disposable async-training Worker + dataset
-│   ├── input/, output/      # pure-fn pipelines (deadzone→zoom→curve→smoothing→momentum, then global curve→smoothing→slew→freeze)
-│   ├── features/            # heatmap, snapshots, A/B compare, region/param pin, trail, weight health, gradient flow
-│   └── debug/probe.ts       # synchronous window.__nisps for Playwright
-├── public/                  # nisps.{wasm,js}, c15.{wasm,glue}
-└── tests/e2e/               # Playwright specs + helpers
+│   ├── engine/              # framework-neutral TS engine spine: wasm-iml, engine-host + worklet,
+│   │                        # input/output pipelines + curves (move into core at P4), spine.ts, EngineProvider
+│   ├── primitives/          # 12 design primitives as typed React
+│   ├── console/             # convertible Console (CompositeStage, Dock, Drawers, Manifold canvas, …)
+│   ├── dock/, backends/, inputs/, feedback/, settings/, serial/, midi-devices/
+│   └── debug/probe.ts       # window.__nisps behind ?debug=1 for Playwright
+├── public/                  # nisps.{wasm,js} — canonical build-wasm.sh output
+└── tests/                   # e2e Playwright specs + fixtures/ (P4 golden parity fixtures)
 ```
 
-Dev: `cd playground && bun install && bun run dev`. Build: `bun run build`. Typecheck: `bun run typecheck`. E2E: `bunx playwright test`.
+Dev: `cd manifold && bun install && bun run dev`. Build: `bun run build`. Typecheck: `bun run typecheck`. Unit: `bun run test`. E2E: `bunx playwright test` (on the VPS run the runner via non-snap node — BUILD-PLAN gotcha).
 
-### Stores + reactivity
-
-All stores use SolidJS `createStore` for objects, `createSignal` for primitives. ML outputs are stored in a separate Float32Array signal (per the migration plan's perf guidance). Persistence (debounced 200ms localStorage round-trip) wired in `playground/src/stores/persistence.ts`. The signal bus (`bus.ts`) handles cross-store events (`ml.*`, `mode.*`, `pin.*`, `ui.*`).
-
-### Control surface
-
-Three compound axes (Boldness / Memory / Precision) interpolate per-axis tables to drive ~6 underlying parameters each, with offset overrides ("trim-pot" model). State is in `control-store`. Six built-in control presets (Default, First Touch, Jazz Hands, Sculptor, Improviser, Microscope) available via the ModeShell control bar.
-
-### Debug probe (Playwright)
-
-`window.__nisps` is exposed synchronously and bypasses Solid reactivity (uses `untrack`/`batch`). API matches the `.local/recon/04-playground.md` spec — `setInputs`, `getOutputs`, `getLoss`, `train`, `thumbsUp`/`thumbsDown`, `randomise`, `clearExamples`, `inferBatch`, `getLayerStats`, `saveState`, etc.
+Read `manifold/ONBOARDING.md` before touching manifold UI — layering, Stages, Dock, gotchas.
 
 ## The `schemas/` + `codegen/` contract
 
@@ -113,7 +101,7 @@ Each mode has a `schemas/modes/<mode>.json` describing its parameters (name, lab
 
 Codegen (`bun run codegen/generate.ts`) emits:
 - `nisps/modes/generated/<mode>_schema.hpp` — `constexpr` C++ data, namespace `nisps::modes::generated`, re-exports `nisps::Curve` from `nisps/core/math.hpp`.
-- `playground/src/modes/generated/<mode>_schema.ts` — typed const objects + per-mode params interface.
+- (TS emission is dormant since P1; it returns at P5 targeting `manifold/src/modes/generated/`.)
 
 Codegen is idempotent. Golden test ensures regenerating produces byte-identical output.
 
@@ -121,29 +109,28 @@ Codegen is idempotent. Golden test ensures regenerating produces byte-identical 
 
 Two WASM instances at runtime:
 
-1. **Main thread** (`playground/src/ml/wasm-iml.ts`): ML inference + sync training + RL primitives. Update store after each call. Async training via disposable Web Worker (`wasm-worker.ts`).
-2. **AudioWorklet** (`playground/src/audio/worklet/nisps-processor.ts`): runs engine `process_block` per audio block. Loads `nisps.wasm` directly via `WebAssembly.compile` (no Emscripten glue in worklet). Bytes posted from main thread.
+1. **Main thread** (`manifold/src/engine/wasm-iml.ts`): ML inference + sync training + RL primitives, reporting into an injected `EngineSink`. Async training via disposable Web Worker (`wasm-worker.ts`).
+2. **AudioWorklet** (`manifold/src/engine/worklet/nisps-processor.ts`): runs engine `process_block` per audio block. Loads `nisps.wasm` directly via `WebAssembly.compile` (no Emscripten glue in worklet). Bytes posted from main thread.
 
-C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `manifold/public/`, transitional copy to `playground/public/` until P1).
+C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `manifold/public/`).
 
 The WASM target is fixed at `MLP<32u, 10u, 14u, 18u, 126u>` (`nisps_ml_create` ignores requested dims — see `docs/specs/plans/one-core-engine-refactor.md` P2). Modes with smaller `input_size`/`output_size` use a slice.
 
 ### Known limitations
 
-- Loss history not yet plumbed through C API; `lossHistory` in the store is a single-element array per training run.
-- Engine MLP architecture is fixed at compile time — supporting per-mode hidden-layer shapes would need either multiple WASM modules or runtime variation.
-- Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired; UI scaffolds render but feature is TODO.
-- C15 voice space integration in C15Mode is a placeholder.
-- The browser Jolt/OU controls (`playground/src/ml/jolt.ts`, `playground/src/output/ou-explore.ts`) reimplement the gesture math in TS rather than calling the C++ `ml::Jolt`/`ml::OUNoise` through WASM. They drive weights via the existing `nisps_ml_get/set_weights` bindings and use `Math.random()` (not the deterministic `Rng`) — fine for stochastic exploration aids, but firmware↔browser bit-parity of the noise itself is intentionally not guaranteed.
+- Loss history not yet plumbed through C API; only the final loss of a training run reaches TS.
+- Engine MLP architecture is fixed at compile time — runtime-shaped browser MLP arrives at P2 of `docs/specs/plans/one-core-engine-refactor.md`.
+- Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired in manifold.
+- C15 has no home on main (see `ALIGNMENT.md` defect #1).
+- The browser Jolt/OU controls in manifold reimplement the gesture math in TS (interim, ported from the retired playground) rather than calling the C++ `ml::Jolt`/`ml::OUNoise` through WASM. They drive weights via the existing `nisps_ml_get/set_weights` bindings — the P3 phase of the one-core-engine plan replaces them with `nisps_ml_jolt_press/release` + `nisps_ml_explore_intensity` bindings.
 
-## URL parameters (playground)
+## URL parameters (manifold)
 
 | Param | Range | Default | Effect |
 |-------|-------|---------|--------|
-| `tame` | 0–1 | 1 | Constrains synth output ranges toward safe limits. |
-| `spread` | 0–1 | 0.6 | Master noise regime (init scale, RL noise cap, per-layer Xavier scaling, weight decay). |
-| `preset` | preset id | _(none)_ | Auto-loads a synth preset on first visit. |
-| `debug` | 1 | _(off)_ | Exposes `window.__nisps` debug probe. |
+| `debug` | 1 | _(off)_ | Exposes the `window.__nisps` debug probe. |
+
+(The playground-era `tame`/`spread`/`preset` URL params died with the playground; `spread` survives as an engine concept — see below.)
 
 ### `spread` — sigmoid saturation control
 
@@ -187,12 +174,13 @@ scripts/build-firmware.sh PAFSynth        # or any other variant
 scripts/flash-firmware.sh
 scripts/build-and-flash-firmware.sh
 
-# Playground
-cd playground && bun install
+# Manifold
+cd manifold && bun install
 bun run dev          # Vite dev (COOP/COEP enabled)
 bun run typecheck
+bun run test         # bun unit tests
 bun run build
-bunx playwright test
+bunx playwright test # on the VPS: node node_modules/.bin/playwright test
 
 # All tests
 bash scripts/run-all-tests.sh

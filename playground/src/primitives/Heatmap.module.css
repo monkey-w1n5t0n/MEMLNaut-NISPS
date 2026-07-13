@@ -1,7 +1,0 @@
-.canvas {
-  display: block;
-  border: 1px solid var(--line);
-  border-radius: var(--r-2);
-  background: var(--bg-1);
-  image-rendering: pixelated;
-}

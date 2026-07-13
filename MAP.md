@@ -1,6 +1,6 @@
 # MAP
 
-MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 codebase (`nisps/`) compiles to two targets: (1) Arduino/RP2350 firmware for the MEMLNaut hardware, (2) WASM in a SolidJS browser playground that runs the same engines + ML through an AudioWorklet. Browser audio engines are a superset of firmware engines (C15 is browser-only). See `CLAUDE.md` for the long-form architecture narrative and `ALIGNMENT.md` for current strategic gaps.
+MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 codebase (`nisps/`) compiles to two targets: (1) Arduino/RP2350 firmware for the MEMLNaut hardware, (2) WASM in the Manifold React browser app that runs the same engines + ML through an AudioWorklet. (The former SolidJS playground was retired 2026-07-13 — branch `archive/playground-solidjs`, tag `playground-solidjs-final`; the browser-only C15 engine lives only there for now.) See `CLAUDE.md` for the long-form architecture narrative and `ALIGNMENT.md` for current strategic gaps.
 
 ## Layout
 
@@ -29,22 +29,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `firmware/MEMLCelium-upstream/` — **vendored** verbatim snapshot of the upstream `MusicallyEmbodiedML/MEMLNaut-NISPS` @ `main` Arduino sketch (pre-refactor monorepo, does NOT use `nisps/`), preset to `MODE_MEMLCELIUM`. Self-contained: upstream `memllib`@`e291192d` + `memlp`@`ea777502` vendored as plain files; `src/daisysp` in-tree. Built directly with `arduino-cli` (not the repo build scripts) — see its `README.md` for provenance + the compile command.
 - `firmware/useq-celium/` — standalone RP2040 firmware (PlatformIO, Arduino-Pico core) that turns a uSEQ module + CV expander into a USB→CV/gate converter driven by the manifold `cvgate` backend. `shared/protocol.h` is the v2 wire-protocol single source of truth (mirrored by `manifold/src/backends/useq-protocol.ts`); `main/` (USB serial → CV1–3 + GATE1–3, I2C → expander) and `expander/` (I2C slave → CV4–11). Wire spec: `docs/specs/useq-cv-protocol.md`. Restored from the April-2026 "uSEQ-Celium" mode.
 
-### `playground/` — SolidJS + Vite + TypeScript app
-- `playground/index.html`, `vite.config.ts`, `tsconfig.json`, `package.json` — scaffold. COOP/COEP headers configured.
-- `playground/src/main.tsx`, `App.tsx` — entry + router (`/`, `/dev/primitives`, `/modes`).
-- `playground/src/primitives/` — 16 UI building blocks: `Slider`, `SliderBank`, `VirtualJoystick`, `XYPad`, `Heatmap`, `OutputDisplay`, `TrainingControls`, `Drawer`, `ControlAxis`, `ProgressRing`, `PillToggle`, `ParamEditor`, `JoyMap`, `WeightHealth`, `GradientFlow`, `LossPlot`. Each has a `.demo.tsx` showcased on `/dev/primitives`.
-- `playground/src/modes/` — one TSX per firmware mode (+ `C15Mode` browser-only). `ModeShell.tsx` is the shared scaffold; `ModeSwitcher.tsx` picks the active mode; `mode-runtime.ts` is the schema → ML → audio wiring hook; `mode-helpers.ts` for SliderBank configs. `generated/` holds codegen-produced TS schemas (do not edit).
-- `playground/src/stores/` — Solid stores: `ml-store`, `input-store`, `output-store`, `mode-store`, `control-store` (compound axes Boldness/Memory/Precision), `session-store` (snapshots, A/B, presets), `exploration-store`, `bus` (typed signal bus). `persistence.ts` debounces localStorage writes.
-- `playground/src/audio/engine-host.ts`, `worklet/nisps-processor.ts` — main-thread engine host + AudioWorklet processor. WASM loaded twice (main thread for ML, worklet for engines).
-- `playground/src/ml/wasm-iml.ts`, `wasm-worker.ts`, `dataset.ts`, `types.ts` — main-thread WasmIML class + disposable async-training worker + FIFO dataset.
-- `playground/src/input/pipeline.ts`, `playground/src/output/pipeline.ts`, `playground/src/output/curves.ts` — pure-fn pipelines (deadzone→zoom→curve→smoothing→momentum, then global curve→smoothing→slew→freeze).
-- `playground/src/features/` — additional feature modules (heatmap sampling, snapshot stack, A/B compare, region pin, param pin, trail, weight health, etc.).
-- `playground/src/debug/probe.ts` — synchronous `window.__nisps` debug probe for Playwright.
-- `playground/public/nisps.{wasm,js}`, `c15.wasm`, `c15-glue.js` — WASM artifacts. `nisps.*` are a transitional copy from `scripts/build-wasm.sh` (canonical output is `manifold/public/`; copy dies with playground at P1).
-- `playground/tests/e2e/` — Playwright specs (`ml-engine`, `modes`, `persistence`, `ui-interactions`) + `helpers.ts`.
-- `playground/playwright.config.ts` — Vite preview server setup.
-
-### `manifold/` — Vite + React + TS convertible-mode app (the NEW front-end, WIP)
+### `manifold/` — Vite + React + TS convertible-mode app (the sole browser app)
 The Manifold "convertible" Console on the real engine, deployed at `meml.lnfinitemonkeys.org/next` (staging,
 alongside the live vanilla a-immersive at `/`). Built 2026-06-27/28; see `docs/specs/plans/BUILD-PLAN.md` (resume
 anchor + locked decisions) and the `docs/specs/*-spec.md` set.
@@ -102,7 +87,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - `schemas/midi_devices/<device>.json` (×6) — CC-controllable external synths (Moog Sub 37 / Sub Phatty, Creamware Pro-12 ASB, Elektron Analog Keys, ASM Hydrasynth, Roland JD-800). Each param: `{id, cc, label, min, max, default, group}`. Canonical source for both firmware + browser device pickers. Verified-CC provenance + sources live in `synth-midi-cc.json` (repo root).
 
 ### `codegen/` — schema → C++/TS code
-- `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`) and `playground/src/modes/generated/<mode>_schema.ts`. Idempotent.
+- `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`). Idempotent. (TS emitters retained but dormant; re-targeted at `manifold/src/modes/generated/` in P5.)
 - `codegen/generate-midi-devices.ts` — separate Bun script (isolated from the mode golden test): validates `schemas/midi_devices/` via ajv, emits `nisps/midi/generated/midi_devices.hpp` (no-heap `constexpr`) and `manifold/src/midi-devices/generated/{types,devices,index}.ts`. Idempotent.
 - `codegen/seed-midi-devices.ts` — one-time/idempotent seed deriving `schemas/midi_devices/*.json` from the `synth-midi-cc.json` research artifact (slugifies labels → ids, heuristic groups).
 - `codegen/templates/`, `codegen/tests/golden/` — reference templates + golden snapshot for paf_synth.
@@ -113,14 +98,14 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 
 ### `scripts/` — build + verify entry points
 - `build-firmware.sh`, `flash-firmware.sh`, `build-and-flash-firmware.sh`, `firmware-common.sh` — Arduino-CLI wrapper for RP2350 target with C++20 flag.
-- `build-wasm.sh` — Emscripten compile producing `manifold/public/nisps.{wasm,js}` (+ transitional copy to `playground/public/` until P1).
+- `build-wasm.sh` — Emscripten compile producing `manifold/public/nisps.{wasm,js}`.
 - `build-cpp-tests.sh` — CMake configure + build + ctest (Ninja).
 - `parity-check.sh` — runs native + WASM and diffs binary outputs.
 - `lint-cpp.sh` — `.f` literal warn + heap/`Arduino.h` violation fail.
 - `run-all-tests.sh` — master verification script.
 
 ### `.github/workflows/`
-- `ci.yml` — GitHub Actions: cmake build + ctest + WASM build + parity check + lint + Playwright (cpp-tests + playground-tests jobs). Firmware compile is documented as manual.
+- `ci.yml` — GitHub Actions: cmake build + ctest + WASM build + parity check + lint + Playwright (cpp-tests + manifold-tests jobs). Firmware compile is documented as manual.
 
 ### Submodules (in `src/`)
 - `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI). **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`.
@@ -136,22 +121,22 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 ## Entry points
 
 - **Firmware**: `scripts/build-firmware.sh [VARIANT]` (interactive prompt if omitted), `scripts/flash-firmware.sh`, `scripts/build-and-flash-firmware.sh`. Target: `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3`, `-std=gnu++20`.
-- **Playground dev**: `cd playground && bun install && bun run dev` (Vite, port 5173, COOP/COEP headers).
-- **Playground build**: `cd playground && bun run build`.
+- **Manifold dev**: `cd manifold && bun install && bun run dev` (Vite, COOP/COEP headers).
+- **Manifold build**: `cd manifold && bun run build`.
 - **WASM rebuild**: `bash scripts/build-wasm.sh` (needs `emcc`).
 - **Host C++ tests**: `bash scripts/build-cpp-tests.sh`.
 - **Parity check**: `bash scripts/parity-check.sh`.
 - **All tests**: `bash scripts/run-all-tests.sh`.
-- **Playwright**: `cd playground && bunx playwright test`.
-- **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/` and `playground/src/modes/generated/`).
+- **Playwright**: `cd manifold && node node_modules/.bin/playwright test` (non-snap node runner on the VPS — BUILD-PLAN gotcha; `bunx playwright test` works elsewhere).
+- **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/`; TS target returns at P5 for manifold).
 
 ## Conventions
 
 - Firmware mode selection is compile-time only — `#define MEMLNAUT_MODE_TYPE` in the `.ino`.
 - `nisps/` follows Chris's RP2350 perf rules globally: no heap, `static const float` for non-trivial constants, strict `.f` suffix, memory section attrs (`NISPS_AUDIO_MEM`, `NISPS_AUDIO_FUNC`, `NISPS_APP_SRAM`, `NISPS_HOT`, `NISPS_FORCE_INLINE`).
 - C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
-- `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`); generated mode headers re-export via `using Curve = ::nisps::Curve;`. TS mirror at `playground/src/output/curves.ts` with same names.
-- Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++/TS types. **No declarative JSON UI.**
+- `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`); generated mode headers re-export via `using Curve = ::nisps::Curve;`. TS mirror at `manifold/src/engine/curves.ts` with same names (moves into core at P4).
+- Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++ types (TS codegen returns at P5). **No declarative JSON UI.**
 - WASM and firmware share the same C++; WASM is fixed at `MLP<32, 10, 14, 18, 126>` (`nisps_ml_create` ignores requested dims — see `plans/one-core-engine-refactor.md` P2) and modes use a slice of outputs based on schema's `output_size`.
 - Cross-platform parity: `scripts/parity-check.sh` enforces native vs WASM agreement within 1e-5.
 

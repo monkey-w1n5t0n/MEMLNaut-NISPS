@@ -40,7 +40,7 @@ jobs:
 
       - name: Compile
         run: |
-          cd playground/osc-bridge
+          cd manifold/osc-bridge
           deno compile --allow-net --unstable-net --target ${{ matrix.target }} --output ../../dist/nisps-osc-bridge-${{ matrix.suffix }}${{ matrix.os == 'windows-latest' && '.exe' || '' }} bridge.ts
 
       - uses: actions/upload-artifact@v4

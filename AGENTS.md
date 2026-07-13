@@ -1,9 +1,9 @@
 # Agent Instructions — MEMLNaut-NISPS
 
-One C++20 NISPS core targets RP2350 firmware and a SolidJS/WASM playground. Read
+One C++20 NISPS core targets RP2350 firmware and the Manifold React/WASM browser app. Read
 `MAP.md`, `ALIGNMENT.md`, and `docs/AGENT-REFERENCE.md`; for Manifold UI work read
-`manifold/ONBOARDING.md` first. Parameter JSON schemas generate both C++ and TypeScript
-contracts.
+`manifold/ONBOARDING.md` first. Parameter JSON schemas generate the C++ contracts
+(TS codegen returns at P5 of `docs/specs/plans/one-core-engine-refactor.md`).
 
 ## Gates
 
@@ -12,7 +12,7 @@ bash scripts/build-cpp-tests.sh
 bash scripts/parity-check.sh
 bash scripts/lint-cpp.sh
 scripts/build-firmware.sh [VARIANT]
-cd playground && bun run typecheck && bun run build
+cd manifold && bun run typecheck && bun run test && bun run build
 ```
 
 - `nisps/` must remain platform-neutral and allocation-free in hot paths: no heap, no

@@ -1,3 +1,9 @@
+---
+kind: finding
+date: 2026-06-27
+immutable: true
+---
+
 # Findings — Engine Surface Audit (Phase-1)
 
 *Read-only audit, 2026-06-27. VERIFIED from source unless `[INFER]`. Engine A = deployed vanilla JS live at

@@ -1,4 +1,11 @@
-# Output Backends — Specification (`docs/redesign/backends-spec.md`)
+---
+kind: spec
+stability: evolving
+layer: binding
+counterpart: aimmersive-clone-spec.md
+---
+
+# Output Backends — Specification
 
 *Workstream E. Design-only, read-only audit 2026-06-27. The new app is Vite + React + TS in `manifold/`, wired to the parity-tested TS engine lifted from `playground/src`. British spelling in product copy. The built-in synth is the **"Powerful Synth Engine"** — the string "C15" must never reach the user.*
 
@@ -465,9 +472,9 @@ Per the search, the standard flow is `export RACK_DIR=…; make clean; make dist
 - MIDI: `/home/w1n5t0n/deployments/meml-aimmersive/js/midi/midi-output.js` (`:114` batch throttle), `…/midi/midi-cc-map.js`
 - OSC client: `/home/w1n5t0n/deployments/meml-aimmersive/js/nisps/osc-client.js`; param-named client `…/js/synth/osc-output.js` (`:97`)
 - OSC bridge server: `/home/w1n5t0n/deployments/meml-aimmersive/osc-bridge/bridge.ts` (addresses `:298–305`, encode/decode `:70–182`), `bridge.mjs`, `compile.sh`
-- VCV module: `/home/w1n5t0n/src/MEMLNaut-NISPS/vcv/src/MEMLNaut.cpp` (threading `:67–312`, verdict `:412–445`, ranges `:818–843`, display `:699`, LED `:804`), `…/vcv/src/osc_server.hpp`, `…/vcv/plugin.json`, `…/vcv/SPEC.md`, `…/vcv/Makefile`, `…/vcv/NISPS-FORMAT.md`, `…/vcv/res/*.svg`
+- VCV module: `/home/w1n5t0n/src/MEMLNaut-NISPS/vcv/src/MEMLNaut.cpp` (threading `:67–312`, verdict `:412–445`, ranges `:818–843`, display `:699`, LED `:804`), `…/vcv/src/osc_server.hpp`, `…/vcv/plugin.json`, `…/docs/specs/vcv-module.md`, `…/vcv/Makefile`, `…/vcv/NISPS-FORMAT.md`, `…/vcv/res/*.svg`
 - Design tokens (ring palette): `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/redesign/manifold-export/tokens/colors.css`
-- Spine/engine context: `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/redesign/engine-architecture.md` (§2), `…/findings-design-and-manifold.md` (§4), `…/findings-engine-surface.md`, `…/aimmersive-clone-spec.md` (routeOutputs §6, §7 visual table, §10)
+- Spine/engine context: `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/specs/engine-architecture.md` (§2), `…/recon/findings-design-and-manifold.md` (§4), `…/recon/findings-engine-surface.md`, `…/aimmersive-clone-spec.md` (routeOutputs §6, §7 visual table, §10)
 
 Sources (VCV SDK / widgets): [VCV custom lights](https://community.vcvrack.com/t/how-to-use-custom-lights/1941), [Migrate2 (drawLayer/layer 1)](https://vcvrack.com/manual/Migrate2), [Plugin Development Tutorial (RACK_DIR/make dist)](https://vcvrack.com/manual/PluginDevelopmentTutorial), [Plugin API Guide](https://vcvrack.com/manual/PluginGuide).
 ---
@@ -493,7 +500,7 @@ spine; WebMIDI out with per-output CC#/ch/name/range; OSC-over-WS to the Deno br
 The Outputs dock panel specialises per backend (`manifold/src/dock/OutputsBackendConfig.tsx`) with named presets
 (`manifold/src/backends/presets.ts`). Audio gated via `engine.audio.setMuted` on non-synth modes.
 
-**VCV module** — see `vcv/SPEC.md` "⚠️ BUILD DELTAS (2026-06-28)" for the authoritative build target: 8 inputs ×
+**VCV module** — see `docs/specs/vcv-module.md` "⚠️ BUILD DELTAS (2026-06-28)" for the authoritative build target: 8 inputs ×
 16 outputs, an LED ring per output (drawLayer + nvgArc), palette from the frontend tokens, WS↔OSC bridge
 (browser OSC backend → `manifold/osc-bridge/` Deno relay → the module's OSC server), bidirectional training, and
 the `nisps-core`→`nisps/` core-path repoint. The existing `vcv/` module (2→12) is evolved, not rebuilt.

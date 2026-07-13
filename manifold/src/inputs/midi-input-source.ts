@@ -25,7 +25,7 @@
  * Pull-based: messages latch the latest per-binding value into `values`;
  * `sample()` copies them out. Hot path performs no IO/allocation.
  *
- * NOTE: the canonical learn-map spec was `docs/redesign/inputs-spec.md`, which
+ * NOTE: the canonical learn-map spec was `docs/specs/inputs-spec.md`, which
  * is absent from this tree. The shape here follows the WebMidiBackend output
  * pattern (src/backends/midi-backend.ts) for symmetry.
  */

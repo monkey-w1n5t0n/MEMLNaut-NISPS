@@ -1,3 +1,8 @@
+---
+kind: plan
+status: active
+---
+
 # Manifold — Build Plan & Locked Decisions (resume anchor)
 
 *Dated 2026-06-27. This is the single resume anchor for the Manifold convertible-app build. Read this + the
@@ -17,17 +22,17 @@ specs it points to before continuing. Mission: one working browser instrument pu
 | Synth UI label | **"Powerful Synth Engine"** — the string "C15" must NEVER appear in the UI |
 | Product copy | British spelling (randomise, visualise, colour) |
 
-## Spec docs (all in docs/redesign/)
-- `rl-feedback-design.md` — the learning engine (both modes + solo); **§1 = verified ground truth: the feedback
+## Spec docs (now in docs/specs/ and subdirs)
+- `docs/adr/rl-feedback-design.md` — the learning engine (both modes + solo); **§1 = verified ground truth: the feedback
   C API, `MLHandle.feedback`, `0xFEEDBACC0DE` salt, parity Stage 5, and `CMakeLists.txt:59` registration ALL
   ALREADY EXIST** — edit/extend, don't re-scaffold. Mode 1 ports to upstream **`0a541cc`** InterfaceRL.
 - `dock-spec.md` — six drawers + per-output control row + tri-state semantics + advanced modals.
 - `backends-spec.md` — `OutputBackend` adapter interface; **VCV module already at `vcv/` (2-in/12-out)** →
   evolve to 8→16 + LED rings; faithful `visualizer.js` particle port (algorithm documented).
 - `inputs-spec.md` — modular XY/WebMIDI/gamepad; multiple-WASM-module reshape with warm-start.
-- `findings-{feedback-behaviour,engine-surface,design-and-manifold}.md` — Phase-1 audits.
-- `upstream-firmware-survey.md` — git topology; latest InterfaceRL = `0a541cc`.
-- `playground-2.0-rewrite-plan.md`, `engine-architecture.md`, `aimmersive-clone-spec.md`,
+- `recon/findings-{feedback-behaviour,engine-surface,design-and-manifold}.md` — Phase-1 audits.
+- `recon/upstream-firmware-survey.md` — git topology; latest InterfaceRL = `0a541cc`.
+- `plans/playground-2.0-rewrite-plan.md`, `engine-architecture.md`, `aimmersive-clone-spec.md`,
   `feedback-modes-port-spec.md` — the prior planning corpus.
 
 ## Reactive spine → React (load-bearing, from findings-design-and-manifold.md §4)

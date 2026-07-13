@@ -5,7 +5,7 @@ time, chosen by the dock **Mode** (Particle / MIDI / OSC / VCV / Built-in Synth 
 Editor → `BackendId`). The `BackendManager` consumes the engine spine and
 forwards each routed output vector to the active backend's `send()`.
 
-See `docs/redesign/backends-spec.md` for the authoritative design.
+See `docs/specs/backends-spec.md` for the authoritative design.
 
 ## Files
 

@@ -4,7 +4,7 @@ Turns a [uSEQ](https://www.emutelabinstruments.co.uk/useq/) module (+ its CV
 expander) into a USB→CV/gate converter driven by the Manifold browser app's **CV
 output backend** (or, in future, the MEMLNaut RP2350 firmware directly). This is
 the restored + modernised descendant of the April-2026 "uSEQ-Celium" output mode
-(provenance in `docs/useq-celium/protocol.md`).
+(provenance in `docs/specs/useq-cv-protocol.md`).
 
 Both boards are RP2040 (Raspberry Pi Pico / uSEQ hardware) flashed with the
 Arduino-Pico (Earle Philhower) core. The wire protocol (v2) is defined once in
@@ -43,4 +43,4 @@ add `firmware/useq-celium/shared` to the include path.)
 
 Hold the browser's **Identify** button (CV backend config) → both boards run an
 LED sweep, confirming the USB + I2C links end-to-end. Full frame layout:
-`docs/useq-celium/protocol.md`.
+`docs/specs/useq-cv-protocol.md`.

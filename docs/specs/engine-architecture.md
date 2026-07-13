@@ -1,17 +1,12 @@
-I now have everything I need. Key findings confirmed:
-
-- The **engine layer is genuinely good and parity-tested**: `WasmIML`, `EngineHost` (already uses `?worker&url` + hand-rolled imports), `nisps-processor.ts`, the pure pipelines, the stores. These are reusable.
-- The **debt is concentrated** in `mode-runtime.ts` (663-line god-hook), the 9 cloned `*Mode.tsx`, `ModeShell`/`ModeSwitcher`, and `App.tsx` (toy nav). The pull-vs-push reactivity bug lives in the god-hook (output flows through imperative `setInput` → `mlStore.process()` → effects, not a clean memo chain).
-- **Serving**: nginx root is `meml-aimmersive` (the legacy vanilla a-immersive at `a-immersive.html`, served untouched). The auto-deploy already builds `playground/dist` into `/home/w1n5t0n/deployments/meml.lnfinitemonkeys.org/playground/dist` but it's **currently unserved** (no location block points to it). COOP/COEP is server-scoped. The deploy clone is separate from the dev repo.
-- `FeedbackController` = the RL feedback bindings (`thumbsUp`/`thumbsDown`/`moveWeights`/`drawWeights` against the 3-mode loop), not a named class.
-
-I have enough to write the spec. It's a foundation-architecture document, not a code change, so I'll return it directly.
-
+---
+kind: spec
+stability: evolving
+layer: cross-cutting
 ---
 
 # NISPS Foundation Architecture — One Engine, Two Skins
 
-*Status: implementation-ready spec. Scope: the foundation only — the headless engine layer plus the two-skin shell. The detailed UX of each skin (Console drawers, interactive heatmap craft, etc.) is owned by `docs/redesign/playground-2.0-rewrite-plan.md` and not re-litigated here.*
+*Status: implementation-ready spec. Scope: the foundation only — the headless engine layer plus the two-skin shell. The detailed UX of each skin (Console drawers, interactive heatmap craft, etc.) is owned by `plans/playground-2.0-rewrite-plan.md` and not re-litigated here.*
 
 *Constraint from the operator: "lay solid ground that's simple and doesn't paint us into a corner." Build BOTH skins on ONE engine; don't port the engine twice; don't inherit existing tech debt.*
 
@@ -430,8 +425,8 @@ The deliberate ordering choice vs the plan: **establish `EngineApi` + both skin 
 ---
 
 ### Relevant file paths
-- Authoritative UX/feature plan (owns the skins' detail): `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/redesign/playground-2.0-rewrite-plan.md`
-- Design-intent reference for skin-a-immersive: `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/redesign/playground-2026.md`
+- Authoritative UX/feature plan (owns the skins' detail): `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/specs/plans/playground-2.0-rewrite-plan.md`
+- Design-intent reference for skin-a-immersive: `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/specs/recon/playground-2026.md`
 - The god-hook to discard (the debt): `/home/w1n5t0n/src/MEMLNaut-NISPS/playground/src/modes/mode-runtime.ts`
 - Engine modules to lift: `/home/w1n5t0n/src/MEMLNaut-NISPS/playground/src/audio/engine-host.ts`, `…/audio/worklet/nisps-processor.ts`, `…/ml/wasm-iml.ts`, `…/ml/wasm-worker.ts`, `…/ml/dataset.ts`, `…/input/pipeline.ts`, `…/output/pipeline.ts`, `…/output/curves.ts`, `…/stores/bus.ts`, `…/stores/ml-store.ts`, `…/primitives/*`
 - Codegen TS types to extend (`capability_class`+`tier`): `/home/w1n5t0n/src/MEMLNaut-NISPS/playground/src/modes/generated/types.ts`

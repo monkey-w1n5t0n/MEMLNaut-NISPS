@@ -270,7 +270,7 @@ function VcvChannelEditor({
   );
 }
 
-// ---- uSEQ CV / gate (docs/useq-celium) -------------------------------------
+// ---- uSEQ CV / gate (docs/specs/useq-cv-protocol.md) -------------------------------------
 
 function CvChannelEditor({
   params,
@@ -282,7 +282,7 @@ function CvChannelEditor({
   return (
     <div>
       <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: '0 0 8px' }}>
-        Live CV/gate over USB serial to a uSEQ module + expander (docs/useq-celium). Assign each model output to a
+        Live CV/gate over USB serial to a uSEQ module + expander (docs/specs/useq-cv-protocol.md). Assign each model output to a
         CV jack or gate; gates threshold the mapped 0–1 value. Connect the device in the Outputs panel.
       </p>
       <div style={{ maxHeight: 360, overflow: 'auto' }}>

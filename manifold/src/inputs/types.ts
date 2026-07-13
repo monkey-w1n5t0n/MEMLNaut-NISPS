@@ -7,7 +7,7 @@
  * the active sources are concatenated into one N-dim input vector at the head of
  * the reactive spine (engine.setInput / setInputs).
  *
- * Design intent (the canonical spec was `docs/redesign/inputs-spec.md`, which is
+ * Design intent (the canonical spec was `docs/specs/inputs-spec.md`, which is
  * NOT present in this tree — see TODO refs below):
  *
  *  - **Pull-based.** The InputLayer owns a single rAF loop and pulls every

@@ -1,6 +1,13 @@
+---
+kind: spec
+stability: evolving
+layer: binding
+counterpart: aimmersive-clone-spec.md
+---
+
 # Inputs Spec — Modular Input Layer (Workstream F)
 
-*Status: implementation-ready spec for the `manifold/` React app. Scope: the modular input layer — sources (XY pad, MIDI input, gamepad single/double-stick), how they compose into an N-dimensional input vector, the MLP-rebuild-on-input-change mechanism, the binding to the reactive spine, and the dock INPUTS panel. Read alongside `docs/redesign/findings-engine-surface.md` (the fixed-2-input gap), `docs/redesign/engine-architecture.md` (the `EngineApi` seam — note that doc says SolidJS/`playground2`; this app is React/`manifold/`), and `docs/redesign/aimmersive-clone-spec.md` (existing gamepad/MIDI/joystick behaviour). British spelling in product copy. The built-in synth is always shown as the "Powerful Synth Engine" — never "C15".*
+*Status: implementation-ready spec for the `manifold/` React app. Scope: the modular input layer — sources (XY pad, MIDI input, gamepad single/double-stick), how they compose into an N-dimensional input vector, the MLP-rebuild-on-input-change mechanism, the binding to the reactive spine, and the dock INPUTS panel. Read alongside `recon/findings-engine-surface.md` (the fixed-2-input gap), `engine-architecture.md` (the `EngineApi` seam — note that doc says SolidJS/`playground2`; this app is React/`manifold/`), and `aimmersive-clone-spec.md` (existing gamepad/MIDI/joystick behaviour). British spelling in product copy. The built-in synth is always shown as the "Powerful Synth Engine" — never "C15".*
 
 ---
 

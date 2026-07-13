@@ -1,4 +1,5 @@
 ---
+kind: spec
 stability: evolving
 layer: binding
 ---
@@ -41,7 +42,7 @@ layer: binding
 - `playground/src/modes/SLPWorkshopMode.tsx`, `playground/src/modes/mode-runtime.ts` — browser controls.
 - `playground/src/ml/jolt.ts`, `playground/src/output/ou-explore.ts` — browser-side gesture math.
 - `tests/cpp/test_mlp_jolt.cpp`, `tests/cpp/test_mlp_ou_noise.cpp`, `tests/cpp/test_mode_learning.cpp`, `tests/cpp/test_mode_concepts.cpp` — anchoring tests.
-- **Part II companions (planned work):** `docs/useq-celium/protocol.md` (CV wire protocol), `manifold/src/backends/` (CV/MIDI output backends), `manifold/src/inputs/` (input layer).
+- **Part II companions (planned work):** `docs/specs/useq-cv-protocol.md` (CV wire protocol), `manifold/src/backends/` (CV/MIDI output backends), `manifold/src/inputs/` (input layer).
 
 ---
 
@@ -226,7 +227,7 @@ A **mode** is just *which streams are active* and *whether they share a network*
 12.3 **CV mode** hardware is fixed (11 PWM/CV-capable jacks + 3 digital gate-only jacks), so the two counts are **linked** and gates are optional. The rule **MUST** be `gates ∈ [0, 14]`; `CV = gates ≤ 3 ? 11 : 14 − gates`.
 **Why:** the first 3 gate sequences land on the dedicated gate-only jacks and cost no CV (0→11 CV, 3→11 CV, 6→8 CV, 14→0 CV); converting CV jacks only begins past 3. Pure CV (0 gates) is valid.
 
-12.4 Wire-protocol impact **MUST** be none: a CV jack acting as a gate carries 0/full (or the 2-level velocity) in its `u16` slot; the 3 dedicated gate bits stay digital pins (`docs/useq-celium/protocol.md`). `CvSpec` extends so PWM jacks can also be gate targets.
+12.4 Wire-protocol impact **MUST** be none: a CV jack acting as a gate carries 0/full (or the 2-level velocity) in its `u16` slot; the 3 dedicated gate bits stay digital pins (`docs/specs/useq-cv-protocol.md`). `CvSpec` extends so PWM jacks can also be gate targets.
 **Why:** reusing the existing protocol slots avoids a protocol revision for a routing feature.
 
 12.5 The **Rhythm network** toggle (shown only when gate sequences > 0) selects **Separate** (default) or **Shared**. Separate gives the Rhythm stream its own MLP and routes each input channel to one engine, automatically by source kind: XY pad → a second on-screen pad (pad 1 → Continuous, pad 2 → Rhythm); gamepad → double-stick (left → Continuous, right → Rhythm); MIDI controller → per-CC `Continuous | Rhythm` toggle. Shared uses one MLP for both streams (all inputs feed it; the hardware-parity hybrid).

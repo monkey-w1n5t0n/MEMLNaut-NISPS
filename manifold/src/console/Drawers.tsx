@@ -468,7 +468,7 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       {/* ---- Reshape note (only when >2 axes feed the fixed WASM head) ---- */}
       {reshaping && depth === 'expanded' && (
         <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          {/* TODO(workstream F, docs/redesign/inputs-spec.md — "multiple WASM modules +
+          {/* TODO(workstream F, docs/specs/inputs-spec.md — "multiple WASM modules +
               warm-start"): give every axis its own genuine input dimension by (re)loading a
               WASM module whose MLP arity matches axisCount and warm-starting from the prior
               net. Deferred — the reduction lives in InputLayer.compose(). */}

@@ -2,7 +2,7 @@
  * The learning-engine behaviour module (workstream B) — the two feedback modes
  * plus solo, prototyped in TS on the existing engine primitives.
  *
- * See docs/redesign/rl-feedback-design.md for the authoritative design and the
+ * See docs/adr/rl-feedback-design.md for the authoritative design and the
  * C++ integration plan. Everything here is the TS-prototype-first layer; the
  * controller comments mark each place that becomes a C++ core primitive.
  */

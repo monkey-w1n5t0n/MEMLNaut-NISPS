@@ -1,3 +1,9 @@
+---
+kind: spec
+stability: evolving
+layer: cross-cutting
+---
+
 I have complete grounding now. I'll write the implementation-ready spec.
 
 # Implementation Spec — "Down Action" Negative-Feedback Feature in the `nisps/` Core

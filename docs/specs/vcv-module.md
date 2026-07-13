@@ -1,56 +1,21 @@
-# MEMLNaut VCV Rack Module — Specification
-
+---
+kind: spec
+stability: evolving
+layer: binding
+counterpart: backends-spec.md
 ---
 
-## ⚠️ BUILD DELTAS (2026-06-28) — AUTHORITATIVE OVERRIDES
+# MEMLNaut VCV Rack Module — Specification
 
-These supersede any conflicting detail below. They reflect the Manifold mission + the locked decisions in
-`docs/redesign/BUILD-PLAN.md` and `docs/redesign/backends-spec.md`. Build to THESE.
-
-1. **I/O = 8 inputs × 16 outputs** (was 2→12). `NUM_ML_INPUTS = 8`, `NUM_ML_OUTPUTS = 16`. The IML is sized
-   8→16 (a runtime-shaped native MLP is fine here — the module is C++, not the fixed WASM target). The 8 CV
-   inputs feed the model's input dims; the 16 CV outputs are the model's inference outputs (the modular N×M
-   envelope). Keep the control inputs (Spread CV, Learn gate, + / − triggers).
-2. **LED RING around EACH of the 16 outputs** — a custom ring widget encircling each output jack whose arc
-   fills in proportion to that output's value (0..1 → 0..2π). Draw on `drawLayer()` layer 1 with `nvgArc` for
-   the proportional fill + a dim track ring. Each ring is COLOURED from a palette that MATCHES the frontend
-   design tokens.
-3. **Palette from the frontend tokens** — generate `vcv/src/palette.hpp` from
-   `docs/redesign/manifold-export/tokens/colors.css`: `--accent #ff6a00` (orange), `--accent-2 #00ccff` (cyan),
-   and the group colours (formant→accent, pitch→accent-2, amp→`--good #6bc26b`, filter→`--warn #f5c45e`,
-   fx→`--info #5b9eef`, mod→`--accent-3 #ffa860`). Assign the 16 rings across these group colours (or a clean
-   16-step ramp between orange and cyan) so the module reads as the same instrument as the browser. A tiny
-   hand-written `palette.hpp` is acceptable (no build-time codegen needed).
-4. **Browser ↔ VCV bridge = WS↔OSC** (locked transport). The module runs its OSC server (`src/osc_server.hpp`
-   already exists — evolve it). The browser's OSC backend (`manifold/src/backends/osc-backend.ts`) sends over a
-   WebSocket to the Deno bridge (`manifold/osc-bridge/`), which relays UDP-OSC to the module. **Bidirectional
-   training**: drive + train the module FROM the browser (the verdict loop + example-placing over the bridge)
-   AND from the module's own panel (+/− buttons, Learn gate, triggers). OSC verbs to support both directions:
-   `/nisps/input` (drive), `/nisps/output` (module→browser viz), `/nisps/feedback` (thumbs up/down + place),
-   `/nisps/weights`, `/nisps/examples`, `/nisps/state`. Pick a fixed default UDP port (e.g. 7001) + per-instance
-   offset; the Deno bridge maps `ws://localhost:8765` ↔ that UDP port.
-5. **Core include path** — the Makefile's `-I../nisps-core/include` points at the RETIRED `nisps-core`. Repoint
-   to the current core (`../nisps/`) OR vendor a minimal runtime IML inside `vcv/src/`. Goal: get it COMPILING
-   with an 8→16 runtime MLP that shares the firmware/browser training semantics (spread-aware draw/move_weights,
-   deterministic RNG) as closely as the native runtime-shaped form allows. If full nisps/ml reuse is blocked by
-   the templated fixed-size API, keep a self-contained IML in the module and note the alignment as a follow-up.
-6. **Derived outputs** (Mean/Std/Delta/Novelty/Confidence) → move to the optional EXPANDER or a context-menu
-   toggle; the headline is 16 raw outputs + their LED rings. Do not let them crowd the 16-jack panel.
-7. **Build** needs the VCV Rack 2 SDK (`RACK_DIR`, default `$HOME/.local/share/Rack2/Rack-SDK`, NOT installed).
-   The build step must fetch the Linux Rack-SDK zip from vcvrack.com, set `RACK_DIR`, and `make` to verify the
-   plugin compiles. Panel SVGs in `vcv/res/` exist (MEMLNaut.svg / -wide / -expander) — widen/relayout for 16
-   outputs + rings as needed.
-
-The rest of this document is the prior (2→12) design — useful for threading, persistence, RL workflow, and
-panel/build mechanics, but the I/O counts, LED rings, palette, bridge, and core path above WIN.
+**Revision note:** 2026-06-28 BUILD DELTAS folded into body (2026-07-13). The module now implements 8→16 I/O with per-output LED rings, design-token palette, and WS↔OSC bridge per the Manifold mission and BUILD-PLAN locked decisions. Prior design (2→12) sections retained for threading/persistence/RL workflow reference.
 
 ---
 
 ## Overview
 
-A VCV Rack module that embeds the NISPS interactive ML engine (nisps-core C++ library) as a CV-to-CV mapper. Users explore high-dimensional parameter spaces via reinforcement learning feedback, producing 12 raw CV outputs and 5 derived meta-signals from configurable CV inputs.
+A VCV Rack module that embeds the NISPS interactive ML engine as a CV-to-CV mapper. Users explore high-dimensional parameter spaces via reinforcement learning feedback, producing 16 raw CV outputs (each with a custom LED ring indicator) from 8 CV inputs.
 
-The module does **not** produce sound. It maps input CVs through a trained neural network to output CVs, which the user patches into other modules (VCOs, VCFs, VCAs, etc.). The result: a learned, nonlinear, high-dimensional modulation source shaped by the user's aesthetic preferences.
+The module does **not** produce sound. It maps input CVs through a trained neural network to output CVs, which the user patches into other modules (VCOs, VCFs, VCAs, etc.). The result: a learned, nonlinear, high-dimensional modulation source shaped by the user's aesthetic preferences. The 8→16 architecture enables the module to serve as a general-purpose modulation transformer for complex polyphonic and sequencer-driven patches.
 
 **Plugin name:** MEMLNaut
 **Module name:** MEMLNaut (initially single module, future modules possible)
@@ -109,13 +74,13 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 
 ## I/O Specification
 
-### Inputs (Configurable: 2–8, default 2)
+### Inputs (Fixed: 8 CV inputs + control ports)
+
+The module has **8 fixed CV inputs** feeding the MLP's input layer (no runtime reconfiguration of input count).
 
 | Port | Default Label | Notes |
 |------|---------------|-------|
-| IN 1 | X | Primary input CV |
-| IN 2 | Y | Primary input CV |
-| IN 3–8 | IN 3–8 | Hidden by default, shown when enabled |
+| IN 1–8 | IN 1–8 | CV inputs feeding the 8-input MLP. Each input jack is visible on the panel. |
 | SPREAD CV | Spread | CV modulation of SPREAD knob (attenuated, added to knob value) |
 | LEARN | Learn | Gate input: when high, RL feedback is accepted |
 | + TRIG | Positive | Trigger input: register thumbs-up |
@@ -127,16 +92,12 @@ The module does **not** produce sound. It maps input CVs through a trained neura
 - LEARN gate has a corresponding panel toggle button (either/or — gate OR button enables learning)
 - +/− triggers work only when LEARN is enabled (gate high OR toggle on)
 
-### Outputs (17 total: 12 raw + 5 derived)
+### Outputs (16 raw + optional derived)
 
 | Port | Type | Description |
 |------|------|-------------|
-| OUT 1–12 | Raw MLP | Direct MLP output activations, scaled to configured CV range |
-| MEAN | Derived | Mean of the 12 raw outputs |
-| STD | Derived | Standard deviation of the 12 raw outputs (named "STD" to avoid collision with the SPREAD knob) |
-| DELTA | Derived | Rate of change (L2 norm of output difference from previous inference) |
-| NOVELTY | Derived | Gate: fires when current input is far from all training examples (computed on training thread, cached). **Default with 0 examples: 10V** (everything is novel when untrained). |
-| CONFIDENCE | Derived | Inverse of loss on nearest training example (computed on training thread, cached). **Default with 0 examples: 0V** (no confidence with no data). |
+| OUT 1–16 | Raw MLP | Direct MLP output activations, scaled to configured CV range. Each jack is surrounded by a custom LED ring (see Visual Feedback). |
+| MEAN, STD, DELTA, NOVELTY, CONFIDENCE | Derived | Available on the expander module or via context-menu toggle (hidden by default to keep the main panel clean). See prior design section for semantics. |
 
 Each output has:
 - Per-output range configuration (0–10V unipolar or ±5V bipolar) via context menu
@@ -171,27 +132,29 @@ Each output has:
 
 ## Visual Feedback
 
-### Primary Display (Custom OpenGL Widget)
+### Per-Output LED Rings
 
-The module includes a real-time rendered display area showing:
+Each of the 16 output jacks is surrounded by a **custom LED ring** (SVG + NanoVG on `drawLayer()` layer 1). The ring arc fills proportionally to the output's current value (0 → 0V, 1 → full arc = 2π). The track ring is dimly visible always; the fill is bright and **color-coded by parameter group** to match the frontend design-token palette:
 
-**Option A — Full Custom Display:**
-- 12 vertical bars showing raw output levels (color-coded)
-- Neuron activation heatmap (simplified MLP visualization)
+- **Formant group** → `--accent` (#ff6a00, orange)
+- **Pitch group** → `--accent-2` (#00ccff, cyan)
+- **Amplitude group** → `--good` (#6bc26b, green)
+- **Filter group** → `--warn` (#f5c45e, yellow)
+- **Effects group** → `--info` (#5b9eef, blue)
+- **Modulation group** → `--accent-3` (#ffa860, light orange)
+
+If the 16 outputs don't have a pre-assigned group mapping, use a smooth 16-step ramp interpolating between orange and cyan across the jacks left-to-right. The palette is defined in a minimal `vcv/src/palette.hpp` (hand-written, no build-time codegen required).
+
+### Control Panel Display
+
+A small real-time display area (if space permits on the panel) showing:
 - Training state indicator (idle / training / converged)
 - Example count
 - Current noise level
+- Current spread value
 
-**Option B — Bars + Input Position:**
-- 12 vertical bars showing raw output levels
-- Small 2D dot plot showing current input position (XY scope style)
-- Training state, example count, noise level as text overlays
+### Additional LEDs
 
-Both options to be prototyped; converge based on usability and CPU cost.
-
-### LED Indicators
-
-- Per-output LEDs showing signal level (brightness = voltage)
 - LEARN LED (green when active)
 - Training activity LED (flashes during training)
 
@@ -199,21 +162,21 @@ Both options to be prototyped; converge based on usability and CPU cost.
 
 ## MLP Configuration
 
-### Default Network
+### Fixed Network Architecture
 
 ```
-Inputs:  2 (+ bias = 3 input nodes)
-Hidden:  [16, 24, 16]  (3 hidden layers, ReLU activation)
-Output:  12 (sigmoid activation, maps to [0, 1])
+Inputs:  8 (+ bias = 9 input nodes)
+Hidden:  [24, 32, 16]  (3 hidden layers, ReLU activation)
+Output:  16 (sigmoid activation, maps to [0, 1])
 ```
 
-Significantly smaller than the webapp's [3, 32, 48, 64, 126] — appropriate for 12 outputs and real-time inference constraints.
+The architecture is **fixed at compile time**; no runtime reconfiguration of input/output layer sizes. The hidden layer widths are appropriate for 8 inputs → 16 outputs and real-time inference constraints (well under 1% CPU on any modern machine at typical inference rates).
 
-### When Input Count Changes
+### Core Library Integration
 
-- User selects new input count from context menu
-- Confirmation dialog: "This will reset the network and clear all training data. Continue?"
-- On confirm: rebuild MLP with new input layer size, clear dataset, randomize weights
+The MLP uses a **runtime-shaped IML** (not the fixed-size WASM template). Point the build at the current `../nisps/` (not the retired `nisps-core`) and either:
+1. Reuse `nisps/ml/mlp.hpp` and compile with `MLP<8, 24, 32, 16, 16>` type, or
+2. Vendor a minimal self-contained 8→16 IML in `vcv/src/`, ensuring it shares the firmware/browser training semantics (spread-aware `DrawWeights`/`MoveWeights`, deterministic RNG). If templated-API constraints block option 1, option 2 is acceptable with a note of alignment as a follow-up.
 
 ### Spread Parameter
 
@@ -305,69 +268,54 @@ The `version` field enables forward compatibility. On load, validate that `mlpCo
 
 ---
 
-## Companion Webapp Integration
+## Companion Webapp Integration (Manifold)
 
-### Bidirectional State Transfer
+### Locked Transport: WebSocket ↔ UDP OSC Bridge
 
-**File-based (offline):**
-- Webapp: "Export .nisps" button → downloads JSON file
-- VCV: Right-click → "Load .nisps preset" → imports weights + examples + config
-- VCV: Right-click → "Save .nisps preset" → exports for webapp import
-- Webapp: "Import .nisps" → loads and continues training
+The module runs its own **UDP OSC server** (`src/osc_server.hpp` — evolve the existing skeleton). The browser app (`manifold/src/backends/osc-backend.ts`) connects via **WebSocket to a Deno bridge** (`manifold/osc-bridge/`), which relays UDP OSC to the module. This enables **bidirectional training**: both the browser verdict loop (thumbs-up/down + example-placing) and the module's panel (+/− buttons, Learn gate, triggers) can drive the same MLP.
 
-**OSC-based (live):**
-- VCV module runs an OSC server (configurable port, default 9000)
-- Webapp connects via WebSocket → OSC bridge
-- Messages:
-  - `/nisps/weights` — full weight transfer (either direction)
-  - `/nisps/examples` — example set transfer
-  - `/nisps/state` — full state sync
-  - `/nisps/input` — current input values (for webapp visualization)
-  - `/nisps/output` — current output values (for webapp visualization)
+### OSC Verbs (Module ← → Browser)
 
-### Webapp Modifications Required
+| Verb | Source | Direction | Payload |
+|------|--------|-----------|---------|
+| `/nisps/input` | Browser | → VCV | [8 floats] — CV input values |
+| `/nisps/output` | VCV | → Browser | [16 floats] — raw MLP outputs (for visualization) |
+| `/nisps/feedback` | Browser | → VCV | (thumbsUp&#124;thumbsDown, optional posLabel [float, float] for placement) |
+| `/nisps/feedback` | VCV | → Browser | Same (module panel triggers) |
+| `/nisps/weights` | Either | ↔ | Full weight transfer |
+| `/nisps/examples` | Either | ↔ | Example dataset transfer |
+| `/nisps/state` | Either | ↔ | Full module state (weights, examples, spread, noise level, etc.) |
 
-- Add .nisps file import/export buttons
-- Add OSC client mode (connect to VCV module)
-- Network size configuration to match VCV (12 outputs vs 126)
-- Shared .nisps file format specification
+**Port assignment:** Fixed default UDP port 7001, with per-instance offset if multiple modules exist in the same patch (e.g. module 2 → 7002). The Deno bridge maps `ws://localhost:8765` ↔ that UDP port.
+
+### File-Based Preset Export/Import
+
+File-based transfer remains supported via `.nisps` JSON format (same structure as patch state, see State Persistence section):
+- VCV: Right-click → "Export .nisps preset" → JSON file
+- VCV: Right-click → "Import .nisps preset" → restores weights + examples + config
+- Webapp can read/write the same `.nisps` format for offline interchange with other modules or archival
 
 ---
 
-## Panel Layout (Prototyping Phase)
+## Panel Layout
 
-Three panel variants to prototype. The compact (20HP) option was cut — 22 jacks + 5 buttons + 2 knobs + display cannot physically fit in 128.5mm of vertical panel space.
+The module spans **44HP** (wide variant) to accommodate all 8 input jacks, 16 output jacks with LED rings, control knobs, and buttons. An optional **expander module (16HP)** provides additional attenuverter fine-tuning and advanced display.
 
-### Standard (30HP) — minimum viable panel
-```
-┌──────────────────────────────────┐
-│          MEMLNaut                │
-│  ┌──────────────────────────┐   │
-│  │       DISPLAY             │   │
-│  │  (bars + XY + metrics)    │   │
-│  └──────────────────────────┘   │
-│                                  │
-│  SPREAD     RATE                 │
-│  [knob]     [knob]               │
-│                                  │
-│  [+]  [−]  [LEARN]  [RAND]     │
-│                                  │
-│  IN:  (1) (2)    LEARN (+) (−) │
-│                                  │
-│  OUT:                            │
-│  1[a](o) 2[a](o) 3[a](o) 4[a](o)│
-│  5[a](o) 6[a](o) 7[a](o) 8[a](o)│
-│  9[a](o) 10[a](o) 11[a](o) 12[a]│
-│  MN(o) SP(o) DL(o) NV(o) CF(o) │
-└──────────────────────────────────┘
-```
-[a] = small attenuverter knob per output.
+### Main Module (44HP) Layout
 
-### Wide (44HP)
-Full display, all attenuverters, room for 8 input jacks, OpenGL network visualization.
+Typical layout (exact spacing subject to panel artwork):
+- Top: small DISPLAY showing training state, example count, spread, noise level
+- Upper: SPREAD knob, RATE knob, LEARN button + LED, RAND button, CLEAR button
+- Middle: 8 input jacks (IN 1–8) in a column, LEARN gate, +/− trigger inputs
+- Lower: 16 output jacks arranged in 2 rows of 8, each jack surrounded by an LED ring
+- Under each output jack: small attenuverter trim pot for per-output scaling
 
-### Expander Module (16HP)
-Adds: 6 extra input jacks, per-output attenuverters, secondary display.
+### Expander Module (16HP) — Optional
+
+Adds:
+- Extended attenuverter controls (alternate layout for finer per-output adjustment)
+- Secondary display (novelty grid, confidence map, or advanced metrics)
+- Space for future I/O expansion
 
 ---
 
@@ -378,33 +326,45 @@ Adds: 6 extra input jacks, per-output attenuverters, secondary display.
 ```
 vcv/
 ├── plugin.json          # Plugin manifest
-├── Makefile             # VCV SDK Makefile
+├── Makefile             # VCV SDK Makefile + RACK_DIR auto-download
 ├── src/
 │   ├── plugin.hpp       # Plugin globals
 │   ├── plugin.cpp       # Plugin init
-│   ├── MEMLNaut.cpp     # Module logic (process, state, threading)
-│   └── MEMLNautWidget.cpp  # Panel UI (widgets, display, layout)
+│   ├── MEMLNaut.cpp     # Module logic (process, state, threading, OSC)
+│   ├── MEMLNautWidget.cpp  # Panel UI + LED ring drawing
+│   ├── palette.hpp      # Hand-written color palette (from design tokens)
+│   └── osc_server.hpp   # OSC server impl (evolve existing skeleton)
 ├── res/
-│   ├── MEMLNaut.svg     # Panel artwork
+│   ├── MEMLNaut.svg     # Panel artwork (44HP, 16 outputs + LED rings)
+│   ├── MEMLNaut-wide.svg     # Wide variant (if needed)
+│   ├── MEMLNaut-expander.svg  # Expander panel (future)
 │   └── components/      # Custom SVG components
 └── dep/
-    └── nisps-core/      # Symlink or copy of nisps-core headers
+    └── nisps/           # Symlink to ../nisps (C++20 core library)
 ```
 
 ### Dependencies
 
-- **VCV Rack SDK** (v2.x)
-- **nisps-core** (header-only, C++20, already in this repo)
-- **OSC library** (Phase 8 only): oscpack or liblo for UDP OSC server. Not needed until Phase 8. Alternative: minimal from-scratch UDP implementation to avoid the dependency.
+- **VCV Rack SDK 2.x** — must be installed or auto-fetched. The build step should check for `RACK_DIR` env var, and if not set, fetch the Linux SDK zip from vcvrack.com and set it automatically.
+- **nisps/** (C++20 core library) — use the current repo's `nisps/ml/` and `nisps/core/` directly (not the retired `nisps-core`)
+- **OSC library** — `oscpack` or `liblo` for UDP OSC server, or a minimal from-scratch UDP impl to avoid the dependency
 
 ### Build Commands
 
 ```bash
 cd vcv
-export RACK_DIR=/path/to/Rack-SDK
+# RACK_DIR will be auto-fetched/set if not already present
 make
 make install  # Copies to VCV plugin directory
 ```
+
+### Panel SVG Updates
+
+Widen and relayout panel SVGs (`MEMLNaut.svg` / `-wide.svg` / `-expander.svg`) for:
+- 8 input jacks (vertical column on left)
+- 16 output jacks with LED ring enclosures (2 rows of 8)
+- Attenuverter trim pots under each output
+- Knobs, buttons, display, and gate/trigger inputs in the remaining space
 
 ---
 

@@ -3,9 +3,9 @@
  * feedback modes plus solo/arm, prototyped in pure TS on the EXISTING engine
  * primitives (NO C++/WASM change).
  *
- * Authoritative design: docs/redesign/rl-feedback-design.md (Mode 2 default;
+ * Authoritative design: docs/adr/rl-feedback-design.md (Mode 2 default;
  * Mode 1 selectable; SOLO default MaskGradients). Engine primitives audited in
- * docs/redesign/findings-feedback-behaviour.md.
+ * docs/specs/recon/findings-feedback-behaviour.md.
  *
  * This class holds NO React. ConsoleApp owns one instance and exposes its
  * actions + state into the console context; VerdictCluster + Manifold drive it.

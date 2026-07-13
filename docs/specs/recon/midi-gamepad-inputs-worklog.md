@@ -1,8 +1,14 @@
+---
+kind: finding
+date: 2026-06-27
+immutable: true
+---
+
 # Work log — MIDI + Game Controller inputs, N-D engine foundation
 
 *Scope: what was actually built on the `feat/midi-inputs` branch. This is a
 description of the work, not a spec. The design intent lives in
-`docs/redesign/inputs-spec.md`; where this branch diverges from or only partially
+`docs/specs/inputs-spec.md`; where this branch diverges from or only partially
 realises that spec, it is called out below.*
 
 ## Summary

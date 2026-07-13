@@ -13,7 +13,7 @@
  *  - The default feedback mode is "Explore and place" → the shared C++ core's
  *    FeedbackMode::ExploreAndPlace (set on mount; the controller forwards the
  *    Idle→Exploring→Placing lifecycle to engine.feedback.* — nisps/ml/feedback.hpp,
- *    per docs/redesign/rl-feedback-design.md).
+ *    per docs/adr/rl-feedback-design.md).
  *  - AltitudeNav switches `focus` via React state (in|split|out|composite), not
  *    by navigating to separate HTML files.
  *  - `c15` is labelled "Powerful Synth Engine" (in model.ts) — "C15" never shows.

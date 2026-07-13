@@ -1,6 +1,13 @@
-# Tiered Specs — MEMLNaut-NISPS
+---
+deprecated-by: 2026-07-13
+superseded-by: MAIN.md
+---
 
-This corpus is the **prescriptive plan** for the project: what we are building and why, organised from
+# Tiered Specs — MEMLNaut-NISPS (Deprecated)
+
+**Note:** This tiered planning approach was not built out; the corpus adopted a flat MAIN.md layout instead (see `docs/specs/MAIN.md`).
+
+This corpus was the **prescriptive plan** for the project: what we are building and why, organised from
 high-level intent down to implementation specifics. It is distinct from the two orienting docs at the repo
 root:
 

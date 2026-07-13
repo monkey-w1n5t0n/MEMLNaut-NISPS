@@ -1,6 +1,6 @@
 # RL / Feedback Learning-Engine Design — Manifold
 
-*Design sign-off. Dated 2026-06-27. Supersedes the AVOID-out-of-scope decision in `docs/redesign/feedback-modes-port-spec.md` §2.5/§7. Author: lead architect, synthesising a 4-candidate / 4-judge design panel against verified source.*
+*Design sign-off. Dated 2026-06-27. Supersedes the AVOID-out-of-scope decision in `docs/specs/feedback-modes-port-spec.md` §2.5/§7. Author: lead architect, synthesising a 4-candidate / 4-judge design panel against verified source.*
 
 ---
 

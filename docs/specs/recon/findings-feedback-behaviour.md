@@ -1,3 +1,9 @@
+---
+kind: finding
+date: 2026-06-27
+immutable: true
+---
+
 # Findings — Current RL / Feedback Behaviour (Phase-1 Audit)
 
 *Read-only audit, 2026-06-27. Citations are `file:line`. "VERIFIED" = read in source; "INFER" = deduced.
@@ -18,7 +24,7 @@ hook blocks subagent report-file writes. Adversarially spot-checked against sour
    random Gaussian noise"** — undirected diffusion, not directed avoidance.
 4. The true geometric push-away (move output away from k-NN centroid of liked examples) exists only in the
    firmware submodule (`memllib` InterfaceRL; "geo push" commits) and is documented in
-   `docs/redesign/feedback-modes-port-spec.md` §1.1. **This is the algorithm Mode 1 must match** (workstream B).
+   `docs/specs/feedback-modes-port-spec.md` §1.1. **This is the algorithm Mode 1 must match** (workstream B).
 5. **Why often inaudible (deployed AVOID):** noise added across all 4 layers of `MLP<2,10,14,18,126>`,
    per-layer scaled `(1-spread)+spread/√fan_in`, capped at `noiseCap=0.12`, spread default 0.6 → tiny
    per-step perturbation that the sigmoid output + output smoothing/slew pipeline absorb. One press moves the
@@ -36,7 +42,7 @@ hook blocks subagent report-file writes. Adversarially spot-checked against sour
    `LikeStore` (anchor) + `trainOnCurrent` (train). Missing in deployed build: the randomise-audition-then-anchor
    loop; today thumbs-down only diffuses noise and never anchors.
 10. The full port spec (component, WASM C API, TS FFI, ~22 ctest cases, parity stage) already exists at
-    `docs/redesign/feedback-modes-port-spec.md` and matches the untracked `feedback.hpp`.
+    `docs/specs/feedback-modes-port-spec.md` and matches the untracked `feedback.hpp`.
 11. **Parity/perf constraints:** no heap / `std::array` only, per-instance deterministic `nisps::Rng`
     (no libc `rand()`), no virtual dispatch, `.f` literals, fixed WASM arch `MLP<2,10,14,18,126>`,
     native↔WASM parity within `1e-5`.
@@ -153,6 +159,6 @@ prototype but commits at the *current* input position, not a chosen one, and lac
 - WASM API: `nisps/wasm/bindings.cpp:419-437`
 - TS: `playground/src/ml/wasm-iml.ts:488-508`; runtime `playground/src/modes/mode-runtime.ts:444-565`
 - Exploration knobs: `playground/src/stores/exploration-store.ts`
-- Port spec: `docs/redesign/feedback-modes-port-spec.md`
+- Port spec: `docs/specs/feedback-modes-port-spec.md`
 - Firmware geo-push: `src/memllib` (commits `2429bcc`, `d301cc7`; upstream `SB2026`; main `e291192`/`abe93ec`);
   design docs on `origin/feat/feedback-explore-modes`: `docs/dislike_system_{analysis,design_space}.md`

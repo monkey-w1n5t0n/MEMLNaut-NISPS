@@ -1,3 +1,9 @@
+---
+kind: spec
+stability: evolving
+layer: behavioural
+---
+
 I now have a thorough, complete understanding of the entire deployed app — DOM, CSS theme tokens, all interaction handlers, state model, engine call points, persistence, and the help-modal copy. I have everything needed to write the faithful clone spec. Let me write it now.
 
 # NISPS Immersive (`a-immersive.html`) — SolidJS Clone Spec

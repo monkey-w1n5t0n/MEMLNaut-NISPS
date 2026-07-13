@@ -1,6 +1,6 @@
 /**
  * The per-output control model for the Outputs / Routing dock (workstream D,
- * docs/redesign/dock-spec.md §3.2).
+ * docs/specs/dock-spec.md §3.2).
  *
  * DELIBERATE DIVERGENCE from the deployed a-immersive app (dock-spec §3.3 note,
  * open choice 3): the deployed override system conflates "frozen" (heatmap
@@ -72,7 +72,7 @@ export interface VcvSpec {
  * uSEQ CV/gate backend per-output extras. Each model output is assigned to one
  * physical uSEQ channel (or 'none'); gate channels threshold the mapped 0..1
  * value. The fixed hardware topology is 11 CV + 3 gate — see
- * docs/useq-celium/protocol.md.
+ * docs/specs/useq-cv-protocol.md.
  */
 export type CvChannelId =
   | 'none'

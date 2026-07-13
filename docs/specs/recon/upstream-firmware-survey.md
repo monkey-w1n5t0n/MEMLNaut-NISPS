@@ -1,3 +1,9 @@
+---
+kind: finding
+date: 2026-06-27
+immutable: true
+---
+
 # Upstream Firmware Survey — git archaeology of the MusicallyEmbodiedML ecosystem
 
 _Dated 2026-06-27. Author: research agent (read-only). All SHAs from a fresh `git fetch --all` + memllib submodule-gitdir fetch (incl. operator's memllib fork `monkey-w1n5t0n/memllib`)._
@@ -29,7 +35,7 @@ fast-forward or 3-way merge path; every integration is a re-implementation again
 | Branch | Remote | Last push | Author | vs its main¹ | Purpose | Judgment |
 |---|---|---|---|---|---|---|
 | `main` | origin | 2026-06-16 | monkey-w1n5t0n | — | The C++20/SolidJS rewrite. | canonical |
-| `feat/feedback-explore-modes` | origin | 2026-06-08 | w1n5t0n | +42 / −193 | Pins memllib `abe93ec` = the `FEEDBACK_MODE` (avoid / randomise-outputs / randomise-MLP) commit. Source material for `docs/redesign/feedback-modes-port-spec.md`. | **real RL work to port** (already spec'd, not yet in main) |
+| `feat/feedback-explore-modes` | origin | 2026-06-08 | w1n5t0n | +42 / −193 | Pins memllib `abe93ec` = the `FEEDBACK_MODE` (avoid / randomise-outputs / randomise-MLP) commit. Source material for `docs/specs/feedback-modes-port-spec.md`. | **real RL work to port** (already spec'd, not yet in main) |
 | `feat/useq-celium-opus46` | origin | 2026-06-14 | w1n5t0n | +2 / −36 | MEMLCelium useq experiment (Opus-4.6 session). | experiment — superseded by opus47 |
 | `useq-celium-opus47` | origin | 2026-04-20 | w1n5t0n | +6 / −36 | Later MEMLCelium useq iteration. | experiment |
 | `feat/unified-preset-system` | origin | 2026-04-16 | w1n5t0n | +46 / −55 | Preset-system spike; heavily diverged, stale. | abandoned/spike |
@@ -157,7 +163,7 @@ not `git merge`. Ranked by mission impact (RL/feedback richness and firmware-fea
   `origin/feat/feedback-explore-modes`; cross-checked against memllib main `80420d1`/`d9bdcd6` (SB2026 dislikes
   in `InterfaceRL`) which upstream/main pins via `e291192`.
 - **Why first:** This is the negative-feedback / RL core of the whole project, and the work is *already
-  written up* as an implementation-ready spec at `docs/redesign/feedback-modes-port-spec.md` (new
+  written up* as an implementation-ready spec at `docs/specs/feedback-modes-port-spec.md` (new
   `nisps::ml::FeedbackController<MLP_T>`, WASM C API, 11 ctest cases, parity Stage 5). The branch
   `feat/feedback-explore-modes` and the half-present `nisps/ml/feedback.hpp` + `tests/cpp/test_mlp_feedback.cpp`
   in the working tree show this is mid-flight. **Finish it and merge to main.** The spec's AVOID reconciliation
@@ -213,7 +219,7 @@ The 49 upstream commits are firmware apps on the old tree. Port the ones with mi
    operator's own memllib fork — an off-graph gitlink that a clean checkout cannot resolve.
 3. **The dislikes/RL feedback work the task flagged as "to find" is already (a) merged into upstream via SB2026
    → memllib `e291192`, AND (b) re-implemented by the operator on `feat/feedback-explore-modes` (memllib
-   `abe93ec`), AND (c) fully spec'd for the new core** in `docs/redesign/feedback-modes-port-spec.md` — with
+   `abe93ec`), AND (c) fully spec'd for the new core** in `docs/specs/feedback-modes-port-spec.md` — with
    `nisps/ml/feedback.hpp` and `tests/cpp/test_mlp_feedback.cpp` already present (untracked) in the working tree.
    The feedback integration is not a research question; it's a half-finished implementation to land.
 
@@ -250,4 +256,4 @@ The **latest upstream `InterfaceRL` tip is `0a541cc` "highlighting"** (990 lines
 which are older. **Mode 1 "Geometric dislike" must be ported to `0a541cc` parity.** Note: the in-tree submodule
 gitdir resolves none of `4733ca0`/`e291192`/`abe93ec`/`0a541cc` — only the separate `-upstream` memllib
 checkout has them; the orphaned-pin footgun stands and `0a541cc` is the re-pin/port target. See
-`docs/redesign/rl-feedback-design.md` §1 for the verified-ground-truth list.
+`docs/adr/rl-feedback-design.md` §1 for the verified-ground-truth list.

@@ -248,12 +248,12 @@ a setting → `--r-*` tokens.
 
 ## 7. Deeper references (only when this doc isn't enough)
 
-All in `docs/redesign/` (at the repo root, not under `manifold/`):
-- `BUILD-PLAN.md` — locked decisions + the 12-step build sequence + spec pointers (the resume anchor).
+All in `docs/specs/` (at the repo root, not under `manifold/`), with subdirectories:
+- `plans/BUILD-PLAN.md` — locked decisions + the 12-step build sequence + spec pointers (the resume anchor).
 - `engine-architecture.md` — full engine/spine/WASM design.
 - `dock-spec.md` — dock + drawers spec. `inputs-spec.md` — mixed-input design. `backends-spec.md` — backends.
-- `rl-feedback-design.md` + `feedback-modes-port-spec.md` + `findings-feedback-behaviour.md` — feedback modes (Mode 1/Mode 2).
-- `aimmersive-clone-spec.md` / `playground-2026.md` — the a-immersive feature parity target.
+- `docs/adr/rl-feedback-design.md` + `feedback-modes-port-spec.md` + `recon/findings-feedback-behaviour.md` — feedback modes (Mode 1/Mode 2).
+- `aimmersive-clone-spec.md` / `recon/playground-2026.md` — the a-immersive feature parity target.
 - `src/backends/README.md` — backend wiring notes.
 
 **Memories** (auto-loaded): `manifold-build` (status + locked decisions), `manifold-mixed-inputs`

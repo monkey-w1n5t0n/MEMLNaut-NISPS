@@ -1,6 +1,11 @@
+---
+kind: plan
+status: executed
+---
+
 # NISPS Playground 2.0 — Clean-Room SolidJS Rewrite Plan
 
-*Status: sign-off-ready. Author: lead architect, synthesizing four designer proposals (P1–P4) against three judge panels (mission-fit, feasibility, UX coherence). Date: 2026-06-17.*
+*Status: sign-off-ready. Author: lead architect, synthesizing four designer proposals (P1–P4) against three judge panels (mission-fit, feasibility, UX coherence). Date: 2026-06-17. Executed: largely implemented in the Manifold convertible app (June 2026) + playground SolidJS foundation.*
 
 ---
 

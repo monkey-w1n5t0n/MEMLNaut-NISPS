@@ -583,7 +583,7 @@ function VcvConfig({ ctx }: { ctx: ConsoleCtx }) {
   );
 }
 
-// ---- uSEQ CV / gate config (backends-spec §2.5; docs/useq-celium) -----------
+// ---- uSEQ CV / gate config (backends-spec §2.5; docs/specs/useq-cv-protocol.md) -----------
 
 function CvConfig({ ctx }: { ctx: ConsoleCtx }) {
   const s = ctx.backendStatus;

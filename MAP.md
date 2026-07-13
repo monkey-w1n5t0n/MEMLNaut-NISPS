@@ -26,7 +26,8 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
   - `settings_view.hpp` — `wire_settings(mode)`: adds on-device settings views to the MEMLNaut display carousel (TFT + rotary encoder). Joystick Dual/Single toggle for the 4-input ("two 2-D joystick") modes — "Single" pins ML input channels 2,3 to neutral via `ModeBase::set_input_pinned` (no net rebuild). Registered in the `.ino` after `addSystemInfoView()`.
 - `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks (Arduino-CLI requires sketch-tree includes; preprocessor refuses `..` in headers).
 - `firmware/README.md` — structure + build instructions.
-- `firmware/useq-celium/` — standalone RP2040 firmware (PlatformIO, Arduino-Pico core) that turns a uSEQ module + CV expander into a USB→CV/gate converter driven by the manifold `cvgate` backend. `shared/protocol.h` is the v2 wire-protocol single source of truth (mirrored by `manifold/src/backends/useq-protocol.ts`); `main/` (USB serial → CV1–3 + GATE1–3, I2C → expander) and `expander/` (I2C slave → CV4–11). Wire spec: `docs/useq-celium/protocol.md`. Restored from the April-2026 "uSEQ-Celium" mode.
+- `firmware/MEMLCelium-upstream/` — **vendored** verbatim snapshot of the upstream `MusicallyEmbodiedML/MEMLNaut-NISPS` @ `main` Arduino sketch (pre-refactor monorepo, does NOT use `nisps/`), preset to `MODE_MEMLCELIUM`. Self-contained: upstream `memllib`@`e291192d` + `memlp`@`ea777502` vendored as plain files; `src/daisysp` in-tree. Built directly with `arduino-cli` (not the repo build scripts) — see its `README.md` for provenance + the compile command.
+- `firmware/useq-celium/` — standalone RP2040 firmware (PlatformIO, Arduino-Pico core) that turns a uSEQ module + CV expander into a USB→CV/gate converter driven by the manifold `cvgate` backend. `shared/protocol.h` is the v2 wire-protocol single source of truth (mirrored by `manifold/src/backends/useq-protocol.ts`); `main/` (USB serial → CV1–3 + GATE1–3, I2C → expander) and `expander/` (I2C slave → CV4–11). Wire spec: `docs/specs/useq-cv-protocol.md`. Restored from the April-2026 "uSEQ-Celium" mode.
 
 ### `playground/` — SolidJS + Vite + TypeScript app
 - `playground/index.html`, `vite.config.ts`, `tsconfig.json`, `package.json` — scaffold. COOP/COEP headers configured.
@@ -45,8 +46,8 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 
 ### `manifold/` — Vite + React + TS convertible-mode app (the NEW front-end, WIP)
 The Manifold "convertible" Console on the real engine, deployed at `meml.lnfinitemonkeys.org/next` (staging,
-alongside the live vanilla a-immersive at `/`). Built 2026-06-27/28; see `docs/redesign/BUILD-PLAN.md` (resume
-anchor + locked decisions) and the `docs/redesign/*-spec.md` set.
+alongside the live vanilla a-immersive at `/`). Built 2026-06-27/28; see `docs/specs/plans/BUILD-PLAN.md` (resume
+anchor + locked decisions) and the `docs/specs/*-spec.md` set.
 - `manifold/src/engine/` — the parity-tested TS engine LIFTED from `playground/src` (same `nisps.wasm`), made
   framework-neutral: `wasm-iml.ts` (rewired off Solid stores onto an injected `EngineSink`), `engine-host.ts` +
   `worklet/nisps-processor.ts` (audio), `input-pipeline.ts`/`output-pipeline.ts`/`curves.ts`, `wasm-worker.ts`,
@@ -89,7 +90,7 @@ anchor + locked decisions) and the `docs/redesign/*-spec.md` set.
 ### `vcv/` — VCV Rack 2 plugin (MEMLNaut module, WIP)
 Native C++ Rack module: ML CV-mapper with RL feedback + a browser bridge. Currently 2→12 (being evolved to
 **8 inputs × 16 outputs + per-output LED rings**, palette from the frontend tokens, WS↔OSC browser bridge — see
-the "BUILD DELTAS" block at the top of `vcv/SPEC.md`). `src/MEMLNaut.cpp` (module), `src/osc_server.hpp` (bridge),
+the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNaut.cpp` (module), `src/osc_server.hpp` (bridge),
 `src/plugin.{hpp,cpp}`, `res/*.svg` (panels), `Makefile` (needs `RACK_DIR`). Was built against the retired
 `nisps-core`; the core include path is being repointed.
 
@@ -170,9 +171,10 @@ See `ALIGNMENT.md`.
 ## Specs
 
 - **Root**: `docs/specs/`
-- **Entry**: `README.md`
-- **Layout**: `flat`
-- **Index**: none
+- **Entry**: `MAIN.md`
+- **Layout**: flat (with `plans/`, `recon/`, `_archive/` subdirs)
+- **Index**: none (intentionally — generate when a consumer exists)
 - **Skill**: invoke `/specs` to review/maintain/add/navigate.
+- **Conventions**: Four-genre ontology — `kind: spec` (timeless contract, wins by intent), `kind: plan` (status: active|executed|superseded, never authority for behaviour), `kind: finding` (dated, immutable, exempt from drift lint), ADRs in `docs/adr/`.
 
-The corpus is a tiered T0–T4 prescriptive plan ("what we are going to build"); only `README.md` plus a handful of files exist so far. Alongside the tiers it also holds **feature specs** — e.g. `slp-workshop-firmware.md`, the single SLP-Workshop spec: Part I (shipped) covers the mode + Jolt / OU-explore learning gestures; Part II (planned) covers the output-mode evolution, gate sequences, and Manifold config UX. Before changing the behaviour a spec covers, find it via `/specs`; the spec wins by intent — if it's wrong, update it in the same commit as the code.
+The corpus holds platform-level specs (engine architecture, I/O backends, feedback design), implementation specs (port specs, wire protocols), feature specs (e.g. slp-workshop-firmware.md), historical findings (dated research artifacts), and finite build plans. Before changing behaviour a spec covers, find it via `/specs`; the spec wins by intent — if it's wrong, update it in the same commit as the code.

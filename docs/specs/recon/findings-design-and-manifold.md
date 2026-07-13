@@ -1,3 +1,9 @@
+---
+kind: finding
+date: 2026-06-27
+immutable: true
+---
+
 # Findings — Design + Manifold Console: build-oriented brief (Phase-1)
 
 *Read-only synthesis, 2026-06-27, of the five redesign docs + the on-disk Manifold token export + the
@@ -8,15 +14,15 @@
 > claude.ai design project and must be pulled via DesignSync before Phase-3 build. `ConsoleApp.jsx` was read
 > directly and is summarised in §2.
 
-## Source map (`docs/redesign/`)
-- `playground-2.0-rewrite-plan.md` (399ln) — authoritative SolidJS UX+architecture plan: Console IA, drawers,
+## Source map (now in docs/specs/ and subdirs)
+- `plans/playground-2.0-rewrite-plan.md` (399ln) — authoritative SolidJS UX+architecture plan: Console IA, drawers,
   reactive spine, feature table, roadmap, open questions.
 - `engine-architecture.md` (440ln) — one-engine-two-skins: `EngineApi` headless boundary, reuse table, COOP/COEP,
   build sequence S0–S7.
 - `aimmersive-clone-spec.md` (351ln) — faithful clone spec of deployed `a-immersive.html`: feature inventory,
   exact tactile constants, state→store map, engine call points.
 - `feedback-modes-port-spec.md` (548ln) — 3-mode "Down Action" ported to `nisps/` as `FeedbackController<MLP_T>`.
-- `playground-2026.md` (341ln) — older design-intent doc (dock+drawer, interactive heatmap); reference-only.
+- `recon/playground-2026.md` (341ln) — older design-intent doc (dock+drawer, interactive heatmap); reference-only.
 
 > **Framework mismatch:** every planning doc targets **SolidJS**; the mission is a **React** port. The §4 spine
 > translation is the largest design decision and biggest risk (§7).

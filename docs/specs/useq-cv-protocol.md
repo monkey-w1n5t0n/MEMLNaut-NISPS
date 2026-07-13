@@ -1,4 +1,10 @@
-# uSEQ-CV wire protocol v2
+---
+kind: spec
+stability: stable
+layer: binding
+---
+
+# uSEQ-CV Wire Protocol v2
 
 The protocol the Manifold **CV output backend** (`manifold/src/backends/cv-backend.ts`)
 speaks over USB Web Serial to the uSEQ main module, which drives CV/gate jacks and

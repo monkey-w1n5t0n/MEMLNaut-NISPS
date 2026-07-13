@@ -18,7 +18,7 @@
 //     the threading double-buffer stays race-free (each MLP owns its own RNG).
 //
 // It is NOT bit-identical to the firmware core (different optimiser internals),
-// and that divergence is an accepted follow-up (see vcv/SPEC.md delta #5). The
+// and that divergence is an accepted follow-up (see docs/specs/vcv-module.md delta #5). The
 // public method names mirror the core so `MEMLNaut.cpp` is unchanged in spirit.
 //
 // MPL-2.0 in spirit with the rest of nisps; wrapper code under the VCV module's

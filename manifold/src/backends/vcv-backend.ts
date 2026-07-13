@@ -1,6 +1,6 @@
 /**
  * VcvBackend — drives + trains the VCV Rack NISPS module over the OSC↔WS bridge
- * (backends-spec §2.6; vcv/SPEC.md OSC verbs). In "bridged" mode the BROWSER is
+ * (backends-spec §2.6; docs/specs/vcv-module.md OSC verbs). In "bridged" mode the BROWSER is
  * authoritative: it streams the current input vector to the module and forwards
  * the verdict loop (thumbs up/down, explore-and-place) so the module's embedded
  * net trains in lock-step with the browser session.

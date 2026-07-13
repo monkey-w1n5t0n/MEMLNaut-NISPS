@@ -1,7 +1,7 @@
 /**
  * UseqCvBackend — real CV/gate output over USB Web Serial to a uSEQ module
  * (+ CV expander). The restored, modernised descendant of the April-2026
- * "uSEQ-Celium" output mode (provenance: docs/useq-celium/protocol.md).
+ * "uSEQ-Celium" output mode (provenance: docs/specs/useq-cv-protocol.md).
  *
  * Per non-silent output: map (0..1) → baseline (min/max/curve) → assign to the
  * output's configured uSEQ channel — a CV jack (12-bit value) or a gate

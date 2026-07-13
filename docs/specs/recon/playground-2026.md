@@ -1,10 +1,16 @@
+---
+kind: finding
+date: 2026-04-12
+immutable: true
+---
+
 # Playground Redesign — 2026 (Design Intent)
 
 > **Purpose of this doc.** Captures design intent of an unfinished playground UI
 > redesign that lived as uncommitted changes in a `MEMLNaut-NISPS_rewound`
 > working copy. The implementation will not be merged into the current vanilla
 > playground — the playground is being rewritten in SolidJS — but the *design*
-> shouldn't be lost. Read this as a feature spec for the SolidJS rewrite, not as
+> shouldn't be lost. Read this as a reference for the SolidJS rewrite, not as
 > a description of current code.
 >
 > **Source snapshot.** `archive/playground-redesign-2026-snapshot` branch in
@@ -12,7 +18,7 @@
 > `playground/a-immersive.html`, `playground/css/a-immersive.css`,
 > `playground/js/a-app.js`. ~1200 lines net of changes.
 >
-> **Status.** Reference-only. Do not merge into the vanilla playground — those
+> **Status.** Reference-only, immutable. Do not merge into the vanilla playground — those
 > files have moved on independently in `main` and a textual merge would be
 > meaningless.
 

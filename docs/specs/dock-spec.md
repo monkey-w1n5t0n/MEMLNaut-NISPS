@@ -1,8 +1,14 @@
+---
+kind: spec
+stability: evolving
+layer: behavioural
+---
+
 # Dock Spec — Console Right-Dock Drawers + Per-Output Controls
 
-*Workstream D. Read-only design, 2026-06-27. Target app: `manifold/` (Vite + React + TS), wired to the parity-tested TS engine (`playground/src`) via the headless `EngineApi` boundary (`docs/redesign/engine-architecture.md` §2). Citations are `file:line`. British spelling in product copy. The built-in synth is the **"Powerful Synth Engine"** — the string "C15" MUST NEVER appear in the UI.*
+*Workstream D. Read-only design, 2026-06-27. Target app: `manifold/` (Vite + React + TS), wired to the parity-tested TS engine (`playground/src`) via the headless `EngineApi` boundary (`engine-architecture.md` §2). Citations are `file:line`. British spelling in product copy. The built-in synth is the **"Powerful Synth Engine"** — the string "C15" MUST NEVER appear in the UI.*
 
-This spec replaces the placeholder Shape/Feel/Route/Health/Help drawers in `ConsoleApp.jsx` (`docs/redesign/findings-design-and-manifold.md` §2 — keyboard `1-5` map drawers, `\` toggles depth) with the real dock contents.
+This spec replaces the placeholder Shape/Feel/Route/Health/Help drawers in `ConsoleApp.jsx` (`recon/findings-design-and-manifold.md` §2 — keyboard `1-5` map drawers, `\` toggles depth) with the real dock contents.
 
 ---
 

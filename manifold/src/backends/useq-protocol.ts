@@ -4,7 +4,7 @@
  * header; useq-protocol.test.ts asserts the frame sizes match.
  *
  * Pure + framework-neutral (no navigator / DOM) so it is unit-testable and safe
- * to import from anywhere. See docs/useq-celium/protocol.md.
+ * to import from anywhere. See docs/specs/useq-cv-protocol.md.
  */
 
 // ─── Sync bytes ──────────────────────────────────────────────────────────────

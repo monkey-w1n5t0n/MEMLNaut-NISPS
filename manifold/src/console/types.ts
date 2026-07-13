@@ -159,6 +159,17 @@ export interface ConsoleCtx {
   spreadLevel: number;
   setSpreadLevel: (v: number) => void;
 
+  // ---- Exploration gestures (one-core-engine §P1; interim TS shells) ----
+  /** True while the Jolt press-and-hold weight-morph is engaged. */
+  joltActive: boolean;
+  /** Begin the Jolt morph (button press). */
+  onJoltPress: () => void;
+  /** Freeze the Jolt morph where it landed (button release). */
+  onJoltRelease: () => void;
+  /** OU exploration amount on the output vector, [0,1]; 0 = off. */
+  exploreIntensity: number;
+  setExploreIntensity: (v: number) => void;
+
   // ---- Synth engine (dock-spec §5) ----
   audioStarted: boolean;
   onToggleAudio: () => void;

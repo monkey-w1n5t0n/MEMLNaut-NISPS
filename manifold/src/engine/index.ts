@@ -15,6 +15,12 @@ export type {
 export { Spine } from './spine';
 export type { SpineState, BackendSend } from './spine';
 
+// Exploration gestures (interim TS shells; maths moves to WASM in P3).
+export { ExplorationController } from './exploration';
+export { Jolt, DEFAULT_JOLT_PARAMS } from './jolt';
+export type { JoltParams } from './jolt';
+export { OUExplore, OU_MAX_AMPLITUDE } from './ou-explore';
+
 export { WasmIML } from './wasm-iml';
 export type { WasmIMLOptions } from './wasm-iml';
 

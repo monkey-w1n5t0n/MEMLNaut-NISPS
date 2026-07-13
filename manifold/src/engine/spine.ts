@@ -103,6 +103,12 @@ export class Spine implements EngineSink {
   private liveOutputs: F32 = new Float32Array(126);
   private liveWeights: F32 = new Float32Array(0);
 
+  // Optional post-output transform, applied to the routed buffer AFTER the
+  // output pipeline and BEFORE backend.send (exploration noise — see
+  // engine/exploration.ts). Inert (null) by default so the spine stays
+  // parity-safe; the OU morph itself is a no-op until intensity > 0.
+  private outputMorph: ((routed: Float32Array) => void) | null = null;
+
   private lastTickMs = 0;
 
   // ---- EngineSink ----------------------------------------------------
@@ -161,6 +167,16 @@ export class Spine implements EngineSink {
 
   setBackendSend(backendSend: BackendSend | null): void {
     this.backendSend = backendSend;
+  }
+
+  /**
+   * Register (or clear with null) a post-output transform applied to the routed
+   * buffer in place, after the output pipeline and before backend.send. Used for
+   * exploration noise (engine/exploration.ts). Interim seam — in P3 the OU walk
+   * runs in the WASM core and this hook can retire.
+   */
+  setOutputMorph(fn: ((routed: Float32Array) => void) | null): void {
+    this.outputMorph = fn;
   }
 
   // ---- The hot action ------------------------------------------------
@@ -229,6 +245,10 @@ export class Spine implements EngineSink {
     } else {
       this.routedBuf = routed;
     }
+
+    // 4b. optional exploration morph on the routed vector (OU noise). Inert
+    //     unless a controller has registered one AND it is turned up.
+    if (this.outputMorph && this.routedBuf) this.outputMorph(this.routedBuf);
 
     // 5. single backend.send at the tail (off React render).
     if (this.backendSend && this.routedBuf) this.backendSend(this.routedBuf);

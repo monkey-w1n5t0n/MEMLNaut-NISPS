@@ -112,7 +112,7 @@ function bind(Module) {
     feedbackLike:         cwrap('nisps_ml_feedback_like',          null,     ['number']),
     feedbackCommitPlace:  cwrap('nisps_ml_feedback_commit_place',  null,     ['number']),
     feedbackPlacedOutput: cwrap('nisps_ml_feedback_placed_output', 'number', ['number','number']),
-    describe:    cwrap('nisps_ml_describe',     null,     ['number']),
+    describe:    cwrap('nisps_ml_describe',     null,     ['number','number']),
 
     engineCreate:    cwrap('nisps_engine_create', 'number', ['string','number']),
     engineDestroy:   cwrap('nisps_engine_destroy', null, ['number']),
@@ -186,9 +186,10 @@ async function main() {
   const Module = await loadWasm();
   const api = bind(Module);
 
-  // Verify dimensions match the native side.
+  // Verify dimensions match the native side. A null handle reports the
+  // DEFAULT shape (what create() yields for non-positive args).
   const dimsBuf = api.malloc(6 * 4);
-  api.describe(dimsBuf);
+  api.describe(0, dimsBuf);
   const dims = new Int32Array(Module.HEAP32.buffer, dimsBuf, 6).slice();
   api.free(dimsBuf);
   // Expect: [32, 10, 14, 18, 126, 4]  (32-input max for mix-and-match)

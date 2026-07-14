@@ -32,7 +32,7 @@ mkdir -p "$OUT"
 # function is missing.
 EXPORTED_FUNCS='[
   "_malloc","_free",
-  "_nisps_ml_create","_nisps_ml_destroy","_nisps_ml_reset",
+  "_nisps_ml_create","_nisps_ml_destroy","_nisps_ml_reset","_nisps_ml_reshape",
   "_nisps_ml_set_input","_nisps_ml_process","_nisps_ml_outputs","_nisps_ml_infer_batch",
   "_nisps_ml_add_example","_nisps_ml_train","_nisps_ml_eval_loss",
   "_nisps_ml_clear_examples","_nisps_ml_example_count",

@@ -1,31 +1,26 @@
-// nisps/wasm/bindings.cpp — flat C API exported to the SolidJS playground.
+// nisps/wasm/bindings.cpp — flat C API exported to the Manifold browser app.
 //
 // Two consumers per build:
-//   1. Main-thread WasmIML (playground/src/ml/wasm-iml.ts)        — ML calls.
-//   2. AudioWorklet processor (playground/src/audio/worklet/...)  — engine
+//   1. Main-thread WasmIML (manifold/src/engine/wasm-iml.ts)          — ML calls.
+//   2. AudioWorklet processor (manifold/src/engine/worklet/...)       — engine
 //      calls. (Each instance owns its own WASM module instance.)
 //
-// ARCHITECTURE (input dim is OVER-PROVISIONED for mix-and-match inputs)
+// ARCHITECTURE (runtime-shaped since one-core-engine-refactor P2)
 // ---------------------------------------------------------------------
-// The C++ MLP class is templated on layer sizes (architecture.md §4.1, §6.2).
-// We instantiate ONE concrete configuration here:
+// The browser MLP is `MLPCore<DynamicStorage>`: `nisps_ml_create()` HONOURS
+// its caller-supplied input_size / output_size / hidden[3] arguments. The
+// topology stays fixed at 4 layers (ReLU×3 + Sigmoid); only the dimensions
+// are runtime. Non-positive / missing arguments fall back to the historical
+// compiled defaults (32 → [10, 14, 18] → 126), which keeps every pre-P2
+// caller — including the parity harness — bit-identical (FixedStorage and
+// DynamicStorage are bit-parity-tested for equal shapes/seeds).
 //
-//     using DefaultMLP = nisps::ml::MLP<32, 10, 14, 18, 126>;
-//
-// The 32-input dimension is the MAX number of composed input axes the manifold
-// front-end can feed (matches MAX_AXES in manifold/src/inputs/input-layer.ts).
-// The mix-and-match input layer (Internal XY pad + Game Controller + MIDI) gives
-// each active axis its OWN dedicated input slot — NO mean-blending — and feeds
-// the remaining (unused) slots a constant 0. The "active input dimension count"
-// is a front-end concept: a 2-axis pad uses slots 0–1, a 4-axis pad+stick uses
-// 0–3, etc. Because slot assignment is stable and unused slots are held at 0,
-// the net behaves as an N-input net where N = active axes; changing N is a
-// reshape, after which the front-end resets the weights (recreate-from-scratch,
-// behind a confirm modal). 126 outputs cover C15 + any current schema.
-//
-// `nisps_ml_create()` accepts caller-supplied input_size/output_size/hidden[]
-// but only validates them against these compile-time defaults — extra
-// inputs/outputs are clipped at the boundary and hidden overrides are ignored.
+// Reshape = `nisps_ml_reshape()`: a NEW instance at the new dimensions,
+// warm-started by copying the overlapping weight region from the old net
+// (nisps/ml/warm_start.hpp); weights outside the overlap keep the fresh
+// spread-initialised values. The feedback controller is re-created at the
+// new dimensions (its exploration state resets — the front-end shows a
+// reset-on-reshape modal).
 //
 // WIRE FORMAT FOR WEIGHTS
 // -----------------------
@@ -68,9 +63,11 @@
 
 // ML.
 #include "../core/types.hpp"
+#include "../ml/dynamic_storage.hpp"
 #include "../ml/feedback.hpp"
 #include "../ml/mlp.hpp"
 #include "../ml/stats.hpp"
+#include "../ml/warm_start.hpp"
 
 namespace {
 
@@ -78,45 +75,89 @@ namespace {
 // ML side
 // ---------------------------------------------------------------------------
 
-// Compile-time default architecture. See header comment.
-//
-// Choice rationale:
-//   * 2 inputs            — playground virtual joystick (X, Y).
+// Historical compiled defaults. Non-positive / missing create() args fall
+// back to these, keeping every pre-P2 caller bit-identical.
+//   * 32 inputs           — MAX composed input axes the manifold front-end
+//     feeds (matches MAX_AXES in manifold/src/inputs/input-layer.ts).
 //   * [10, 14, 18] hidden — covers the largest schema layouts in
-//     `schemas/modes/*.json` (channel_strip variants, verb_fx, breakor,
-//     elysiamorf, memlcelium).
+//     `schemas/modes/*.json`.
 //   * 126 outputs         — enough for the C15 mode and any current schema.
-//
-// The MLP also has dataset slots, loss history etc. — see mlp.hpp.
-using DefaultMLP = nisps::ml::MLP<32u, 10u, 14u, 18u, 126u>;
+constexpr std::size_t kDefaultInputs    = 32u;
+constexpr std::size_t kDefaultHidden[3] = {10u, 14u, 18u};
+constexpr std::size_t kDefaultOutputs   = 126u;
+// Sanity ceiling per dimension — create/reshape reject anything larger.
+constexpr std::size_t kMaxDim = 4096u;
 
-constexpr std::size_t kDefaultInputs  = DefaultMLP::kInput;
-constexpr std::size_t kDefaultOutputs = DefaultMLP::kOutput;
+constexpr std::uint64_t kFeedbackSalt = 0xFEEDBACC0DEull;
+
+using BrowserMLP = nisps::ml::MLPCore<nisps::ml::DynamicStorage>;
+using BrowserFeedback =
+    nisps::ml::FeedbackControllerCore<nisps::ml::DynamicFeedbackStorage>;
+
+constexpr std::size_t kFeedbackUndoDepth = 4u;
+
+struct MlDims {
+    std::size_t n_in;
+    std::size_t hidden[3];
+    std::size_t n_out;
+    bool        ok;
+};
+
+// Sanitise caller-supplied dims. Non-positive input/output and missing /
+// non-3-entry hidden lists fall back to the defaults; out-of-range values
+// make the request invalid.
+MlDims sanitise_dims(int input_size, int output_size,
+                     const int* hidden, int n_hidden) noexcept {
+    MlDims d{kDefaultInputs,
+             {kDefaultHidden[0], kDefaultHidden[1], kDefaultHidden[2]},
+             kDefaultOutputs,
+             true};
+    if (input_size > 0) d.n_in = static_cast<std::size_t>(input_size);
+    if (output_size > 0) d.n_out = static_cast<std::size_t>(output_size);
+    if (hidden && n_hidden == 3) {
+        for (std::size_t i = 0; i < 3u; ++i) {
+            if (hidden[i] <= 0) { d.ok = false; return d; }
+            d.hidden[i] = static_cast<std::size_t>(hidden[i]);
+        }
+    } else if (hidden && n_hidden != 0) {
+        d.ok = false;  // the 4-layer topology needs exactly 3 hidden sizes
+        return d;
+    }
+    if (d.n_in > kMaxDim || d.n_out > kMaxDim ||
+        d.hidden[0] > kMaxDim || d.hidden[1] > kMaxDim || d.hidden[2] > kMaxDim) {
+        d.ok = false;
+    }
+    return d;
+}
 
 // We allocate the MLP on the heap (one-off — not the audio path) and return
 // the opaque pointer to JS.
 struct MLHandle {
-    DefaultMLP mlp;
+    std::uint64_t seed64;
+    BrowserMLP mlp;
     // "Down Action" negative-feedback controller (Avoid/RandomiseOutputs/
-    // RandomiseMlp). Seeded off the MLP seed XOR a salt so its static-output
-    // RNG stream is independent of the MLP's inference/move RNG.
-    nisps::ml::FeedbackController<DefaultMLP> feedback;
-    // Buffers used to bridge JS → C++:
-    std::array<float, kDefaultInputs>  input_scratch{};
-    std::array<float, kDefaultOutputs> output_scratch{};
+    // RandomiseMlp/ExploreAndPlace). Seeded off the MLP seed XOR a salt so
+    // its static-output RNG stream is independent of the MLP's RNG.
+    BrowserFeedback feedback;
+    // Buffers used to bridge JS → C++ (sized to the instance's dims):
+    std::vector<float> output_scratch;
     // Stats buffer fed back to JS via get_layer_stats.
-    std::array<float, DefaultMLP::kNumLayers * 4u> stats_scratch{};
+    std::array<float, BrowserMLP::kNumLayers * 4u> stats_scratch{};
     // Static-output buffer for the RandomiseOutputs bypass path.
-    std::array<float, kDefaultOutputs> feedback_static_scratch{};
-    // Used by infer_batch with arbitrary N — must exceed any reasonable
-    // request from the heatmap. 256x256 = 65536 max points → too many in
-    // practice. We cap batch size at 4096 here; callers must split larger
-    // requests.
+    std::vector<float> feedback_static_scratch;
+    // infer_batch cap; callers must split larger requests.
     static constexpr std::size_t kMaxBatch = 4096u;
-    std::array<float, kMaxBatch * kDefaultOutputs> batch_out_scratch{};
 
-    explicit MLHandle(std::uint64_t seed) noexcept
-        : mlp(seed), feedback(seed ^ 0xFEEDBACC0DEull) {}
+    MLHandle(std::uint64_t seed, const MlDims& d) noexcept
+        : seed64(seed),
+          mlp(seed, d.n_in, std::span<const std::size_t>(d.hidden, 3u), d.n_out),
+          feedback(seed ^ kFeedbackSalt, d.n_out, mlp.weight_count(), kFeedbackUndoDepth),
+          output_scratch(d.n_out, 0.f),
+          feedback_static_scratch(d.n_out, 0.f) {}
+
+    bool valid() const noexcept { return mlp.valid() && feedback.valid(); }
+    std::size_t n_in()  const noexcept { return mlp.n_in(); }
+    std::size_t n_out() const noexcept { return mlp.n_out(); }
 };
 
 // ---------------------------------------------------------------------------
@@ -290,22 +331,55 @@ extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
 void* nisps_ml_create(int input_size, int output_size,
-                     const int* /*hidden*/, int /*n_hidden*/,
+                     const int* hidden, int n_hidden,
                      uint32_t seed) {
-    // We accept and ignore caller-supplied dimensions if they don't match the
-    // compile-time default. See file header.
+    // Dimensions are HONOURED (runtime-shaped MLP); non-positive/missing args
+    // fall back to the historical defaults. See file header.
     //
     // NOTE: the C++ Rng takes uint64_t; we sign-extend the 32-bit seed into
     // the high 32 bits via xor-shift so callers passing zero still get a
     // non-degenerate seed. Truly 64-bit seeds are not exposed to JS — the
-    // playground doesn't need them, and avoiding BigInt at the boundary
+    // front-end doesn't need them, and avoiding BigInt at the boundary
     // simplifies both wasm-iml.ts and wasm-worker.ts.
-    (void)input_size;
-    (void)output_size;
+    const MlDims d = sanitise_dims(input_size, output_size, hidden, n_hidden);
+    if (!d.ok) return nullptr;
     const std::uint64_t s64 = static_cast<std::uint64_t>(seed) ^
                               (static_cast<std::uint64_t>(seed) << 32);
-    auto* h = new MLHandle(s64);
+    auto* h = new MLHandle(s64, d);
+    if (!h->valid()) {
+        delete h;
+        return nullptr;
+    }
     return static_cast<void*>(h);
+}
+
+// Reshape: construct a NEW net at the requested dimensions (same seed
+// stream restart, fresh spread-init), warm-start it with the overlapping
+// weights of the current net, then swap it in. The feedback controller is
+// re-created at the new dims (exploration state resets). Returns 1 on
+// success; 0 leaves the existing net untouched.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_reshape(void* ml, int input_size, int output_size,
+                     const int* hidden, int n_hidden, float spread) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    const MlDims d = sanitise_dims(input_size, output_size, hidden, n_hidden);
+    if (!d.ok) return 0;
+
+    BrowserMLP fresh(h->seed64, d.n_in, std::span<const std::size_t>(d.hidden, 3u), d.n_out);
+    if (!fresh.valid()) return 0;
+    fresh.draw_weights(spread);
+    nisps::ml::warm_start_copy(fresh, h->mlp);
+
+    BrowserFeedback fb(h->seed64 ^ kFeedbackSalt, d.n_out, fresh.weight_count(),
+                       kFeedbackUndoDepth);
+    if (!fb.valid()) return 0;
+
+    h->mlp      = static_cast<BrowserMLP&&>(fresh);
+    h->feedback = static_cast<BrowserFeedback&&>(fb);
+    h->output_scratch.assign(d.n_out, 0.f);
+    h->feedback_static_scratch.assign(d.n_out, 0.f);
+    return 1;
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -323,7 +397,7 @@ void nisps_ml_set_input(void* ml, int idx, float v) {
     if (!ml) return;
     auto* h = static_cast<MLHandle*>(ml);
     if (idx < 0) return;
-    if (static_cast<std::size_t>(idx) >= kDefaultInputs) return;
+    if (static_cast<std::size_t>(idx) >= h->n_in()) return;
     h->mlp.set_input(static_cast<std::size_t>(idx), v);
 }
 
@@ -333,7 +407,8 @@ void nisps_ml_process(void* ml) {
     auto* h = static_cast<MLHandle*>(ml);
     h->mlp.process();
     auto outs = h->mlp.outputs();
-    for (std::size_t i = 0; i < kDefaultOutputs; ++i) h->output_scratch[i] = outs[i];
+    const std::size_t n_out = h->n_out();
+    for (std::size_t i = 0; i < n_out; ++i) h->output_scratch[i] = outs[i];
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -347,18 +422,20 @@ EMSCRIPTEN_KEEPALIVE
 void nisps_ml_infer_batch(void* ml, const float* points, int n_points, float* out) {
     if (!ml || !points || !out || n_points <= 0) return;
     auto* h = static_cast<MLHandle*>(ml);
+    const std::size_t n_in  = h->n_in();
+    const std::size_t n_out = h->n_out();
     const std::size_t n = static_cast<std::size_t>(n_points);
     if (n > MLHandle::kMaxBatch) {
-        // Caller exceeded the scratch buffer. Process what we can.
+        // Caller exceeded the batch cap. Process what we can.
         const std::size_t safe_n = MLHandle::kMaxBatch;
         h->mlp.infer_batch(
-            std::span<const float>(points, safe_n * kDefaultInputs),
-            std::span<float>(out, safe_n * kDefaultOutputs));
+            std::span<const float>(points, safe_n * n_in),
+            std::span<float>(out, safe_n * n_out));
         return;
     }
     h->mlp.infer_batch(
-        std::span<const float>(points, n * kDefaultInputs),
-        std::span<float>(out, n * kDefaultOutputs));
+        std::span<const float>(points, n * n_in),
+        std::span<float>(out, n * n_out));
 }
 
 // ---------------------------------------------------------------------------
@@ -370,8 +447,8 @@ void nisps_ml_add_example(void* ml, const float* features, const float* labels) 
     if (!ml || !features || !labels) return;
     auto* h = static_cast<MLHandle*>(ml);
     h->mlp.add_example(
-        std::span<const float>(features, kDefaultInputs),
-        std::span<const float>(labels, kDefaultOutputs));
+        std::span<const float>(features, h->n_in()),
+        std::span<const float>(labels, h->n_out()));
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -400,8 +477,15 @@ float nisps_ml_eval_loss(void* ml) {
 
 EMSCRIPTEN_KEEPALIVE
 int nisps_ml_weight_count(void* ml) {
-    (void)ml;
-    return static_cast<int>(DefaultMLP::weight_count());
+    if (!ml) {
+        // Handle-less callers get the default shape's count.
+        const MlDims d = sanitise_dims(0, 0, nullptr, 0);
+        return static_cast<int>(
+            d.n_in * d.hidden[0] + d.hidden[0] * d.hidden[1] +
+            d.hidden[1] * d.hidden[2] + d.hidden[2] * d.n_out +
+            d.hidden[0] + d.hidden[1] + d.hidden[2] + d.n_out);
+    }
+    return static_cast<int>(static_cast<MLHandle*>(ml)->mlp.weight_count());
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -416,7 +500,7 @@ EMSCRIPTEN_KEEPALIVE
 void nisps_ml_set_weights(void* ml, const float* in) {
     if (!ml || !in) return;
     auto* h = static_cast<MLHandle*>(ml);
-    h->mlp.set_weights(std::span<const float>(in, DefaultMLP::weight_count()));
+    h->mlp.set_weights(std::span<const float>(in, h->mlp.weight_count()));
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -433,7 +517,7 @@ void nisps_ml_move_weights(void* ml, float speed, float spread,
     auto* h = static_cast<MLHandle*>(ml);
     std::span<const std::uint8_t> mask;
     if (output_pin_mask) {
-        mask = std::span<const std::uint8_t>(output_pin_mask, kDefaultOutputs);
+        mask = std::span<const std::uint8_t>(output_pin_mask, h->n_out());
     }
     h->mlp.move_weights(speed, spread, mask);
 }
@@ -452,7 +536,7 @@ void nisps_ml_move_weights(void* ml, float speed, float spread,
 //   output (nisps_ml_outputs / nisps_ml_feedback_static_output) BEFORE calling
 //   nisps_ml_feedback_up / _drag, then store THAT captured vector as the +1
 //   example. Reading the output AFTER the call yields the restored (wrong) net.
-//   nisps_ml_feedback_down with current_out should pass the full kDefaultOutputs
+//   nisps_ml_feedback_down with current_out should pass the full n_out
 //   live vector (RandomiseOutputs freezes unfocused dims at those values).
 // ---------------------------------------------------------------------------
 
@@ -497,7 +581,7 @@ void nisps_ml_feedback_set_focus(void* ml, const uint8_t* mask, int n) {
         std::span<const std::uint8_t>(mask, static_cast<std::size_t>(n)));
 }
 
-// current_out = kDefaultOutputs floats the user is hearing (may be null).
+// current_out = n_out floats the user is hearing (may be null).
 // pin_mask may be null. Returns the FeedbackAction int.
 EMSCRIPTEN_KEEPALIVE
 int nisps_ml_feedback_down(void* ml, const float* current_out,
@@ -505,9 +589,9 @@ int nisps_ml_feedback_down(void* ml, const float* current_out,
     if (!ml) return 0;
     auto* h = static_cast<MLHandle*>(ml);
     std::span<const float> out;
-    if (current_out) out = std::span<const float>(current_out, kDefaultOutputs);
+    if (current_out) out = std::span<const float>(current_out, h->n_out());
     std::span<const std::uint8_t> mask;
-    if (pin_mask) mask = std::span<const std::uint8_t>(pin_mask, kDefaultOutputs);
+    if (pin_mask) mask = std::span<const std::uint8_t>(pin_mask, h->n_out());
     return static_cast<int>(h->feedback.on_down(h->mlp, out, speed, spread, mask));
 }
 
@@ -525,17 +609,17 @@ int nisps_ml_feedback_drag(void* ml) {
     return static_cast<int>(h->feedback.on_drag(h->mlp));
 }
 
-// If returns 1, `out` (kDefaultOutputs floats) holds the static bypass vector
+// If returns 1, `out` (n_out floats) holds the static bypass vector
 // and the caller should NOT call nisps_ml_process(); if 0, run process().
 EMSCRIPTEN_KEEPALIVE
 int nisps_ml_feedback_static_output(void* ml, float* out) {
     if (!ml || !out) return 0;
     auto* h = static_cast<MLHandle*>(ml);
-    const bool bypass =
-        h->feedback.static_output(std::span<float>(h->feedback_static_scratch));
+    const bool bypass = h->feedback.static_output(std::span<float>(
+        h->feedback_static_scratch.data(), h->feedback_static_scratch.size()));
     if (bypass) {
         std::memcpy(out, h->feedback_static_scratch.data(),
-                    kDefaultOutputs * sizeof(float));
+                    h->n_out() * sizeof(float));
     }
     return bypass ? 1 : 0;
 }
@@ -637,7 +721,7 @@ int nisps_ml_feedback_undo_depth(void* ml) {
     return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.undo_depth());
 }
 
-// Writes the committed/placed output vector (kDefaultOutputs floats) into `out`.
+// Writes the committed/placed output vector (n_out floats) into `out`.
 // Returns 1 if a vector was written (placing OR a fresh commit), else 0. Reads
 // committed_output() (valid post-commit) falling back to placed_output() (while
 // placing) so the caller can grab the label either before or after commit.
@@ -648,7 +732,7 @@ int nisps_ml_feedback_placed_output(void* ml, float* out) {
     std::span<const float> v = h->feedback.committed_output();
     if (v.empty()) v = h->feedback.placed_output();
     if (v.empty()) return 0;
-    const std::size_t n = (v.size() < kDefaultOutputs) ? v.size() : kDefaultOutputs;
+    const std::size_t n = (v.size() < h->n_out()) ? v.size() : h->n_out();
     std::memcpy(out, v.data(), n * sizeof(float));
     return 1;
 }
@@ -657,7 +741,7 @@ EMSCRIPTEN_KEEPALIVE
 void nisps_ml_get_layer_stats(void* ml, float* out_stats) {
     if (!ml || !out_stats) return;
     auto* h = static_cast<MLHandle*>(ml);
-    for (std::size_t i = 0; i < DefaultMLP::kNumLayers; ++i) {
+    for (std::size_t i = 0; i < BrowserMLP::kNumLayers; ++i) {
         const auto s = h->mlp.layer_stats(i);
         out_stats[i * 4u + 0u] = s.mean_abs;
         out_stats[i * 4u + 1u] = s.max_abs;
@@ -689,17 +773,29 @@ void nisps_ml_reset(void* ml) {
     h->mlp.reset();
 }
 
-// Architecture introspection — returns 4-int packed [in, h1, h2, h3, out, n_layers].
-// Kept simple: writes into a caller-supplied int buffer. Always 6 ints.
+// Architecture introspection — writes [in, h1, h2, h3, out, n_layers] into a
+// caller-supplied int buffer. Always 6 ints. With a null handle it reports
+// the DEFAULT shape (what create() yields for non-positive args); with a
+// handle it reports that instance's actual runtime shape.
 EMSCRIPTEN_KEEPALIVE
-void nisps_ml_describe(int* out_dims) {
+void nisps_ml_describe(void* ml, int* out_dims) {
     if (!out_dims) return;
-    out_dims[0] = static_cast<int>(DefaultMLP::kInput);
-    out_dims[1] = static_cast<int>(DefaultMLP::kHidden1);
-    out_dims[2] = static_cast<int>(DefaultMLP::kHidden2);
-    out_dims[3] = static_cast<int>(DefaultMLP::kHidden3);
-    out_dims[4] = static_cast<int>(DefaultMLP::kOutput);
-    out_dims[5] = static_cast<int>(DefaultMLP::kNumLayers);
+    if (!ml) {
+        out_dims[0] = static_cast<int>(kDefaultInputs);
+        out_dims[1] = static_cast<int>(kDefaultHidden[0]);
+        out_dims[2] = static_cast<int>(kDefaultHidden[1]);
+        out_dims[3] = static_cast<int>(kDefaultHidden[2]);
+        out_dims[4] = static_cast<int>(kDefaultOutputs);
+        out_dims[5] = static_cast<int>(BrowserMLP::kNumLayers);
+        return;
+    }
+    auto* h = static_cast<MLHandle*>(ml);
+    out_dims[0] = static_cast<int>(h->mlp.n_in());
+    out_dims[1] = static_cast<int>(h->mlp.fan_out(0u));
+    out_dims[2] = static_cast<int>(h->mlp.fan_out(1u));
+    out_dims[3] = static_cast<int>(h->mlp.fan_out(2u));
+    out_dims[4] = static_cast<int>(h->mlp.n_out());
+    out_dims[5] = static_cast<int>(BrowserMLP::kNumLayers);
 }
 
 // ---------------------------------------------------------------------------

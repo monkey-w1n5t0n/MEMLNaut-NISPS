@@ -12,6 +12,7 @@
 
 #include "../../nisps/ml/dynamic_storage.hpp"
 #include "../../nisps/ml/mlp.hpp"
+#include "../../nisps/ml/warm_start.hpp"
 #include "test_helpers.hpp"
 
 namespace {
@@ -141,6 +142,76 @@ NISPS_TEST(mlp_dynamic_storage_invalid_dims_inert) {
     NISPS_EXPECT(bad.train() == 0.f);
     NISPS_EXPECT(bad.get_weights().empty());
     NISPS_EXPECT(bad.eval_loss() == 0.f);
+}
+
+// warm_start_copy preserves the overlapping weight region across a reshape
+// (grow AND shrink), and leaves the destination's fresh init outside it.
+NISPS_TEST(mlp_warm_start_copy_overlap) {
+    // Source: 3→[10,14,18]→7 with a recognisable weight pattern.
+    FixedMLP src(kSeed);
+    {
+        const auto wf = src.get_weights();
+        std::vector<float> w(wf.begin(), wf.end());
+        for (std::size_t i = 0; i < w.size(); ++i) {
+            w[i] = 0.001f * static_cast<float>(i % 997u);
+        }
+        src.set_weights(w);
+    }
+
+    // Grow: 5 inputs, 9 outputs (same hidden). Overlap = src's full matrix
+    // region per layer.
+    const std::size_t hidden[3] = {kH1, kH2, kH3};
+    DynamicMLP grown(kSeed ^ 0x9E3779B9u, 5u, std::span<const std::size_t>(hidden), 9u);
+    NISPS_ASSERT(grown.valid());
+    nisps::ml::warm_start_copy(grown, src);
+
+    // Layer 0 rows: node < kH1, j < kIn must match; j >= kIn keeps fresh init.
+    {
+        auto sw = src.weights_l<0u>();
+        auto gw = grown.weights_l<0u>();
+        bool overlap_ok = true;
+        for (std::size_t node = 0; node < kH1 && overlap_ok; ++node) {
+            for (std::size_t j = 0; j < kIn; ++j) {
+                if (sw[node * kIn + j] != gw[node * 5u + j]) { overlap_ok = false; break; }
+            }
+        }
+        NISPS_EXPECT(overlap_ok);
+    }
+    // Final layer: node < kOut biases match; nodes kOut..8 keep fresh init.
+    {
+        auto sb = src.biases_l<3u>();
+        auto gb = grown.biases_l<3u>();
+        bool bias_ok = true;
+        for (std::size_t node = 0; node < kOut; ++node) {
+            if (sb[node] != gb[node]) { bias_ok = false; break; }
+        }
+        NISPS_EXPECT(bias_ok);
+    }
+
+    // Shrink: 2 inputs, 4 outputs. Every dst weight must come from src.
+    DynamicMLP shrunk(kSeed ^ 0x51ED270Bu, 2u, std::span<const std::size_t>(hidden), 4u);
+    NISPS_ASSERT(shrunk.valid());
+    nisps::ml::warm_start_copy(shrunk, src);
+    {
+        auto sw = src.weights_l<0u>();
+        auto dw = shrunk.weights_l<0u>();
+        bool ok = true;
+        for (std::size_t node = 0; node < kH1 && ok; ++node) {
+            for (std::size_t j = 0; j < 2u; ++j) {
+                if (sw[node * kIn + j] != dw[node * 2u + j]) { ok = false; break; }
+            }
+        }
+        NISPS_EXPECT(ok);
+        auto sw3 = src.weights_l<3u>();
+        auto dw3 = shrunk.weights_l<3u>();
+        ok = true;
+        for (std::size_t node = 0; node < 4u && ok; ++node) {
+            for (std::size_t j = 0; j < kH3; ++j) {
+                if (sw3[node * kH3 + j] != dw3[node * kH3 + j]) { ok = false; break; }
+            }
+        }
+        NISPS_EXPECT(ok);
+    }
 }
 
 // Moved-from dynamic instances stay inert; moved-to keeps working.

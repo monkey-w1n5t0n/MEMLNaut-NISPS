@@ -23,6 +23,7 @@
 #endif
 
 #include <cstddef>
+#include <cstdint>
 #include <new>
 #include <span>
 
@@ -189,6 +190,90 @@ class DynamicStorage {
                 off_flat_ = 0u, off_lh_ = 0u;
     float*      arena_ = nullptr;
     std::size_t total_ = 0u;
+};
+
+// ---------------------------------------------------------------------------
+// Runtime-sized feedback-controller storage (see nisps/ml/feedback.hpp for
+// the surface contract). One arena allocation at construction; nothing
+// per-call. The focus mask lives in a byte region carved from the same
+// arena (aliased through the float arena's tail, kept byte-aligned by
+// allocating whole floats for it).
+// ---------------------------------------------------------------------------
+class DynamicFeedbackStorage {
+   public:
+    DynamicFeedbackStorage(std::size_t n_out,
+                           std::size_t n_weights,
+                           std::size_t undo_depth = 4u) noexcept
+        : n_out_(n_out), n_weights_(n_weights), undo_cap_(undo_depth) {
+        if (n_out == 0u || n_weights == 0u || undo_depth == 0u) return;
+        // float regions: static_out, placed_out, snapshot, scratch, undo ring
+        // byte region: focus mask (n_out bytes, rounded up to whole floats)
+        const std::size_t focus_floats = (n_out + sizeof(float) - 1u) / sizeof(float);
+        const std::size_t total = n_out * 2u                 // static_out + placed_out
+                                + n_weights * 2u             // snapshot + scratch
+                                + n_weights * undo_depth     // undo ring
+                                + focus_floats;
+        arena_ = new (std::nothrow) float[total]();
+        if (!arena_) return;
+        off_placed_  = n_out_;
+        off_snap_    = off_placed_ + n_out_;
+        off_scratch_ = off_snap_ + n_weights_;
+        off_undo_    = off_scratch_ + n_weights_;
+        off_focus_   = off_undo_ + n_weights_ * undo_cap_;
+    }
+
+    ~DynamicFeedbackStorage() { delete[] arena_; }
+
+    DynamicFeedbackStorage(const DynamicFeedbackStorage&)            = delete;
+    DynamicFeedbackStorage& operator=(const DynamicFeedbackStorage&) = delete;
+    DynamicFeedbackStorage(DynamicFeedbackStorage&& o) noexcept { move_from_(o); }
+    DynamicFeedbackStorage& operator=(DynamicFeedbackStorage&& o) noexcept {
+        if (this != &o) {
+            delete[] arena_;
+            move_from_(o);
+        }
+        return *this;
+    }
+
+    bool valid() const noexcept { return arena_ != nullptr; }
+
+    std::size_t n_out()     const noexcept { return n_out_; }
+    std::size_t n_weights() const noexcept { return n_weights_; }
+    std::size_t undo_cap()  const noexcept { return undo_cap_; }
+
+    std::span<float>       static_out()       noexcept { return {arena_, n_out_}; }
+    std::span<const float> static_out() const noexcept { return {arena_, n_out_}; }
+    std::span<float>       placed_out()       noexcept { return {arena_ + off_placed_, n_out_}; }
+    std::span<const float> placed_out() const noexcept { return {arena_ + off_placed_, n_out_}; }
+    std::span<float>       snapshot()         noexcept { return {arena_ + off_snap_, n_weights_}; }
+    std::span<const float> snapshot()   const noexcept { return {arena_ + off_snap_, n_weights_}; }
+    std::span<float>       scratch_buf()      noexcept { return {arena_ + off_scratch_, n_weights_}; }
+    std::span<float> undo_slot(std::size_t i) noexcept {
+        return {arena_ + off_undo_ + i * n_weights_, n_weights_};
+    }
+    std::span<const float> undo_slot(std::size_t i) const noexcept {
+        return {arena_ + off_undo_ + i * n_weights_, n_weights_};
+    }
+    std::span<std::uint8_t> focus() noexcept {
+        return {reinterpret_cast<std::uint8_t*>(arena_ + off_focus_), n_out_};
+    }
+    std::span<const std::uint8_t> focus() const noexcept {
+        return {reinterpret_cast<const std::uint8_t*>(arena_ + off_focus_), n_out_};
+    }
+
+   private:
+    void move_from_(DynamicFeedbackStorage& o) noexcept {
+        n_out_ = o.n_out_; n_weights_ = o.n_weights_; undo_cap_ = o.undo_cap_;
+        off_placed_ = o.off_placed_; off_snap_ = o.off_snap_;
+        off_scratch_ = o.off_scratch_; off_undo_ = o.off_undo_; off_focus_ = o.off_focus_;
+        arena_ = o.arena_;
+        o.arena_ = nullptr;
+    }
+
+    std::size_t n_out_ = 0u, n_weights_ = 0u, undo_cap_ = 0u;
+    std::size_t off_placed_ = 0u, off_snap_ = 0u, off_scratch_ = 0u,
+                off_undo_ = 0u, off_focus_ = 0u;
+    float*      arena_ = nullptr;
 };
 
 }  // namespace nisps::ml

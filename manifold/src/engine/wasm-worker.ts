@@ -194,6 +194,11 @@ if (isWorker) {
     mod = await factory({
       locateFile: (path: string) => (path.endsWith('.wasm') ? assetUrl('nisps.wasm') : path),
     });
+    // Default shape (0,0 → 32→[10,14,18]→126). The worker's net MUST match
+    // the main thread's shape — weights are exchanged as flat vectors. When
+    // the main thread creates/reshapes with non-default dims (one-core-engine
+    // P2.3+), the init/train messages must carry those dims and this call
+    // must pass them through.
     mlHandle = mod._nisps_ml_create(0, 0, 0, 0, seed >>> 0);
     weightCount = mod._nisps_ml_weight_count(mlHandle);
   }

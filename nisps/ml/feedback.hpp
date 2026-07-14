@@ -21,12 +21,21 @@
 //                        then restores the original net (the kept example then
 //                        trains the original net toward the audition).
 //
-// Design: header-only class template over the concrete MLP type. The controller
-// does NOT own the MLP — every mutating method takes `MLP_T&`. It owns only the
-// exploration state, all fixed-size (no heap), with its OWN per-instance Rng so
+// STORAGE POLICY (one-core-engine-refactor P2): like MLPCore, the controller
+// algorithms are written once in `FeedbackControllerCore<FbStorage>` against a
+// storage surface. Two models:
+//   * `FixedFeedbackStorage<NOut, NWeights, UndoDepth>` — std::array, zero
+//     heap. The classic `FeedbackController<MLP_T, UndoDepth>` alias derives
+//     the sizes from the fixed MLP type; firmware + tests compile unchanged.
+//   * `DynamicFeedbackStorage` (nisps/ml/dynamic_storage.hpp) — sizes at
+//     construction for the runtime-shaped browser MLP. Non-embedded only.
+//
+// Design: the controller does NOT own the MLP — every mutating method takes
+// the MLP by reference (method-level template, so fixed and dynamic MLPs both
+// work). It owns only the exploration state, with its OWN per-instance Rng so
 // re-rolling outputs is deterministic and never perturbs the MLP's RNG stream.
-// Honours the RP2350 perf contract: no heap, no virtual dispatch, deterministic
-// per-instance RNG.
+// Honours the RP2350 perf contract in the fixed model: no heap, no virtual
+// dispatch, deterministic per-instance RNG.
 //
 // The C++/JS boundary: the controller decides *what transition happened*
 // (returns a FeedbackAction); the caller decides *what to persist* (add example,
@@ -40,6 +49,7 @@
 #include <cstdint>
 #include <span>
 
+#include "../core/perf.hpp"
 #include "../core/rng.hpp"
 
 namespace nisps::ml {
@@ -59,7 +69,7 @@ enum class FeedbackMode : std::uint8_t {
 //   Exploring — real net snapshotted aside; a random SCRATCHPAD net is live and
 //               the user auditions it (reroll / nudge / undo). NEVER trained.
 //   Placing   — the user liked the current scratchpad sound; its output vector
-//               is FROZEN in placed_out_ and held while they choose WHERE to
+//               is FROZEN in placed_out and held while they choose WHERE to
 //               place it. The caller drives inference at the chosen input but
 //               the audition stays the frozen vector.
 enum class ExploreState : std::uint8_t {
@@ -84,28 +94,68 @@ enum class FeedbackAction : std::uint8_t {
     ScratchReroll = 8,   // scratchpad re-randomised (Exploring); pure audition, no store.
     ScratchNudge  = 9,   // scratchpad nudged (bounded perturb, Exploring); undoable.
     ScratchUndo   = 10,  // last reroll/nudge undone (Exploring).
-    BeginPlace    = 11,  // Exploring→Placing; placed_out_ captured + frozen (no store yet).
+    BeginPlace    = 11,  // Exploring→Placing; placed_out captured + frozen (no store yet).
     CommitPlace   = 12,  // Placing→Idle; real net restored. CALLER adds +1 (input→placed_output) + trains.
     CancelPlace   = 13,  // Placing→Exploring; backed out of placing (no store).
 };
 
+// ---------------------------------------------------------------------------
+// Fixed feedback storage — std::array, zero heap. Sizes are compile-time.
 // UndoDepth = number of scratchpad ops (reroll/nudge) that can be undone in
-// ExploreAndPlace. The undo ring is a fixed std::array of weight snapshots
-// (no heap); each slot is kWeights floats. WASM uses depth 4, firmware 2 (per
-// rl-feedback-design §2.2 — SRAM budget). Default 4 (the WASM depth).
-template <typename MLP_T, std::size_t UndoDepth = 4u>
-class FeedbackController {
+// ExploreAndPlace; each undo slot is NWeights floats. WASM historically used
+// depth 4, firmware 2 (per rl-feedback-design §2.2 — SRAM budget).
+// ---------------------------------------------------------------------------
+template <std::size_t NOut, std::size_t NWeights, std::size_t UndoDepth = 4u>
+class FixedFeedbackStorage {
    public:
-    static constexpr std::size_t kNOut     = MLP_T::kOutput;
-    static constexpr std::size_t kWeights  = MLP_T::weight_count();
+    static constexpr std::size_t kNOut      = NOut;
+    static constexpr std::size_t kWeights   = NWeights;
     static constexpr std::size_t kUndoDepth = UndoDepth;
 
-    explicit FeedbackController(std::uint64_t seed) noexcept : rng_(seed) {}
+    static constexpr std::size_t n_out()     noexcept { return NOut; }
+    static constexpr std::size_t n_weights() noexcept { return NWeights; }
+    static constexpr std::size_t undo_cap()  noexcept { return UndoDepth; }
+
+    NISPS_FORCE_INLINE std::span<float>        static_out()       noexcept { return static_out_; }
+    NISPS_FORCE_INLINE std::span<const float>  static_out() const noexcept { return static_out_; }
+    NISPS_FORCE_INLINE std::span<float>        snapshot()         noexcept { return snapshot_; }
+    NISPS_FORCE_INLINE std::span<const float>  snapshot()   const noexcept { return snapshot_; }
+    NISPS_FORCE_INLINE std::span<std::uint8_t> focus()            noexcept { return focus_; }
+    NISPS_FORCE_INLINE std::span<const std::uint8_t> focus() const noexcept { return focus_; }
+    NISPS_FORCE_INLINE std::span<float>        placed_out()       noexcept { return placed_out_; }
+    NISPS_FORCE_INLINE std::span<const float>  placed_out() const noexcept { return placed_out_; }
+    NISPS_FORCE_INLINE std::span<float>        scratch_buf()      noexcept { return scratch_buf_; }
+    NISPS_FORCE_INLINE std::span<float> undo_slot(std::size_t i)  noexcept { return undo_ring_[i]; }
+    NISPS_FORCE_INLINE std::span<const float> undo_slot(std::size_t i) const noexcept {
+        return undo_ring_[i];
+    }
+
+   private:
+    std::array<float, NOut>         static_out_{};
+    std::array<float, NWeights>     snapshot_{};
+    std::array<std::uint8_t, NOut>  focus_{};
+    std::array<float, NOut>         placed_out_{};
+    std::array<std::array<float, NWeights>, UndoDepth> undo_ring_{};
+    std::array<float, NWeights>     scratch_buf_{};
+};
+
+// ---------------------------------------------------------------------------
+// The controller algorithms, written once against the feedback storage
+// surface: n_out(), n_weights(), undo_cap(), static_out(), snapshot(),
+// focus(), placed_out(), scratch_buf(), undo_slot(i).
+// ---------------------------------------------------------------------------
+template <typename FbStorage>
+class FeedbackControllerCore : public FbStorage {
+   public:
+    template <typename... StorageArgs>
+    explicit FeedbackControllerCore(std::uint64_t seed, StorageArgs&&... storage_args) noexcept
+        : FbStorage(static_cast<StorageArgs&&>(storage_args)...), rng_(seed) {}
 
     // ---- mode ---------------------------------------------------------------
     // Switching mode mid-exploration cleanly tears down: restores the net (in
     // RandomiseMlp) and resumes learning, so we never strand a randomised net.
-    void set_mode(FeedbackMode m, MLP_T& mlp) noexcept {
+    template <typename M>
+    void set_mode(FeedbackMode m, M& mlp) noexcept {
         if (explore_active_) abort_explore(mlp);
         if (ep_state_ != ExploreState::Idle) abort_explore_place(mlp);
         mode_ = m;
@@ -126,33 +176,35 @@ class FeedbackController {
     bool placing() const noexcept { return ep_state_ == ExploreState::Placing; }
     // True while a REPOSITION hold is active (grab→move→drop). Distinguishes a
     // reposition (real net never set aside) from an Explore→Place (scratchpad +
-    // snapshot). Both sit in ExploreState::Placing and both hold placed_out_ via
+    // snapshot). Both sit in ExploreState::Placing and both hold placed_out via
     // static_output(); only commit/teardown differ (reposition does NOT restore
     // weights — there is nothing to restore).
     bool repositioning() const noexcept { return reposition_; }
-    // Depth of the scratchpad undo ring currently available to pop (0..UndoDepth).
+    // Depth of the scratchpad undo ring currently available to pop (0..undo_cap).
     std::size_t undo_depth() const noexcept { return undo_count_; }
     // The output vector frozen at like()/begin-place time. Valid only while
     // placing(); empty span otherwise. The caller adds this as the +1 example
     // label at commit (input → placed_output).
     std::span<const float> placed_output() const noexcept {
         if (ep_state_ != ExploreState::Placing) return {};
-        return std::span<const float>(placed_out_.data(), kNOut);
+        return this->placed_out();
     }
 
     // ---- focus mask: 1 byte per output; 0 == frozen (unfocused). Copied into a
     // fixed buffer (no heap, no dangling span). Empty ⇒ all outputs active.
     void set_focus_mask(std::span<const std::uint8_t> mask) noexcept {
-        focus_count_ = (mask.size() < kNOut) ? mask.size() : kNOut;
-        for (std::size_t i = 0; i < focus_count_; ++i) focus_[i] = mask[i];
+        auto focus = this->focus();
+        focus_count_ = (mask.size() < focus.size()) ? mask.size() : focus.size();
+        for (std::size_t i = 0; i < focus_count_; ++i) focus[i] = mask[i];
     }
     void clear_focus_mask() noexcept { focus_count_ = 0; }
 
     // ---- press handlers -----------------------------------------------------
     // `current_out` is the live (post-pipeline) output the user is hearing
-    // (kNOut floats). `pin_mask` may be empty. Returns the FeedbackAction the
+    // (n_out floats). `pin_mask` may be empty. Returns the FeedbackAction the
     // caller must act on.
-    FeedbackAction on_down(MLP_T& mlp, std::span<const float> current_out,
+    template <typename M>
+    FeedbackAction on_down(M& mlp, std::span<const float> current_out,
                            float speed, float spread,
                            std::span<const std::uint8_t> pin_mask) noexcept {
         switch (mode_) {
@@ -197,7 +249,8 @@ class FeedbackController {
     // Up = thumbs-up / "keep". While exploring it commits: the CALLER must have
     // captured the heard output BEFORE calling this (on_up restores the original
     // net in RandomiseMlp), then stores it as a +1 example at the current input.
-    FeedbackAction on_up(MLP_T& mlp) noexcept {
+    template <typename M>
+    FeedbackAction on_up(M& mlp) noexcept {
         if (mode_ == FeedbackMode::ExploreAndPlace) {
             // SOFTWARE DEFAULT POLICY (browser): up begins place from
             // Exploring (freeze the heard output), then commits from Placing
@@ -225,7 +278,8 @@ class FeedbackController {
     // Drag-store (joystick freeze→reposition→release). In RandomiseMlp this is
     // the "reposition-commit": the caller has already stored the +1 at the new
     // input; we just restore the original net and end exploration.
-    FeedbackAction on_drag(MLP_T& mlp) noexcept {
+    template <typename M>
+    FeedbackAction on_drag(M& mlp) noexcept {
         if (explore_active_ && mode_ == FeedbackMode::RandomiseMlp) {
             restore_after_explore(mlp);
             return FeedbackAction::Restore;
@@ -235,18 +289,21 @@ class FeedbackController {
 
     // Inference hook: fills `out` with the held static vector and returns true
     // when RandomiseOutputs is bypassing the MLP; else returns false (the caller
-    // should run mlp.process() normally). `out` should hold at least kNOut.
+    // should run mlp.process() normally). `out` should hold at least n_out.
     bool static_output(std::span<float> out) const noexcept {
+        const std::size_t n_out = this->n_out();
         // ExploreAndPlace: while PLACING, the audition is the frozen vector the
         // user liked, held steady as they aim at a location.
         if (mode_ == FeedbackMode::ExploreAndPlace && ep_state_ == ExploreState::Placing) {
-            const std::size_t n = (out.size() < kNOut) ? out.size() : kNOut;
-            for (std::size_t i = 0; i < n; ++i) out[i] = placed_out_[i];
+            const auto placed = this->placed_out();
+            const std::size_t n = (out.size() < n_out) ? out.size() : n_out;
+            for (std::size_t i = 0; i < n; ++i) out[i] = placed[i];
             return true;
         }
         if (!(mode_ == FeedbackMode::RandomiseOutputs && explore_active_)) return false;
-        const std::size_t n = (out.size() < kNOut) ? out.size() : kNOut;
-        for (std::size_t i = 0; i < n; ++i) out[i] = static_out_[i];
+        const auto held = this->static_out();
+        const std::size_t n = (out.size() < n_out) ? out.size() : n_out;
+        for (std::size_t i = 0; i < n; ++i) out[i] = held[i];
         return true;
     }
 
@@ -264,11 +321,11 @@ class FeedbackController {
 
     // Idle→Exploring. Snapshot the real (trained) net aside, randomise a
     // scratchpad net the user auditions. No-op if not Idle.
-    void enter_explore(MLP_T& mlp, float spread) noexcept {
+    template <typename M>
+    void enter_explore(M& mlp, float spread) noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Idle) return;
-        auto w = mlp.get_weights();  // flat snapshot (size == kWeights)
-        for (std::size_t i = 0; i < kWeights; ++i) snapshot_[i] = w[i];
+        take_snapshot(mlp);
         learning_paused_ = true;
         ep_state_        = ExploreState::Exploring;
         undo_count_      = 0u;
@@ -278,78 +335,85 @@ class FeedbackController {
 
     // Exploring→Idle. Restore the real net, discard the scratchpad. No example
     // stored. (The hardware "enter/exit explore toggle" off-path.)
-    void exit_explore(MLP_T& mlp) noexcept {
+    template <typename M>
+    void exit_explore(M& mlp) noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ == ExploreState::Idle) return;
         restore_real_net(mlp);
     }
 
     // Exploring scratchpad op: re-randomise the scratchpad. Undoable.
-    void reroll(MLP_T& mlp, float spread) noexcept {
+    template <typename M>
+    void reroll(M& mlp, float spread) noexcept {
         if (!can_scratch_op()) return;
         push_undo(mlp);
         mlp.draw_weights(spread);
     }
 
     // Exploring scratchpad op: small bounded perturbation of the scratchpad via
-    // move_weights on the controller's OWN Rng-free path — move_weights uses the
-    // MLP's Rng, so to keep the controller's Rng stream out of the MLP stream we
-    // draw the perturbation here and apply it. Undoable. `amount` is the noise
-    // stddev (small, e.g. 0.05).
-    void nudge(MLP_T& mlp, float amount) noexcept {
+    // the controller's OWN Rng (move_weights uses the MLP's Rng; to keep the
+    // controller's Rng stream out of the MLP stream we draw the perturbation
+    // here and apply it). Undoable. `amount` is the noise stddev (e.g. 0.05).
+    template <typename M>
+    void nudge(M& mlp, float amount) noexcept {
         if (!can_scratch_op()) return;
         push_undo(mlp);
+        auto scratch = this->scratch_buf();
+        const std::size_t n_weights = this->n_weights();
         auto w = mlp.get_weights();
-        for (std::size_t i = 0; i < kWeights; ++i) {
-            scratch_buf_[i] = w[i] + rng_.next_float_gaussian(amount);
+        for (std::size_t i = 0; i < n_weights; ++i) {
+            scratch[i] = w[i] + rng_.next_float_gaussian(amount);
         }
-        mlp.set_weights(std::span<const float>(scratch_buf_.data(), kWeights));
+        mlp.set_weights(std::span<const float>(scratch.data(), n_weights));
     }
 
     // Exploring scratchpad op: undo the last reroll/nudge (bounded ring).
-    void undo(MLP_T& mlp) noexcept {
+    template <typename M>
+    void undo(M& mlp) noexcept {
         if (!can_scratch_op()) return;
         if (undo_count_ == 0u) return;
-        undo_head_  = (undo_head_ + kUndoDepth - 1u) % kUndoDepth;
+        const std::size_t cap = this->undo_cap();
+        undo_head_  = (undo_head_ + cap - 1u) % cap;
         --undo_count_;
-        mlp.set_weights(std::span<const float>(undo_ring_[undo_head_].data(), kWeights));
+        const auto slot = this->undo_slot(undo_head_);
+        mlp.set_weights(std::span<const float>(slot.data(), this->n_weights()));
     }
 
     // Exploring→Placing. Capture + FREEZE the current scratchpad output the user
     // is auditioning. The caller MUST have run mlp.process() at the audition
     // input first; pass that output here. While placing, static_output() holds
     // this vector and the caller chooses WHERE to place it.
-    void begin_place(MLP_T& mlp, std::span<const float> current_out) noexcept {
+    template <typename M>
+    void begin_place(M& mlp, std::span<const float> current_out) noexcept {
+        (void)mlp;
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Exploring) return;
-        const std::size_t n = (current_out.size() < kNOut) ? current_out.size() : kNOut;
-        for (std::size_t i = 0; i < n; ++i) placed_out_[i] = current_out[i];
+        capture_placed(current_out);
         ep_state_ = ExploreState::Placing;
     }
 
     // Convenience: freeze the scratchpad's output at its CURRENT input (runs the
     // forward pass on the live scratchpad net). Equivalent to process()+capture.
-    void begin_place(MLP_T& mlp) noexcept {
+    template <typename M>
+    void begin_place(M& mlp) noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Exploring) return;
         mlp.process();
-        const auto outs = mlp.outputs();
-        const std::size_t n = (outs.size() < kNOut) ? outs.size() : kNOut;
-        for (std::size_t i = 0; i < n; ++i) placed_out_[i] = outs[i];
+        capture_placed(mlp.outputs());
         ep_state_ = ExploreState::Placing;
     }
 
     // Placing→Idle. Restore the real net. The CALLER then adds a +1 example at
-    // (chosen input → placed_output()) and trains. Returns the placed output so
-    // the caller can read it after the restore (it survives the restore).
-    void commit_place(MLP_T& mlp) noexcept {
+    // (chosen input → placed_output()) and trains.
+    template <typename M>
+    void commit_place(M& mlp) noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Placing) return;
-        // Restore the real net but KEEP placed_out_ valid for the caller until
+        // Restore the real net but KEEP placed_out valid for the caller until
         // it transitions to Idle; expose via a separate accessor that does not
         // gate on Placing.
-        mlp.set_weights(std::span<const float>(snapshot_.data(), kWeights));
-        last_placed_valid_ = true;  // placed_out_ holds the just-committed vector
+        restore_snapshot(mlp);
+        last_placed_valid_ = true;  // placed_out holds the just-committed vector
         learning_paused_   = false;
         ep_state_          = ExploreState::Idle;
         undo_count_        = 0u;
@@ -360,7 +424,7 @@ class FeedbackController {
     // AFTER commit_place has restored the real net.
     std::span<const float> committed_output() const noexcept {
         if (!last_placed_valid_) return {};
-        return std::span<const float>(placed_out_.data(), kNOut);
+        return this->placed_out();
     }
 
     // Placing→Exploring. Back out of placing without storing; resume auditioning
@@ -393,8 +457,7 @@ class FeedbackController {
     void begin_reposition(std::span<const float> current_out) noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Idle) return;
-        const std::size_t n = (current_out.size() < kNOut) ? current_out.size() : kNOut;
-        for (std::size_t i = 0; i < n; ++i) placed_out_[i] = current_out[i];
+        capture_placed(current_out);
         reposition_        = true;
         learning_paused_   = true;
         last_placed_valid_ = false;
@@ -403,13 +466,12 @@ class FeedbackController {
 
     // Convenience: capture the trained net's output at its CURRENT input
     // (process + capture). Equivalent to begin_reposition(mlp.outputs()).
-    void begin_reposition(MLP_T& mlp) noexcept {
+    template <typename M>
+    void begin_reposition(M& mlp) noexcept {
         if (mode_ != FeedbackMode::ExploreAndPlace) return;
         if (ep_state_ != ExploreState::Idle) return;
         mlp.process();
-        const auto outs = mlp.outputs();
-        const std::size_t n = (outs.size() < kNOut) ? outs.size() : kNOut;
-        for (std::size_t i = 0; i < n; ++i) placed_out_[i] = outs[i];
+        capture_placed(mlp.outputs());
         reposition_        = true;
         learning_paused_   = true;
         last_placed_valid_ = false;
@@ -429,48 +491,74 @@ class FeedbackController {
     }
 
    private:
+    void capture_placed(std::span<const float> src) noexcept {
+        auto placed = this->placed_out();
+        const std::size_t n = (src.size() < placed.size()) ? src.size() : placed.size();
+        for (std::size_t i = 0; i < n; ++i) placed[i] = src[i];
+    }
+
+    template <typename M>
+    void take_snapshot(M& mlp) noexcept {
+        auto snap = this->snapshot();
+        auto w = mlp.get_weights();  // flat snapshot (size == n_weights)
+        const std::size_t n = this->n_weights();
+        for (std::size_t i = 0; i < n; ++i) snap[i] = w[i];
+    }
+
+    template <typename M>
+    void restore_snapshot(M& mlp) noexcept {
+        const auto snap = this->snapshot();
+        mlp.set_weights(std::span<const float>(snap.data(), this->n_weights()));
+    }
+
     void enter_randomise_outputs(std::span<const float> seed_out) noexcept {
         explore_active_  = true;
         learning_paused_ = true;
         // Seed every dim with the live output the user is hearing, so unfocused
         // (frozen) dims hold that value through the exploration — matching the
         // firmware `staticRandomOut_ = action; _roll_static_outputs();`. The
-        // CALLER CONTRACT is to pass the full kNOut live output. Any dims beyond
+        // CALLER CONTRACT is to pass the full n_out live output. Any dims beyond
         // a short seed keep their previous static value (we have no live value
         // to freeze them to); they are only observable if a focus mask freezes
         // a dim the short seed did not cover — an out-of-contract corner.
-        const std::size_t n = (seed_out.size() < kNOut) ? seed_out.size() : kNOut;
-        for (std::size_t i = 0; i < n; ++i) static_out_[i] = seed_out[i];
+        auto held = this->static_out();
+        const std::size_t n = (seed_out.size() < held.size()) ? seed_out.size() : held.size();
+        for (std::size_t i = 0; i < n; ++i) held[i] = seed_out[i];
         roll_static_outputs();
     }
 
     void roll_static_outputs() noexcept {
-        for (std::size_t i = 0; i < kNOut; ++i) {
-            const bool active = (focus_count_ == 0u) || (i < focus_count_ && focus_[i] != 0u);
-            if (active) static_out_[i] = rng_.next_float_uniform();  // [0, 1)
+        auto held = this->static_out();
+        const auto focus = this->focus();
+        for (std::size_t i = 0; i < held.size(); ++i) {
+            const bool active = (focus_count_ == 0u) || (i < focus_count_ && focus[i] != 0u);
+            if (active) held[i] = rng_.next_float_uniform();  // [0, 1)
             // inactive dims keep their seeded entry value
         }
     }
 
-    void enter_randomise_mlp(MLP_T& mlp, float spread) noexcept {
+    template <typename M>
+    void enter_randomise_mlp(M& mlp, float spread) noexcept {
         explore_active_  = true;
         learning_paused_ = true;
-        auto w = mlp.get_weights();  // flat snapshot (size == kWeights)
-        for (std::size_t i = 0; i < kWeights; ++i) snapshot_[i] = w[i];
+        take_snapshot(mlp);
         mlp.draw_weights(spread);    // randomise the live net
     }
 
-    void restore_after_explore(MLP_T& mlp) noexcept {
+    template <typename M>
+    void restore_after_explore(M& mlp) noexcept {
         if (mode_ == FeedbackMode::RandomiseMlp) {
-            mlp.set_weights(std::span<const float>(snapshot_.data(), kWeights));
+            restore_snapshot(mlp);
         }
         learning_paused_ = false;
         explore_active_  = false;
     }
 
     // Cancel and abort share restore semantics; the caller stores nothing.
-    void cancel_explore(MLP_T& mlp) noexcept { restore_after_explore(mlp); }
-    void abort_explore(MLP_T& mlp)  noexcept { restore_after_explore(mlp); }
+    template <typename M>
+    void cancel_explore(M& mlp) noexcept { restore_after_explore(mlp); }
+    template <typename M>
+    void abort_explore(M& mlp)  noexcept { restore_after_explore(mlp); }
 
     // ---- ExploreAndPlace helpers --------------------------------------------
     bool can_scratch_op() const noexcept {
@@ -480,28 +568,34 @@ class FeedbackController {
 
     // Push the CURRENT scratchpad weights onto the bounded undo ring before a
     // mutating op, so undo() restores the pre-op candidate.
-    void push_undo(MLP_T& mlp) noexcept {
+    template <typename M>
+    void push_undo(M& mlp) noexcept {
+        auto slot = this->undo_slot(undo_head_);
         auto w = mlp.get_weights();
-        for (std::size_t i = 0; i < kWeights; ++i) undo_ring_[undo_head_][i] = w[i];
-        undo_head_ = (undo_head_ + 1u) % kUndoDepth;
-        if (undo_count_ < kUndoDepth) ++undo_count_;
+        const std::size_t n = this->n_weights();
+        for (std::size_t i = 0; i < n; ++i) slot[i] = w[i];
+        const std::size_t cap = this->undo_cap();
+        undo_head_ = (undo_head_ + 1u) % cap;
+        if (undo_count_ < cap) ++undo_count_;
     }
 
     // Restore the set-aside real net and return to Idle. Shared by exit_explore
     // and abort_explore_place. No example stored.
-    void restore_real_net(MLP_T& mlp) noexcept {
-        mlp.set_weights(std::span<const float>(snapshot_.data(), kWeights));
+    template <typename M>
+    void restore_real_net(M& mlp) noexcept {
+        restore_snapshot(mlp);
         learning_paused_   = false;
         ep_state_          = ExploreState::Idle;
         undo_count_        = 0u;
         last_placed_valid_ = false;
     }
 
-    void abort_explore_place(MLP_T& mlp) noexcept {
+    template <typename M>
+    void abort_explore_place(M& mlp) noexcept {
         if (ep_state_ == ExploreState::Idle) return;
         if (reposition_) {
             // A reposition never set the real net aside, so there is nothing to
-            // restore — clearing snapshot_ into the net here would CLOBBER the
+            // restore — clearing snapshot into the net here would CLOBBER the
             // live trained weights. Just drop the hold.
             reposition_        = false;
             learning_paused_   = false;
@@ -516,22 +610,22 @@ class FeedbackController {
     FeedbackMode mode_            = FeedbackMode::Avoid;
     bool         explore_active_  = false;
     bool         learning_paused_ = false;
-    std::array<float, kNOut>        static_out_{};
-    std::array<float, kWeights>     snapshot_{};
-    std::array<std::uint8_t, kNOut> focus_{};
-    std::size_t                     focus_count_ = 0;  // 0 ⇒ all active
+    std::size_t  focus_count_     = 0;  // 0 ⇒ all active
 
-    // ---- ExploreAndPlace state (all fixed-size, no heap) --------------------
-    ExploreState                                    ep_state_ = ExploreState::Idle;
-    std::array<float, kNOut>                        placed_out_{};       // frozen audition/carried vector
-    bool                                            last_placed_valid_ = false;
-    bool                                            reposition_ = false; // grab→move→drop hold; net NOT set aside
-    std::array<std::array<float, kWeights>, kUndoDepth> undo_ring_{};    // bounded undo
-    std::size_t                                     undo_head_  = 0u;    // next write slot
-    std::size_t                                     undo_count_ = 0u;    // valid entries (0..kUndoDepth)
-    std::array<float, kWeights>                     scratch_buf_{};      // nudge scratch (no heap)
+    // ---- ExploreAndPlace state ----------------------------------------------
+    ExploreState ep_state_ = ExploreState::Idle;
+    bool         last_placed_valid_ = false;
+    bool         reposition_ = false;  // grab→move→drop hold; net NOT set aside
+    std::size_t  undo_head_  = 0u;     // next write slot
+    std::size_t  undo_count_ = 0u;     // valid entries (0..undo_cap)
 
-    Rng                             rng_;
+    Rng rng_;
 };
+
+// The classic fixed-size controller over a compile-time MLP type — the
+// firmware model and the default for tests. Sizes derive from the MLP.
+template <typename MLP_T, std::size_t UndoDepth = 4u>
+using FeedbackController = FeedbackControllerCore<
+    FixedFeedbackStorage<MLP_T::kOutput, MLP_T::weight_count(), UndoDepth>>;
 
 }  // namespace nisps::ml

@@ -110,8 +110,14 @@ Each phase ends green on its test gate and is independently landable. File phase
   - `DynamicStorage` (`nisps/ml/dynamic_storage.hpp`) — sizes at construction, single arena allocation,
     nothing per-call. `#error`s under `NISPS_TARGET_EMBEDDED`; sole `lint-cpp.sh` heap-allowlist entry, with
     a lint check that fails if the guard is ever removed.
-- `nisps_ml_create(input, output, hidden[])` honours its arguments. Reshape = new instance + warm-start
-  copy of overlapping weights (the BUILD-PLAN warm-start idea, now runtime).
+- ✅ (landed 2026-07-14, operator-approved) `nisps_ml_create(input, output, hidden[])` honours its
+  arguments (non-positive/null → the historical 32→[10,14,18]→126 defaults, keeping pre-P2 callers
+  bit-identical). `nisps_ml_reshape` = new instance + warm-start copy of overlapping weights
+  (`nisps/ml/warm_start.hpp`); feedback controller re-created (state resets — front-end modal).
+  `FeedbackController` got the same storage split (`FeedbackControllerCore<FbStorage>`, fixed alias for
+  firmware/tests, `DynamicFeedbackStorage` for the browser). `nisps_ml_describe` now takes the handle
+  (null → default shape). Verified: reshape ABI smoke (dims honoured, overlap survives, invalid dims
+  rejected), warm-start ctest (grow+shrink), parity PASS unchanged, firmware `.text` unchanged.
 - Manifold drops input clamping/phantom-channel handling; XIASRI/sound-analysis multi-input modes become
   browser-viable.
 - **Gate:** parity — fixed and dynamic storage produce bit-identical outputs for identical shapes/seeds

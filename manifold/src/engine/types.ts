@@ -28,9 +28,14 @@ export interface NispsModule {
   _free(ptr: number): void;
 
   // ML lifecycle. Seed is uint32_t (not 64-bit) — see bindings.cpp file comment.
+  // Since one-core-engine P2 the dims are HONOURED (runtime-shaped MLP);
+  // non-positive/null args fall back to the compiled defaults (32→[10,14,18]→126).
   _nisps_ml_create(input_size: number, output_size: number, hidden_ptr: number, n_hidden: number, seed: number): number;
   _nisps_ml_destroy(ml: number): void;
   _nisps_ml_reset(ml: number): void;
+  // Reshape = new net at the new dims, warm-started with the overlapping
+  // weights; feedback state resets. Returns 1 on success (0 = no change).
+  _nisps_ml_reshape(ml: number, input_size: number, output_size: number, hidden_ptr: number, n_hidden: number, spread: number): number;
 
   // ML inference.
   _nisps_ml_set_input(ml: number, idx: number, v: number): void;
@@ -54,7 +59,8 @@ export interface NispsModule {
   _nisps_ml_draw_weights(ml: number, spread: number): void;
   _nisps_ml_move_weights(ml: number, speed: number, spread: number, mask_ptr: number): void;
   _nisps_ml_get_layer_stats(ml: number, out_ptr: number): void;
-  _nisps_ml_describe(out_ptr: number): void;
+  // Null ml reports the DEFAULT shape; a handle reports its runtime shape.
+  _nisps_ml_describe(ml: number, out_ptr: number): void;
 
   // ML feedback — the "Down Action" state machine (Avoid / RandomiseOutputs /
   // RandomiseMlp). Mode ints: 0=Avoid 1=RandomiseOutputs 2=RandomiseMlp.

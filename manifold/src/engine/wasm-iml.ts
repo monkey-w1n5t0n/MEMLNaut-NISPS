@@ -164,8 +164,20 @@ export class WasmIML {
       locateFile: (path: string) => (path.endsWith('.wasm') ? assetUrl('nisps.wasm') : path),
     });
 
+    // Default shape (null handle). Since one-core-engine P2 the MLP is
+    // runtime-shaped: create() honours requested dims; we pass the caller's
+    // sizes (falling back to the defaults) and re-describe the instance.
     this.describePtr = this.module._malloc(6 * 4);
-    this.module._nisps_ml_describe(this.describePtr);
+    this.module._nisps_ml_describe(0, this.describePtr);
+    const defaults = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 6);
+    const wantedIn = opts.inputSize ?? defaults[0];
+    const wantedOut = opts.outputSize ?? defaults[4];
+
+    const seed = (opts.seed ?? (Date.now() >>> 0)) >>> 0;
+    this.mlHandle = this.module._nisps_ml_create(wantedIn, wantedOut, 0, 0, seed);
+    if (!this.mlHandle) throw new Error('[wasm-iml] nisps_ml_create returned null');
+
+    this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
     const dims = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 6);
     this.arch_ = {
       inputSize: dims[0],
@@ -173,25 +185,6 @@ export class WasmIML {
       outputSize: dims[4],
       numLayers: dims[5],
     };
-
-    const wantedIn = opts.inputSize ?? this.arch_.inputSize;
-    const wantedOut = opts.outputSize ?? this.arch_.outputSize;
-    if (wantedIn !== this.arch_.inputSize || wantedOut !== this.arch_.outputSize) {
-      console.warn(
-        `[wasm-iml] requested ${wantedIn}->${wantedOut} but WASM build is fixed at ` +
-        `${this.arch_.inputSize}->${this.arch_.outputSize}; extras are ignored.`,
-      );
-    }
-
-    const seed = (opts.seed ?? (Date.now() >>> 0)) >>> 0;
-    this.mlHandle = this.module._nisps_ml_create(
-      this.arch_.inputSize,
-      this.arch_.outputSize,
-      0,
-      0,
-      seed,
-    );
-    if (!this.mlHandle) throw new Error('[wasm-iml] nisps_ml_create returned null');
 
     this.weightCount_ = this.module._nisps_ml_weight_count(this.mlHandle);
 

@@ -81,13 +81,36 @@ test.describe('ML engine — debug probe contract', () => {
     expect(count).toBeGreaterThanOrEqual(0);
   });
 
-  test('thumbsDown moves weights and changes outputs', async ({ page }) => {
-    await page.evaluate(() => window.__nisps!.setInputs(0.3, 0.7));
-    const before = await getOutputs(page);
-    await page.evaluate(() => window.__nisps!.thumbsDown());
-    await page.evaluate(() => window.__nisps!.setInputs(0.3, 0.7));
-    const after = await getOutputs(page);
-    expect(countChanged(before, after, 1e-4)).toBeGreaterThan(0);
+  test('thumbsDown returns a finite action; a geometric dislike changes outputs', async ({ page }) => {
+    // Under the geometric-dislike core (one-core-engine P3) a dislike trains AWAY
+    // from the HEARD (post-pipeline) vector. Passing the net's OWN output — as the
+    // bare thumbsDown probe does — is intentionally inert (zero MSE derivative), so
+    // we assert only its SHAPE there and drive a real, distinct heard vector for
+    // the behaviour. Everything runs in ONE evaluate so the app's input rAF loop
+    // cannot drift the input-pipeline EMA between reads (which would make the delta
+    // timing-dependent).
+    const r = await page.evaluate((n) => {
+      const p = window.__nisps!;
+      p.setFeedbackMode('avoid'); // geometric dislike proto mode maps to core Avoid
+      p.setAvoidStyle(0); // Geometric (default)
+      p.setInputs(0.3, 0.7);
+      // Contract: thumbsDown returns a finite FeedbackAction and never throws.
+      const action = p.thumbsDown();
+      // Behaviour: a dislike with a heard vector DISTINCT from the output trains a
+      // real push → outputs change deterministically.
+      const before = Array.from(p.getOutputs());
+      const heard = new Array(n).fill(0.9);
+      p.dislikeGeometric(heard, 1.0); // trains + re-processes at the same input
+      const after = Array.from(p.getOutputs());
+      let changed = 0;
+      for (let i = 0; i < before.length; ++i) {
+        if (Math.abs(before[i]! - after[i]!) > 1e-4) ++changed;
+      }
+      return { action, changed };
+    }, N_OUTPUTS);
+    expect(typeof r.action).toBe('number');
+    expect(Number.isFinite(r.action)).toBe(true);
+    expect(r.changed).toBeGreaterThan(0);
   });
 
   test('addExample reports success and bumps the example count', async ({ page }) => {

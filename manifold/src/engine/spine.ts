@@ -110,6 +110,17 @@ export class Spine implements EngineSink {
   private outputMorph: ((routed: Float32Array) => void) | null = null;
 
   private lastTickMs = 0;
+  // Optional fixed per-tick dt (seconds). null ⇒ real wall-clock dt. Set under
+  // ?debug=1 (see App.tsx) so the input/output pipeline smoothing + momentum are
+  // deterministic across runs — the pipelines otherwise read performance.now(),
+  // which makes single-tick EMA lag (and therefore feedback/inference deltas)
+  // timing-dependent and flaky in tests. Production keeps real-time dt.
+  private fixedDt: number | null = null;
+
+  /** Pin a deterministic per-tick dt (seconds), or null to use wall-clock. */
+  setFixedDt(dt: number | null): void {
+    this.fixedDt = dt !== null && dt > 0 ? dt : null;
+  }
 
   // ---- EngineSink ----------------------------------------------------
 
@@ -271,8 +282,10 @@ export class Spine implements EngineSink {
     return this.setInputs(this.lastRawInputs);
   }
 
-  /** Monotonic per-tick dt in seconds (≈1/60 on the first tick). */
+  /** Monotonic per-tick dt in seconds (≈1/60 on the first tick). A pinned
+   *  {@link fixedDt} (debug) overrides the wall-clock delta for determinism. */
   private dt_(): number {
+    if (this.fixedDt !== null) return this.fixedDt;
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const dt = this.lastTickMs > 0 ? (now - this.lastTickMs) / 1000 : 1 / 60;
     this.lastTickMs = now;

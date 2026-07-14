@@ -10,16 +10,15 @@ export type {
   EngineApiOptions,
   EngineAudioApi,
   EngineFeedbackApi,
+  EngineExploreApi,
 } from './engine-api';
 
 export { Spine } from './spine';
 export type { SpineState, BackendSend } from './spine';
 
-// Exploration gestures (interim TS shells; maths moves to WASM in P3).
+// Exploration gestures (Jolt weight-morph + OU explore) — now backed by the
+// shared C++/WASM core (nisps/ml/{jolt,ou_noise}.hpp) via engine.explore.
 export { ExplorationController } from './exploration';
-export { Jolt, DEFAULT_JOLT_PARAMS } from './jolt';
-export type { JoltParams } from './jolt';
-export { OUExplore, OU_MAX_AMPLITUDE } from './ou-explore';
 
 export { WasmIML } from './wasm-iml';
 export type { WasmIMLOptions } from './wasm-iml';

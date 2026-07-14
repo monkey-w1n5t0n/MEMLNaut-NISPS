@@ -180,10 +180,13 @@ a setting → `--r-*` tokens.
 - `curves.ts` — math primitives. **Must stay lockstep with C++ `nisps/core/math.hpp`** (golden tests
   compare WASM vs TS). `sink.ts` — `EngineSink` framework boundary. `types.ts` — C-ABI surface types.
 - `exploration.ts` — `ExplorationController` adapter for the Jolt press + OU explore gestures
-  (Learning drawer). Interim TS math in `jolt.ts` / `ou-explore.ts` (ported from the retired
-  playground), driven via get/set-weights; OU applies through the spine's inert-by-default
-  `setOutputMorph` hook. The `─── P3 SWAP POINT ───` comment marks where the one-core-engine plan
-  swaps these for `nisps_ml_jolt_press/release` + `nisps_ml_explore_intensity` WASM bindings.
+  (Learning drawer). **As of one-core-engine P3 the maths lives in the shared C++/WASM core** — this
+  class is a thin driver that owns only the control-rate timers and calls `engine.explore.*`
+  (`joltPress`/`joltStep`/`joltRelease`/`joltActive` → `nisps_ml_jolt_*`; `setExploreIntensity`/
+  `exploreApply` → `nisps_ml_explore_*`). The held ~200 Hz driver calls `joltStep()` + `process()`;
+  the OU walk is the spine's inert-by-default `setOutputMorph` hook, now `exploreApply(routed)` (copy
+  into the WASM heap → advance+add in the core → copy back). The interim `jolt.ts` / `ou-explore.ts`
+  TS ports were deleted with the swap.
 
 ### Inputs — `src/inputs/`
 - `input-layer.ts` — composition hub. One rAF loop polls sources, pulls all axes into a vector,
@@ -206,16 +209,21 @@ a setting → `--r-*` tokens.
   for the locked design (adaptive slider viz when >2 dims is still pending).
 
 ### Feedback — `src/feedback/`
-- `controller.ts` (**~490 lines**) — `FeedbackController`, framework-neutral, owned by ConsoleApp.
-  Two modes: **geometric-dislike** (default, Mode 1, "Push away" — down carves the current sound
-  away from what you like, directed repulsion) and **explore-and-place** (Mode 2, positive-only,
-  selectable — drives the C++ core's snapshot/scratchpad/undo lifecycle; caller accumulates anchors
-  and trains on finalise with warm-start). Solo/arm via per-output mask.
-- `rng.ts` — `SeededRng` (deterministic xorshift32 + gaussian). **Stand-in** until the C++ nudge owns
-  the stream — not bit-identical to `nisps::Rng`.
-- **`--- C++ GAP ---` markers** flag behaviour approximated in TS pending C++ port: true geometric
-  push (firmware k-NN), feedback nudge → `nisps_ml_feedback_nudge`, loss-history plumbing. Grep for
-  `C++ GAP` before changing feedback maths.
+- `controller.ts` — `FeedbackController`, framework-neutral, owned by ConsoleApp. **As of one-core-
+  engine P3 it holds NO algorithm approximation** — a thin driver over the shared C++ core. Two modes:
+  **geometric-dislike** (default, Mode 1, "Push away") — `dislike()` calls `engine.feedback.
+  dislikeGeometric(heardVec)` (the k-NN centroid push-away in `nisps/ml/geo_push.hpp`; returns
+  FeedbackAction 14=push / 15=cold-start) then `process()`; `like()` runs the core's `thumbsUp`
+  (auto-stores the positive centroid in Avoid+Geometric) + `addExample` + `train`. **explore-and-
+  place** (Mode 2, positive-only) drives the core's snapshot/scratchpad/undo lifecycle; caller
+  accumulates anchors and trains on finalise with warm-start. Solo/arm via per-output mask.
+- **The heard-vector rule:** the geometric dislike trains AWAY from the HEARD (post-pipeline, routed)
+  output — pass `engine.routedOutput()`, never the raw MLP output, or the cold-start MSE derivative is
+  zero (inert). The `EngineApi.feedback.thumbsDown` facade + the Mode-1 `dislike()` call site honour this.
+- **Cold-start prompt:** a dislike with zero positives returns action 15 → ConsoleApp shows a one-time
+  "Like a few sounds first…" banner (dismissed on the next like or the dismiss button; rl-feedback §7).
+- The interim `rng.ts` (`SeededRng`) and the `C++ GAP` approximation markers are **gone** — the seeded
+  RNG, geometric push, jolt, and OU all run in the core now.
 
 ### Backends — `src/backends/`
 - `manager.ts` — `BackendManager`, the **single consumer of the engine spine** for output: subscribes,

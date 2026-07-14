@@ -44,6 +44,20 @@ export interface DebugProbe {
   getFeedbackMode(): FeedbackMode | null;
   setFocus(mask: ReadonlyArray<number> | null): void;
   exploring(): boolean;
+  // ---- Geometric dislike (one-core-engine P3; rl-feedback-design §2.1) ----
+  /**
+   * Drive a geometric dislike at the MLP's CURRENT input with `heardVec` as the
+   * heard (post-pipeline) output. `lr <= 0` uses the core default (small). Runs a
+   * process() after so outputs reflect the trained net. Returns the FeedbackAction
+   * int (14=GeometricPush, 15=GeometricColdStart).
+   */
+  dislikeGeometric(heardVec: ReadonlyArray<number>, lr?: number): number;
+  /** Feed a positive into the k-NN centroid (omit vec → live MLP output). */
+  storePositive(vec?: ReadonlyArray<number>): void;
+  /** Replay-memory sizes (Mode 1). */
+  feedbackCounts(): { positive: number; negative: number };
+  /** Avoid sub-mode: 0 = Geometric (default), 1 = Diffuse (legacy). */
+  setAvoidStyle(style: number): void;
   train(): number;
   trainAsync(): Promise<number>;
   randomise(): void;
@@ -152,6 +166,27 @@ function makeProbe(engine: EngineApi): DebugProbe {
 
     exploring(): boolean {
       return engine.feedback.exploring();
+    },
+
+    dislikeGeometric(heardVec: ReadonlyArray<number>, lr = 0): number {
+      const a = engine.feedback.dislikeGeometric(Float32Array.from(heardVec), lr);
+      engine.process();
+      return a;
+    },
+
+    storePositive(vec?: ReadonlyArray<number>): void {
+      engine.feedback.storePositive(vec ? Float32Array.from(vec) : undefined);
+    },
+
+    feedbackCounts(): { positive: number; negative: number } {
+      return {
+        positive: engine.feedback.positiveCount(),
+        negative: engine.feedback.negativeCount(),
+      };
+    },
+
+    setAvoidStyle(style: number): void {
+      engine.feedback.setAvoidStyle(style);
     },
 
     train(): number {

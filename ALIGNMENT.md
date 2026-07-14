@@ -26,14 +26,6 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Half a day. Add `nisps_ml_train_with_history` (or extend the existing call) returning a pointer to the loss array; copy on the JS side.
 
-### 3. WASM MLP architecture is fixed (2026-04-29)
-
-**What.** WASM compiles `MLP<2, 10, 14, 18, 126>` only. Modes with smaller `output_size` use a slice; modes that want different hidden layer shapes (e.g. `[10, 10, 14]` for smaller modes) can't get them in the browser.
-
-**Why it blocks the mission.** Per-mode ML architecture variation is one of our four "research dimensions". The fix isn't urgent for the current mode set (all schemas are within the universal arch's capacity), but the moment we want to experiment with bigger networks or different shapes, this hits.
-
-**Rough cost.** Medium. Either compile multiple WASM modules (one per arch shape; load on demand) or move to a runtime-shaped MLP (loses some compile-time perf). Templates-vs-runtime is a research-vs-firmware-perf tradeoff worth a separate decision doc.
-
 ### 4. `NISPS_AUDIO_FUNC` host fallback is misshapen (2026-04-29)
 
 **What.** `nisps/core/perf.hpp` defines `NISPS_AUDIO_FUNC(decl) decl` for the host but the firmware path `__not_in_flash_func(name)` takes only a function name (it stringifies into a section attribute). The two forms don't match. Stream 6 (firmware glue) avoided the macro to dodge the inconsistency, but it's still a footgun.
@@ -83,6 +75,8 @@ The original a-immersive was mobile-first ("designed for touch / foldable phone 
 - **Manifold dock splits `state`/`muted`/`armed` into three fields, diverging from the deployed conflated `frozen`↔`muted`** (2026-06-28) — the deployed a-immersive override system maps the heatmap-popup `frozen` and the group-drawer `muted` onto ONE underlying field. The Manifold per-output model (`manifold/src/dock/output-state.ts`, folded onto `MFParam`) deliberately separates them: `status` carries the off/fixed/live tri-state, `muted` is downstream-silence (still computed + visible), `armed` is solo/focus-training. Cleaner semantics; intentional divergence (dock-spec §3.3, open choice 3). Note `muted`-downstream and the `soloMode` gradient-mask variants (mask-gradients / zero-loss / dont-care) are UI+state only so far — the engine C API exposes `set_focus` but not per-mode gradient masking nor a downstream mute gate yet (TODOs in `ConsoleApp.tsx` / `Drawers.tsx` reference rl-feedback-design §3 and dock-spec §3.3).
 
 ## Recently resolved (delete after a few weeks)
+
+- 2026-07-14: Defect "WASM MLP architecture is fixed" resolved by one-core-engine P2: `nisps/ml/` is storage-policied (`MLPCore<Storage>`); the browser MLP is runtime-shaped (`DynamicStorage`), `nisps_ml_create` honours dims, `nisps_ml_reshape` warm-starts. Firmware keeps the zero-heap fixed template (`.text` +0.30%, within contract).
 
 - 2026-04-29: Three-implementation ML duplication (firmware `memlp`, `nisps-core`, JS engine) collapsed to single `nisps/` C++ codebase.
 - 2026-04-29: Firmware mode forks (~280–400 lines duplicated across 8 modes) collapsed via `nisps/modes/base.hpp` CRTP scaffold; concrete modes are now ~50–130 lines.

@@ -114,12 +114,11 @@ Two WASM instances at runtime:
 
 C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `manifold/public/`).
 
-The WASM target is fixed at `MLP<32u, 10u, 14u, 18u, 126u>` (`nisps_ml_create` ignores requested dims — see `docs/specs/plans/one-core-engine-refactor.md` P2). Modes with smaller `input_size`/`output_size` use a slice.
+The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_ml_create` honours `(input, output, hidden[3])`; non-positive/null args default to `32→[10,14,18]→126`. `nisps_ml_reshape` swaps in a new shape warm-started from the overlapping weights (examples + feedback state reset). Modes currently still slice the default 126 outputs; per-mode dims become schema-real at P5.
 
 ### Known limitations
 
 - Loss history not yet plumbed through C API; only the final loss of a training run reaches TS.
-- Engine MLP architecture is fixed at compile time — runtime-shaped browser MLP arrives at P2 of `docs/specs/plans/one-core-engine-refactor.md`.
 - Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired in manifold.
 - C15 has no home on main (see `ALIGNMENT.md` defect #1).
 - The browser Jolt/OU controls in manifold reimplement the gesture math in TS (interim, ported from the retired playground) rather than calling the C++ `ml::Jolt`/`ml::OUNoise` through WASM. They drive weights via the existing `nisps_ml_get/set_weights` bindings — the P3 phase of the one-core-engine plan replaces them with `nisps_ml_jolt_press/release` + `nisps_ml_explore_intensity` bindings.

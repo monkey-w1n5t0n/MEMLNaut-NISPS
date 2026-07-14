@@ -99,7 +99,7 @@ Each phase ends green on its test gate and is independently landable. File phase
 - **Gate met:** full `run-all-tests.sh` green with playground gone (ctest 4/4, parity PASS, lint clean,
   manifold 9 unit + 20 e2e).
 
-### P2 — Storage-policy split: templated hardware, dynamic browser (the structural centre, ≈1 wk)
+### P2 — Storage-policy split: templated hardware, dynamic browser (the structural centre, ≈1 wk) — ✅ landed 2026-07-14 (hardware timing spot-check of chokepoint B pending physical MEMLNaut)
 
 - ✅ (landed 2026-07-13) Refactor `nisps/ml/` so algorithms (forward, backprop/SGD, init, `move_weights`)
   are written once against a storage policy (`mlp.hpp` `MLPCore<Storage>`; jolt/OU/feedback already operate
@@ -118,11 +118,16 @@ Each phase ends green on its test gate and is independently landable. File phase
   firmware/tests, `DynamicFeedbackStorage` for the browser). `nisps_ml_describe` now takes the handle
   (null → default shape). Verified: reshape ABI smoke (dims honoured, overlap survives, invalid dims
   rejected), warm-start ctest (grow+shrink), parity PASS unchanged, firmware `.text` unchanged.
-- Manifold drops input clamping/phantom-channel handling; XIASRI/sound-analysis multi-input modes become
-  browser-viable.
-- **Gate:** parity — fixed and dynamic storage produce bit-identical outputs for identical shapes/seeds
-  (new ctest); `parity-check.sh` native↔WASM ≤1e-5 unchanged; firmware builds byte-comparable (chokepoint B:
-  compile PAFSynth, compare `.text` size ±1%).
+- ✅ (landed 2026-07-14) Manifold reshape wiring: `WasmIML.reshape` + `EngineApi.reshape` (buffers/worker/
+  spine follow the new dims; training-worker protocol carries `hidden`); reset-on-reshape confirm modal
+  offered on genuine input-layout changes (default 32-in over-provisioned head untouched on load/decline);
+  stale even/odd-blend copy deleted. The mean-blend clamping itself was already gone (dedicated dims);
+  the `min(n, inputSize)` guard + zero-padding stay as the legitimate declined-reshape behaviour.
+  XIASRI/sound-analysis multi-input modes become browser-viable (schema-real dims arrive at P5).
+- **Gate met:** fixed↔dynamic bit-identical ctest (+ warm-start grow/shrink ctest + reshape ABI smoke);
+  `parity-check.sh` native↔WASM PASS unchanged (2.4e-7); PAFSynth `.text` 122324→122692 (+0.30%, within
+  ±1%); manifold 9 unit + 25 e2e. Hardware audio-callback timing check deferred to the chokepoint-B
+  hardware session (operator, physical MEMLNaut).
 
 ### P3 — Exploration + feedback fully in core (≈3–4 days)
 

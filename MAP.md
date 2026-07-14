@@ -143,7 +143,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
 - `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`); generated mode headers re-export via `using Curve = ::nisps::Curve;`. TS mirror at `manifold/src/engine/curves.ts` with same names (moves into core at P4).
 - Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++ types (TS codegen returns at P5). **No declarative JSON UI.**
-- WASM and firmware share the same C++; WASM is fixed at `MLP<32, 10, 14, 18, 126>` (`nisps_ml_create` ignores requested dims — see `plans/one-core-engine-refactor.md` P2) and modes use a slice of outputs based on schema's `output_size`.
+- WASM and firmware share the same C++; the browser MLP is runtime-shaped (`MLPCore<DynamicStorage>`, since P2): `nisps_ml_create` honours `(input, output, hidden[3])` with non-positive/null args defaulting to `32→[10,14,18]→126`; `nisps_ml_reshape` warm-starts a new shape. Firmware keeps compile-time `MLP<...>` (zero heap). Modes currently still use a slice of the default 126 outputs (per-mode dims become schema-real at P5).
 - Cross-platform parity: `scripts/parity-check.sh` enforces native vs WASM agreement within 1e-5.
 
 ## Gotchas

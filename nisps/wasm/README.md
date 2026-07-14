@@ -28,30 +28,23 @@ Both files are committed (so the browser apps work from a fresh clone
 without a C++ toolchain). Re-run `build-wasm.sh` after changes to
 `nisps/{core,ml,engines,wasm}`.
 
-## Architecture limit (read this)
+## Architecture (runtime-shaped since one-core-engine P2)
 
-The MLP class template is parametrised on `(input_size, hidden1, hidden2,
-hidden3, output_size)`. WASM cannot recompile templates at runtime, so
-this build instantiates exactly ONE configuration:
+The browser MLP is `MLPCore<DynamicStorage>` (`nisps/ml/dynamic_storage.hpp`):
+`nisps_ml_create(input, output, hidden[3], n, seed)` HONOURS its dimensions.
+The 4-layer topology (ReLU×3 + Sigmoid) is fixed; only the dimensions are
+runtime, capped at 4096 per dim. Non-positive/null arguments fall back to the
+historical defaults:
 
-    nisps::ml::MLP<32, 10, 14, 18, 126>
+    32 inputs → [10, 14, 18] hidden → 126 outputs
 
-That serves the browser use case (up to 32 input axes → up to 126 synth
-parameters). `nisps_ml_create()` accepts caller-supplied dimensions for
-forward compatibility but currently ignores them — see comment at the top
-of `bindings.cpp`. The schemas in `schemas/modes/*.json` use up to
-`output_size=126`; modes whose output_size is < 126 simply ignore the
-trailing entries.
-
-To support additional architectures, either:
-
-1. Compile multiple wasm modules (`nisps_small.wasm`,
-   `nisps_default.wasm`, …) and let the playground load the right one
-   based on the active mode.
-2. Add a runtime-shape MLP variant to `nisps/ml` (heap allocation only at
-   `create()`; no impact on hot paths).
-
-Both options are deferred to a future stream.
+`nisps_ml_reshape(ml, in, out, hidden, n, spread)` constructs a new net at
+the requested shape, warm-starts it by copying the overlapping weight region
+(`nisps/ml/warm_start.hpp`), and swaps it in. The C-side dataset and the
+feedback controller state RESET on reshape (front-end shows a confirm modal).
+Heap is used only at create/reshape time, never per-call; the firmware target
+never compiles the dynamic storage at all (`#error` under
+`NISPS_TARGET_EMBEDDED`).
 
 ## C API surface
 
@@ -59,7 +52,7 @@ See `bindings.cpp` for the full list. Summary:
 
 | Group     | Functions                                                                    |
 |-----------|------------------------------------------------------------------------------|
-| ML life   | `nisps_ml_create`, `nisps_ml_destroy`, `nisps_ml_reset`                      |
+| ML life   | `nisps_ml_create`, `nisps_ml_destroy`, `nisps_ml_reset`, `nisps_ml_reshape`  |
 | ML I/O    | `nisps_ml_set_input`, `nisps_ml_process`, `nisps_ml_outputs`, `nisps_ml_infer_batch` |
 | Training  | `nisps_ml_add_example`, `nisps_ml_train`, `nisps_ml_eval_loss`, `nisps_ml_clear_examples`, `nisps_ml_example_count` |
 | Weights   | `nisps_ml_weight_count`, `nisps_ml_get_weights`, `nisps_ml_set_weights`, `nisps_ml_draw_weights`, `nisps_ml_move_weights` |

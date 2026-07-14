@@ -194,10 +194,16 @@ a setting → `--r-*` tokens.
   double=4 axes, deadzone 0.08), `midi-input-source.ts` (Web MIDI, batch CC-learn, multi-port).
 - `useInputLayer.ts` — React binding; manages exclusive input mode + gamepad stick mode + MIDI
   device/learn map; exposes `pushPad`, `sources`, `channelLayout`, etc.
-- **Reshape status:** the WASM head is over-provisioned to 32 but the spine's `setInputs` historically
-  treated the head as effectively 2-D — confirm current behaviour in `spine.ts`/`input-layer.ts`
-  before relying on >2 active dims. See the `manifold-mixed-inputs` memory for the locked design
-  (reshapeable net, reset-on-reshape modal, adaptive slider viz when >2 dims).
+- **Reshape (P2.3, live):** the net is now **runtime-shaped**. It boots at the default
+  over-provisioned 32-input head (zero-padding preserved), and `EngineApi.reshape({ inputSize, … })`
+  → `WasmIML.reshape` swaps in a new net at the requested arity, **warm-started** from the overlapping
+  weights (`nisps_ml_reshape`; C-side dataset + feedback state RESET). When the active axis layout
+  CHANGES to a count ≠ the net's arity, `ConsoleApp` offers the swap behind `ReshapeModal.tsx`
+  (reset-on-reshape confirm; declining keeps the zero-padded head). Never offered on load. The
+  spine tolerates the arity change (buffers resize, version bumps); the training worker
+  (`wasm-worker.ts`) carries the current dims in its train message and re-creates its mirror net to
+  match. Debug: `window.__nisps.reshape(nIn)` / `.describe()`. See the `manifold-mixed-inputs` memory
+  for the locked design (adaptive slider viz when >2 dims is still pending).
 
 ### Feedback — `src/feedback/`
 - `controller.ts` (**~490 lines**) — `FeedbackController`, framework-neutral, owned by ConsoleApp.
@@ -239,10 +245,11 @@ a setting → `--r-*` tokens.
    `engine-host.ts`, `wasm-iml.ts`, `wasm-worker.ts`) handles this — use it.
 3. **`nisps.js` is non-module Emscripten glue (no ES exports).** Workers/worklet fetch + indirect-eval
    to install the global `createNispsModule`; the worklet uses raw `WebAssembly.instantiate`.
-4. **WASM architecture is hardwired at build time** (`nisps/wasm/bindings.cpp`): 2→126 outputs,
-   fixed hidden layers, 32 input slots. Requesting other sizes in options is a logged warning, not
-   dynamic. Changing it means rebuilding WASM (`bash scripts/build-wasm.sh`) and updating the parity
-   test (`tests/cpp/parity_check.cpp`) or parity CI goes red.
+4. **WASM MLP is runtime-shaped (since one-core-engine P2).** `nisps_ml_create(in, out, hidden[])`
+   honours its dims (non-positive/null → the default `32→[10,14,18]→126` head, so pre-P2 callers are
+   bit-identical), and `nisps_ml_reshape` swaps in a warm-started net at new dims. Weights = 3148 at
+   the default shape; reshaping only the input arity shifts the first layer (e.g. →4 inputs = 2868).
+   The firmware MLP stays compile-time templated — only the WASM/browser build is dynamic.
 5. **`curves.ts` ↔ `nisps/core/math.hpp` must stay lockstep** (golden-vector parity tests).
 6. **COOP/COEP headers are mandatory** for the WASM/worklet path — set in `vite.config.ts` for
    dev+preview, and at nginx server scope in prod (inherited by `/next/`).

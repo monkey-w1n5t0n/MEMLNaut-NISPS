@@ -374,7 +374,11 @@ function MidiInputMeter({ label, value, onClear }: { label: string; value: numbe
 
 function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
   const inp = ctx.inputs;
-  const reshaping = inp.axisCount > inp.engineInputSize;
+  // The net is runtime-shaped (P2): each active axis drives its OWN input slot
+  // 1:1. A mismatch means the net is over-provisioned (axes < slots, extra slots
+  // zero-padded) or over capacity (axes > slots, extras dropped) — the reshape
+  // offer resolves either.
+  const inputMismatch = inp.axisCount > 0 && inp.axisCount !== inp.engineInputSize;
   const active = inp.sources.find((s) => s.enabled);
   const modeLabel = INPUT_MODE_OPTS.find((o) => o.value === inp.inputMode)?.label ?? 'Internal';
 
@@ -383,7 +387,13 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <Badge tone="info">{modeLabel}</Badge>
         {inp.inputMode !== 'internal' && <Chip tone="var(--accent)">{inp.axisCount} axes</Chip>}
-        {reshaping && <Chip tone="var(--warn)">blended → {inp.engineInputSize}</Chip>}
+        {inputMismatch && (
+          <Chip tone="var(--warn)">
+            {inp.axisCount > inp.engineInputSize
+              ? `${inp.axisCount} axes › ${inp.engineInputSize} slots`
+              : `net: ${inp.engineInputSize}-D`}
+          </Chip>
+        )}
         {active && (
           <Chip tone={STATUS_TONE[active.status.state] ?? 'var(--fg-dim)'}>{active.status.state}</Chip>
         )}
@@ -517,16 +527,15 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         </>
       )}
 
-      {/* ---- Reshape note (only when >2 axes feed the fixed WASM head) ---- */}
-      {reshaping && depth === 'expanded' && (
+      {/* ---- Dedicated-dimensions note (only with >2 active axes) ---- */}
+      {inp.axisCount > 2 && depth === 'expanded' && (
         <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          {/* TODO(workstream F, docs/specs/inputs-spec.md — "multiple WASM modules +
-              warm-start"): give every axis its own genuine input dimension by (re)loading a
-              WASM module whose MLP arity matches axisCount and warm-starting from the prior
-              net. Deferred — the reduction lives in InputLayer.compose(). */}
-          The browser WASM is a fixed {inp.engineInputSize}-input head (MLP&lt;2,…&gt;), so the{' '}
-          {inp.axisCount} axes are blended down to {inp.engineInputSize} (even→X / odd→Y mean). True
-          per-axis dimensions land with the multi-WASM reshape.
+          The net has {inp.engineInputSize} dedicated inputs — each active axis drives its own
+          dimension 1:1 (no blending).
+          {inputMismatch
+            ? ` Its ${inp.engineInputSize} slots don't match the ${inp.axisCount} active axes; ` +
+              `changing the layout offers a reshape to ${inp.axisCount} inputs (warm-started).`
+            : ''}
         </p>
       )}
     </>

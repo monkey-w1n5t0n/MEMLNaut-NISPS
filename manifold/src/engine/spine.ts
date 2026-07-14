@@ -116,6 +116,11 @@ export class Spine implements EngineSink {
   setState(patch: EngineStatePatch): void {
     let changed = false;
     const s = this.state_;
+    // A reshape (WasmIML.reshape → sink.setState) can change either dim. The
+    // stored inputSize drives the setInputs axis loop (and lastRawInputs resizes
+    // itself there); a changed outputSize resizes the hot output buffers below.
+    // Either bumps the version so useSyncExternalStore consumers re-read the new
+    // arity (e.g. inputs.engineInputSize in the dock).
     if (patch.inputSize !== undefined && patch.inputSize !== s.inputSize) { s.inputSize = patch.inputSize; changed = true; }
     if (patch.outputSize !== undefined && patch.outputSize !== s.outputSize) {
       s.outputSize = patch.outputSize;

@@ -29,6 +29,8 @@ export interface TrainArgs {
   minErr: number;
   inputSize: number;
   outputSize: number;
+  /** Main net's hidden layers, so the worker's mirror net matches after reshape. */
+  hidden: readonly [number, number, number];
 }
 
 export interface TrainResult {
@@ -95,6 +97,7 @@ export class WasmTrainer {
         minErr: args.minErr,
         inputSize: args.inputSize,
         outputSize: args.outputSize,
+        hidden: args.hidden,
       };
       this.worker.postMessage(msg, [
         args.weights.buffer,
@@ -170,6 +173,14 @@ if (isWorker) {
   let mlHandle = 0;
   let weightCount = 0;
 
+  // Current mirror-net shape. The net is (re)created to match the main thread's
+  // dims so flat weight vectors exchange 1:1 across a reshape (P2.3). Seed is
+  // irrelevant to results — the net is immediately overwritten via set_weights.
+  let netInputSize = 0;
+  let netOutputSize = 0;
+  let netHidden: readonly number[] = [];
+  let workerSeed = 0;
+
   let weightsPtr = 0;
   let weightsViewLen = 0;
   let featuresPtr = 0;
@@ -194,13 +205,41 @@ if (isWorker) {
     mod = await factory({
       locateFile: (path: string) => (path.endsWith('.wasm') ? assetUrl('nisps.wasm') : path),
     });
-    // Default shape (0,0 → 32→[10,14,18]→126). The worker's net MUST match
-    // the main thread's shape — weights are exchanged as flat vectors. When
-    // the main thread creates/reshapes with non-default dims (one-core-engine
-    // P2.3+), the init/train messages must carry those dims and this call
-    // must pass them through.
-    mlHandle = mod._nisps_ml_create(0, 0, 0, 0, seed >>> 0);
+    // Default shape (0,0 → 32→[10,14,18]→126). The worker's net MUST match the
+    // main thread's shape — weights are exchanged as flat vectors. Each `train`
+    // message carries the current dims (one-core-engine P2.3), so `ensureNet`
+    // recreates this net if the main net was reshaped.
+    workerSeed = seed >>> 0;
+    mlHandle = mod._nisps_ml_create(0, 0, 0, 0, workerSeed);
     weightCount = mod._nisps_ml_weight_count(mlHandle);
+    const dPtr = mod._malloc(6 * 4);
+    mod._nisps_ml_describe(mlHandle, dPtr);
+    const d = new Int32Array(mod.HEAP32.buffer, dPtr, 6);
+    netInputSize = d[0];
+    netOutputSize = d[4];
+    netHidden = [d[1], d[2], d[3]];
+    mod._free(dPtr);
+  }
+
+  /** Recreate the mirror net iff the requested shape differs from the current. */
+  function ensureNet(inputSize: number, outputSize: number, hidden: readonly [number, number, number]): void {
+    if (!mod) throw new Error('worker module not loaded');
+    const same =
+      netInputSize === inputSize &&
+      netOutputSize === outputSize &&
+      netHidden.length === hidden.length &&
+      netHidden.every((h, i) => h === hidden[i]);
+    if (same) return;
+
+    if (mlHandle) mod._nisps_ml_destroy(mlHandle);
+    const hPtr = mod._malloc(hidden.length * 4);
+    new Int32Array(mod.HEAP32.buffer, hPtr, hidden.length).set(hidden);
+    mlHandle = mod._nisps_ml_create(inputSize, outputSize, hPtr, hidden.length, workerSeed);
+    mod._free(hPtr);
+    weightCount = mod._nisps_ml_weight_count(mlHandle);
+    netInputSize = inputSize;
+    netOutputSize = outputSize;
+    netHidden = [...hidden];
   }
 
   function ensureBuffers(features: Float32Array, labels: Float32Array, sampleWeights: Float32Array, weights: Float32Array): void {
@@ -240,6 +279,8 @@ if (isWorker) {
       return { kind: 'error', requestId: req.requestId, message: 'worker not initialised' };
     }
     try {
+      // Match the main net's shape (it may have been reshaped since init).
+      ensureNet(req.inputSize, req.outputSize, req.hidden);
       ensureBuffers(req.features, req.labels, req.sampleWeights, req.weights);
       mod._nisps_ml_set_weights(mlHandle, weightsPtr);
 

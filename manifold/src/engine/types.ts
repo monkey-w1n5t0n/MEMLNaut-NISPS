@@ -201,6 +201,9 @@ export type WorkerRequest =
       minErr: number;
       inputSize: number;
       outputSize: number;
+      // The main net's hidden layers. The worker (re)creates its mirror net to
+      // this shape so weight vectors exchange 1:1 after a reshape (P2.3).
+      hidden: readonly [number, number, number];
     }
   | {
       kind: 'dispose';

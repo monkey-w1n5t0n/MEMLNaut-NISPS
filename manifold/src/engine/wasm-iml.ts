@@ -257,6 +257,109 @@ export class WasmIML {
   }
 
   // -------------------------------------------------------------------
+  // Reshape (runtime-shaped MLP; one-core-engine P2)
+  // -------------------------------------------------------------------
+
+  /**
+   * Swap the net for one at new dims, warm-started from the overlapping weights
+   * of the current net (`nisps_ml_reshape`). Any omitted dim keeps its current
+   * value. Returns true on success (false = C-side rejected / no change).
+   *
+   * The C side RESETS its dataset/examples and feedback/exploration state on
+   * reshape, so this method also clears the TS `Dataset` mirror, reallocates
+   * every dim-dependent heap buffer, refreshes `weightCount`, and pushes the new
+   * shape + zeroed example/output state through the sink so React re-reads.
+   */
+  reshape(
+    dims: { inputSize?: number; outputSize?: number; hidden?: readonly [number, number, number] },
+    spread = 0.6,
+  ): boolean {
+    const wantIn = dims.inputSize ?? this.arch_.inputSize;
+    const wantOut = dims.outputSize ?? this.arch_.outputSize;
+    const wantHidden = dims.hidden ?? this.arch_.hidden;
+
+    const hiddenPtr = this.module._malloc(wantHidden.length * 4);
+    new Int32Array(this.module.HEAP32.buffer, hiddenPtr, wantHidden.length).set(wantHidden);
+    const ok = this.module._nisps_ml_reshape(
+      this.mlHandle,
+      wantIn,
+      wantOut,
+      hiddenPtr,
+      wantHidden.length,
+      spread,
+    );
+    this.module._free(hiddenPtr);
+    if (ok !== 1) return false;
+
+    // Re-describe the (new) instance and refresh the weight count.
+    this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
+    const d = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 6);
+    this.arch_ = {
+      inputSize: d[0],
+      hidden: [d[1], d[2], d[3]],
+      outputSize: d[4],
+      numLayers: d[5],
+    };
+    this.weightCount_ = this.module._nisps_ml_weight_count(this.mlHandle);
+
+    // Reallocate every dim-dependent heap buffer. Freeing first then reallocating
+    // means a later malloc may sbrk-grow the heap and detach earlier views, so we
+    // rebind() all of them afterwards.
+    this.featuresBuf.free();
+    this.labelsBuf.free();
+    this.weightsBuf.free();
+    this.statsBuf.free();
+    this.batchInBuf.free();
+    this.batchOutBuf.free();
+    this.pinMaskBuf.free();
+    this.feedbackBuf.free();
+    this.featuresBuf = new HeapBuffer(this.module, this.arch_.inputSize);
+    this.labelsBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+    this.weightsBuf = new HeapBuffer(this.module, this.weightCount_);
+    this.statsBuf = new HeapBuffer(this.module, this.arch_.numLayers * 4);
+    this.batchInBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.inputSize);
+    this.batchOutBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.outputSize);
+    this.pinMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
+    this.feedbackBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+    this.featuresBuf.rebind();
+    this.labelsBuf.rebind();
+    this.weightsBuf.rebind();
+    this.statsBuf.rebind();
+    this.batchInBuf.rebind();
+    this.batchOutBuf.rebind();
+    this.pinMaskBuf.rebind();
+    this.feedbackBuf.rebind();
+
+    // C-side dataset/examples reset on reshape → clear the TS mirror to match.
+    this.dataset.clear();
+    this.lastLoss_ = null;
+
+    // The lazy training worker's mirror net is now stale (wrong arity). Dropping
+    // it makes the next trainAsync re-create it; the train protocol also carries
+    // the current dims so a fresh worker matches (see wasm-worker.ts).
+    if (this.trainer) {
+      this.trainer.dispose();
+      this.trainer = null;
+    }
+
+    this.sink.setState({
+      inputSize: this.arch_.inputSize,
+      outputSize: this.arch_.outputSize,
+      exampleCount: 0,
+      lastLoss: null,
+      lossHistory: [],
+    });
+    this.sink.setOutputs(new Float32Array(this.arch_.outputSize));
+    this.publishWeights_();
+    this.sink.emit('ml.reshaped', {
+      inputSize: this.arch_.inputSize,
+      outputSize: this.arch_.outputSize,
+    });
+    this.scheduleSave_();
+    return true;
+  }
+
+  // -------------------------------------------------------------------
   // Inference
   // -------------------------------------------------------------------
 
@@ -403,6 +506,7 @@ export class WasmIML {
         minErr,
         inputSize: this.arch_.inputSize,
         outputSize: this.arch_.outputSize,
+        hidden: this.arch_.hidden,
       });
       this.setWeights(result.weights);
       this.lastLoss_ = result.loss;

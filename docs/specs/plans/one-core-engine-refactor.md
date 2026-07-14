@@ -129,19 +129,26 @@ Each phase ends green on its test gate and is independently landable. File phase
   ±1%); manifold 9 unit + 25 e2e. Hardware audio-callback timing check deferred to the chokepoint-B
   hardware session (operator, physical MEMLNaut).
 
-### P3 — Exploration + feedback fully in core (≈3–4 days)
+### P3 — Exploration + feedback fully in core (≈3–4 days) — ✅ software landed 2026-07-14; ⏳ chokepoint A hardware spot-check pending (operator, physical MEMLNaut)
 
-- **Geometric dislike:** port firmware k-NN centroid push (upstream `InterfaceRL.cpp:602-738`) into
-  `nisps/ml/geo_push.hpp` + `replay.hpp` + `mlp.train_targets`, per `docs/adr/rl-feedback-design.md` §4.
-  Expose via `nisps_ml_feedback_dislike_geometric`. Delete the TS approximation + both `C++ GAP` blocks in
-  `manifold/src/feedback/controller.ts`.
-- **Jolt / OU:** expose `nisps/ml/jolt.hpp` + `ou_noise.hpp` through bindings
-  (`nisps_ml_jolt_press/release`, `nisps_ml_explore_intensity`); manifold's P1 UI shells switch to them.
-  The playground TS ports die with P1.
-- **RNG:** feedback/exploration randomness in the browser comes from the core's seeded `Rng` streams
-  (already per-instance, ctor-seeded). Delete `manifold/src/feedback/rng.ts`.
-- **Gate:** new cross-platform parity test — scripted feedback session (seeded) produces identical weight
-  trajectories native↔WASM; firmware spot-check on hardware (chokepoint A) for geometric dislike feel.
+- ✅ **Geometric dislike:** firmware k-NN centroid push (upstream `InterfaceRL` @ `0a541cc`, verbatim
+  constants) ported into `nisps/ml/geo_push.hpp` + `replay.hpp` + `mlp.train_targets`; the press+optimise
+  halves collapsed into one synchronous `dislike_geometric()` per the ADR. `AvoidStyle::Geometric` is the
+  Avoid default; `Diffuse` (legacy move_weights) kept for A/B. Exposed via
+  `nisps_ml_feedback_dislike_geometric` (+ store_positive/counts/set_avoid_style). TS approximation +
+  both `C++ GAP` blocks deleted; two call-site bugs fixed en route (raw vs HEARD post-pipeline vector —
+  raw gives a zero-derivative no-op). Cold-start prompt per ADR §7.
+- ✅ **Jolt / OU:** exposed through bindings (`nisps_ml_jolt_press/step/release/lr_scale/...`,
+  `nisps_ml_explore_intensity/apply`; browser `OUNoise<4096>` over-provisioned); manifold's P1 UI shells
+  switched at the marked swap point; interim TS ports (`jolt.ts`, `ou-explore.ts`) deleted. OU applies
+  through the spine's output morph hook.
+- ✅ **RNG:** `manifold/src/feedback/rng.ts` deleted; all feedback/exploration randomness is the core's
+  seeded per-instance `Rng` streams. (Debug-only fixed seed/dt under `?debug=1` for deterministic e2e.)
+- **Gate:** ✅ parity Stage 6 (v4) — scripted seeded feedback session (2 likes → centroid → 2 dislikes)
+  produces identical weight trajectories native↔WASM (961 floats, 2.4e-7); ctest geo suite; manifold 9
+  unit + 27 e2e. ⏳ Hardware spot-check (chokepoint A) BLOCKED on the physical MEMLNaut — and on ergo bug
+  `10c3e55c`: the explore/place wiring is linker-GC'd out of the PAFSynth ELF (pre-existing, discovered
+  during P3; the gestures are dead code on that build until fixed).
 
 ### P4 — Input/output pipelines + curves into core (≈3 days)
 

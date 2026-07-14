@@ -121,7 +121,7 @@ The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_m
 - Loss history not yet plumbed through C API; only the final loss of a training run reaches TS.
 - Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired in manifold.
 - C15 has no home on main (see `ALIGNMENT.md` defect #1).
-- The browser Jolt/OU controls in manifold reimplement the gesture math in TS (interim, ported from the retired playground) rather than calling the C++ `ml::Jolt`/`ml::OUNoise` through WASM. They drive weights via the existing `nisps_ml_get/set_weights` bindings — the P3 phase of the one-core-engine plan replaces them with `nisps_ml_jolt_press/release` + `nisps_ml_explore_intensity` bindings.
+- (P3, 2026-07-14) The browser Jolt/OU gestures and the geometric dislike run the C++ core through WASM: `nisps_ml_jolt_*`, `nisps_ml_explore_*`, `nisps_ml_feedback_dislike_geometric` — no TS gesture math remains.
 
 ## URL parameters (manifold)
 

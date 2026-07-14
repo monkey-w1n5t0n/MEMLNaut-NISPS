@@ -23,8 +23,9 @@
  * behaviour) — that diluted every source and biased the net toward idle
  * sources' resting values.
  *
- * Changing the ACTIVE axis count is a reshape: the front-end resets the net
- * (recreate-from-scratch, behind a confirm modal) since slot meanings change.
+ * Changing the ACTIVE axis count offers a reshape (ConsoleApp → ReshapeModal):
+ * a new net at the new arity, warm-started from the overlapping weights, with
+ * examples + feedback state reset. Declining keeps this over-provisioned head.
  */
 import type { InputAction, InputSource } from './types';
 

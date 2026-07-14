@@ -36,6 +36,7 @@ import { Manifold } from './Manifold';
 import { ReadoutStrip } from './ReadoutStrip';
 import { VerdictCluster } from './VerdictCluster';
 import { Dock } from './Dock';
+import { ReshapeModal } from './ReshapeModal';
 import type {
   Axes,
   ConsoleCtx,
@@ -275,6 +276,44 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   // (XY pad / MIDI / gamepad) into the engine. The XY pad is push-driven via
   // `pushPad`; MIDI + gamepad are pulled by the layer's own rAF loop.
   const inputs = useInputLayer(engine);
+
+  // ---- Reshape offer (runtime-shaped net, P2) --------------------------------
+  // When the ACTIVE input layout CHANGES (source added/removed, MIDI-learn axes
+  // change, gamepad stick mode) to an axis count that differs from the net's
+  // current input arity, offer a warm-started reshape behind a confirm modal
+  // (locked decision: "reshapeable N-D net, reset-on-reshape modal"). We only
+  // offer on a genuine CHANGE — never on first load — so the default 32-input
+  // over-provisioned head is preserved untouched, and declining keeps the
+  // zero-padding path working. Once per layout change (debounced by the ref).
+  const [reshapeTarget, setReshapeTarget] = useState<number | null>(null);
+  const prevAxisCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!engine) return;
+    const n = inputs.axisCount;
+    // Ignore the boot transient (sources attach a frame after mount, so the
+    // count ramps 0 → 2) and any "no active axes" lull — neither is a layout the
+    // user chose, and treating 0 as a baseline would make the first real layout
+    // look like a change and prompt on load.
+    if (n < 1) return;
+    const inSize = inputs.engineInputSize;
+    // First established layout is the baseline (default load) — record, never
+    // prompt. This is the default over-provisioned case that must stay untouched.
+    if (prevAxisCountRef.current === null) {
+      prevAxisCountRef.current = n;
+      return;
+    }
+    if (n === prevAxisCountRef.current) return; // arity unchanged → no offer
+    prevAxisCountRef.current = n;
+    // Offer iff the new active layout no longer matches the net's arity.
+    if (n !== inSize) setReshapeTarget(n);
+    else setReshapeTarget(null);
+  }, [engine, inputs.axisCount, inputs.engineInputSize]);
+
+  const confirmReshape = () => {
+    const n = reshapeTarget;
+    setReshapeTarget(null);
+    if (engine && n != null) engine.reshape({ inputSize: n });
+  };
 
   // Drive a pad/joystick/manifold move through the input layer's XY-pad source,
   // then mirror the raw position into React state for readouts. The layer's loop
@@ -1096,6 +1135,15 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
           if (v) setActive(null);
         }}
       />
+
+      {reshapeTarget !== null && (
+        <ReshapeModal
+          target={reshapeTarget}
+          current={inputs.engineInputSize}
+          onConfirm={confirmReshape}
+          onCancel={() => setReshapeTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -19,7 +19,7 @@
  */
 
 import type { EngineApi } from '../engine/engine-api';
-import type { FeedbackMode, LayerStats } from '../engine/types';
+import type { FeedbackMode, LayerStats, MLArchitecture } from '../engine/types';
 
 export interface DebugProbe {
   // ---- Core engine surface (live) ----
@@ -29,6 +29,14 @@ export interface DebugProbe {
   getLossHistory(): ReadonlyArray<number>;
   getWeights(): Float32Array;
   getExampleCount(): number;
+  /** The net's current shape (runtime-shaped MLP; P2). */
+  describe(): MLArchitecture;
+  /**
+   * Reshape the net (warm-started; dataset + feedback reset). Returns the new
+   * shape on success, or null if the reshape was rejected / no-op. Omitted dims
+   * keep their current value.
+   */
+  reshape(inputSize: number, outputSize?: number, hidden?: [number, number, number]): MLArchitecture | null;
   setInputs(x: number, y: number): void;
   thumbsUp(): number;
   thumbsDown(): number;
@@ -94,6 +102,20 @@ function makeProbe(engine: EngineApi): DebugProbe {
 
     getExampleCount(): number {
       return engine.getState().exampleCount;
+    },
+
+    describe(): MLArchitecture {
+      return engine.architecture;
+    },
+
+    reshape(inputSize, outputSize, hidden): MLArchitecture | null {
+      const dims: { inputSize?: number; outputSize?: number; hidden?: [number, number, number] } = {
+        inputSize,
+      };
+      if (outputSize !== undefined) dims.outputSize = outputSize;
+      if (hidden !== undefined) dims.hidden = hidden;
+      const ok = engine.reshape(dims);
+      return ok ? engine.architecture : null;
     },
 
     setInputs(x: number, y: number): void {

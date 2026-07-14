@@ -219,6 +219,22 @@ export class EngineApi {
     this.process();
   }
 
+  /**
+   * Reshape the net to new dims (runtime-shaped MLP; one-core-engine P2). The
+   * new net is warm-started from the current net's overlapping weights; the
+   * dataset + feedback/exploration state RESET (front-end shows a confirm modal
+   * first). Returns true on success. On success the spine re-reads its arity and
+   * re-ticks the last input so outputs/audio reflect the new net.
+   */
+  reshape(
+    dims: { inputSize?: number; outputSize?: number; hidden?: [number, number, number] },
+    spread = this.spread_,
+  ): boolean {
+    const ok = this.iml.reshape(dims, spread);
+    if (ok) this.process();
+    return ok;
+  }
+
   clearExamples(): void {
     this.iml.clearExamples();
   }

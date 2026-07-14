@@ -100,6 +100,35 @@ export interface NispsModule {
   // Writes placed/committed output (outputSize floats) into out; returns 1 if written.
   _nisps_ml_feedback_placed_output(ml: number, out_ptr: number): number;
 
+  // Geometric dislike (one-core-engine P3; rl-feedback-design §2.1). The Avoid
+  // mode's default realisation, ported from firmware InterfaceRL. current_out
+  // may be null (0) → the MLP's live output is used (zero-derivative caveat:
+  // pass the HEARD post-pipeline vector for an audible push). lr <= 0 → the
+  // controller default (1e-3). Returns the FeedbackAction int (14=GeometricPush,
+  // 15=GeometricColdStart when no positives exist yet).
+  _nisps_ml_feedback_dislike_geometric(ml: number, current_out_ptr: number, lr: number): number;
+  // Store a positive (like) into the replay memory so the k-NN centroid sees it.
+  // current_out may be null (live output used). Caller still runs addExample+train.
+  _nisps_ml_feedback_store_positive(ml: number, current_out_ptr: number): void;
+  _nisps_ml_feedback_positive_count(ml: number): number;
+  _nisps_ml_feedback_negative_count(ml: number): number;
+  // Avoid sub-mode: 0 = Geometric (default), 1 = Diffuse (legacy move_weights, A/B).
+  _nisps_ml_feedback_set_avoid_style(ml: number, style: number): void;
+
+  // Jolt (held weight morph) + OU exploration noise (one-core-engine P3.2) — the
+  // SAME nisps/ml/{jolt,ou_noise}.hpp the firmware ModeBase runs. jolt_step does
+  // the get→glide→set of weights C-side; explore_apply advances the OU walk and
+  // adds it (clamped [0,1]) to the first min(n, n_out) floats in place.
+  _nisps_ml_jolt_press(ml: number): void;
+  _nisps_ml_jolt_step(ml: number): void;
+  _nisps_ml_jolt_release(ml: number): void;
+  _nisps_ml_jolt_active(ml: number): number; // 1 = held/active
+  _nisps_ml_jolt_lr_scale(ml: number): number; // post-release LR ramp multiplier
+  _nisps_ml_jolt_tick_lr_ramp(ml: number): void;
+  _nisps_ml_explore_intensity(ml: number, level: number): void;
+  _nisps_ml_explore_get_intensity(ml: number): number;
+  _nisps_ml_explore_apply(ml: number, inout_ptr: number, n: number): void;
+
   // Engines.
   _nisps_engine_create(id_ptr: number, sample_rate: number): number;
   _nisps_engine_destroy(engine: number): void;

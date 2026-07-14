@@ -720,6 +720,119 @@ export class WasmIML {
   }
 
   // -------------------------------------------------------------------
+  // Geometric dislike (one-core-engine P3; rl-feedback-design §2.1)
+  // -------------------------------------------------------------------
+
+  /**
+   * Geometric dislike: push the current mapping away from the liked centroid.
+   * `heardVec` is the kDefaultOutputs vector the user is HEARING (post-pipeline —
+   * with a null/raw vector the cold-start has a zero MSE derivative and is inert).
+   * `lr <= 0` uses the C++ controller default. Mutates weights → republishes.
+   * Returns the FeedbackAction int (14=GeometricPush, 15=GeometricColdStart).
+   */
+  feedbackDislikeGeometric(heardVec?: Float32Array, lr = 0): number {
+    let outPtr = 0;
+    if (heardVec) {
+      const n = Math.min(heardVec.length, this.arch_.outputSize);
+      this.feedbackBuf.view.fill(0);
+      this.feedbackBuf.view.set(heardVec.subarray(0, n));
+      outPtr = this.feedbackBuf.ptr;
+    }
+    const action = this.module._nisps_ml_feedback_dislike_geometric(this.mlHandle, outPtr, lr);
+    this.publishWeights_();
+    this.sink.emit('feedback.down', { action });
+    this.scheduleSave_();
+    return action;
+  }
+
+  /**
+   * Feed a positive (like) into the replay memory so the k-NN centroid sees it.
+   * `vec` is the heard output at the liked input (null → the live MLP output).
+   * No weight mutation; the caller still runs addExample + train.
+   */
+  feedbackStorePositive(vec?: Float32Array): void {
+    let outPtr = 0;
+    if (vec) {
+      const n = Math.min(vec.length, this.arch_.outputSize);
+      this.feedbackBuf.view.fill(0);
+      this.feedbackBuf.view.set(vec.subarray(0, n));
+      outPtr = this.feedbackBuf.ptr;
+    }
+    this.module._nisps_ml_feedback_store_positive(this.mlHandle, outPtr);
+  }
+
+  feedbackPositiveCount(): number {
+    return this.module._nisps_ml_feedback_positive_count(this.mlHandle);
+  }
+
+  feedbackNegativeCount(): number {
+    return this.module._nisps_ml_feedback_negative_count(this.mlHandle);
+  }
+
+  /** Avoid sub-mode: 0 = Geometric (default), 1 = Diffuse (legacy, A/B). */
+  feedbackSetAvoidStyle(style: number): void {
+    this.module._nisps_ml_feedback_set_avoid_style(this.mlHandle, style);
+  }
+
+  // -------------------------------------------------------------------
+  // Jolt (held weight morph) + OU exploration (one-core-engine P3.2).
+  // The shared nisps/ml/{jolt,ou_noise}.hpp the firmware ModeBase runs.
+  // -------------------------------------------------------------------
+
+  /** Begin a jolt over the flat weight buffer (held-button continuous morph). */
+  joltPress(): void {
+    this.module._nisps_ml_jolt_press(this.mlHandle);
+  }
+
+  /** One ~200 Hz morph tick while held (no-op when inactive). C-side get→glide→
+   *  set of the flat weights; republish so weight-health views + persistence follow. */
+  joltStep(): void {
+    this.module._nisps_ml_jolt_step(this.mlHandle);
+    this.publishWeights_();
+    this.scheduleSave_();
+  }
+
+  /** Release: freeze the weights where they landed (permanent). */
+  joltRelease(): void {
+    this.module._nisps_ml_jolt_release(this.mlHandle);
+  }
+
+  joltActive(): boolean {
+    return this.module._nisps_ml_jolt_active(this.mlHandle) === 1;
+  }
+
+  /** Post-release LR-ramp multiplier (0 while held → 1 over ~5 s of ticks). */
+  joltLrScale(): number {
+    return this.module._nisps_ml_jolt_lr_scale(this.mlHandle);
+  }
+
+  joltTickLrRamp(): void {
+    this.module._nisps_ml_jolt_tick_lr_ramp(this.mlHandle);
+  }
+
+  /** Exploration amount in [0,1]; 0 disables (inert — parity-safe). */
+  setExploreIntensity(level: number): void {
+    this.module._nisps_ml_explore_intensity(this.mlHandle, level);
+  }
+
+  exploreIntensity(): number {
+    return this.module._nisps_ml_explore_get_intensity(this.mlHandle);
+  }
+
+  /**
+   * Advance the OU walk and add it (clamped to [0,1]) to `inout` IN PLACE. No-op
+   * at intensity 0. `inout` is the routed (post-pipeline) vector; only the first
+   * min(inout.length, n_out) values are touched (via the shared feedbackBuf heap).
+   */
+  exploreApply(inout: Float32Array): void {
+    const n = Math.min(inout.length, this.arch_.outputSize);
+    if (n <= 0) return;
+    this.feedbackBuf.view.set(inout.subarray(0, n));
+    this.module._nisps_ml_explore_apply(this.mlHandle, this.feedbackBuf.ptr, n);
+    inout.set(this.feedbackBuf.view.subarray(0, n));
+  }
+
+  // -------------------------------------------------------------------
   // Weights I/O
   // -------------------------------------------------------------------
 

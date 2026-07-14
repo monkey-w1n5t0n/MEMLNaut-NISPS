@@ -7,9 +7,30 @@
 
 import { useEffect } from 'react';
 import { EngineProvider } from './engine/EngineProvider';
+import type { EngineApiOptions } from './engine/engine-api';
 import { useEngine } from './engine/useEngine';
 import { installDebugProbe } from './debug/probe';
 import { ConsoleApp } from './console';
+
+/**
+ * Engine options derived from the URL. Under `?debug=1` (the Playwright /
+ * dev-probe gate) we pin a FIXED RNG seed so the net's initial weights — and
+ * therefore inference, feedback, and reshape behaviour — are deterministic run
+ * to run. Production (no debug flag) keeps the time-seeded default, so this
+ * never changes what a real user hears.
+ */
+function engineOptions(): EngineApiOptions {
+  if (typeof window === 'undefined') return {};
+  try {
+    const params = new URLSearchParams(window.location.search);
+    // Fixed seed + fixed per-tick dt ⇒ deterministic weights AND deterministic
+    // pipeline smoothing (the pipelines otherwise read performance.now()).
+    if (params.get('debug') === '1') return { seed: 0xc0ffee, debugClockDt: 1 / 60 };
+  } catch {
+    /* no URL (SSR / sandbox) — fall through */
+  }
+  return {};
+}
 
 function Loading() {
   return (
@@ -52,7 +73,7 @@ function ProbeInstaller() {
 
 export function App() {
   return (
-    <EngineProvider fallback={<Loading />}>
+    <EngineProvider options={engineOptions()} fallback={<Loading />}>
       <ProbeInstaller />
       <ConsoleApp focus="composite" />
     </EngineProvider>

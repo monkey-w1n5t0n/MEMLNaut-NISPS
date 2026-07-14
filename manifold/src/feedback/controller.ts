@@ -11,21 +11,21 @@
  * actions + state into the console context; VerdictCluster + Manifold drive it.
  *
  * It talks ONLY to the small primitive surface of EngineApi:
- *   getWeights / setWeights      — snapshot + restore (byte round-trip)
- *   randomise()                  — draw_weights, re-roll the whole net
  *   setInput(x,y) / getOutputs() — synchronous forward inference (the spine)
  *   process()                    — re-run last input after a weight change
  *   addExample([x,y], outVec)    — append a training example
  *   train()                      — SGD over the dataset
- *   feedback.{setFocus,thumbsDown,thumbsUp}  — engine's RL primitives (Mode 1)
+ *   feedback.{setFocus,thumbsUp,dislikeGeometric,storePositive,…}
+ *                                — the SHARED C++ core's RL primitives
  *
- * Everything the design plans to push into the C++ core (geometric push-away,
- * the scratch-undo ring, the column-freeze gradient mask, the warm-start
- * interpolation loop) is implemented here in TS and CLEARLY COMMENTED as the
- * approximation it is, with a pointer to where the real core primitive lands.
+ * As of one-core-engine P3 the geometric push-away (Mode 1) is a C++ core
+ * primitive (nisps/ml/{geo_push,replay}.hpp + mlp.train_targets), driven from
+ * here via engine.feedback.dislikeGeometric; the scratch-undo ring + snapshot
+ * lifecycle (Mode 2) are the shared core too. This controller now holds NO
+ * algorithm approximation — it is a thin driver over the core primitives plus
+ * the per-session anchor list for the multi-anchor warm-start.
  */
 
-import { SeededRng } from './rng';
 import type { FeedbackMode } from '../engine/types';
 
 /** The two product feedback modes (rl-feedback-design §0). */
@@ -65,8 +65,15 @@ export interface ControllerEngine {
   train(): number;
   readonly feedback: {
     thumbsUp(): number;
-    thumbsDown(speed?: number, spread?: number, pinMask?: Uint8Array): number;
     setFocus(mask: Uint8Array | null): void;
+    // Geometric dislike (Mode 1) — the SHARED C++ core (nisps/ml/geo_push.hpp).
+    // `heardVec` is the post-pipeline (HEARD) output; returns the FeedbackAction
+    // int (14=GeometricPush, 15=GeometricColdStart).
+    dislikeGeometric(heardVec?: Float32Array, lr?: number): number;
+    /** Feed a positive into the k-NN centroid (null → live MLP output). */
+    storePositive(vec?: Float32Array): void;
+    positiveCount(): number;
+    negativeCount(): number;
     // ExploreAndPlace lifecycle — the SHARED C++ core (mode 'explore_and_place').
     // The controller drives these instead of its own getWeights/setWeights/
     // randomise scratchpad logic, so explore-and-place runs identically in the
@@ -101,6 +108,10 @@ export interface FeedbackControllerState {
   undoDepth: number;
   /** Count of currently-armed (soloed) outputs; 0 ⇒ none armed ⇒ train all. */
   armedCount: number;
+  /** Positives in the C++ core's replay memory (k-NN centroid; Mode 1). */
+  positiveCount: number;
+  /** Negatives in the C++ core's replay memory (Mode 1 dislikes). */
+  negativeCount: number;
 }
 
 export interface FeedbackControllerOptions {
@@ -119,7 +130,6 @@ export interface FeedbackControllerOptions {
 
 export class FeedbackController {
   private engine: ControllerEngine;
-  private rng: SeededRng;
   private spread: number;
   private nudgeStddev: number;
   private maxUndo: number;
@@ -144,25 +154,12 @@ export class FeedbackController {
   /** Current arm mask (1=armed/soloed). null ⇒ none armed ⇒ train all. */
   private armMask: Uint8Array | null = null;
 
-  // ---- Mode-1 dislike memory (TS approximation) ----------------------
-  /**
-   * Disliked (input → output) pairs. The TRUE firmware geometric push (upstream
-   * 0a541cc, replay-backed) computes a k-NN positive centroid and pushes the
-   * disliked action away from it, then trains toward that target. We cannot do
-   * that on the existing primitives without the C++ replay store + train_targets
-   * hook, so the TS prototype:
-   *   (a) calls the engine's existing feedback.thumbsDown() (AVOID/move_weights)
-   *       as the audible baseline, AND
-   *   (b) records the disliked pair here so subsequent training can bias AWAY
-   *       from it (a coarse example-level approximation — see applyDislikeBias).
-   * Documented C++ gap: the directed geometric push-away lands in the core as
-   * `geo_push.hpp` + `replay.hpp` + `mlp.train_targets` (rl-feedback-design §4).
-   */
-  private dislikes: { input: readonly [number, number]; output: Float32Array }[] = [];
+  // Mode-1 dislike memory now lives entirely in the C++ core's ReplayStore
+  // (positives + negatives, k-NN centroid), fed via engine.feedback.storePositive
+  // / dislikeGeometric. No TS-side mirror.
 
   constructor(engine: ControllerEngine, opts: FeedbackControllerOptions = {}) {
     this.engine = engine;
-    this.rng = new SeededRng(opts.seed ?? 0xfeedbacc);
     this.spread = opts.spread ?? 0.6;
     this.nudgeStddev = opts.nudgeStddev ?? 0.05;
     this.maxUndo = Math.max(1, opts.undoDepth ?? 4);
@@ -358,108 +355,56 @@ export class FeedbackController {
   // ===================================================================
 
   /**
-   * DISLIKE (thumbs-down in Mode 1). Push the current mapping away from the
-   * disliked sound.
+   * DISLIKE (thumbs-down in Mode 1). Push the current mapping away from the liked
+   * centroid — the SHARED C++ core's geometric push (nisps/ml/geo_push.hpp +
+   * replay.hpp + mlp.train_targets, ported from upstream InterfaceRL 0a541cc).
    *
-   * PROTOTYPE: we use the engine's existing feedback.thumbsDown() (AVOID /
-   * move_weights — undirected Gaussian diffusion, the baseline) as the audible
-   * effect, AND record the disliked (input → output) so a subsequent like+train
-   * can bias away from it (applyDislikeBias).
+   * The core uses the MLP's CURRENT input and the passed HEARD output vector:
+   *   1. stores the negative (input, a_neg) in the ReplayStore (dedup within 0.05)
+   *   2. k-NN(k=4) centroid of positives near the input
+   *   3. target[j] = clamp(a_neg[j] + dir/||dir|| · pushStep/(1+||dir||), 0, 1)
+   *   4. trains toward that target at lr·negLRRatio
+   *   5. cold-start fallback (negative-LR) when there are no positives yet.
+   * Soloed/active dims come from the core's focus mask (set via setArmMask).
    *
-   * --- C++ GAP (the real firmware behaviour) -----------------------------
-   * The true geometric push-away (upstream 0a541cc, replay-backed,
-   * InterfaceRL.cpp:602-738) is:
-   *   1. store the negative (input, action) in a ReplayStore (dedup within 0.05)
-   *   2. compute the k-NN(k=4) centroid of POSITIVE memories near the input
-   *   3. target[j] = clamp(neg[j] + dir/||dir|| * pushStep/(1+||dir||), 0, 1)
-   *      where dir[j] = neg[j] - meanPositive[j]  (away from the liked centroid)
-   *   4. train the net toward that computed `target` at lr*negLRRatio
-   *   5. cold-start fallback when there are no positives yet.
-   * This needs `replay.hpp`, `geo_push.hpp`, and `mlp.train_targets` (train
-   * toward arbitrary COMPUTED targets, which the existing train()/addExample()
-   * cannot do — they only train toward STORED labels). It lands in the C++ core
-   * in rl-feedback-design Phase 1 (§5). Until then this TS prototype keeps the
-   * baseline move_weights effect plus example-level bias.
-   * ----------------------------------------------------------------------
-   *
-   * @param input   the control input the disliked sound was heard at
-   * @param output  the heard 126-dim output vector (a_neg)
-   * @param speed   move_weights speed (noise cap)
-   * @param spread  move_weights spread
+   * @param input   the control input the disliked sound was heard at (unused by
+   *                the core — it reads the MLP's live input — kept for the marker /
+   *                call-site symmetry with like()).
+   * @param output  the HEARD (post-pipeline) output vector a_neg. MUST be the
+   *                heard vector, not the raw MLP output, or the cold-start MSE
+   *                derivative is zero (see engine.feedback.dislikeGeometric).
+   * @param _speed  legacy move_weights speed — ignored (geometric path).
+   * @param _spread legacy move_weights spread — ignored (geometric path).
+   * @returns the FeedbackAction int (14=GeometricPush, 15=GeometricColdStart).
    */
   dislike(
     input: readonly [number, number],
     output: Float32Array,
-    speed: number,
-    spread: number,
-  ): void {
-    // Record the disliked pair (the firmware ReplayStore negative). Dedup within
-    // a coarse radius so repeated dislikes near each other don't pile up — a
-    // cheap stand-in for the firmware `deepen_or_store_negative(radius=0.05)`.
-    const RADIUS = 0.05;
-    const near = this.dislikes.find(
-      (d) =>
-        Math.hypot(d.input[0] - input[0], d.input[1] - input[1]) <= RADIUS,
-    );
-    if (near) {
-      near.output = new Float32Array(output);
-    } else {
-      this.dislikes.push({ input: [input[0], input[1]], output: new Float32Array(output) });
-    }
-    // Audible baseline: the engine's existing AVOID move_weights, focus-gated by
-    // the arm mask (the only directional gating the primitive offers today).
-    this.engine.feedback.thumbsDown(speed, spread, this.armMask ?? undefined);
+    _speed: number,
+    _spread: number,
+  ): number {
+    void input;
+    const action = this.engine.feedback.dislikeGeometric(output);
     this.engine.process();
+    return action;
   }
 
   /**
-   * LIKE + train (thumbs-up in Mode 1). Store the current (input → output) as a
-   * positive example and train. In firmware this also feeds the positive
-   * centroid (replay.store(+1,…)); here it is a normal addExample + train, with
-   * an optional bias away from recorded dislikes.
+   * LIKE + train (thumbs-up in Mode 1). Feeds the positive into the C++ core's
+   * k-NN centroid (via the core's thumbsUp auto-store, ADR §2.1) AND stores the
+   * current (input → output) as a positive example, then trains — exactly the two
+   * effects the design asks for. No TS dislike-bias any more (the core owns the
+   * geometric push).
    */
   like(input: readonly [number, number], output: Float32Array): void {
     this.engine.feedback.setFocus(this.armMask);
+    // The core's thumbsUp, in Avoid+Geometric mode, feeds the positive centroid
+    // (store_positive with the live MLP output). Keep the mode 'avoid' invariant
+    // (setMode maps 'geometric-dislike' → 'avoid') so this path is active.
+    this.engine.feedback.thumbsUp();
     this.engine.addExample([input[0], input[1]], Array.from(output));
-    this.applyDislikeBias();
     this.engine.train();
     this.engine.process();
-  }
-
-  /**
-   * Coarse example-level bias AWAY from disliked sounds (the TS approximation of
-   * the geometric push). For each recorded dislike we add a "repelled" example:
-   * an example at the disliked input whose output is nudged away from the
-   * disliked vector toward the dataset mean. This is a WEAK stand-in — it biases
-   * the trainer rather than computing a true centroid-relative push.
-   *
-   * --- C++ GAP -----------------------------------------------------------
-   * Replaced by `geo_push.compute_push_targets` + `train_targets` in the C++
-   * core (rl-feedback-design §4). Intentionally conservative here so it never
-   * destabilises the net before any positives exist (the `posMemCount==0`
-   * cold-start fallback the design ports faithfully).
-   * ----------------------------------------------------------------------
-   */
-  private applyDislikeBias(): void {
-    // No-op when there are no dislikes; conservative cold-start (do nothing
-    // destabilising) when there is nothing to push away from yet.
-    if (this.dislikes.length === 0) return;
-    for (const d of this.dislikes) {
-      const out = new Float32Array(d.output.length);
-      // Push each dim of the disliked output toward its complement (0.5 pivot) —
-      // a direction-free repulsion stand-in. Respect the arm mask: only move
-      // armed dims; leave others at the disliked value (don't-care).
-      for (let j = 0; j < out.length; j++) {
-        const armed = !this.armMask || this.armMask[j] === 1;
-        if (armed) {
-          const v = d.output[j];
-          out[j] = Math.max(0, Math.min(1, v + (0.5 - v) * 0.6));
-        } else {
-          out[j] = d.output[j];
-        }
-      }
-      this.engine.addExample([d.input[0], d.input[1]], Array.from(out));
-    }
   }
 
   // ===================================================================
@@ -478,6 +423,9 @@ export class FeedbackController {
       // Scratchpad undo depth now comes from the shared C++ core's undo ring.
       undoDepth: this.exploringFlag ? this.engine.feedback.undoDepth() : 0,
       armedCount: armed,
+      // Replay-memory sizes from the C++ core (cheap int reads).
+      positiveCount: this.engine.feedback.positiveCount(),
+      negativeCount: this.engine.feedback.negativeCount(),
     };
   }
 

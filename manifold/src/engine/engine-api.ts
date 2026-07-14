@@ -61,6 +61,44 @@ export interface EngineFeedbackApi {
   undoDepth(): number;
   /** The frozen placed / just-committed output (null if none). */
   placedOutput(): Float32Array | null;
+
+  // ---- Geometric dislike (one-core-engine P3; rl-feedback-design §2.1) ----
+  /**
+   * Push the current mapping away from the liked centroid. `heardVec` is the
+   * post-pipeline (HEARD) output vector — pass what the user hears, NOT the raw
+   * MLP output, or the cold-start MSE derivative is zero. Returns the
+   * FeedbackAction int (14=GeometricPush, 15=GeometricColdStart).
+   */
+  dislikeGeometric(heardVec?: Float32Array, lr?: number): number;
+  /** Feed a positive (like) into the k-NN centroid (null → live MLP output). */
+  storePositive(vec?: Float32Array): void;
+  positiveCount(): number;
+  negativeCount(): number;
+  /** Avoid sub-mode: 0 = Geometric (default), 1 = Diffuse (legacy, A/B). */
+  setAvoidStyle(style: number): void;
+}
+
+/**
+ * Exploration gestures backed by the shared C++ core (nisps/ml/{jolt,ou_noise}.
+ * hpp — the same the firmware ModeBase runs). The ExplorationController owns the
+ * control-rate drivers; these are the raw per-tick primitives.
+ */
+export interface EngineExploreApi {
+  /** Begin a held jolt (continuous weight morph). */
+  joltPress(): void;
+  /** One ~200 Hz morph tick while held (no-op when inactive; mutates weights). */
+  joltStep(): void;
+  /** Release: freeze the weights where they landed (permanent). */
+  joltRelease(): void;
+  joltActive(): boolean;
+  /** Post-release LR-ramp multiplier (0 held → 1 over ~5 s of ticks). */
+  joltLrScale(): number;
+  joltTickLrRamp(): void;
+  /** Exploration amount in [0,1]; 0 disables (inert — parity-safe). */
+  setExploreIntensity(level: number): void;
+  exploreIntensity(): number;
+  /** Advance the OU walk and add it (clamped [0,1]) to `inout` in place. */
+  exploreApply(inout: Float32Array): void;
 }
 
 export interface EngineAudioApi {
@@ -81,6 +119,12 @@ export interface EngineApiOptions {
   /** Default RL move speed / spread for thumbsDown. */
   noiseCap?: number;
   spread?: number;
+  /**
+   * Pin a deterministic per-tick dt (seconds) on the spine — set under ?debug=1
+   * so the timing-driven pipeline smoothing is reproducible in tests. Omit in
+   * production (real-time wall-clock dt).
+   */
+  debugClockDt?: number;
 }
 
 export class EngineApi {
@@ -93,6 +137,7 @@ export class EngineApi {
   private spread_: number;
 
   readonly feedback: EngineFeedbackApi;
+  readonly explore: EngineExploreApi;
   readonly audio: EngineAudioApi;
 
   private constructor(iml: WasmIML, spine: Spine, host: EngineHost, opts: EngineApiOptions) {
@@ -102,6 +147,7 @@ export class EngineApi {
     this.learningRate = opts.learningRate ?? 1.0;
     this.noiseCap = opts.noiseCap ?? 0.3;
     this.spread_ = opts.spread ?? 0.6;
+    if (opts.debugClockDt !== undefined) this.spine.setFixedDt(opts.debugClockDt);
 
     // Wire the spine's backend.send to push routed params into the worklet.
     const send: BackendSend = (routed) => {
@@ -112,7 +158,16 @@ export class EngineApi {
     this.feedback = {
       thumbsUp: () => this.iml.feedbackUp(),
       thumbsDown: (speed = this.noiseCap, spread = this.spread_, pinMask?: Uint8Array) =>
-        this.iml.feedbackDown(speed, spread, this.spine.outputs(), pinMask),
+        // Pass the HEARD (post-pipeline, routed) vector as the disliked action —
+        // NOT the raw MLP output. In Avoid+Geometric mode the core trains toward
+        // it; a raw vector equal to the net's own output gives a zero MSE
+        // derivative (an inert cold-start). Falls back to raw if not yet routed.
+        this.iml.feedbackDown(
+          speed,
+          spread,
+          this.spine.routedOutput() ?? this.spine.outputs(),
+          pinMask,
+        ),
       drag: () => this.iml.feedbackDrag(),
       setMode: (mode) => this.iml.feedbackSetMode(mode),
       getMode: () => this.iml.feedbackGetMode(),
@@ -131,6 +186,24 @@ export class EngineApi {
       exploreState: () => this.iml.feedbackState(),
       undoDepth: () => this.iml.feedbackUndoDepth(),
       placedOutput: () => this.iml.feedbackPlacedOutput(),
+      dislikeGeometric: (heardVec?: Float32Array, lr = 0) =>
+        this.iml.feedbackDislikeGeometric(heardVec, lr),
+      storePositive: (vec?: Float32Array) => this.iml.feedbackStorePositive(vec),
+      positiveCount: () => this.iml.feedbackPositiveCount(),
+      negativeCount: () => this.iml.feedbackNegativeCount(),
+      setAvoidStyle: (style) => this.iml.feedbackSetAvoidStyle(style),
+    };
+
+    this.explore = {
+      joltPress: () => this.iml.joltPress(),
+      joltStep: () => this.iml.joltStep(),
+      joltRelease: () => this.iml.joltRelease(),
+      joltActive: () => this.iml.joltActive(),
+      joltLrScale: () => this.iml.joltLrScale(),
+      joltTickLrRamp: () => this.iml.joltTickLrRamp(),
+      setExploreIntensity: (level) => this.iml.setExploreIntensity(level),
+      exploreIntensity: () => this.iml.exploreIntensity(),
+      exploreApply: (inout) => this.iml.exploreApply(inout),
     };
 
     this.audio = {

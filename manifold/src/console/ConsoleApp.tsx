@@ -119,6 +119,10 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [soloMode, setSoloMode] = useState<SoloMode>('mask-gradients');
   const [exploring, setExploring] = useState(false);
   const [learningPaused, setLearningPaused] = useState(false);
+  // One-time cold-start prompt for geometric dislike: set when a dislike runs
+  // before any likes exist (core returns GeometricColdStart=15). Dismissed on the
+  // next like or an explicit dismiss (rl-feedback-design §7). British spelling.
+  const [coldStart, setColdStart] = useState(false);
   // Explore-and-place scratchpad session state (workstream B; rl-feedback §2.2).
   const [picking, setPicking] = useState(false);
   const [anchorCount, setAnchorCount] = useState(0);
@@ -410,6 +414,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     const c = controllerRef.current;
     setFirstSession(false);
     setBusy(true);
+    // A like teaches the system what to move away from → dismiss the cold-start prompt.
+    setColdStart(false);
     if (feedbackMode === 'explore-and-place') {
       if (c?.getState().exploring) {
         // Place the current candidate → next manifold tap chooses the location.
@@ -457,9 +463,18 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
         forwardVcvFeedback('rand');
       }
     } else {
-      // Geometric dislike: push the current mapping away from this sound.
+      // Geometric dislike: push the current mapping away from this sound. Pass the
+      // HEARD (post-pipeline, routed) vector — NOT the raw MLP output — so the
+      // core has a non-zero MSE derivative (see engine.feedback.dislikeGeometric).
       pushSnap('dislike −');
-      c?.dislike(pos, engine?.getOutputs() ?? new Float32Array(0), noiseCap, spread ? 1 : 0.6);
+      const action = c?.dislike(
+        pos,
+        engine?.routedOutput() ?? new Float32Array(0),
+        noiseCap,
+        spread ? 1 : 0.6,
+      );
+      // GeometricColdStart (15): no positives yet → show the one-time prompt.
+      if (action === 15) setColdStart(true);
       pushMarker(pos, 'negative');
       // VCV bridged mode: thumbs-down = negative verdict.
       forwardVcvFeedback('down');
@@ -1032,6 +1047,44 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             exploring={exploring}
             picking={picking}
           />
+
+          {/* Cold-start prompt (geometric dislike, no positives yet; rl-feedback
+              §7). One-time; dismissed on the next like or the dismiss button. */}
+          {coldStart && feedbackMode === 'geometric-dislike' && !exploring && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 31,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '8px 14px',
+                background: 'var(--glass)',
+                backdropFilter: 'blur(14px)',
+                WebkitBackdropFilter: 'blur(14px)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--r-pill)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--accent)',
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>
+                Like a few sounds first so the system knows what to move away from.
+              </span>
+              <button
+                type="button"
+                onClick={() => setColdStart(false)}
+                title="Dismiss"
+                style={pillBtn('var(--fg-mute)')}
+              >
+                dismiss
+              </button>
+            </div>
+          )}
 
           {/* Exploring-scratchpad banner (workstream B; rl-feedback §2.2 §7). */}
           {exploring && (

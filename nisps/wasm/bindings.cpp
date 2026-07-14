@@ -65,7 +65,9 @@
 #include "../core/types.hpp"
 #include "../ml/dynamic_storage.hpp"
 #include "../ml/feedback.hpp"
+#include "../ml/jolt.hpp"
 #include "../ml/mlp.hpp"
+#include "../ml/ou_noise.hpp"
 #include "../ml/stats.hpp"
 #include "../ml/warm_start.hpp"
 
@@ -89,12 +91,18 @@ constexpr std::size_t kDefaultOutputs   = 126u;
 constexpr std::size_t kMaxDim = 4096u;
 
 constexpr std::uint64_t kFeedbackSalt = 0xFEEDBACC0DEull;
+// Distinct salts keep the jolt/OU RNG streams independent of the MLP's and
+// the feedback controller's (mirrors the firmware ModeBase seeding).
+constexpr std::uint64_t kJoltSalt = 0xB01DFACEull;
+constexpr std::uint64_t kOUSalt   = 0x0DDBA11ull;
 
 using BrowserMLP = nisps::ml::MLPCore<nisps::ml::DynamicStorage>;
 using BrowserFeedback =
     nisps::ml::FeedbackControllerCore<nisps::ml::DynamicFeedbackStorage>;
 
 constexpr std::size_t kFeedbackUndoDepth = 4u;
+// Browser replay capacity (rl-feedback-design §4: WASM 64, firmware 32).
+constexpr std::size_t kFeedbackReplayCap = 64u;
 
 struct MlDims {
     std::size_t n_in;
@@ -145,15 +153,26 @@ struct MLHandle {
     std::array<float, BrowserMLP::kNumLayers * 4u> stats_scratch{};
     // Static-output buffer for the RandomiseOutputs bypass path.
     std::vector<float> feedback_static_scratch;
+    // Jolt (held weight morph) + OU exploration noise — the P3 gesture
+    // engines, same code the firmware ModeBase runs. Jolt operates on the
+    // flat weight buffer via jolt_scratch; OU state is over-provisioned to
+    // kMaxDim and applies to the first n_out entries.
+    nisps::ml::Jolt jolt;
+    nisps::ml::OUNoise<kMaxDim> ou;
+    std::vector<float> jolt_scratch;
     // infer_batch cap; callers must split larger requests.
     static constexpr std::size_t kMaxBatch = 4096u;
 
     MLHandle(std::uint64_t seed, const MlDims& d) noexcept
         : seed64(seed),
           mlp(seed, d.n_in, std::span<const std::size_t>(d.hidden, 3u), d.n_out),
-          feedback(seed ^ kFeedbackSalt, d.n_out, mlp.weight_count(), kFeedbackUndoDepth),
+          feedback(seed ^ kFeedbackSalt, d.n_out, mlp.weight_count(), kFeedbackUndoDepth,
+                   d.n_in, kFeedbackReplayCap),
           output_scratch(d.n_out, 0.f),
-          feedback_static_scratch(d.n_out, 0.f) {}
+          feedback_static_scratch(d.n_out, 0.f),
+          jolt(seed ^ kJoltSalt),
+          ou(seed ^ kOUSalt),
+          jolt_scratch(mlp.weight_count(), 0.f) {}
 
     bool valid() const noexcept { return mlp.valid() && feedback.valid(); }
     std::size_t n_in()  const noexcept { return mlp.n_in(); }
@@ -372,13 +391,16 @@ int nisps_ml_reshape(void* ml, int input_size, int output_size,
     nisps::ml::warm_start_copy(fresh, h->mlp);
 
     BrowserFeedback fb(h->seed64 ^ kFeedbackSalt, d.n_out, fresh.weight_count(),
-                       kFeedbackUndoDepth);
+                       kFeedbackUndoDepth, d.n_in, kFeedbackReplayCap);
     if (!fb.valid()) return 0;
 
     h->mlp      = static_cast<BrowserMLP&&>(fresh);
     h->feedback = static_cast<BrowserFeedback&&>(fb);
     h->output_scratch.assign(d.n_out, 0.f);
     h->feedback_static_scratch.assign(d.n_out, 0.f);
+    h->jolt.release();
+    h->ou.reset();
+    h->jolt_scratch.assign(h->mlp.weight_count(), 0.f);
     return 1;
 }
 
@@ -735,6 +757,132 @@ int nisps_ml_feedback_placed_output(void* ml, float* out) {
     const std::size_t n = (v.size() < h->n_out()) ? v.size() : h->n_out();
     std::memcpy(out, v.data(), n * sizeof(float));
     return 1;
+}
+
+// ---------------------------------------------------------------------------
+// ML feedback — geometric dislike (one-core-engine P3; rl-feedback-design
+// §2.1). The Avoid mode's default realisation. current_out may be null (the
+// MLP's live output is used — note the zero-derivative caveat: pass the
+// HEARD post-pipeline vector for an audible push). lr <= 0 uses the
+// controller default (1e-3, upstream).
+// ---------------------------------------------------------------------------
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_dislike_geometric(void* ml, const float* current_out, float lr) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    std::span<const float> out;
+    if (current_out) out = std::span<const float>(current_out, h->n_out());
+    const float use_lr = (lr > 0.f) ? lr : h->feedback.geo_lr();
+    return static_cast<int>(h->feedback.dislike_geometric(h->mlp, out, use_lr));
+}
+
+// Store a positive (like) into the replay memory so the k-NN centroid sees
+// it. current_out may be null (live output used). The caller still runs its
+// usual addExample + train.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_store_positive(void* ml, const float* current_out) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    std::span<const float> out;
+    if (current_out) out = std::span<const float>(current_out, h->n_out());
+    h->feedback.store_positive(h->mlp, out);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_positive_count(void* ml) {
+    if (!ml) return 0;
+    return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.positive_count());
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_negative_count(void* ml) {
+    if (!ml) return 0;
+    return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.negative_count());
+}
+
+// Avoid sub-mode: 0 = Geometric (default), 1 = Diffuse (legacy move_weights,
+// kept for A/B comparison).
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_set_avoid_style(void* ml, int style) {
+    if (!ml) return;
+    static_cast<MLHandle*>(ml)->feedback.set_avoid_style(
+        style == 1 ? nisps::ml::AvoidStyle::Diffuse : nisps::ml::AvoidStyle::Geometric);
+}
+
+// ---------------------------------------------------------------------------
+// Jolt (held weight morph) + OU exploration noise (one-core-engine P3.2) —
+// the same nisps/ml/{jolt,ou_noise}.hpp the firmware ModeBase runs.
+// ---------------------------------------------------------------------------
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_jolt_press(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    h->jolt.press(h->mlp.weight_count());
+}
+
+// One ~200 Hz morph tick while held (no-op when inactive): reads the flat
+// weights, glides the jolt-selected few, writes them back.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_jolt_step(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    if (!h->jolt.active()) return;
+    auto w = h->mlp.get_weights();
+    for (std::size_t i = 0; i < w.size(); ++i) h->jolt_scratch[i] = w[i];
+    h->jolt.step(std::span<float>(h->jolt_scratch.data(), w.size()));
+    h->mlp.set_weights(std::span<const float>(h->jolt_scratch.data(), w.size()));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_jolt_release(void* ml) {
+    if (!ml) return;
+    static_cast<MLHandle*>(ml)->jolt.release();
+}
+
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_jolt_active(void* ml) {
+    if (!ml) return 0;
+    return static_cast<MLHandle*>(ml)->jolt.active() ? 1 : 0;
+}
+
+// Post-release learning-rate ramp: multiply the training LR by this (0 while
+// held, ramps back to 1 over ~5 s of ticks).
+EMSCRIPTEN_KEEPALIVE
+float nisps_ml_jolt_lr_scale(void* ml) {
+    if (!ml) return 1.f;
+    return static_cast<MLHandle*>(ml)->jolt.lr_scale();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_jolt_tick_lr_ramp(void* ml) {
+    if (!ml) return;
+    static_cast<MLHandle*>(ml)->jolt.tick_lr_ramp();
+}
+
+// Exploration amount in [0,1]; 0 disables (inert — parity-safe).
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_explore_intensity(void* ml, float level) {
+    if (!ml) return;
+    static_cast<MLHandle*>(ml)->ou.set_intensity(level);
+}
+
+EMSCRIPTEN_KEEPALIVE
+float nisps_ml_explore_get_intensity(void* ml) {
+    if (!ml) return 0.f;
+    return static_cast<MLHandle*>(ml)->ou.intensity();
+}
+
+// Advance the OU walk and add it (clamped to [0,1]) to `inout` (n floats,
+// capped at the instance's n_out). No-op at intensity 0.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_explore_apply(void* ml, float* inout, int n) {
+    if (!ml || !inout || n <= 0) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    std::size_t count = static_cast<std::size_t>(n);
+    if (count > h->n_out()) count = h->n_out();
+    h->ou.apply(std::span<float>(inout, count));
 }
 
 EMSCRIPTEN_KEEPALIVE

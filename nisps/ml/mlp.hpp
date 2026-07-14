@@ -209,6 +209,42 @@ class MLPCore : public Storage {
         return epoch_loss;
     }
 
+    // Train ONE step toward a COMPUTED target vector (not a stored label) —
+    // the geometric-dislike hook (docs/adr/rl-feedback-design.md §4). The
+    // dataset is untouched. A negative `lr` trains AWAY from the target (the
+    // upstream cold-start fallback). `out_mask` (1 = active) zeroes the
+    // loss-derivative of inactive output dims before backprop — the solo/
+    // focus gate; empty ⇒ all active. Returns the sample loss.
+    float train_targets(std::span<const float> input,
+                        std::span<const float> target,
+                        float lr,
+                        std::span<const std::uint8_t> out_mask = {}) noexcept {
+        if (!storage_ok_()) return 0.f;
+        const std::size_t n_out = this->n_out();
+        if (input.size() < this->n_in() || target.size() < n_out) return 0.f;
+
+        forward_(input);
+
+        auto deriv = this->template eval_act_l<3u>();
+        const float loss = mse_per_sample(
+            target,
+            std::span<const float>(this->template act_l<3u>()),
+            deriv);
+        if (!out_mask.empty()) {
+            for (std::size_t j = 0; j < n_out; ++j) {
+                const bool active = (j < out_mask.size() && out_mask[j] != 0u);
+                if (!active) deriv[j] = 0.f;
+            }
+        }
+
+        backprop_(input, deriv, 1.f);
+        apply_grad_<3u>(lr);
+        apply_grad_<2u>(lr);
+        apply_grad_<1u>(lr);
+        apply_grad_<0u>(lr);
+        return loss;
+    }
+
     // ---------------------------------------------------------------
     // RL ops (concept: move_weights / draw_weights)
     // ---------------------------------------------------------------

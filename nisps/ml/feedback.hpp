@@ -51,14 +51,25 @@
 
 #include "../core/perf.hpp"
 #include "../core/rng.hpp"
+#include "geo_push.hpp"
+#include "replay.hpp"
 
 namespace nisps::ml {
 
 enum class FeedbackMode : std::uint8_t {
-    Avoid            = 0,  // down → move_weights (Gaussian perturb). No internal state.
+    Avoid            = 0,  // down → geometric push-away (or legacy Diffuse — see AvoidStyle).
     RandomiseOutputs = 1,  // down → bypass MLP, hold static random vector; re-roll each down.
     RandomiseMlp     = 2,  // down → snapshot + draw_weights live net; down-again cancels.
     ExploreAndPlace  = 3,  // Idle→Exploring→Placing→Idle scratchpad lifecycle (default product mode).
+};
+
+// How the Avoid mode realises a dislike (rl-feedback-design §2.1). Geometric
+// is the ported firmware behaviour (replay-backed k-NN centroid push-away);
+// Diffuse is the pre-P3 undirected move_weights, kept reachable as a legacy
+// sub-mode for A/B comparison.
+enum class AvoidStyle : std::uint8_t {
+    Geometric = 0,
+    Diffuse   = 1,
 };
 
 // The explicit lifecycle state for FeedbackMode::ExploreAndPlace. The whole
@@ -97,6 +108,9 @@ enum class FeedbackAction : std::uint8_t {
     BeginPlace    = 11,  // Exploring→Placing; placed_out captured + frozen (no store yet).
     CommitPlace   = 12,  // Placing→Idle; real net restored. CALLER adds +1 (input→placed_output) + trains.
     CancelPlace   = 13,  // Placing→Exploring; backed out of placing (no store).
+    // ---- Geometric dislike (append-only) ----
+    GeometricPush      = 14,  // dislike trained toward the computed push-away target.
+    GeometricColdStart = 15,  // no positives yet: negative-LR fallback ran; UI shows the cold-start prompt.
 };
 
 // ---------------------------------------------------------------------------
@@ -105,16 +119,21 @@ enum class FeedbackAction : std::uint8_t {
 // ExploreAndPlace; each undo slot is NWeights floats. WASM historically used
 // depth 4, firmware 2 (per rl-feedback-design §2.2 — SRAM budget).
 // ---------------------------------------------------------------------------
-template <std::size_t NOut, std::size_t NWeights, std::size_t UndoDepth = 4u>
+template <std::size_t NOut, std::size_t NWeights, std::size_t UndoDepth = 4u,
+          std::size_t NIn = 2u, std::size_t ReplayCap = 32u>
 class FixedFeedbackStorage {
    public:
     static constexpr std::size_t kNOut      = NOut;
     static constexpr std::size_t kWeights   = NWeights;
     static constexpr std::size_t kUndoDepth = UndoDepth;
+    static constexpr std::size_t kNIn       = NIn;
+    static constexpr std::size_t kReplayCap = ReplayCap;
 
-    static constexpr std::size_t n_out()     noexcept { return NOut; }
-    static constexpr std::size_t n_weights() noexcept { return NWeights; }
-    static constexpr std::size_t undo_cap()  noexcept { return UndoDepth; }
+    static constexpr std::size_t n_out()      noexcept { return NOut; }
+    static constexpr std::size_t n_weights()  noexcept { return NWeights; }
+    static constexpr std::size_t undo_cap()   noexcept { return UndoDepth; }
+    static constexpr std::size_t n_in()       noexcept { return NIn; }
+    static constexpr std::size_t replay_cap() noexcept { return ReplayCap; }
 
     NISPS_FORCE_INLINE std::span<float>        static_out()       noexcept { return static_out_; }
     NISPS_FORCE_INLINE std::span<const float>  static_out() const noexcept { return static_out_; }
@@ -129,6 +148,13 @@ class FixedFeedbackStorage {
     NISPS_FORCE_INLINE std::span<const float> undo_slot(std::size_t i) const noexcept {
         return undo_ring_[i];
     }
+    // Replay memory buffers (geometric dislike — nisps/ml/replay.hpp).
+    NISPS_FORCE_INLINE std::span<float> replay_inputs()  noexcept { return replay_in_; }
+    NISPS_FORCE_INLINE std::span<float> replay_actions() noexcept { return replay_act_; }
+    NISPS_FORCE_INLINE std::span<float> replay_rewards() noexcept { return replay_rew_; }
+    // Centroid + push-target scratch (n_out each).
+    NISPS_FORCE_INLINE std::span<float> centroid_buf() noexcept { return centroid_; }
+    NISPS_FORCE_INLINE std::span<float> target_buf()   noexcept { return target_; }
 
    private:
     std::array<float, NOut>         static_out_{};
@@ -137,6 +163,11 @@ class FixedFeedbackStorage {
     std::array<float, NOut>         placed_out_{};
     std::array<std::array<float, NWeights>, UndoDepth> undo_ring_{};
     std::array<float, NWeights>     scratch_buf_{};
+    std::array<float, ReplayCap * NIn>  replay_in_{};
+    std::array<float, ReplayCap * NOut> replay_act_{};
+    std::array<float, ReplayCap>        replay_rew_{};
+    std::array<float, NOut>             centroid_{};
+    std::array<float, NOut>             target_{};
 };
 
 // ---------------------------------------------------------------------------
@@ -161,6 +192,16 @@ class FeedbackControllerCore : public FbStorage {
         mode_ = m;
     }
     FeedbackMode mode() const noexcept { return mode_; }
+
+    // Avoid sub-mode: Geometric (default, the ported firmware behaviour) or
+    // Diffuse (legacy undirected move_weights — kept for A/B comparison).
+    void set_avoid_style(AvoidStyle s) noexcept { avoid_style_ = s; }
+    AvoidStyle avoid_style() const noexcept { return avoid_style_; }
+
+    // Base learning rate for the geometric push training (upstream
+    // InterfaceRL default 1e-3, pre-scaling).
+    void set_geo_lr(float lr) noexcept { geo_lr_ = lr; }
+    float geo_lr() const noexcept { return geo_lr_; }
 
     // `exploring()` is true whenever a scratchpad net is live and learning is
     // paused — for the legacy RANDOMISE_* modes, AND for ExploreAndPlace in
@@ -209,8 +250,11 @@ class FeedbackControllerCore : public FbStorage {
                            std::span<const std::uint8_t> pin_mask) noexcept {
         switch (mode_) {
             case FeedbackMode::Avoid:
-                mlp.move_weights(speed, spread, pin_mask);
-                return FeedbackAction::AvoidPerturb;
+                if (avoid_style_ == AvoidStyle::Diffuse) {
+                    mlp.move_weights(speed, spread, pin_mask);
+                    return FeedbackAction::AvoidPerturb;
+                }
+                return dislike_geometric(mlp, current_out, geo_lr_);
             case FeedbackMode::RandomiseOutputs:
                 if (!explore_active_) {
                     enter_randomise_outputs(current_out);
@@ -272,6 +316,11 @@ class FeedbackControllerCore : public FbStorage {
             restore_after_explore(mlp);
             return FeedbackAction::CommitStore;
         }
+        if (mode_ == FeedbackMode::Avoid && avoid_style_ == AvoidStyle::Geometric) {
+            // A geometric-mode like also feeds the positive centroid (ADR
+            // §2.1); the caller still runs addExample + train as usual.
+            store_positive(mlp);
+        }
         return FeedbackAction::LikeStore;
     }
 
@@ -308,6 +357,92 @@ class FeedbackControllerCore : public FbStorage {
     }
 
     void seed(std::uint64_t s) noexcept { rng_.seed(s); }
+
+    // =========================================================================
+    // Geometric dislike (rl-feedback-design §2.1) — the press-time half and
+    // the async optimise() half of upstream InterfaceRL collapsed into ONE
+    // synchronous call (nisps has no background optimise driver).
+    // =========================================================================
+
+    std::size_t replay_size() const noexcept { return replay_count_; }
+    std::size_t positive_count() noexcept { return replay_().positive_count(); }
+    std::size_t negative_count() noexcept { return replay_().negative_count(); }
+    std::size_t dislike_multiplier() const noexcept { return dislike_multiplier_; }
+
+    // Store a positive (like) into the replay so the k-NN centroid sees it.
+    // `current_out` may be empty ⇒ the MLP's live output vector is used. The
+    // input is the MLP's current input vector.
+    template <typename M>
+    void store_positive(M& mlp, std::span<const float> current_out = {}) noexcept {
+        std::span<const float> a = current_out.empty()
+            ? std::span<const float>(mlp.outputs())
+            : current_out;
+        replay_().store(1.f, std::span<const float>(mlp.input_buf()), a);
+    }
+
+    // Thumbs-down at the MLP's CURRENT input with heard action `current_out`
+    // (empty ⇒ the MLP's live outputs). Runs the full upstream sequence:
+    //   1. deepen-or-store the negative (dedup radius 0.05); double the
+    //      dislike multiplier (max 16).
+    //   2. cold start (no positives): train AWAY from the heard action at
+    //      lr * 0.1 * avgRewardNeg (negative LR — upstream fallback).
+    //   3. else: k-NN(4) positive centroid → push-away target → train toward
+    //      it at lr * negLRRatio, gated by the focus/solo mask.
+    //   4. proportional decay + eviction of expired negatives; halve the
+    //      multiplier per expiry.
+    template <typename M>
+    FeedbackAction dislike_geometric(M& mlp, std::span<const float> current_out,
+                                     float lr) noexcept {
+        auto replay = replay_();
+        const std::size_t n_out = this->n_out();
+
+        std::span<const float> a_neg = current_out.empty()
+            ? std::span<const float>(mlp.outputs())
+            : current_out;
+        std::span<const float> x_neg(mlp.input_buf());
+
+        // 1. store/deepen the negative (InterfaceRL.cpp:42-66).
+        replay.deepen_or_store_negative(x_neg, a_neg);
+        dislike_multiplier_ *= 2u;
+        if (dislike_multiplier_ > 16u) dislike_multiplier_ = 16u;
+
+        const std::size_t pos_total = replay.positive_count();
+        const std::size_t neg_total = replay.negative_count();
+        const float avg_neg = replay.avg_negative_reward();
+
+        FeedbackAction action;
+        if (pos_total == 0u) {
+            // 2. cold-start fallback (InterfaceRL.cpp:746): negative-LR
+            // training away from the heard action; no geometric push. The
+            // caller shows the "like a few sounds first" prompt.
+            mlp.train_targets(x_neg, a_neg, lr * 0.1f * avg_neg, focus_span_());
+            action = FeedbackAction::GeometricColdStart;
+        } else {
+            // 3. centroid → target → train (InterfaceRL.cpp:602-743).
+            auto mean = this->centroid_buf();
+            const std::size_t used =
+                replay.knn_positive_centroid(x_neg, kCentroidK, mean);
+            auto target = this->target_buf();
+            compute_push_target(a_neg.subspan(0, (a_neg.size() < n_out) ? a_neg.size() : n_out),
+                                std::span<const float>(mean.data(), n_out),
+                                focus_span_(), geo_push_step(avg_neg), rng_, target);
+            const float ratio = geo_neg_lr_ratio(neg_total, pos_total);
+            mlp.train_targets(x_neg, std::span<const float>(target.data(), n_out),
+                              lr * ratio, focus_span_());
+            (void)used;
+            action = FeedbackAction::GeometricPush;
+        }
+
+        // 4. decay + evict; halve the multiplier per expiry, reset when no
+        // negatives remain (InterfaceRL.cpp:752-760).
+        const std::size_t expired = replay.decay_negatives();
+        for (std::size_t i = 0; i < expired; ++i) {
+            dislike_multiplier_ = (dislike_multiplier_ > 1u) ? dislike_multiplier_ / 2u : 1u;
+        }
+        if (expired > 0u && replay.negative_count() == 0u) dislike_multiplier_ = 1u;
+
+        return action;
+    }
 
     // =========================================================================
     // ExploreAndPlace — granular lifecycle methods (firmware maps buttons to
@@ -491,6 +626,20 @@ class FeedbackControllerCore : public FbStorage {
     }
 
    private:
+    // The replay view over the storage-owned buffers.
+    ReplayView replay_() noexcept {
+        return ReplayView(this->replay_inputs(), this->replay_actions(),
+                          this->replay_rewards(), this->n_in(), this->n_out(),
+                          this->replay_cap(), replay_count_);
+    }
+
+    // The focus mask as the geometric active-dims gate (empty ⇒ all active).
+    std::span<const std::uint8_t> focus_span_() const noexcept {
+        if (focus_count_ == 0u) return {};
+        const auto focus = this->focus();
+        return focus.subspan(0, focus_count_);
+    }
+
     void capture_placed(std::span<const float> src) noexcept {
         auto placed = this->placed_out();
         const std::size_t n = (src.size() < placed.size()) ? src.size() : placed.size();
@@ -608,9 +757,15 @@ class FeedbackControllerCore : public FbStorage {
     }
 
     FeedbackMode mode_            = FeedbackMode::Avoid;
+    AvoidStyle   avoid_style_     = AvoidStyle::Geometric;
     bool         explore_active_  = false;
     bool         learning_paused_ = false;
     std::size_t  focus_count_     = 0;  // 0 ⇒ all active
+
+    // ---- Geometric dislike state ---------------------------------------------
+    std::size_t  replay_count_       = 0u;
+    std::size_t  dislike_multiplier_ = 1u;
+    float        geo_lr_             = 0.001f;  // upstream InterfaceRL.hpp:312
 
     // ---- ExploreAndPlace state ----------------------------------------------
     ExploreState ep_state_ = ExploreState::Idle;
@@ -624,8 +779,11 @@ class FeedbackControllerCore : public FbStorage {
 
 // The classic fixed-size controller over a compile-time MLP type — the
 // firmware model and the default for tests. Sizes derive from the MLP.
-template <typename MLP_T, std::size_t UndoDepth = 4u>
+// ReplayCap 32 is the firmware SRAM-budget default (rl-feedback-design §4);
+// the browser's DynamicFeedbackStorage uses 64.
+template <typename MLP_T, std::size_t UndoDepth = 4u, std::size_t ReplayCap = 32u>
 using FeedbackController = FeedbackControllerCore<
-    FixedFeedbackStorage<MLP_T::kOutput, MLP_T::weight_count(), UndoDepth>>;
+    FixedFeedbackStorage<MLP_T::kOutput, MLP_T::weight_count(), UndoDepth,
+                         MLP_T::kInput, ReplayCap>>;
 
 }  // namespace nisps::ml

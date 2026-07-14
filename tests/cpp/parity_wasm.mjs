@@ -38,7 +38,7 @@ const __dirname  = dirname(__filename);
 const repoRoot   = resolve(__dirname, '..', '..');
 
 const MAGIC   = 0x5450524e; // 'NPRT'
-const VERSION = 3; // v3 adds stage 5d (ExploreAndPlace lifecycle)
+const VERSION = 4; // v4 adds stage 6 (geometric dislike)
 
 const SEED         = 42 >>> 0;
 const INPUT_X      = 0.25;
@@ -112,6 +112,8 @@ function bind(Module) {
     feedbackLike:         cwrap('nisps_ml_feedback_like',          null,     ['number']),
     feedbackCommitPlace:  cwrap('nisps_ml_feedback_commit_place',  null,     ['number']),
     feedbackPlacedOutput: cwrap('nisps_ml_feedback_placed_output', 'number', ['number','number']),
+    feedbackPositiveCount: cwrap('nisps_ml_feedback_positive_count', 'number', ['number']),
+    feedbackNegativeCount: cwrap('nisps_ml_feedback_negative_count', 'number', ['number']),
     describe:    cwrap('nisps_ml_describe',     null,     ['number','number']),
 
     engineCreate:    cwrap('nisps_engine_create', 'number', ['string','number']),
@@ -322,6 +324,57 @@ async function main() {
     api.feedbackPlacedOutput(ml, committedBuf);
     for (const v of new Float32Array(api.HEAPF32.buffer, committedBuf, N_OUT)) feedbackFloats.push(v);
     api.free(committedBuf);
+  }
+
+  // --- Stage 6: geometric dislike (one-core-engine P3) ---
+  // Mirrors parity_check.cpp stage 6: two likes feed the replay positives via
+  // the Avoid+Geometric on_up path, then two dislikes (second deepens) train
+  // toward the computed push-away target. f32 arithmetic for the "heard"
+  // vector via Math.fround to match native float ops exactly.
+  const FB_AVOID = 0;
+  api.feedbackSetMode(ml, FB_AVOID);
+
+  const likeAt = (x, y) => {
+    api.setInput(ml, 0, x);
+    api.setInput(ml, 1, y);
+    api.process(ml);
+    api.feedbackUp(ml);  // Avoid+Geometric: store_positive + LikeStore
+  };
+  likeAt(0.2, 0.2);
+  likeAt(0.8, 0.8);
+
+  const POS_DELTA = Math.fround(0.15);
+  const dislikeAt = (x, y) => {
+    api.setInput(ml, 0, x);
+    api.setInput(ml, 1, y);
+    api.process(ml);
+    const outs = getOutputsCopy(api, ml, N_OUT);
+    const heard = new Float32Array(N_OUT);
+    for (let j = 0; j < N_OUT; j++) {
+      let v = Math.fround(outs[j] + ((j & 1) !== 0 ? -POS_DELTA : POS_DELTA));
+      if (v < 0) v = 0;
+      if (v > 1) v = 1;
+      heard[j] = v;
+    }
+    const heardBuf = api.malloc(N_OUT * 4);
+    new Float32Array(api.HEAPF32.buffer, heardBuf, N_OUT).set(heard);
+    api.feedbackDown(ml, heardBuf, 0.1, 0.5, 0);
+    api.free(heardBuf);
+  };
+  dislikeAt(0.25, 0.75);
+  dislikeAt(0.26, 0.74);  // within dedup radius: deepen + push
+
+  feedbackFloats.push(api.feedbackPositiveCount(ml));
+  feedbackFloats.push(api.feedbackNegativeCount(ml));
+
+  api.setInput(ml, 0, INPUT_X);
+  api.setInput(ml, 1, INPUT_Y);
+  api.process(ml);
+  {
+    const outs = getOutputsCopy(api, ml, N_OUT);
+    for (const v of outs) feedbackFloats.push(v);
+    const w = getWeightsCopy(api, ml);
+    for (const idx of PROBE_IDX) feedbackFloats.push(idx < w.length ? w[idx] : 0);
   }
 
   api.destroy(ml);

@@ -203,23 +203,39 @@ class DynamicFeedbackStorage {
    public:
     DynamicFeedbackStorage(std::size_t n_out,
                            std::size_t n_weights,
-                           std::size_t undo_depth = 4u) noexcept
-        : n_out_(n_out), n_weights_(n_weights), undo_cap_(undo_depth) {
-        if (n_out == 0u || n_weights == 0u || undo_depth == 0u) return;
-        // float regions: static_out, placed_out, snapshot, scratch, undo ring
+                           std::size_t undo_depth = 4u,
+                           std::size_t n_in = 2u,
+                           std::size_t replay_cap = 64u) noexcept
+        : n_out_(n_out), n_weights_(n_weights), undo_cap_(undo_depth),
+          n_in_(n_in), replay_cap_(replay_cap) {
+        if (n_out == 0u || n_weights == 0u || undo_depth == 0u ||
+            n_in == 0u || replay_cap == 0u) {
+            return;
+        }
+        // float regions: static_out, placed_out, snapshot, scratch, undo ring,
+        // replay (inputs/actions/rewards), centroid + target scratch
         // byte region: focus mask (n_out bytes, rounded up to whole floats)
         const std::size_t focus_floats = (n_out + sizeof(float) - 1u) / sizeof(float);
         const std::size_t total = n_out * 2u                 // static_out + placed_out
                                 + n_weights * 2u             // snapshot + scratch
                                 + n_weights * undo_depth     // undo ring
+                                + replay_cap * n_in          // replay inputs
+                                + replay_cap * n_out         // replay actions
+                                + replay_cap                 // replay rewards
+                                + n_out * 2u                 // centroid + target
                                 + focus_floats;
         arena_ = new (std::nothrow) float[total]();
         if (!arena_) return;
-        off_placed_  = n_out_;
-        off_snap_    = off_placed_ + n_out_;
-        off_scratch_ = off_snap_ + n_weights_;
-        off_undo_    = off_scratch_ + n_weights_;
-        off_focus_   = off_undo_ + n_weights_ * undo_cap_;
+        off_placed_    = n_out_;
+        off_snap_      = off_placed_ + n_out_;
+        off_scratch_   = off_snap_ + n_weights_;
+        off_undo_      = off_scratch_ + n_weights_;
+        off_replay_in_ = off_undo_ + n_weights_ * undo_cap_;
+        off_replay_a_  = off_replay_in_ + replay_cap_ * n_in_;
+        off_replay_r_  = off_replay_a_ + replay_cap_ * n_out_;
+        off_centroid_  = off_replay_r_ + replay_cap_;
+        off_target_    = off_centroid_ + n_out_;
+        off_focus_     = off_target_ + n_out_;
     }
 
     ~DynamicFeedbackStorage() { delete[] arena_; }
@@ -237,9 +253,11 @@ class DynamicFeedbackStorage {
 
     bool valid() const noexcept { return arena_ != nullptr; }
 
-    std::size_t n_out()     const noexcept { return n_out_; }
-    std::size_t n_weights() const noexcept { return n_weights_; }
-    std::size_t undo_cap()  const noexcept { return undo_cap_; }
+    std::size_t n_out()      const noexcept { return n_out_; }
+    std::size_t n_weights()  const noexcept { return n_weights_; }
+    std::size_t undo_cap()   const noexcept { return undo_cap_; }
+    std::size_t n_in()       const noexcept { return n_in_; }
+    std::size_t replay_cap() const noexcept { return replay_cap_; }
 
     std::span<float>       static_out()       noexcept { return {arena_, n_out_}; }
     std::span<const float> static_out() const noexcept { return {arena_, n_out_}; }
@@ -254,6 +272,11 @@ class DynamicFeedbackStorage {
     std::span<const float> undo_slot(std::size_t i) const noexcept {
         return {arena_ + off_undo_ + i * n_weights_, n_weights_};
     }
+    std::span<float> replay_inputs()  noexcept { return {arena_ + off_replay_in_, replay_cap_ * n_in_}; }
+    std::span<float> replay_actions() noexcept { return {arena_ + off_replay_a_, replay_cap_ * n_out_}; }
+    std::span<float> replay_rewards() noexcept { return {arena_ + off_replay_r_, replay_cap_}; }
+    std::span<float> centroid_buf()   noexcept { return {arena_ + off_centroid_, n_out_}; }
+    std::span<float> target_buf()     noexcept { return {arena_ + off_target_, n_out_}; }
     std::span<std::uint8_t> focus() noexcept {
         return {reinterpret_cast<std::uint8_t*>(arena_ + off_focus_), n_out_};
     }
@@ -264,15 +287,21 @@ class DynamicFeedbackStorage {
    private:
     void move_from_(DynamicFeedbackStorage& o) noexcept {
         n_out_ = o.n_out_; n_weights_ = o.n_weights_; undo_cap_ = o.undo_cap_;
+        n_in_ = o.n_in_; replay_cap_ = o.replay_cap_;
         off_placed_ = o.off_placed_; off_snap_ = o.off_snap_;
         off_scratch_ = o.off_scratch_; off_undo_ = o.off_undo_; off_focus_ = o.off_focus_;
+        off_replay_in_ = o.off_replay_in_; off_replay_a_ = o.off_replay_a_;
+        off_replay_r_ = o.off_replay_r_; off_centroid_ = o.off_centroid_;
+        off_target_ = o.off_target_;
         arena_ = o.arena_;
         o.arena_ = nullptr;
     }
 
-    std::size_t n_out_ = 0u, n_weights_ = 0u, undo_cap_ = 0u;
+    std::size_t n_out_ = 0u, n_weights_ = 0u, undo_cap_ = 0u, n_in_ = 0u, replay_cap_ = 0u;
     std::size_t off_placed_ = 0u, off_snap_ = 0u, off_scratch_ = 0u,
-                off_undo_ = 0u, off_focus_ = 0u;
+                off_undo_ = 0u, off_focus_ = 0u, off_replay_in_ = 0u,
+                off_replay_a_ = 0u, off_replay_r_ = 0u, off_centroid_ = 0u,
+                off_target_ = 0u;
     float*      arena_ = nullptr;
 };
 

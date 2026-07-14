@@ -83,7 +83,7 @@ constexpr std::array<std::size_t, 12u> kProbeIdx = {
 };
 
 constexpr std::uint32_t kMagic   = 0x5450524Eu;  // 'NPRT'
-constexpr std::uint32_t kVersion = 3u;  // v3 adds stage 5d (ExploreAndPlace lifecycle)
+constexpr std::uint32_t kVersion = 4u;  // v4 adds stage 6 (geometric dislike)
 
 // Must match the salt in nisps/wasm/bindings.cpp MLHandle so the controller's
 // static-output RNG stream is identical native ↔ WASM.
@@ -269,6 +269,58 @@ int main(int argc, char** argv) {
             for (std::size_t idx : kProbeIdx) payload.push_back(idx < w.size() ? w[idx] : 0.f);
             const auto v = fb.committed_output();
             for (std::size_t i = 0; i < 126u; ++i) payload.push_back(i < v.size() ? v[i] : 0.f);
+        }
+
+        // ---- Stage 6: geometric dislike (one-core-engine P3) ----
+        // Scripted feedback session — likes at two corners feed the replay
+        // positives (via the Avoid+Geometric on_up path), then two dislikes at
+        // a probed input: the first stores the negative and trains toward the
+        // computed push-away target; the second deepens and pushes again. The
+        // weight trajectory must match native↔WASM within 1e-5 (the useRandom
+        // branch never fires here; the controller Rng is untouched).
+        fb.set_mode(nisps::ml::FeedbackMode::Avoid, mlp);
+
+        auto like_at = [&](float x, float y) {
+            mlp.set_input(0u, x);
+            mlp.set_input(1u, y);
+            mlp.process();
+            fb.on_up(mlp);  // Avoid+Geometric: store_positive + LikeStore
+        };
+        like_at(0.2f, 0.2f);
+        like_at(0.8f, 0.8f);
+
+        auto dislike_at = [&](float x, float y) {
+            mlp.set_input(0u, x);
+            mlp.set_input(1u, y);
+            mlp.process();
+            // The "heard" vector deliberately differs from the raw output
+            // (the browser passes the post-pipeline vector) so the push
+            // trains meaningfully. f32 arithmetic mirrored in parity_wasm.mjs
+            // via Math.fround.
+            std::array<float, 126u> heard{};
+            const auto outs = mlp.outputs();
+            for (std::size_t j = 0; j < 126u; ++j) {
+                float v = outs[j] + (((j & 1u) != 0u) ? -0.15f : 0.15f);
+                if (v < 0.f) v = 0.f;
+                if (v > 1.f) v = 1.f;
+                heard[j] = v;
+            }
+            fb.on_down(mlp, heard, 0.1f, 0.5f, no_mask);
+        };
+        dislike_at(0.25f, 0.75f);
+        dislike_at(0.26f, 0.74f);  // within dedup radius → deepen + push
+
+        payload.push_back(static_cast<float>(fb.positive_count()));
+        payload.push_back(static_cast<float>(fb.negative_count()));
+
+        mlp.set_input(0u, kInputX);
+        mlp.set_input(1u, kInputY);
+        mlp.process();
+        {
+            const auto outs = mlp.outputs();
+            push_floats(payload, std::span<const float>(outs.data(), 126u));
+            const auto w = mlp.get_weights();
+            for (std::size_t idx : kProbeIdx) payload.push_back(idx < w.size() ? w[idx] : 0.f);
         }
     }
 

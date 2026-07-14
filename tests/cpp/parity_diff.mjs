@@ -16,7 +16,7 @@
 import { readFile } from 'node:fs/promises';
 
 const MAGIC   = 0x5450524e;
-const VERSION = 3;
+const VERSION = 4; // v4 adds stage 6 (geometric dislike)
 const DEFAULT_TOL = 1e-5;
 
 // Layout for context in error messages — must match parity_check.cpp / parity_wasm.mjs.

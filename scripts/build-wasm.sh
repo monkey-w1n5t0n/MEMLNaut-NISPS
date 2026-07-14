@@ -47,6 +47,12 @@ EXPORTED_FUNCS='[
   "_nisps_ml_feedback_like","_nisps_ml_feedback_commit_place","_nisps_ml_feedback_cancel_place",
   "_nisps_ml_feedback_placing","_nisps_ml_feedback_state","_nisps_ml_feedback_undo_depth",
   "_nisps_ml_feedback_placed_output",
+  "_nisps_ml_feedback_dislike_geometric","_nisps_ml_feedback_store_positive",
+  "_nisps_ml_feedback_positive_count","_nisps_ml_feedback_negative_count",
+  "_nisps_ml_feedback_set_avoid_style",
+  "_nisps_ml_jolt_press","_nisps_ml_jolt_step","_nisps_ml_jolt_release",
+  "_nisps_ml_jolt_active","_nisps_ml_jolt_lr_scale","_nisps_ml_jolt_tick_lr_ramp",
+  "_nisps_ml_explore_intensity","_nisps_ml_explore_get_intensity","_nisps_ml_explore_apply",
   "_nisps_ml_get_layer_stats","_nisps_ml_describe",
   "_nisps_engine_create","_nisps_engine_destroy",
   "_nisps_engine_set_params","_nisps_engine_process_block"

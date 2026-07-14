@@ -57,6 +57,10 @@ NISPS_TEST(feedback_avoid_routes_to_move_weights) {
     SmallMLP m(99ull);
     m.draw_weights(0.5f);
     FB fb(7ull);  // default mode is Avoid
+    // Since one-core-engine P3 the Avoid default is the GEOMETRIC push
+    // (rl-feedback-design §2.1); the undirected move_weights survives as the
+    // legacy Diffuse sub-mode, pinned here.
+    fb.set_avoid_style(nisps::ml::AvoidStyle::Diffuse);
 
     const auto before = snapshot_weights(m);
     const FeedbackAction a = fb.on_down(m, kNoOut, 0.1f, 0.5f, kNoMask);

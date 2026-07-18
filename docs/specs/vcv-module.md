@@ -174,9 +174,19 @@ The architecture is **fixed at compile time**; no runtime reconfiguration of inp
 
 ### Core Library Integration
 
-The MLP uses a **runtime-shaped IML** (not the fixed-size WASM template). Point the build at the current `../nisps/` (not the retired `nisps-core`) and either:
-1. Reuse `nisps/ml/mlp.hpp` and compile with `MLP<8, 24, 32, 16, 16>` type, or
-2. Vendor a minimal self-contained 8→16 IML in `vcv/src/`, ensuring it shares the firmware/browser training semantics (spread-aware `DrawWeights`/`MoveWeights`, deterministic RNG). If templated-API constraints block option 1, option 2 is acceptable with a note of alignment as a follow-up.
+**Delta #5 CLOSED (2026-07-18, one-core-engine-refactor P6).** The module no longer
+vendors its own MLP. `vcv/src/iml.hpp` is now a THIN, Rack-free adapter over the shared
+core: `nisps::ml::MLPCore<nisps::ml::DynamicStorage>` (the runtime-shaped branch of the one
+core MLP — fixed 4-layer ReLU×3 + Sigmoid topology, three runtime hidden sizes) with the
+module's real `[16, 24, 16]` shape, `nisps::Rng` (nisps/core/rng.hpp) replacing the vendored
+`DetRng`, and the core MLP's own FIFO dataset replacing the vendored `Dataset`. The adapter
+includes only nisps headers + the standard library (no Rack includes) so the host ctest can
+compile it. Behaviour therefore **changed** from the vendored *approximation* of firmware/
+browser training semantics to **core-exact**: weight init, RL `move_weights`, SGD training,
+activations and RNG are now bit-identical to the firmware/WASM engine — pinned by
+`tests/cpp/test_vcv_iml_parity.cpp` (adapter == bare `MLPCore<DynamicStorage>`, memcmp-equal).
+Persisted weights are now the core's FLAT `[weights…][biases…]` vector (patch `version` = 3);
+old 3D vendored weight blobs will not load.
 
 ### Spread Parameter
 

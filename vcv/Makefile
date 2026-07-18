@@ -11,8 +11,9 @@ endif
 
 FLAGS += -std=c++20
 FLAGS += -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include
-# The retired nisps-core header tree is gone; the runtime IML/MLP is vendored
-# self-contained in src/iml.hpp (see that file's header for the rationale).
+# src/iml.hpp is a THIN adapter over the shared C++ core: it pulls in
+# nisps/ml/{mlp,dynamic_storage}.hpp + nisps/core/rng.hpp via relative includes
+# (../../nisps/…), so no extra -I for the core is needed here (P6, 2026-07-18).
 FLAGS += -Isrc
 
 SOURCES += src/plugin.cpp

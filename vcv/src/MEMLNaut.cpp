@@ -82,12 +82,12 @@ struct MEMLNaut : Module {
     nisps::IML<float> iml{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
     nisps::IML<float> imlShadow{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
 
-    // Worker → Audio: staged weights ready for swap
-    nisps::MLP<float>::mlp_weights pendingWeights;
+    // Worker → Audio: staged weights ready for swap (core-exact flat layout)
+    nisps::IML<float>::Weights pendingWeights;
     std::atomic<bool> weightsPending{false};
 
     // Audio → Worker: staged weight snapshot for the worker to start from
-    nisps::MLP<float>::mlp_weights stagedWeightsForWorker;
+    nisps::IML<float>::Weights stagedWeightsForWorker;
     std::vector<std::vector<float>> stagedFeatures;
     std::vector<std::vector<float>> stagedLabels;
     std::mutex stagingMutex;
@@ -624,7 +624,7 @@ struct MEMLNaut : Module {
     // ── Serialization ─────────────────────────────────────────────────
     json_t* dataToJson() override {
         json_t* root = json_object();
-        json_object_set_new(root, "version", json_integer(2));
+        json_object_set_new(root, "version", json_integer(3));
         json_object_set_new(root, "inputCount", json_integer(NUM_ML_INPUTS));
         json_object_set_new(root, "outputCount", json_integer(NUM_ML_OUTPUTS));
         json_object_set_new(root, "noiseLevel", json_real(noiseLevel));
@@ -643,17 +643,10 @@ struct MEMLNaut : Module {
             json_array_append_new(inRanges, json_boolean(inputRangeUnipolar[i]));
         json_object_set_new(root, "inputRangeUnipolar", inRanges);
 
+        // Core-exact FLAT weight vector: [layer0_w … layer3_w][layer0_b … layer3_b].
         auto weights = iml.get_weights();
         json_t* jWeights = json_array();
-        for (auto& layer : weights) {
-            json_t* jLayer = json_array();
-            for (auto& node : layer) {
-                json_t* jNode = json_array();
-                for (float w : node) json_array_append_new(jNode, json_real(w));
-                json_array_append_new(jLayer, jNode);
-            }
-            json_array_append_new(jWeights, jLayer);
-        }
+        for (float w : weights) json_array_append_new(jWeights, json_real(w));
         json_object_set_new(root, "weights", jWeights);
 
         auto features = iml.get_example_features();
@@ -675,9 +668,11 @@ struct MEMLNaut : Module {
         json_object_set_new(jExamples, "labels", jLabels);
         json_object_set_new(root, "examples", jExamples);
 
+        // Core topology: explicit biases (no trailing bias node), so the layer
+        // node counts are [n_in, 16, 24, 16, n_out].
         json_t* jConfig = json_object();
         json_t* jLayers = json_array();
-        json_array_append_new(jLayers, json_integer(NUM_ML_INPUTS + 1)); // + bias
+        json_array_append_new(jLayers, json_integer(NUM_ML_INPUTS));
         for (int h : {16, 24, 16}) json_array_append_new(jLayers, json_integer(h));
         json_array_append_new(jLayers, json_integer(NUM_ML_OUTPUTS));
         json_object_set_new(jConfig, "layers", jLayers);
@@ -707,21 +702,15 @@ struct MEMLNaut : Module {
             for (int i = 0; i < MAX_ML_INPUTS && i < (int)json_array_size(inRanges); i++)
                 inputRangeUnipolar[i] = json_boolean_value(json_array_get(inRanges, i));
 
+        // Core-exact FLAT weight vector (patch version ≥ 3). Old 3D weight
+        // blobs from the vendored model are a different shape and are ignored
+        // by set_weights (size guard) — see iml.hpp header.
         json_t* jWeights = json_object_get(root, "weights");
         if (jWeights && json_is_array(jWeights)) {
-            nisps::MLP<float>::mlp_weights weights;
-            for (size_t li = 0; li < json_array_size(jWeights); li++) {
-                json_t* jLayer = json_array_get(jWeights, li);
-                std::vector<std::vector<float>> layer;
-                for (size_t ni = 0; ni < json_array_size(jLayer); ni++) {
-                    json_t* jNode = json_array_get(jLayer, ni);
-                    std::vector<float> node;
-                    for (size_t wi = 0; wi < json_array_size(jNode); wi++)
-                        node.push_back(json_real_value(json_array_get(jNode, wi)));
-                    layer.push_back(node);
-                }
-                weights.push_back(layer);
-            }
+            nisps::IML<float>::Weights weights;
+            weights.reserve(json_array_size(jWeights));
+            for (size_t wi = 0; wi < json_array_size(jWeights); wi++)
+                weights.push_back(json_real_value(json_array_get(jWeights, wi)));
             iml.set_weights(weights);
         }
 

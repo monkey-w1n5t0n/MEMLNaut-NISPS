@@ -86,11 +86,13 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   `tests/pipeline-golden.test.ts` (in `bun run test`). `manifold/osc-bridge/` — Deno WS↔UDP-OSC bridge.
 
 ### `vcv/` — VCV Rack 2 plugin (MEMLNaut module, WIP)
-Native C++ Rack module: ML CV-mapper with RL feedback + a browser bridge. Currently 2→12 (being evolved to
-**8 inputs × 16 outputs + per-output LED rings**, palette from the frontend tokens, WS↔OSC browser bridge — see
-the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNaut.cpp` (module), `src/osc_server.hpp` (bridge),
-`src/plugin.{hpp,cpp}`, `res/*.svg` (panels), `Makefile` (needs `RACK_DIR`). Was built against the retired
-`nisps-core`; the core include path is being repointed.
+Native C++ Rack module: ML CV-mapper with RL feedback + a browser bridge. **8 inputs × 16 outputs + per-output
+LED rings**, palette from the frontend tokens, WS↔OSC browser bridge (see `docs/specs/vcv-module.md`).
+`src/MEMLNaut.cpp` (module, 8→[16,24,16]→16), `src/iml.hpp` (**thin adapter over `nisps::ml::MLPCore<DynamicStorage>`
++ core `nisps::Rng`** — P6 reunification 2026-07-18, closes vcv-module.md delta #5; behaviour is now core-exact,
+pinned by `tests/cpp/test_vcv_iml_parity.cpp`), `src/osc_server.hpp` (bridge, transport-only), `src/plugin.{hpp,cpp}`,
+`res/*.svg` (panels), `Makefile` (needs `RACK_DIR`). Builds against the current `../nisps/` core via relative
+includes; no `nisps-core`.
 
 ### `schemas/` — JSON parameter contracts (firmware/browser source of truth)
 - `schemas/schema.json` — Draft 2020-12 meta-schema validating mode files.

@@ -1,17 +1,14 @@
 #!/usr/bin/env bun
 /**
  * Golden test: re-runs codegen and asserts that the freshly-generated
- * paf_synth_schema.hpp is byte-identical to the snapshot in
- * codegen/tests/golden/.
- *
- * (The TS golden case was removed with the playground target at P1 of
- * docs/specs/plans/one-core-engine-refactor.md; it returns in P5 against
- * manifold/src/modes/generated/. The golden/paf_synth_schema.ts snapshot is
- * kept as the P5 template reference.)
+ * paf_synth_schema.{hpp,ts} files are byte-identical to the snapshots in
+ * codegen/tests/golden/. (The TS target moved playground → manifold at P5
+ * of docs/specs/plans/one-core-engine-refactor.md.)
  *
  * If you change the codegen template intentionally, regenerate the goldens:
  *   bun run generate.ts
  *   cp ../nisps/modes/generated/paf_synth_schema.hpp tests/golden/
+ *   cp ../manifold/src/modes/generated/paf_synth_schema.ts tests/golden/
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -34,6 +31,11 @@ const CASES: Case[] = [
     name: "paf_synth_schema.hpp",
     generatedPath: join(REPO_ROOT, "nisps", "modes", "generated", "paf_synth_schema.hpp"),
     goldenPath: join(GOLDEN_DIR, "paf_synth_schema.hpp"),
+  },
+  {
+    name: "paf_synth_schema.ts",
+    generatedPath: join(REPO_ROOT, "manifold", "src", "modes", "generated", "paf_synth_schema.ts"),
+    goldenPath: join(GOLDEN_DIR, "paf_synth_schema.ts"),
   },
 ];
 

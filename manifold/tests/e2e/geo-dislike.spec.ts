@@ -10,9 +10,10 @@
  */
 import { test, expect } from '@playwright/test';
 import { loadProbe, settleInputs, countChanged, allWithin } from './helpers';
+import { PafSynthSchema } from '../../src/modes/generated';
 
-// Fixed by the WASM build (`nisps/wasm/bindings.cpp`: MLP<32,10,14,18,126>).
-const N_OUTPUTS = 126;
+// The boot mode is paf_synth; the heard vector must match its output arity.
+const N_OUTPUTS = PafSynthSchema.ml.output_size; // 33
 // A heard vector deliberately distinct from any plausible net output.
 const HEARD = new Array(N_OUTPUTS).fill(0.9);
 

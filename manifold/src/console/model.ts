@@ -1,6 +1,15 @@
 /**
- * Console — shared instrument model: the static modes catalogue + per-param
- * shaping helpers. Ported from the window-global `model.jsx`.
+ * Console — shared instrument model: the modes catalogue + per-param shaping
+ * helpers.
+ *
+ * SOURCE OF TRUTH (one-core-engine P5.2): the schema-backed modes are DERIVED
+ * from the codegen-produced schemas in `src/modes/generated/` — real param
+ * names, groups, count, and each mode's `ml` config + `engine_id` come from
+ * schema truth, never hand-written. A thin manifold-side OVERLAY supplies only
+ * the display concerns a schema has no opinion on: label, glyph, ModeClass,
+ * input kind, and ordering. Two manifold-only modes with no schema
+ * (`visualizer`, `c15` placeholder) stay hand-written and use the default net
+ * shape.
  *
  * KEY CHANGE vs the JSX reference: the pseudo-inference `MF_infer` (sin/cos
  * placeholder) and the `useInstrument` hook are GONE. The `values` every
@@ -13,10 +22,50 @@
  * internal mode id).
  */
 
+import type { ModeSchema } from '../modes/generated/types';
+import {
+  BreakorSchema,
+  ChannelStripSchema,
+  ElysiamorfSchema,
+  MemlceliumSchema,
+  PafSynthSchema,
+  SlpWorkshopSchema,
+  SoundAnalysisMidiSchema,
+  VerbFxSchema,
+  XiasriSchema,
+} from '../modes/generated';
+
 export type ParamStatus = 'off' | 'fixed' | 'live';
-export type ParamGroup = 'formant' | 'pitch' | 'amp' | 'filter' | 'fx' | 'mod';
+/**
+ * Param GROUP. Historically a small hand-picked union; now the group is the raw
+ * schema string (`'operators'`, `'envelope'`, `'kick'`, …) so the type is just
+ * `string`. Unknown groups fall back to the accent colour in the GROUP_COLOR
+ * maps that key off this field.
+ */
+export type ParamGroup = string;
 export type ModeClass = 'Synth' | 'Sequencer' | 'Controller' | 'Visual';
 export type ModeInput = 'xy' | 'joystick' | 'audio_in';
+
+/**
+ * A mode's net shape — the engine dims the runtime-shaped WASM MLP is reshaped
+ * to when this mode is active (one-core-engine P5.3). Schema-backed modes carry
+ * their schema's `ml`; the manifold-only modes carry the default net shape.
+ */
+export interface ModeML {
+  inputSize: number;
+  outputSize: number;
+  hidden: [number, number, number];
+  /** Spread used when (re)drawing the net's weights on reshape. */
+  defaultSpread: number;
+}
+
+/** The compiled default over-provisioned net (32→[10,14,18]→126). */
+export const DEFAULT_MODE_ML: ModeML = {
+  inputSize: 32,
+  outputSize: 126,
+  hidden: [10, 14, 18],
+  defaultSpread: 0.6,
+};
 
 /**
  * Per-output control row — the unified store used by both the stage
@@ -35,6 +84,17 @@ export interface MFParam {
   min: number;
   max: number;
   curve: number;
+  /**
+   * Schema ENGINE-unit metadata (display/tooltips only — NOT the routing range).
+   * `min`/`max`/`curve`/`val` above stay the 0..1 routing-knob semantics; these
+   * carry the schema's real engine range, default, human label, and curve name
+   * for the disliked param so the UI can show what an output actually drives.
+   */
+  schemaMin?: number;
+  schemaMax?: number;
+  schemaDefault?: number;
+  schemaLabel?: string;
+  schemaCurve?: string;
   /** Downstream silence — still computed + visible (distinct from `off`). */
   muted?: boolean;
   /** Solo / arm — focus training on this output (dock-spec §1.2). */
@@ -56,6 +116,18 @@ export interface MFMode {
   glyph: string;
   input: ModeInput;
   params: MFParam[];
+  /**
+   * The net shape this mode drives (one-core-engine P5.3). Reshaped into the
+   * engine on mode switch. Schema-backed modes carry their schema's `ml`; the
+   * manifold-only modes carry {@link DEFAULT_MODE_ML}.
+   */
+  ml: ModeML;
+  /**
+   * The schema's `engine_id` (audio-engine metadata). NOTE: audio backend
+   * SELECTION still routes through {@link modeEngineId}, which is unchanged —
+   * this field is the schema-truth annotation, not the routing decision.
+   */
+  engineId: string;
   placeholder?: boolean;
   badge?: string;
 }
@@ -72,103 +144,110 @@ function mkParams(spec: Spec): MFParam[] {
   return out;
 }
 
-export const MF_MODES: MFMode[] = [
+/** Derive a mode's net shape from its schema `ml` config. */
+function mlFromSchema(schema: ModeSchema): ModeML {
+  const h = schema.ml.hidden_layers;
+  return {
+    inputSize: schema.ml.input_size,
+    outputSize: schema.ml.output_size,
+    hidden: [h[0] ?? 10, h[1] ?? 14, h[2] ?? 18],
+    defaultSpread: schema.ml.default_spread,
+  };
+}
+
+/**
+ * Build the manifold param rows from a schema's params. The param NAME + GROUP
+ * are schema truth; the routing knobs (status/val/min/max/curve) keep their
+ * manifold defaults (0..1 routing range) — schema min/max/default/label/curve
+ * are surfaced as ENGINE-unit metadata for display only.
+ */
+function paramsFromSchema(schema: ModeSchema): MFParam[] {
+  return schema.params.map((p) => ({
+    name: p.name,
+    group: p.group,
+    status: 'live' as ParamStatus,
+    val: 0.5,
+    min: 0,
+    max: 1,
+    curve: 0.5,
+    schemaMin: p.min,
+    schemaMax: p.max,
+    schemaDefault: p.default,
+    schemaLabel: p.label,
+    schemaCurve: p.curve,
+  }));
+}
+
+/**
+ * Manifold-side display OVERLAY for a schema-backed mode — the only fields a
+ * schema has no opinion on. Everything else (params, ml, engineId) is derived.
+ */
+interface ModeOverlay {
+  label: string;
+  glyph: string;
+  cls: ModeClass;
+  input: ModeInput;
+  badge?: string;
+}
+
+/**
+ * ORDERED list of schema-backed modes: `{ schema, overlay }`. Order here is the
+ * catalogue order. `xiasri` + `slp_workshop` are new browser-viable entries
+ * (they have schemas but weren't in the hand-written catalogue). The overlay is
+ * hand-picked display; the params/ml/engine_id come from the schema.
+ */
+const SCHEMA_MODES: ReadonlyArray<{ schema: ModeSchema; overlay: ModeOverlay }> = [
+  { schema: PafSynthSchema, overlay: { label: 'PAF Synth', glyph: '∿', cls: 'Synth', input: 'xy' } },
   {
-    id: 'paf_synth',
-    label: 'PAF Synth',
-    cls: 'Synth',
-    glyph: '∿',
-    input: 'xy',
-    params: mkParams([
-      ['formant', ['F1', 'F2', 'F3', 'tilt', 'spread', 'skirt']],
-      ['pitch', ['root', 'glide', 'detune']],
-      ['amp', ['gain', 'attack', 'decay']],
-      ['filter', ['cutoff', 'res', 'env']],
-      ['fx', ['drive', 'air', 'width']],
-    ]),
+    schema: ChannelStripSchema,
+    overlay: { label: 'Channel Strip', glyph: '▤', cls: 'Synth', input: 'joystick' },
+  },
+  { schema: VerbFxSchema, overlay: { label: 'Verb FX', glyph: '◞', cls: 'Synth', input: 'joystick' } },
+  { schema: ElysiamorfSchema, overlay: { label: 'Elysiamorf', glyph: '❋', cls: 'Synth', input: 'xy' } },
+  {
+    schema: MemlceliumSchema,
+    overlay: { label: 'MEML Celium', glyph: '☷', cls: 'Sequencer', input: 'xy' },
+  },
+  { schema: BreakorSchema, overlay: { label: 'Breakor', glyph: '⊟', cls: 'Sequencer', input: 'joystick' } },
+  { schema: XiasriSchema, overlay: { label: 'Xiasri', glyph: '✴', cls: 'Synth', input: 'joystick' } },
+  {
+    schema: SlpWorkshopSchema,
+    overlay: { label: 'SLP Workshop', glyph: '☷', cls: 'Sequencer', input: 'xy' },
   },
   {
-    id: 'channel_strip',
-    label: 'Channel Strip',
-    cls: 'Synth',
-    glyph: '▤',
-    input: 'joystick',
-    params: mkParams([
-      ['filter', ['lo', 'loMid', 'hiMid', 'hi']],
-      ['amp', ['comp', 'gate', 'makeup']],
-      ['fx', ['sat', 'width', 'glue', 'tilt', 'air']],
-    ]),
+    schema: SoundAnalysisMidiSchema,
+    overlay: { label: 'Sound Analysis → MIDI', glyph: '⇉', cls: 'Controller', input: 'audio_in' },
   },
-  {
-    id: 'verb_fx',
-    label: 'Verb FX',
-    cls: 'Synth',
-    glyph: '◞',
-    input: 'joystick',
-    params: mkParams([
-      ['fx', ['size', 'decay', 'damp', 'diff']],
-      ['mod', ['rate', 'depth']],
-      ['filter', ['lo', 'hi']],
-    ]),
-  },
-  {
-    id: 'elysiamorf',
-    label: 'Elysiamorf',
-    cls: 'Synth',
-    glyph: '❋',
-    input: 'xy',
-    params: mkParams([
-      ['formant', ['grain', 'size', 'pos', 'spray']],
-      ['mod', ['rate', 'depth', 'jitter']],
-      ['amp', ['gain', 'env']],
-      ['filter', ['cutoff', 'res']],
-      ['fx', ['blur', 'shimmer', 'freeze', 'width']],
-    ]),
-  },
-  {
-    id: 'memlcelium',
-    label: 'MEML Celium',
-    cls: 'Sequencer',
-    glyph: '☷',
-    input: 'xy',
-    params: mkParams([
-      ['mod', ['cvA', 'cvB', 'gate', 'div']],
-      ['pitch', ['root', 'scale', 'oct']],
-      ['amp', ['vca', 'slew']],
-    ]),
-  },
-  {
-    id: 'breakor',
-    label: 'Breakor',
-    cls: 'Sequencer',
-    glyph: '⊟',
-    input: 'joystick',
-    params: mkParams([
-      ['mod', ['density', 'swing', 'fill', 'stutter']],
-      ['amp', ['punch', 'decay']],
-      ['filter', ['tone', 'crush']],
-      ['fx', ['glitch', 'rev']],
-    ]),
-  },
-  {
-    id: 'sound_analysis_midi',
-    label: 'Sound Analysis → MIDI',
-    cls: 'Controller',
-    glyph: '⇉',
-    input: 'audio_in',
-    badge: '1-input',
-    params: mkParams([
-      ['mod', ['cc1', 'cc2', 'cc3', 'cc4']],
-      ['pitch', ['note', 'bend']],
-      ['amp', ['vel', 'press']],
-    ]),
-  },
+];
+
+function modeFromSchema(schema: ModeSchema, overlay: ModeOverlay): MFMode {
+  return {
+    id: schema.mode_id,
+    label: overlay.label,
+    cls: overlay.cls,
+    glyph: overlay.glyph,
+    input: overlay.input,
+    badge: overlay.badge,
+    params: paramsFromSchema(schema),
+    ml: mlFromSchema(schema),
+    engineId: schema.engine_id,
+  };
+}
+
+/**
+ * Manifold-only modes with NO schema — hand-written params on the DEFAULT net
+ * shape. `visualizer` is a pure browser visual; `c15` is the "Powerful Synth
+ * Engine" placeholder (id stays `c15`; the string "C15" must never surface).
+ */
+const MANIFOLD_ONLY_MODES: MFMode[] = [
   {
     id: 'visualizer',
     label: 'Visualizer',
     cls: 'Visual',
     glyph: '◑',
     input: 'xy',
+    ml: DEFAULT_MODE_ML,
+    engineId: 'thru',
     params: mkParams([
       ['mod', ['hue', 'sat', 'flow', 'warp']],
       ['amp', ['bloom', 'fade']],
@@ -184,8 +263,15 @@ export const MF_MODES: MFMode[] = [
     input: 'xy',
     placeholder: true,
     badge: 'soon',
+    ml: DEFAULT_MODE_ML,
+    engineId: 'thru',
     params: mkParams([['amp', ['a', 'b']]]),
   },
+];
+
+export const MF_MODES: MFMode[] = [
+  ...SCHEMA_MODES.map(({ schema, overlay }) => modeFromSchema(schema, overlay)),
+  ...MANIFOLD_ONLY_MODES,
 ];
 
 /** Mirrors the engine's `applyCurve` (≈0.43 ≈ linear). */
@@ -201,7 +287,10 @@ export function applyCurve(v: number, c: number): number {
  *   fixed → p.val (held static)
  *   live  → engine output[i], shaped by min/max/curve
  *
- * The engine output is 126-dim; a mode with N params uses the first N.
+ * The engine output vector is now per-mode-sized (the net is reshaped to the
+ * mode's schema `ml.output_size` on switch), so a mode with N params maps 1:1
+ * onto its own N outputs; the `i < engineOut.length` guard keeps it safe during
+ * the async reshape window.
  */
 export function shapeValues(params: MFParam[], engineOut: Float32Array | null): number[] {
   return params.map((p, i) => {
@@ -229,9 +318,10 @@ export function seededGradient(rev: number): {
   return { norms, status };
 }
 
-/** Map a mode's `input` kind → the engine backend id to drive audio. */
+/** Map a mode id → the audio-engine backend id. Mode ids align with engine ids
+ *  except `slp_workshop` (runs the memlcelium engine), the analysis controller,
+ *  and the relabelled `c15`. */
 export function modeEngineId(modeId: string): string {
-  // Mode ids align with engine ids except the relabelled `c15`.
   switch (modeId) {
     case 'paf_synth':
     case 'channel_strip':
@@ -239,7 +329,10 @@ export function modeEngineId(modeId: string): string {
     case 'elysiamorf':
     case 'memlcelium':
     case 'breakor':
+    case 'xiasri':
       return modeId;
+    case 'slp_workshop':
+      return 'memlcelium';
     case 'sound_analysis_midi':
       return 'analysis';
     default:

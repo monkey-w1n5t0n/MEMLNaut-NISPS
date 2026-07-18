@@ -49,7 +49,7 @@ Pick A. Update perf.hpp + every `nisps/` use site.
 
 ### Q1: Per-mode MLP architectures or one shared shape? (2026-04-29)
 
-Schemas currently declare per-mode `hidden_layers` (some `[10, 10, 14]`, some `[10, 14, 18]`). Browser is fixed at one shape; firmware compiles per-mode. This works for now. Is the mission served by maintaining per-mode shapes (research diversity) or by collapsing to one (simpler ops)?
+Schemas declare per-mode `input_size`/`hidden_layers`/`output_size` (some hidden `[10, 10, 14]`, some `[10, 14, 18]`; inputs 4 or 10; outputs 24–56). As of P5.3 BOTH targets honour them: firmware compiles per-mode, and the browser now reshapes the runtime-shaped WASM net to the active mode's `ml` config on mode switch (was fixed at one 32→126 shape). This works for now. Is the mission served by maintaining per-mode shapes (research diversity) or by collapsing to one (simpler ops)?
 
 ### Q2: How to express "advanced" features (gradient flow, weight health) without cluttering modes? (2026-04-29)
 

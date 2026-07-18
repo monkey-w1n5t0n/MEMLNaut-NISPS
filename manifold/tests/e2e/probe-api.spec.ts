@@ -6,8 +6,9 @@
  * every probe accessor must return the documented shape and never throw.
  *
  * Adaptations vs. the playground original:
- *   - Manifold's WASM net is `MLP<32,10,14,18,126>` (playground was `<2,...>`),
- *     so `getWeights()` has 3148 elements, not 2848 (derivation below).
+ *   - Manifold's net is runtime-shaped and (since P5.3) boots at the BOOT MODE's
+ *     schema `ml` config, so dims + weight count are derived from the imported
+ *     schema, never hard-coded.
  *   - No `probe.__init()` / no `mlStore.iml` poke-through: Manifold's probe
  *     exposes `addExample()` and `routedOutputs()` directly, so the training
  *     tests drive the real public surface instead of an escape hatch.
@@ -16,15 +17,13 @@
  *     genuine failure, not a pending-stream skip.
  */
 import { test, expect } from '@playwright/test';
-import { loadProbe, getOutputs, countChanged, allWithin } from './helpers';
+import { loadProbe, getOutputs, countChanged, allWithin, weightCountFromMl } from './helpers';
+import { PafSynthSchema } from '../../src/modes/generated';
 
-// Fixed by the WASM build (`nisps/wasm/bindings.cpp`: MLP<32,10,14,18,126>).
-const N_OUTPUTS = 126;
-// weight_count = 32*10 + 10*14 + 14*18 + 18*126  (weights)
-//              + 10 + 14 + 18 + 126              (biases)
-//              = 320 + 140 + 252 + 2268 + 168 = 3148
-const WEIGHT_COUNT = 3148;
-// DefaultMLP::kNumLayers (4) * 4 stats per layer.
+// The boot mode is paf_synth; all dims derive from its schema `ml` config.
+const N_OUTPUTS = PafSynthSchema.ml.output_size; // 33
+const WEIGHT_COUNT = weightCountFromMl(PafSynthSchema.ml); // 4→[10,10,14]→33 = 809
+// 4 layers (3 hidden + output) * 4 stats per layer.
 const LAYER_STATS = 16;
 
 const EXAMPLE_LOW = { input: [0.1, 0.9], output: new Array(N_OUTPUTS).fill(0.1) };

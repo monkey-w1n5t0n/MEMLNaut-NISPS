@@ -98,4 +98,21 @@ export function allWithin(xs: number[], lo = 0, hi = 1, tol = 1e-6): boolean {
   return true;
 }
 
+/**
+ * The MLP weight count implied by an ml config — sum over consecutive layers of
+ * `(prev + 1) * next` (the +1 is the per-layer bias), matching nisps'
+ * `weight_count()`. Layers = `[input_size, ...hidden_layers, output_size]`.
+ * E.g. the default 32→[10,14,18]→126 head = 3148; paf_synth 4→[10,10,14]→33 = 809.
+ */
+export function weightCountFromMl(ml: {
+  readonly input_size: number;
+  readonly hidden_layers: readonly number[];
+  readonly output_size: number;
+}): number {
+  const layers = [ml.input_size, ...ml.hidden_layers, ml.output_size];
+  let total = 0;
+  for (let i = 0; i < layers.length - 1; i++) total += (layers[i]! + 1) * layers[i + 1]!;
+  return total;
+}
+
 export type Probe = DebugProbe;

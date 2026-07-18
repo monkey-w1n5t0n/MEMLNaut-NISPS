@@ -82,7 +82,7 @@ Build: `scripts/build-firmware.sh [VARIANT]`. Verified compiling for PAFSynth, C
 manifold/                    # Vite + React + TypeScript (the sole browser app)
 ├── src/
 │   ├── engine/              # framework-neutral TS engine spine: wasm-iml, engine-host + worklet,
-│   │                        # input/output pipelines + curves (move into core at P4), spine.ts, EngineProvider
+│   │                        # thin WASM wrappers over nisps/pipeline + the curve catalog (P4), spine.ts, EngineProvider
 │   ├── primitives/          # 12 design primitives as typed React
 │   ├── console/             # convertible Console (CompositeStage, Dock, Drawers, Manifold canvas, …)
 │   ├── dock/, backends/, inputs/, feedback/, settings/, serial/, midi-devices/

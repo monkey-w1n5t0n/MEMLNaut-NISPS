@@ -79,6 +79,8 @@ The original a-immersive was mobile-first ("designed for touch / foldable phone 
 
 ## Recently resolved (delete after a few weeks)
 
+- 2026-07-18: Browser curve maths unified onto the canonical `nisps/core/math.hpp` catalog at P4. The retired TS mirror had silently divergent maths for `exp`/`log` (k=4 vs the C++ k=1-normalised pair), `sigmoid` (slope 8 vs 6) and `cubic` (smoothstep vs x³) — browser-shaped params now behave firmware-exact. `linear/square/sqrt/centred-power` were already identical; the four changed curves were re-baselined in `manifold/tests/fixtures/curves-golden.json`.
+
 - 2026-07-14: Defect "WASM MLP architecture is fixed" resolved by one-core-engine P2: `nisps/ml/` is storage-policied (`MLPCore<Storage>`); the browser MLP is runtime-shaped (`DynamicStorage`), `nisps_ml_create` honours dims, `nisps_ml_reshape` warm-starts. Firmware keeps the zero-heap fixed template (`.text` +0.30%, within contract).
 
 - 2026-04-29: Three-implementation ML duplication (firmware `memlp`, `nisps-core`, JS engine) collapsed to single `nisps/` C++ codebase.

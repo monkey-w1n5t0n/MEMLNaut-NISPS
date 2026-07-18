@@ -150,19 +150,21 @@ Each phase ends green on its test gate and is independently landable. File phase
   `10c3e55c`: the explore/place wiring is linker-GC'd out of the PAFSynth ELF (pre-existing, discovered
   during P3; the gestures are dead code on that build until fixed).
 
-### P4 — Input/output pipelines + curves into core (≈3 days)
+### P4 — Input/output pipelines + curves into core (≈3 days) — ✅ landed 2026-07-18
 
-- New `nisps/pipeline/`: input chain and output chain as plain structs satisfying the perf contract
-  (usable per-sample on firmware if ever wanted; per-pointer-event in browser — JS↔WASM call cost is
-  trivial at that rate).
-- Curves: single catalog in `nisps/core/math.hpp` (already canonical); bindings expose
-  `nisps_curve_apply(id, x)` and batch variant; TS `curves.ts` (both copies) deleted, UI curve *previews*
-  render by sampling the WASM.
-- Manifold `input-pipeline.ts` / `output-pipeline.ts` become thin calls into the main-thread WASM instance
-  (state lives C++-side, per-instance, serialisable for persistence).
-- Golden TS-vs-C++ tests retire; replaced by direct use.
-- **Gate:** spine e2e unchanged; recorded-gesture regression: same pointer trace → same routed output
-  pre/post migration (capture fixture before starting).
+- ✅ New `nisps/pipeline/`: `input_chain.hpp` + `output_chain.hpp` (capacity-templated), perf-contract
+  structs, caller-supplied dt with an internal clock (no wall time — deterministic), serialisable state.
+- ✅ Curves: `nisps/core/math.hpp` is the single catalog (+ parameterised `centered_power`); bindings expose
+  `nisps_curve_apply(id, x, param)` + batch. TS `curves.ts` deleted. NOTE: the TS mirror's `exp/log/
+  sigmoid/cubic` maths silently diverged from the canonical catalog — the browser now behaves
+  firmware-exact (re-baselined in `curves-golden.json` with a provenance note; ALIGNMENT entry).
+- ✅ Manifold pipelines are thin WASM calls (one `nisps_pipeline_create` handle per WasmIML; state C++-side;
+  config stays TS-side and is pushed over the 15-float wire layout).
+- ✅ Golden TS-vs-C++ tests retired → the fixture suite drives the WASM directly.
+- **Gate met:** spine e2e unchanged (27 e2e green); recorded-gesture regression against the P1 pre-migration
+  fixtures passes — non-momentum configs at ≤5e-7, momentum configs at 1e-2 with the drift PROVEN inherent
+  f32-vs-f64 (a byte-faithful f32 reference reproduces the WASM to <6e-8; documented in the test + fixtures
+  README). Parity stage 7 (v5): native↔WASM pipeline/curve floats bit-identical.
 
 ### P5 — Schema/codegen serves manifold (≈2 days)
 

@@ -63,6 +63,7 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mlp_geo_dislike.cpp
         ${NISPS_TEST_DIR}/test_mlp_serialize.cpp
         ${NISPS_TEST_DIR}/test_pipeline.cpp
+        ${NISPS_TEST_DIR}/test_vcv_iml_parity.cpp
     )
     target_link_libraries(nisps_core_tests PRIVATE nisps_core)
 

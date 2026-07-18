@@ -166,15 +166,18 @@ Each phase ends green on its test gate and is independently landable. File phase
   f32-vs-f64 (a byte-faithful f32 reference reproduces the WASM to <6e-8; documented in the test + fixtures
   README). Parity stage 7 (v5): native↔WASM pipeline/curve floats bit-identical.
 
-### P5 — Schema/codegen serves manifold (≈2 days)
+### P5 — Schema/codegen serves manifold (≈2 days) — ✅ landed 2026-07-18
 
-- `codegen/generate.ts` emits `manifold/src/modes/generated/` alongside the C++ headers (playground target
-  removed in P1). `MF_MODES` in `console/model.ts` is derived from generated schemas, not hand-written —
-  labels/ordering may stay a manifold-side overlay, but params/ranges/ml-config come from schema truth.
-- With P2's dynamic MLP, per-mode `ml.input_size/output_size/hidden` in schemas becomes *real* in the
-  browser; codegen gains a check that firmware modes still fit the fixed template.
-- **Gate:** codegen idempotence golden test extended to manifold output; e2e per-mode param count/range
-  assertions driven from schema.
+- ✅ `codegen/generate.ts` emits `manifold/src/modes/generated/` alongside the C++ headers. `MF_MODES` is
+  derived from the generated schemas (real param names/groups/counts + per-mode `ml` config + `engine_id`);
+  labels/glyphs/class/ordering stay a manifold overlay; `xiasri` + `slp_workshop` join the browser catalog;
+  schema-less `visualizer`/`c15` remain hand-written overlays on the default shape.
+- ✅ Per-mode `ml.input_size/output_size/hidden` is REAL in the browser: mode switch reshapes the runtime
+  MLP to the schema config (boot mode paf_synth runs 4→[10,10,14]→33, not the old fixed 32→126). Codegen
+  gained the firmware-fit check (exactly 3 hidden layers; dims ≤4096).
+- **Gate met:** codegen idempotence golden covers both languages and runs in `run-all-tests.sh` stage 5;
+  `schema-modes.spec.ts` asserts dims/weight-count/param-count FROM the imported schemas for 4 modes; the
+  existing shape-assuming specs were re-derived from schema constants. 33 e2e green.
 
 ### P6 — VCV reunification (later; may slip)
 

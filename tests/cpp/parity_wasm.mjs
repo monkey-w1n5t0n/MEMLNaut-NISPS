@@ -38,7 +38,7 @@ const __dirname  = dirname(__filename);
 const repoRoot   = resolve(__dirname, '..', '..');
 
 const MAGIC   = 0x5450524e; // 'NPRT'
-const VERSION = 4; // v4 adds stage 6 (geometric dislike)
+const VERSION = 5; // v5 adds stage 7 (pipelines + curves)
 
 const SEED         = 42 >>> 0;
 const INPUT_X      = 0.25;
@@ -115,6 +115,15 @@ function bind(Module) {
     feedbackPositiveCount: cwrap('nisps_ml_feedback_positive_count', 'number', ['number']),
     feedbackNegativeCount: cwrap('nisps_ml_feedback_negative_count', 'number', ['number']),
     describe:    cwrap('nisps_ml_describe',     null,     ['number','number']),
+
+    pipelineCreate:  cwrap('nisps_pipeline_create',  'number', []),
+    pipelineDestroy: cwrap('nisps_pipeline_destroy', null,     ['number']),
+    inputSetConfig:  cwrap('nisps_input_set_config', null,     ['number','number','number']),
+    inputProcess:    cwrap('nisps_input_process',    'number', ['number','number','number','number','number']),
+    outputSetConfig: cwrap('nisps_output_set_config', null,    ['number','number','number','number','number']),
+    outputSetFreezeMask: cwrap('nisps_output_set_freeze_mask', null, ['number','number','number']),
+    outputProcess:   cwrap('nisps_output_process',   null,     ['number','number','number','number']),
+    curveApply:      cwrap('nisps_curve_apply',      'number', ['number','number','number']),
 
     engineCreate:    cwrap('nisps_engine_create', 'number', ['string','number']),
     engineDestroy:   cwrap('nisps_engine_destroy', null, ['number']),
@@ -379,6 +388,78 @@ async function main() {
 
   api.destroy(ml);
 
+  // --- Stage 7: pipelines + curves (one-core-engine P4) ---
+  // Mirrors parity_check.cpp stage 7: rational traces (bit-exact across the
+  // JS/C++ boundary) through the input chain, output chain, and curve
+  // catalog via the C ABI.
+  const pipelineFloats = [];
+  {
+    const outXY = api.malloc(8);
+    const cfgBuf = api.malloc(15 * 4);
+
+    // Input-config wire layout (see bindings.cpp): [zoom, zoomX, zoomY,
+    // anchorX, anchorY, anchorMode, deadzone, inputCurve, curveX, curveY,
+    // smoothing, momentumMode, velocityWindowS, invertX, invertY]
+    const runInput = (cfg) => {
+      const p = api.pipelineCreate();
+      new Float32Array(api.HEAPF32.buffer, cfgBuf, 15).set(cfg);
+      api.inputSetConfig(p, cfgBuf, 15);
+      const dt = Math.fround(1 / 120);
+      for (let i = 0; i < 120; i++) {
+        const x = Math.fround(((i * 37) % 97) / 96);
+        const y = Math.fround(((i * 53 + 11) % 89) / 88);
+        api.inputProcess(p, x, y, dt, outXY);
+        if (i % 10 === 9) {
+          const v = new Float32Array(api.HEAPF32.buffer, outXY, 2);
+          pipelineFloats.push(v[0], v[1]);
+        }
+      }
+      api.pipelineDestroy(p);
+    };
+    const defIn = [1, 0, 0, 0.5, 0.5, 2, 0, 1, 0, 0, 0, 0, 0.15, 0, 0];
+    runInput(defIn);
+    runInput([0.7, 0, 0, 0.5, 0.5, 2, 0.1, 1.8, 0, 0, 0.6, 2, 0.15, 1, 0]);
+
+    const N16 = 16;
+    const vecBuf = api.malloc(N16 * 4);
+    const maskBuf = api.malloc(N16);
+    const runOutput = (curve, smoothing, slew, withMask) => {
+      const p = api.pipelineCreate();
+      api.outputSetConfig(p, curve, smoothing, slew, 0);
+      if (withMask) {
+        const m = new Uint8Array(api.HEAPF32.buffer, maskBuf, N16);
+        for (let j = 0; j < N16; j++) m[j] = j % 2 === 0 ? 1 : 0;
+        api.outputSetFreezeMask(p, maskBuf, N16);
+      }
+      const dt = Math.fround(1 / 60);
+      for (let i = 0; i < 60; i++) {
+        const vec = new Float32Array(api.HEAPF32.buffer, vecBuf, N16);
+        for (let j = 0; j < N16; j++) {
+          vec[j] = Math.fround(((i * 13 + j * 29) % 101) / 100);
+        }
+        api.outputProcess(p, vecBuf, N16, dt);
+        if (i % 15 === 14) {
+          const out = new Float32Array(api.HEAPF32.buffer, vecBuf, N16);
+          for (let j = 0; j < N16; j++) pipelineFloats.push(out[j]);
+        }
+      }
+      api.pipelineDestroy(p);
+    };
+    runOutput(1, 0, 0, false);          // defaults (slew 0 = unlimited)
+    runOutput(2.2, 0.5, 2.0, true);
+
+    for (let id = 0; id <= 7; id++) {
+      for (let i = 0; i <= 16; i++) {
+        pipelineFloats.push(api.curveApply(id, Math.fround(i / 16), 1.7));
+      }
+    }
+
+    api.free(outXY);
+    api.free(cfgBuf);
+    api.free(vecBuf);
+    api.free(maskBuf);
+  }
+
   // --- Build payload, write blob ---
   const payload = [];
   for (const v of outsStage1)  payload.push(v);
@@ -388,6 +469,7 @@ async function main() {
   payload.push(pafL, pafR);
   payload.push(csL,  csR);
   for (const v of feedbackFloats) payload.push(v);
+  for (const v of pipelineFloats) payload.push(v);
 
   // Sanity: all finite.
   for (let i = 0; i < payload.length; ++i) {

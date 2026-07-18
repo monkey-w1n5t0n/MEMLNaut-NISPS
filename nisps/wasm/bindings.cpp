@@ -62,6 +62,7 @@
 #include "../engines/xiasri.hpp"
 
 // ML.
+#include "../core/math.hpp"
 #include "../core/types.hpp"
 #include "../ml/dynamic_storage.hpp"
 #include "../ml/feedback.hpp"
@@ -70,6 +71,10 @@
 #include "../ml/ou_noise.hpp"
 #include "../ml/stats.hpp"
 #include "../ml/warm_start.hpp"
+
+// Pipelines (one-core-engine P4).
+#include "../pipeline/input_chain.hpp"
+#include "../pipeline/output_chain.hpp"
 
 namespace {
 
@@ -177,6 +182,17 @@ struct MLHandle {
     bool valid() const noexcept { return mlp.valid() && feedback.valid(); }
     std::size_t n_in()  const noexcept { return mlp.n_in(); }
     std::size_t n_out() const noexcept { return mlp.n_out(); }
+};
+
+// ---------------------------------------------------------------------------
+// Pipeline side (one-core-engine P4): the input/output processing chains,
+// state C++-side per handle. The output chain is capacity-templated; the
+// browser instantiates the kMaxDim cap.
+// ---------------------------------------------------------------------------
+
+struct PipelineHandle {
+    nisps::pipeline::InputChain            input;
+    nisps::pipeline::OutputChain<kMaxDim>  output;
 };
 
 // ---------------------------------------------------------------------------
@@ -944,6 +960,164 @@ void nisps_ml_describe(void* ml, int* out_dims) {
     out_dims[3] = static_cast<int>(h->mlp.fan_out(2u));
     out_dims[4] = static_cast<int>(h->mlp.n_out());
     out_dims[5] = static_cast<int>(BrowserMLP::kNumLayers);
+}
+
+// ---------------------------------------------------------------------------
+// Pipelines (one-core-engine P4). Input chain: the 2-axis pad pipeline.
+// Output chain: curve → EMA → slew → freeze over the routed vector. State
+// lives C++-side per handle; the TS wrappers are thin.
+//
+// INPUT CONFIG WIRE LAYOUT (nisps_input_set_config, 15 floats — keep in
+// lockstep with manifold/src/engine wrappers):
+//   [0] zoom            [1] zoomX (0=null)   [2] zoomY (0=null)
+//   [3] anchorX         [4] anchorY          [5] anchorMode (0 auto/1 sticky/2 centre)
+//   [6] deadzone        [7] inputCurve       [8] curveX (0=null)
+//   [9] curveY (0=null) [10] smoothing       [11] momentumMode (0 off/1 gentle/2 strong)
+//   [12] velocityWindow (SECONDS)            [13] invertX (!=0)  [14] invertY (!=0)
+// ---------------------------------------------------------------------------
+
+EMSCRIPTEN_KEEPALIVE
+void* nisps_pipeline_create(void) {
+    return static_cast<void*>(new PipelineHandle());
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_pipeline_destroy(void* p) {
+    if (!p) return;
+    delete static_cast<PipelineHandle*>(p);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_input_set_config(void* p, const float* cfg, int n) {
+    if (!p || !cfg || n < 15) return;
+    auto* h = static_cast<PipelineHandle*>(p);
+    nisps::pipeline::InputChainConfig c;
+    c.zoom        = cfg[0];
+    c.zoom_x      = cfg[1];
+    c.zoom_y      = cfg[2];
+    c.anchor_x    = cfg[3];
+    c.anchor_y    = cfg[4];
+    c.anchor_mode = static_cast<nisps::pipeline::AnchorMode>(
+        static_cast<int>(cfg[5]) == 1 ? 1 : (static_cast<int>(cfg[5]) == 2 ? 2 : 0));
+    c.deadzone    = cfg[6];
+    c.input_curve = cfg[7];
+    c.curve_x     = cfg[8];
+    c.curve_y     = cfg[9];
+    c.smoothing   = cfg[10];
+    c.momentum_mode = static_cast<nisps::pipeline::MomentumMode>(
+        static_cast<int>(cfg[11]) == 1 ? 1 : (static_cast<int>(cfg[11]) == 2 ? 2 : 0));
+    c.velocity_window_s = cfg[12];
+    c.invert_x    = cfg[13] != 0.f;
+    c.invert_y    = cfg[14] != 0.f;
+    h->input.set_config(c);
+}
+
+// Returns 1 when the chain is frozen (both axes at the freeze threshold).
+EMSCRIPTEN_KEEPALIVE
+int nisps_input_process(void* p, float x, float y, float dt_s, float* out_xy) {
+    if (!p || !out_xy) return 0;
+    auto* h = static_cast<PipelineHandle*>(p);
+    const auto r = h->input.process(x, y, dt_s);
+    out_xy[0] = r.x;
+    out_xy[1] = r.y;
+    return r.frozen ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_input_reset(void* p) {
+    if (!p) return;
+    static_cast<PipelineHandle*>(p)->input.reset();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_output_set_config(void* p, float global_curve, float smoothing,
+                             float slew_rate, int freeze) {
+    if (!p) return;
+    auto* h = static_cast<PipelineHandle*>(p);
+    nisps::pipeline::OutputChainConfig c;
+    c.global_curve  = global_curve;
+    c.smoothing     = smoothing;
+    c.slew_rate     = slew_rate;  // <= 0 ⇒ unlimited (the TS Infinity default)
+    c.freeze_output = freeze != 0;
+    h->output.set_config(c);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_output_set_freeze_mask(void* p, const uint8_t* mask, int n) {
+    if (!p) return;
+    auto* h = static_cast<PipelineHandle*>(p);
+    if (!mask || n <= 0) {
+        h->output.clear_freeze_mask();
+        return;
+    }
+    h->output.set_freeze_mask(
+        std::span<const std::uint8_t>(mask, static_cast<std::size_t>(n)));
+}
+
+// In-place: processes the first n floats of `inout`.
+EMSCRIPTEN_KEEPALIVE
+void nisps_output_process(void* p, float* inout, int n, float dt_s) {
+    if (!p || !inout || n <= 0) return;
+    auto* h = static_cast<PipelineHandle*>(p);
+    const std::size_t count = static_cast<std::size_t>(n);
+    h->output.process(std::span<const float>(inout, count),
+                      std::span<float>(inout, count), dt_s);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_output_reset(void* p) {
+    if (!p) return;
+    static_cast<PipelineHandle*>(p)->output.reset();
+}
+
+// Persistence: [input state (3)] + [output state (1 + 2*count)].
+EMSCRIPTEN_KEEPALIVE
+int nisps_pipeline_state_size(void* p) {
+    if (!p) return 0;
+    auto* h = static_cast<PipelineHandle*>(p);
+    return static_cast<int>(h->input.state_size() + h->output.state_size());
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_pipeline_save_state(void* p, float* out) {
+    if (!p || !out) return;
+    auto* h = static_cast<PipelineHandle*>(p);
+    const std::size_t in_n = h->input.state_size();
+    h->input.save_state(std::span<float>(out, in_n));
+    h->output.save_state(std::span<float>(out + in_n, h->output.state_size()));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_pipeline_load_state(void* p, const float* in, int n) {
+    if (!p || !in || n <= 0) return;
+    auto* h = static_cast<PipelineHandle*>(p);
+    const std::size_t in_n = h->input.state_size();
+    const std::size_t total = static_cast<std::size_t>(n);
+    if (total < in_n) return;
+    h->input.load_state(std::span<const float>(in, in_n));
+    h->output.load_state(std::span<const float>(in + in_n, total - in_n));
+}
+
+// ---------------------------------------------------------------------------
+// Curve catalog (one-core-engine P4): nisps/core/math.hpp is the single
+// source of truth; the browser samples it instead of mirroring the maths.
+// ids 0..6 = nisps::Curve (param ignored); id 7 = centred power (param =
+// exponent). UI curve previews render by sampling the batch call.
+// ---------------------------------------------------------------------------
+
+EMSCRIPTEN_KEEPALIVE
+float nisps_curve_apply(int id, float x, float param) {
+    if (id == 7) return nisps::centered_power(x, param);
+    if (id < 0 || id > 6) return x;
+    return nisps::apply_curve(static_cast<nisps::Curve>(id), nisps::clamp01(x));
+}
+
+EMSCRIPTEN_KEEPALIVE
+void nisps_curve_apply_batch(int id, const float* xs, float* out, int n, float param) {
+    if (!xs || !out || n <= 0) return;
+    for (int i = 0; i < n; ++i) {
+        out[i] = nisps_curve_apply(id, xs[i], param);
+    }
 }
 
 // ---------------------------------------------------------------------------

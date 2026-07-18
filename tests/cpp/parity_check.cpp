@@ -55,10 +55,13 @@
 #include <string>
 #include <vector>
 
+#include "../../nisps/core/math.hpp"
 #include "../../nisps/engines/channel_strip.hpp"
 #include "../../nisps/engines/paf_synth.hpp"
 #include "../../nisps/ml/feedback.hpp"
 #include "../../nisps/ml/mlp.hpp"
+#include "../../nisps/pipeline/input_chain.hpp"
+#include "../../nisps/pipeline/output_chain.hpp"
 
 namespace {
 
@@ -83,7 +86,7 @@ constexpr std::array<std::size_t, 12u> kProbeIdx = {
 };
 
 constexpr std::uint32_t kMagic   = 0x5450524Eu;  // 'NPRT'
-constexpr std::uint32_t kVersion = 4u;  // v4 adds stage 6 (geometric dislike)
+constexpr std::uint32_t kVersion = 5u;  // v5 adds stage 7 (pipelines + curves)
 
 // Must match the salt in nisps/wasm/bindings.cpp MLHandle so the controller's
 // static-output RNG stream is identical native ↔ WASM.
@@ -321,6 +324,85 @@ int main(int argc, char** argv) {
             push_floats(payload, std::span<const float>(outs.data(), 126u));
             const auto w = mlp.get_weights();
             for (std::size_t idx : kProbeIdx) payload.push_back(idx < w.size() ? w[idx] : 0.f);
+        }
+    }
+
+    // ---- Stage 7: pipelines + curves (one-core-engine P4) ----
+    // Deterministic rational traces (no transcendentals crossing the JS/C++
+    // boundary) through the input chain (2 configs), the output chain
+    // (2 configs), and the curve catalog. parity_wasm.mjs drives the same
+    // sequences through the C ABI.
+    {
+        // -- input chain: default config, then a loaded config --
+        auto run_input = [&payload](const nisps::pipeline::InputChainConfig& cfg) {
+            nisps::pipeline::InputChain ch;
+            ch.set_config(cfg);
+            const float dt = 1.f / 120.f;
+            for (int i = 0; i < 120; ++i) {
+                const float x = static_cast<float>((i * 37) % 97) / 96.f;
+                const float y = static_cast<float>((i * 53 + 11) % 89) / 88.f;
+                const auto r = ch.process(x, y, dt);
+                if (i % 10 == 9) {
+                    payload.push_back(r.x);
+                    payload.push_back(r.y);
+                }
+            }
+        };
+        run_input(nisps::pipeline::InputChainConfig{});
+        {
+            nisps::pipeline::InputChainConfig c;
+            c.zoom = 0.7f;
+            c.deadzone = 0.1f;
+            c.input_curve = 1.8f;
+            c.smoothing = 0.6f;
+            c.momentum_mode = nisps::pipeline::MomentumMode::Strong;
+            c.invert_x = true;
+            run_input(c);
+        }
+
+        // -- output chain: default, then loaded config with a freeze mask --
+        auto run_output = [&payload](const nisps::pipeline::OutputChainConfig& cfg,
+                                     bool with_mask) {
+            nisps::pipeline::OutputChain<16u> ch;
+            ch.set_config(cfg);
+            if (with_mask) {
+                std::uint8_t mask[16u];
+                for (std::size_t j = 0; j < 16u; ++j) {
+                    mask[j] = (j % 2u == 0u) ? 1u : 0u;
+                }
+                ch.set_freeze_mask(mask);
+            }
+            const float dt = 1.f / 60.f;
+            float vec[16u];
+            float out[16u];
+            for (int i = 0; i < 60; ++i) {
+                for (std::size_t j = 0; j < 16u; ++j) {
+                    vec[j] = static_cast<float>((i * 13 + static_cast<int>(j) * 29) % 101) / 100.f;
+                }
+                ch.process(std::span<const float>(vec), std::span<float>(out), dt);
+                if (i % 15 == 14) {
+                    for (std::size_t j = 0; j < 16u; ++j) payload.push_back(out[j]);
+                }
+            }
+        };
+        run_output(nisps::pipeline::OutputChainConfig{}, false);
+        {
+            nisps::pipeline::OutputChainConfig c;
+            c.global_curve = 2.2f;
+            c.smoothing = 0.5f;
+            c.slew_rate = 2.0f;
+            run_output(c, true);
+        }
+
+        // -- curve catalog: ids 0..6 (enum) + centred power (param 1.7) --
+        for (int id = 0; id <= 7; ++id) {
+            for (int i = 0; i <= 16; ++i) {
+                const float x = static_cast<float>(i) / 16.f;
+                const float v = (id == 7)
+                    ? nisps::centered_power(x, 1.7f)
+                    : nisps::apply_curve(static_cast<nisps::Curve>(id), x);
+                payload.push_back(v);
+            }
         }
     }
 

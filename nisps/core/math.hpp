@@ -105,4 +105,21 @@ inline float apply_curve(Curve c, float x) noexcept {
     return x;  // unreachable, silences -Wreturn-type
 }
 
+// Centred power curve — pivots around 0.5 instead of 0 (from the legacy
+// input/output pipelines; both nisps/pipeline chains use it):
+//   exponent < 1 → push toward the extremes
+//   exponent = 1 → identity
+//   exponent > 1 → pull toward the centre
+// Parameterised, so it lives beside the Curve enum rather than inside it
+// (schema param curves don't carry a parameter).
+inline float centered_power(float x, float exponent) noexcept {
+    if (exponent == 1.f) return clamp01(x);
+    const float offset = x - 0.5f;
+    const float sign   = (offset < 0.f) ? -1.f : 1.f;
+    // Range [-0.5, 0.5] → [-1, 1] for the power op, then halve back.
+    const float shaped =
+        sign * std::pow(std::fabs(offset) * 2.f, exponent) * 0.5f;
+    return clamp01(shaped + 0.5f);
+}
+
 }  // namespace nisps

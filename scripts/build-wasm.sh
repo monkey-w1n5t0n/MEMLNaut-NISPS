@@ -53,6 +53,12 @@ EXPORTED_FUNCS='[
   "_nisps_ml_jolt_press","_nisps_ml_jolt_step","_nisps_ml_jolt_release",
   "_nisps_ml_jolt_active","_nisps_ml_jolt_lr_scale","_nisps_ml_jolt_tick_lr_ramp",
   "_nisps_ml_explore_intensity","_nisps_ml_explore_get_intensity","_nisps_ml_explore_apply",
+  "_nisps_pipeline_create","_nisps_pipeline_destroy",
+  "_nisps_input_set_config","_nisps_input_process","_nisps_input_reset",
+  "_nisps_output_set_config","_nisps_output_set_freeze_mask",
+  "_nisps_output_process","_nisps_output_reset",
+  "_nisps_pipeline_state_size","_nisps_pipeline_save_state","_nisps_pipeline_load_state",
+  "_nisps_curve_apply","_nisps_curve_apply_batch",
   "_nisps_ml_get_layer_stats","_nisps_ml_describe",
   "_nisps_engine_create","_nisps_engine_destroy",
   "_nisps_engine_set_params","_nisps_engine_process_block"

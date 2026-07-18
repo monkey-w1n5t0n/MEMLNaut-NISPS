@@ -6,9 +6,9 @@
  * which recomputes on Solid's reactive graph. In React we must NOT couple the
  * per-frame audio inference to the render scheduler. So the spine is a tiny
  * hand-rolled observable: the `setInput` ACTION derives processed → ml → routed
- * EAGERLY + SYNCHRONOUSLY (input pipeline → WasmIML.processInto → output
- * pipeline) and fires the single `backend.send` at the action TAIL, off React's
- * render cycle.
+ * EAGERLY + SYNCHRONOUSLY (WasmIML.processInput → processInto → processOutput,
+ * all C++/WASM chains since one-core-engine P4) and fires the single
+ * `backend.send` at the action TAIL, off React's render cycle.
  *
  * React subscribes via `useSyncExternalStore(subscribe, version)` — the version
  * counter, NOT the array — and reads the live `Float32Array` imperatively (so
@@ -20,18 +20,10 @@
 
 import {
   defaultInputConfig,
-  defaultInputState,
-  processInput,
-  type InputConfig,
-  type InputState,
-} from './input-pipeline';
-import {
   defaultOutputConfig,
-  defaultOutputState,
-  processOutput,
+  type InputConfig,
   type OutputConfig,
-  type OutputState,
-} from './output-pipeline';
+} from './pipeline-types';
 import type { EngineSink, EngineStatePatch } from './sink';
 import type { WasmIML } from './wasm-iml';
 
@@ -83,11 +75,13 @@ export class Spine implements EngineSink {
   private iml: WasmIML | null = null;
   private backendSend: BackendSend | null = null;
 
-  // Pipeline config + per-frame state.
-  inputConfig: InputConfig = defaultInputConfig();
-  outputConfig: OutputConfig = { ...defaultOutputConfig(), reuseBuffer: true };
-  private inputState: InputState = defaultInputState();
-  private outputState: OutputState = defaultOutputState();
+  // Pipeline config (source of truth on the TS side). The PROCESSING + per-frame
+  // state live C++-side per pipeline handle (one-core-engine P4); the spine
+  // forwards config into the WASM wrappers via {@link setInputConfig} /
+  // {@link setOutputConfig} and drives the chains each tick. Reads default until
+  // a UI control sets them.
+  private inputConfig_: InputConfig = defaultInputConfig();
+  private outputConfig_: OutputConfig = defaultOutputConfig();
 
   // Reused per-frame buffers — NO per-frame allocation in the hot path.
   private rawInput: [number, number] = [0.5, 0.5];
@@ -179,6 +173,45 @@ export class Spine implements EngineSink {
     if (this.routedBuf === null || this.routedBuf.length !== iml.architecture.outputSize) {
       this.routedBuf = new Float32Array(iml.architecture.outputSize);
     }
+    // Push the current config into the freshly-created C++ pipeline handle and
+    // reset its state (smoothing/velocity ring/prev buffers seed on first tick).
+    this.pushInputConfig_();
+    this.pushOutputConfig_();
+    iml.resetInput();
+    iml.resetOutput();
+  }
+
+  // ---- Pipeline config (forwarded into the WASM chains) --------------
+
+  get inputConfig(): Readonly<InputConfig> { return this.inputConfig_; }
+  get outputConfig(): Readonly<OutputConfig> { return this.outputConfig_; }
+
+  /** Replace the input-pipeline config and push it C-side. */
+  setInputConfig(cfg: InputConfig): void {
+    this.inputConfig_ = cfg;
+    this.pushInputConfig_();
+  }
+
+  /** Replace the output-pipeline config (scalar params + freeze mask) and push
+   *  it C-side. */
+  setOutputConfig(cfg: OutputConfig): void {
+    this.outputConfig_ = cfg;
+    this.pushOutputConfig_();
+  }
+
+  private pushInputConfig_(): void {
+    if (this.iml) this.iml.setInputConfig(this.inputConfig_);
+  }
+
+  private pushOutputConfig_(): void {
+    if (!this.iml) return;
+    this.iml.setOutputConfig({
+      globalCurve: this.outputConfig_.globalCurve,
+      smoothing: this.outputConfig_.smoothing,
+      slewRate: this.outputConfig_.slewRate,
+      freezeOutput: this.outputConfig_.freezeOutput,
+    });
+    this.iml.setOutputFreezeMask(this.outputConfig_.freezeMask);
   }
 
   setBackendSend(backendSend: BackendSend | null): void {
@@ -232,8 +265,7 @@ export class Spine implements EngineSink {
     this.rawInput[1] = y;
     this.lastRawX = x;
     this.lastRawY = y;
-    const proc = processInput(this.rawInput, this.inputConfig, this.inputState, dt);
-    this.inputState = proc.state;
+    const proc = iml.processInput(x, y, dt);
     iml.setInput(0, proc.x);
     iml.setInput(1, proc.y);
 
@@ -252,15 +284,12 @@ export class Spine implements EngineSink {
     iml.processInto(this.mlBuf);
     this.liveOutputs.set(this.mlBuf.subarray(0, this.liveOutputs.length));
 
-    // 4. routed (output pipeline → reused routedBuf).
-    const routedRes = processOutput(this.mlBuf, this.outputConfig, this.outputState, dt * 1000);
-    this.outputState = routedRes.state;
-    const routed = routedRes.processed;
-    if (this.routedBuf && this.routedBuf.length === routed.length) {
-      this.routedBuf.set(routed);
-    } else {
-      this.routedBuf = routed;
+    // 4. routed (output chain, in place on the reused routedBuf → C++-side state).
+    if (!this.routedBuf || this.routedBuf.length !== this.mlBuf.length) {
+      this.routedBuf = new Float32Array(this.mlBuf.length);
     }
+    this.routedBuf.set(this.mlBuf);
+    iml.processOutput(this.routedBuf, dt);
 
     // 4b. optional exploration morph on the routed vector (OU noise). Inert
     //     unless a controller has registered one AND it is turned up.

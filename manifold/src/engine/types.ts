@@ -129,6 +129,32 @@ export interface NispsModule {
   _nisps_ml_explore_get_intensity(ml: number): number;
   _nisps_ml_explore_apply(ml: number, inout_ptr: number, n: number): void;
 
+  // Pipelines (one-core-engine P4). Input/output processing chains; state lives
+  // C++-side per pipeline handle. Input config is a 15-float wire buffer (layout
+  // documented in nisps/wasm/bindings.cpp). Output config: globalCurve,
+  // smoothing, slewRate (<=0 ⇒ unlimited), freeze (0/1). Both process calls take
+  // dt in SECONDS.
+  _nisps_pipeline_create(): number;
+  _nisps_pipeline_destroy(p: number): void;
+  _nisps_input_set_config(p: number, cfg_ptr: number, n: number): void;
+  // Returns 1 when the chain is frozen; writes {x,y} into out_xy_ptr (2 floats).
+  _nisps_input_process(p: number, x: number, y: number, dt_s: number, out_xy_ptr: number): number;
+  _nisps_input_reset(p: number): void;
+  _nisps_output_set_config(p: number, global_curve: number, smoothing: number, slew_rate: number, freeze: number): void;
+  _nisps_output_set_freeze_mask(p: number, mask_ptr: number, n: number): void;
+  // In place: processes the first n floats of inout_ptr.
+  _nisps_output_process(p: number, inout_ptr: number, n: number, dt_s: number): void;
+  _nisps_output_reset(p: number): void;
+  _nisps_pipeline_state_size(p: number): number;
+  _nisps_pipeline_save_state(p: number, out_ptr: number): void;
+  _nisps_pipeline_load_state(p: number, in_ptr: number, n: number): void;
+
+  // Curve catalog (one-core-engine P4). ids 0..6 = nisps::Curve (param ignored);
+  // id 7 = centred power (param = exponent). nisps/core/math.hpp is the single
+  // source of truth; the browser samples it instead of mirroring the maths.
+  _nisps_curve_apply(id: number, x: number, param: number): number;
+  _nisps_curve_apply_batch(id: number, xs_ptr: number, out_ptr: number, n: number, param: number): void;
+
   // Engines.
   _nisps_engine_create(id_ptr: number, sample_rate: number): number;
   _nisps_engine_destroy(engine: number): void;

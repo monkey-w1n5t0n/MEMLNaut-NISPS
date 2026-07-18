@@ -1,47 +1,32 @@
 /**
- * Shared runner + generator library for the pipeline golden fixtures.
+ * Fixture-support library for the pipeline golden tests.
  *
- * Captured 2026-07-13, BEFORE the P4 "one core engine" migration
- * (docs/specs/plans/one-core-engine-refactor.md §P4) replaces the TS
- * curve/input/output implementations with C++/WASM calls.
+ * Since the one-core-engine P4 migration the input/output PROCESSING lives in
+ * the C++/WASM core; the golden test (tests/pipeline-golden.test.ts) drives the
+ * WASM chains against the committed fixtures. This module no longer runs any TS
+ * pipeline maths — it only provides the PURE, deterministic fixture DATA
+ * (gesture trace, raw output sequence) + the representative config lists + the
+ * curve catalog metadata. The gesture/sequence/config data is embedded in the
+ * committed *.json fixtures, so the test re-derives nothing hidden.
  *
- * This module is imported by BOTH:
- *   - tests/fixtures/_generate.ts  — writes the *.json fixtures once, and
- *   - tests/pipeline-golden.test.ts — re-runs the CURRENT TS implementations
- *     against the committed fixtures and asserts exact equality.
- *
- * The `run*` functions are the single source of truth for how a fixture was
- * produced. The fixtures embed the trace / raw sequence / configs, so the test
- * re-derives outputs purely from committed data — no hidden inputs.
- *
- * --- Determinism / clock contract -----------------------------------------
- * `input-pipeline.ts`'s momentum-zoom path reads `performance.now()` (wall
- * clock) for its velocity ring. To make the momentum configs reproducible,
- * `runInputPipeline` overrides `performance.now` with a synthetic clock driven
- * by the trace's own `t_ms`: before processing event i, the clock is pinned to
- * `events[i].t_ms`. The velocity window (150 ms) therefore slides over the
- * gesture's own timescale, deterministically. The original `performance.now`
- * is restored afterwards. `output-pipeline.ts` uses no wall clock.
- *
- * --- State contract --------------------------------------------------------
- * Both pipelines are STATEFUL (input: EMA smoothing + velocity ring + momentum
- * multiplier; output: prev + smoothed buffers for slew/freeze). Each config run
- * RESETS state to `defaultInputState()` / `defaultOutputState()` at step 0, so
- * runs are independent and order-free.
+ * The gesture/output goldens are a FROZEN pre-migration capture (2026-07-13):
+ * the test proves the WASM chains reproduce them within an f32 tolerance. The
+ * curve goldens were partly re-baselined on 2026-07-18 (see README + the
+ * curves-golden.json provenance field).
  */
 
-import { CURVE_NAMES, applyCurve, type CurveName } from '../src/engine/curves';
+import {
+  CURVE_DEFAULT_PARAMS,
+  CURVE_NAMES,
+  type CurveName,
+} from '../src/engine/curve-catalog';
 import {
   defaultInputConfig,
-  defaultInputState,
-  processInput,
   type InputConfig,
-} from '../src/engine/input-pipeline';
-import {
-  defaultOutputState,
-  processOutput,
-  type OutputConfig,
-} from '../src/engine/output-pipeline';
+} from '../src/engine/pipeline-types';
+
+export { CURVE_DEFAULT_PARAMS, CURVE_NAMES };
+export type { CurveName, InputConfig };
 
 // ---------------------------------------------------------------------------
 // Shared timebases
@@ -157,47 +142,20 @@ export function buildGestureTrace(): GestureEvent[] {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Curve sampling
+// 2. Curve sampling metadata
 // ---------------------------------------------------------------------------
 
 export const CURVE_SAMPLE_COUNT = 129; // 0..1 inclusive, step 1/128
 
-/** Default `param` used per curve (mirrors applyCurve's `?? default`). */
-export const CURVE_DEFAULT_PARAMS: Record<CurveName, number | null> = {
-  linear: null,
-  exp: 4.0,
-  log: 4.0,
-  square: null,
-  sqrt: null,
-  sigmoid: 8.0,
-  cubic: null,
-  centered_power: 1.0,
-};
-
-export function sampleCurve(name: CurveName): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < CURVE_SAMPLE_COUNT; i++) {
-    const x = i / (CURVE_SAMPLE_COUNT - 1); // inclusive endpoints
-    out.push(applyCurve(name, x));
-  }
-  return out;
-}
-
-export function sampleAllCurves(): Record<string, number[]> {
-  const out: Record<string, number[]> = {};
-  for (const name of CURVE_NAMES) out[name] = sampleCurve(name);
-  return out;
-}
-
 // ---------------------------------------------------------------------------
-// 3. Input pipeline configs + runner
+// 3. Input pipeline configs
 // ---------------------------------------------------------------------------
 
 function cfg(overrides: Partial<InputConfig>): InputConfig {
   return { ...defaultInputConfig(), ...overrides };
 }
 
-/** Representative input configs. Exercises every branch of processInput. */
+/** Representative input configs. Exercises every branch of the input chain. */
 export function inputRunSpecs(): InputRunSpec[] {
   return [
     { id: 'default', config: cfg({}) },
@@ -220,36 +178,8 @@ export function inputRunSpecs(): InputRunSpec[] {
   ];
 }
 
-/**
- * Run the gesture trace through the input pipeline under one config.
- * Resets state at step 0. Drives a synthetic `performance.now` from the trace's
- * t_ms so the momentum path is deterministic (see clock contract above).
- */
-export function runInputPipeline(trace: readonly GestureEvent[], config: InputConfig): InputRunOutput[] {
-  const perf = globalThis.performance as { now(): number };
-  const realNow = perf.now;
-  let clock = 0;
-  perf.now = () => clock;
-  try {
-    let state = defaultInputState();
-    const outputs: InputRunOutput[] = [];
-    let prevT = trace.length > 0 ? trace[0]!.t_ms : 0;
-    for (const ev of trace) {
-      clock = ev.t_ms;
-      const dt = Math.max(0, (ev.t_ms - prevT) / 1000);
-      prevT = ev.t_ms;
-      const res = processInput([ev.x, ev.y], config, state, dt);
-      outputs.push({ x: res.x, y: res.y, frozen: res.frozen });
-      state = res.state;
-    }
-    return outputs;
-  } finally {
-    perf.now = realNow;
-  }
-}
-
 // ---------------------------------------------------------------------------
-// 4. Output raw sequence + configs + runner
+// 4. Output raw sequence + configs
 // ---------------------------------------------------------------------------
 
 /**
@@ -284,39 +214,4 @@ export function outputRunSpecs(): OutputRunSpec[] {
     { id: 'freeze-mask', globalCurve: 1.0, smoothing: 0, slewRate: null, freezeMaskIndices: [0, 2, 4], freezeSteps: null, reuseBuffer: false },
     { id: 'combined', globalCurve: 1.8, smoothing: 0.7, slewRate: 1.0, freezeMaskIndices: null, freezeSteps: [90, 110], reuseBuffer: false },
   ];
-}
-
-function outputConfigForStep(spec: OutputRunSpec, step: number, dims: number): OutputConfig {
-  const frozen = spec.freezeSteps ? step >= spec.freezeSteps[0] && step < spec.freezeSteps[1] : false;
-  let mask: Uint8Array | null = null;
-  if (spec.freezeMaskIndices) {
-    mask = new Uint8Array(dims);
-    for (const i of spec.freezeMaskIndices) if (i >= 0 && i < dims) mask[i] = 1;
-  }
-  return {
-    globalCurve: spec.globalCurve,
-    smoothing: spec.smoothing,
-    slewRate: spec.slewRate === null ? Infinity : spec.slewRate,
-    freezeOutput: frozen,
-    freezeMask: mask,
-    reuseBuffer: spec.reuseBuffer,
-  };
-}
-
-/**
- * Run the raw sequence through the output pipeline under one spec. Resets state
- * at step 0. The global-freeze gate follows `spec.freezeSteps`.
- */
-export function runOutputPipeline(sequence: readonly number[][], spec: OutputRunSpec): number[][] {
-  const dims = sequence.length > 0 ? sequence[0]!.length : 0;
-  let state = defaultOutputState();
-  const outputs: number[][] = [];
-  for (let s = 0; s < sequence.length; s++) {
-    const raw = Float32Array.from(sequence[s]!);
-    const config = outputConfigForStep(spec, s, dims);
-    const res = processOutput(raw, config, state, OUTPUT_DT_MS);
-    outputs.push(Array.from(res.processed));
-    state = res.state;
-  }
-  return outputs;
 }

@@ -16,6 +16,7 @@
  */
 
 import { EngineHost } from './engine-host';
+import type { InputConfig, OutputConfig } from './pipeline-types';
 import { Spine, type BackendSend } from './spine';
 import type { EngineId, FeedbackMode, LayerStats } from './types';
 import { WasmIML } from './wasm-iml';
@@ -271,6 +272,30 @@ export class EngineApi {
    */
   process(): void {
     this.spine.reprocess();
+  }
+
+  // ---- Pipeline config + curves (one-core-engine P4) -----------------
+
+  /** Replace the input-pipeline config (forwarded into the WASM input chain). */
+  setInputConfig(cfg: InputConfig): void {
+    this.spine.setInputConfig(cfg);
+  }
+
+  /** Replace the output-pipeline config (forwarded into the WASM output chain). */
+  setOutputConfig(cfg: OutputConfig): void {
+    this.spine.setOutputConfig(cfg);
+  }
+
+  /** Sample one catalog curve via the WASM core. id 0..6 = nisps::Curve (param
+   *  ignored); id 7 = centred power (param = exponent). */
+  curveApply(id: number, x: number, param = 0): number {
+    return this.iml.curveApply(id, x, param);
+  }
+
+  /** Batch-sample a curve over `xs` into `out` (one WASM call, chunked). Use for
+   *  previews / bulk shaping instead of per-value curveApply. */
+  curveApplyBatch(id: number, xs: ArrayLike<number>, out: Float32Array, param = 0): void {
+    this.iml.curveApplyBatch(id, xs, out, param);
   }
 
   // ---- Training ------------------------------------------------------

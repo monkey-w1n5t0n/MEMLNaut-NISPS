@@ -19,6 +19,13 @@
  */
 
 import { Dataset } from './dataset';
+import {
+  anchorModeToInt,
+  momentumModeToInt,
+  type InputConfig,
+  type InputProcessResult,
+  type OutputConfig,
+} from './pipeline-types';
 import { noopSink, type EngineSink } from './sink';
 import {
   FEEDBACK_MODE_FROM_INT,
@@ -136,6 +143,16 @@ export class WasmIML {
   private feedbackBuf!: HeapBuffer; // kDefaultOutputs scratch for feedback static/down
   private describePtr = 0;
 
+  // Pipeline (one-core-engine P4): the input/output processing chains live
+  // C++-side per handle. These wrappers own the handle + bridge buffers.
+  private pipelineHandle = 0;
+  private inCfgBuf!: HeapBuffer;   // 15-float input config wire buffer
+  private inXYBuf!: HeapBuffer;    // 2-float processed-input scratch
+  private outProcBuf!: HeapBuffer; // outputSize scratch for in-place output processing
+  private pipeMaskBuf!: HeapU8;    // outputSize per-output freeze mask
+  private curveBuf!: HeapBuffer;   // curve batch scratch (chunked)
+  private static CURVE_CHUNK = 256;
+
   readonly dataset: Dataset;
   private readonly sink: EngineSink;
   private lastLoss_: number | null = null;
@@ -197,6 +214,15 @@ export class WasmIML {
     this.pinMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
     this.feedbackBuf = new HeapBuffer(this.module, this.arch_.outputSize);
 
+    // Pipeline handle + bridge buffers (input/output chains, curve batch).
+    this.pipelineHandle = this.module._nisps_pipeline_create();
+    if (!this.pipelineHandle) throw new Error('[wasm-iml] nisps_pipeline_create returned null');
+    this.inCfgBuf = new HeapBuffer(this.module, 15);
+    this.inXYBuf = new HeapBuffer(this.module, 2);
+    this.outProcBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+    this.pipeMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
+    this.curveBuf = new HeapBuffer(this.module, WasmIML.CURVE_CHUNK);
+
     this.sink.setState({
       inputSize: this.arch_.inputSize,
       outputSize: this.arch_.outputSize,
@@ -239,6 +265,15 @@ export class WasmIML {
     if (this.batchOutBuf) this.batchOutBuf.free();
     if (this.pinMaskBuf) this.pinMaskBuf.free();
     if (this.feedbackBuf) this.feedbackBuf.free();
+    if (this.module && this.pipelineHandle) {
+      this.module._nisps_pipeline_destroy(this.pipelineHandle);
+      this.pipelineHandle = 0;
+    }
+    if (this.inCfgBuf) this.inCfgBuf.free();
+    if (this.inXYBuf) this.inXYBuf.free();
+    if (this.outProcBuf) this.outProcBuf.free();
+    if (this.pipeMaskBuf) this.pipeMaskBuf.free();
+    if (this.curveBuf) this.curveBuf.free();
     if (this.describePtr) this.module._free(this.describePtr);
     this.sink.setState({ ready: false });
   }
@@ -313,6 +348,8 @@ export class WasmIML {
     this.batchOutBuf.free();
     this.pinMaskBuf.free();
     this.feedbackBuf.free();
+    this.outProcBuf.free();
+    this.pipeMaskBuf.free();
     this.featuresBuf = new HeapBuffer(this.module, this.arch_.inputSize);
     this.labelsBuf = new HeapBuffer(this.module, this.arch_.outputSize);
     this.weightsBuf = new HeapBuffer(this.module, this.weightCount_);
@@ -321,6 +358,8 @@ export class WasmIML {
     this.batchOutBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.outputSize);
     this.pinMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
     this.feedbackBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+    this.outProcBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+    this.pipeMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
     this.featuresBuf.rebind();
     this.labelsBuf.rebind();
     this.weightsBuf.rebind();
@@ -329,6 +368,13 @@ export class WasmIML {
     this.batchOutBuf.rebind();
     this.pinMaskBuf.rebind();
     this.feedbackBuf.rebind();
+    this.outProcBuf.rebind();
+    this.pipeMaskBuf.rebind();
+    // Fixed-size pipeline buffers were not reallocated but a grow above may have
+    // detached their views — rebind so later writes hit the live heap.
+    this.inCfgBuf.rebind();
+    this.inXYBuf.rebind();
+    this.curveBuf.rebind();
 
     // C-side dataset/examples reset on reshape → clear the TS mirror to match.
     this.dataset.clear();
@@ -422,6 +468,100 @@ export class WasmIML {
       written += chunk * outSz;
     }
     return result;
+  }
+
+  // -------------------------------------------------------------------
+  // Pipelines (one-core-engine P4). Thin wrappers over the C++ input/output
+  // chains; state lives C++-side per pipeline handle. The spine drives these
+  // each tick; config is pushed on change.
+  // -------------------------------------------------------------------
+
+  /** Map a TS InputConfig onto the 15-float wire layout and push it C-side. */
+  setInputConfig(cfg: InputConfig): void {
+    const v = this.inCfgBuf.view;
+    v[0] = cfg.zoom;
+    v[1] = cfg.zoomX ?? 0;          // 0 ⇒ null (use global zoom)
+    v[2] = cfg.zoomY ?? 0;
+    v[3] = cfg.anchorX;
+    v[4] = cfg.anchorY;
+    v[5] = anchorModeToInt(cfg.anchorMode);
+    v[6] = cfg.deadzone;
+    v[7] = cfg.inputCurve;
+    v[8] = cfg.inputCurveX ?? 0;    // 0 ⇒ null (use inputCurve)
+    v[9] = cfg.inputCurveY ?? 0;
+    v[10] = cfg.smoothing;
+    v[11] = momentumModeToInt(cfg.momentumZoom);
+    v[12] = cfg.velocityWindow / 1000; // ms → SECONDS
+    v[13] = cfg.invertX ? 1 : 0;
+    v[14] = cfg.invertY ? 1 : 0;
+    this.module._nisps_input_set_config(this.pipelineHandle, this.inCfgBuf.ptr, 15);
+  }
+
+  /** Process one raw [0,1] XY sample through the input chain. `dtSeconds` =
+   *  seconds since the previous call (0 falls back to the reference dt C-side). */
+  processInput(x: number, y: number, dtSeconds: number): InputProcessResult {
+    const frozen = this.module._nisps_input_process(
+      this.pipelineHandle, x, y, dtSeconds, this.inXYBuf.ptr,
+    );
+    return { x: this.inXYBuf.view[0], y: this.inXYBuf.view[1], frozen: frozen === 1 };
+  }
+
+  resetInput(): void {
+    this.module._nisps_input_reset(this.pipelineHandle);
+  }
+
+  /** Push the output-chain scalar config. `slewRate` Infinity → 0 (unlimited). */
+  setOutputConfig(cfg: { globalCurve: number; smoothing: number; slewRate: number; freezeOutput: boolean }): void {
+    const slew = Number.isFinite(cfg.slewRate) ? cfg.slewRate : 0;
+    this.module._nisps_output_set_config(
+      this.pipelineHandle, cfg.globalCurve, cfg.smoothing, slew, cfg.freezeOutput ? 1 : 0,
+    );
+  }
+
+  /** Per-output freeze mask (1 = frozen). null / empty clears it. */
+  setOutputFreezeMask(mask: Uint8Array | null): void {
+    if (!mask || mask.length === 0) {
+      this.module._nisps_output_set_freeze_mask(this.pipelineHandle, 0, 0);
+      return;
+    }
+    const n = Math.min(mask.length, this.pipeMaskBuf.count);
+    this.pipeMaskBuf.view.set(mask.subarray(0, n));
+    this.module._nisps_output_set_freeze_mask(this.pipelineHandle, this.pipeMaskBuf.ptr, n);
+  }
+
+  /** Process `vec` (first n ≤ outputSize floats) through the output chain IN
+   *  PLACE. `dtSeconds` = seconds since the previous call. */
+  processOutput(vec: Float32Array, dtSeconds: number): void {
+    const n = Math.min(vec.length, this.outProcBuf.count);
+    if (n <= 0) return;
+    this.outProcBuf.view.set(vec.subarray(0, n));
+    this.module._nisps_output_process(this.pipelineHandle, this.outProcBuf.ptr, n, dtSeconds);
+    vec.set(this.outProcBuf.view.subarray(0, n));
+  }
+
+  resetOutput(): void {
+    this.module._nisps_output_reset(this.pipelineHandle);
+  }
+
+  // ---- Curve catalog (stateless; nisps/core/math.hpp is the source of truth) --
+
+  /** Sample one curve. id 0..6 = nisps::Curve (param ignored); id 7 = centred
+   *  power (param = exponent). */
+  curveApply(id: number, x: number, param = 0): number {
+    return this.module._nisps_curve_apply(id, x, param);
+  }
+
+  /** Batch-sample a curve over `xs` into `out` (chunked through a heap scratch).
+   *  Use for previews / bulk shaping — one call per frame, not one per value. */
+  curveApplyBatch(id: number, xs: ArrayLike<number>, out: Float32Array, param = 0): void {
+    const total = Math.min(xs.length, out.length);
+    const chunk = this.curveBuf.count;
+    for (let offset = 0; offset < total; offset += chunk) {
+      const n = Math.min(chunk, total - offset);
+      for (let i = 0; i < n; ++i) this.curveBuf.view[i] = xs[offset + i];
+      this.module._nisps_curve_apply_batch(id, this.curveBuf.ptr, this.curveBuf.ptr, n, param);
+      out.set(this.curveBuf.view.subarray(0, n), offset);
+    }
   }
 
   // -------------------------------------------------------------------

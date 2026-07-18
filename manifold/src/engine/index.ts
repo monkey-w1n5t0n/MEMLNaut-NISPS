@@ -40,17 +40,23 @@ export { EngineProvider, EngineContext } from './EngineProvider';
 export type { EngineProviderProps } from './EngineProvider';
 export { useEngine, useEngineOrThrow, useEngineVersion } from './useEngine';
 
-// Pure pipelines (re-exported for consumers that need to configure them).
+// Pipeline config types + defaults. The PROCESSING lives in the C++/WASM core
+// (one-core-engine P4); configure via EngineApi.setInputConfig / setOutputConfig.
 export {
-  processInput,
   defaultInputConfig,
-  defaultInputState,
-} from './input-pipeline';
-export type { InputConfig, InputState } from './input-pipeline';
-export {
-  processOutput,
   defaultOutputConfig,
-  defaultOutputState,
-} from './output-pipeline';
-export type { OutputConfig, OutputState } from './output-pipeline';
-export * as curves from './curves';
+  anchorModeToInt,
+  momentumModeToInt,
+} from './pipeline-types';
+export type {
+  InputConfig,
+  OutputConfig,
+  AnchorMode,
+  MomentumZoomMode,
+  InputProcessResult,
+} from './pipeline-types';
+
+// Curve catalog NAME↔id contract (maths lives in the core; sample via
+// EngineApi.curveApply / curveApplyBatch).
+export { CURVE_ID, CURVE_NAMES, CURVE_DEFAULT_PARAMS } from './curve-catalog';
+export type { CurveName } from './curve-catalog';

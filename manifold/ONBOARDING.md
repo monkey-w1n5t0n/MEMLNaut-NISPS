@@ -158,9 +158,11 @@ a setting → `--r-*` tokens.
 
 ### Engine — `src/engine/` (no React except the two binding files)
 - `spine.ts` — **the reactive store.** `setInput(x,y)`/`setInputs(arr)` drive raw input synchronously
-  through input-pipeline → `WasmIML.processInto()` → output-pipeline → backend, all off the render
-  cycle, reusing buffers. Bumps a monotonic `version`. `reprocess()` re-ticks the last input after a
-  weight change (stores the full N-D vector so extra axes survive).
+  through `WasmIML.processInput` (WASM input chain) → `processInto()` → `WasmIML.processOutput` (WASM
+  output chain) → backend, all off the render cycle, reusing buffers. Bumps a monotonic `version`.
+  `reprocess()` re-ticks the last input after a weight change (stores the full N-D vector so extra axes
+  survive). Pipeline config lives in `inputConfig_`/`outputConfig_` and is pushed C-side via
+  `setInputConfig`/`setOutputConfig` (state itself lives in the WASM pipeline handle since P4).
 - `engine-api.ts` — **`EngineApi`, the framework-neutral facade** everything in the UI talks to:
   `setInput/setInputs`, `getOutputs/routedOutput`, training (`addExample/train/trainAsync/evalLoss`),
   weights (`getWeights/setWeights/process/randomise`), `subscribe/version/on`, plus nested
@@ -173,12 +175,17 @@ a setting → `--r-*` tokens.
   buffers, feedback C-ABI bindings (`nisps_ml_feedback_*`), lazy training worker.
 - `wasm-worker.ts` — off-thread training worker. `worklet/nisps-processor.ts` — the AudioWorklet's
   separate WASM instance (raw `WebAssembly.instantiate`, no Emscripten glue; 128-sample blocks).
-- `input-pipeline.ts` — per-axis: invert → deadzone → circular clamp → zoom → centred power curve →
-  EMA smoothing → momentum. **First 2 axes get the full pad pipeline; axes 2+ feed raw to the spine.**
-- `output-pipeline.ts` — global power curve → per-output EMA smoothing → slew limit → freeze gate.
+- **Input/output pipelines + curves live in the C++/WASM core (one-core-engine P4).** The input chain
+  (invert → deadzone → circular clamp → momentum-modulated zoom → centred power → EMA → momentum) and
+  output chain (global curve → per-output EMA → slew → freeze/mask) are `nisps/pipeline/*`, exposed via
+  `nisps_input_*` / `nisps_output_*` and driven by thin `WasmIML` wrappers (`processInput`,
+  `processOutput`, `setInputConfig`, `setOutputConfig`, `setOutputFreezeMask`, `reset*`). State lives
+  C++-side per pipeline handle. First 2 axes get the full pad pipeline; axes 2+ feed raw to the spine.
+  The old TS `input-pipeline.ts` / `output-pipeline.ts` / `curves.ts` are **deleted**; config TYPES are
+  `pipeline-types.ts`, the curve NAME↔id contract is `curve-catalog.ts`, and the curve MATHS is sampled
+  from the core via `EngineApi.curveApply` / `curveApplyBatch`.
 - `dataset.ts` — JS-side example store + sample-weight modes (uniform/recency/spatial/combined).
-- `curves.ts` — math primitives. **Must stay lockstep with C++ `nisps/core/math.hpp`** (golden tests
-  compare WASM vs TS). `sink.ts` — `EngineSink` framework boundary. `types.ts` — C-ABI surface types.
+  `sink.ts` — `EngineSink` framework boundary. `types.ts` — C-ABI surface types.
 - `exploration.ts` — `ExplorationController` adapter for the Jolt press + OU explore gestures
   (Learning drawer). **As of one-core-engine P3 the maths lives in the shared C++/WASM core** — this
   class is a thin driver that owns only the control-rate timers and calls `engine.explore.*`
@@ -258,7 +265,12 @@ a setting → `--r-*` tokens.
    bit-identical), and `nisps_ml_reshape` swaps in a warm-started net at new dims. Weights = 3148 at
    the default shape; reshaping only the input arity shifts the first layer (e.g. →4 inputs = 2868).
    The firmware MLP stays compile-time templated — only the WASM/browser build is dynamic.
-5. **`curves.ts` ↔ `nisps/core/math.hpp` must stay lockstep** (golden-vector parity tests).
+5. **Curves + input/output pipelines are C++/WASM only (one-core-engine P4).** No TS curve/pipeline
+   maths remains; the browser samples `nisps/core/math.hpp` + `nisps/pipeline/*` via the WASM. The
+   golden test (`tests/pipeline-golden.test.ts`) drives the WASM chains against the frozen fixtures.
+   NOTE: `exp/log/sigmoid/cubic` deliberately changed to the firmware-exact maths at P4 (see
+   `tests/fixtures/README.md`); `linear/square/sqrt/centered_power` are unchanged. The 3 momentum input
+   configs carry a wide (`1e-2`) tolerance — proven-inherent f32 drift, documented in the test header.
 6. **COOP/COEP headers are mandatory** for the WASM/worklet path — set in `vite.config.ts` for
    dev+preview, and at nginx server scope in prod (inherited by `/next/`).
 7. **Never emit "C15"** in code or bundle — the smoke test fails on it. Synth is "Powerful Synth

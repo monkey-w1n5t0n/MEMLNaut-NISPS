@@ -101,9 +101,9 @@ Each mode has a `schemas/modes/<mode>.json` describing its parameters (name, lab
 
 Codegen (`bun run codegen/generate.ts`) emits:
 - `nisps/modes/generated/<mode>_schema.hpp` — `constexpr` C++ data, namespace `nisps::modes::generated`, re-exports `nisps::Curve` from `nisps/core/math.hpp`.
-- (TS emission is dormant since P1; it returns at P5 targeting `manifold/src/modes/generated/`.)
+- `manifold/src/modes/generated/<mode>_schema.ts` (+ `types.ts`, `index.ts`) — typed const schemas; `MF_MODES` derives params/ml-config from them (P5).
 
-Codegen is idempotent. Golden test ensures regenerating produces byte-identical output.
+Codegen validates the firmware fit (exactly 3 hidden layers; dims ≤4096) and is idempotent. The golden test (both languages) runs in `run-all-tests.sh` stage 5.
 
 ## WASM bridge
 

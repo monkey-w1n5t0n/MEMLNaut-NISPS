@@ -48,6 +48,12 @@ if [[ "${NISPS_SKIP_PLAYWRIGHT:-0}" != "1" ]]; then
         echo "[run-all-tests] bun not on PATH; skipping manifold stage"
     else
         (
+            # Codegen idempotence golden (C++ + manifold TS outputs).
+            cd "$ROOT/codegen"
+            bun install --frozen-lockfile 2>/dev/null || bun install
+            bun run tests/golden_test.ts
+        )
+        (
             cd "$ROOT/manifold"
             bun install --frozen-lockfile 2>/dev/null || bun install
             bun run typecheck

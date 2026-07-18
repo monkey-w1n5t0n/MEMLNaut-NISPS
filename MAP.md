@@ -95,7 +95,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - `schemas/midi_devices/<device>.json` (×6) — CC-controllable external synths (Moog Sub 37 / Sub Phatty, Creamware Pro-12 ASB, Elektron Analog Keys, ASM Hydrasynth, Roland JD-800). Each param: `{id, cc, label, min, max, default, group}`. Canonical source for both firmware + browser device pickers. Verified-CC provenance + sources live in `synth-midi-cc.json` (repo root).
 
 ### `codegen/` — schema → C++/TS code
-- `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`). Idempotent. (TS emitters retained but dormant; re-targeted at `manifold/src/modes/generated/` in P5.)
+- `codegen/generate.ts` — Bun script: validates schemas via ajv (incl. the P5 firmware-fit check: exactly 3 hidden layers, dims ≤4096), emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`) and `manifold/src/modes/generated/<mode>_schema.ts` (+ `types.ts`, `index.ts`). Idempotent; golden-tested in `run-all-tests.sh` stage 5.
 - `codegen/generate-midi-devices.ts` — separate Bun script (isolated from the mode golden test): validates `schemas/midi_devices/` via ajv, emits `nisps/midi/generated/midi_devices.hpp` (no-heap `constexpr`) and `manifold/src/midi-devices/generated/{types,devices,index}.ts`. Idempotent.
 - `codegen/seed-midi-devices.ts` — one-time/idempotent seed deriving `schemas/midi_devices/*.json` from the `synth-midi-cc.json` research artifact (slugifies labels → ids, heuristic groups).
 - `codegen/templates/`, `codegen/tests/golden/` — reference templates + golden snapshot for paf_synth.
@@ -136,7 +136,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - **Parity check**: `bash scripts/parity-check.sh`.
 - **All tests**: `bash scripts/run-all-tests.sh`.
 - **Playwright**: `cd manifold && node node_modules/.bin/playwright test` (non-snap node runner on the VPS — BUILD-PLAN gotcha; `bunx playwright test` works elsewhere).
-- **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/`; TS target returns at P5 for manifold).
+- **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/` and `manifold/src/modes/generated/`).
 
 ## Conventions
 
@@ -144,7 +144,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - `nisps/` follows Chris's RP2350 perf rules globally: no heap, `static const float` for non-trivial constants, strict `.f` suffix, memory section attrs (`NISPS_AUDIO_MEM`, `NISPS_AUDIO_FUNC`, `NISPS_APP_SRAM`, `NISPS_HOT`, `NISPS_FORCE_INLINE`).
 - C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
 - `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`, plus the parameterised `centered_power` free function); generated mode headers re-export via `using Curve = ::nisps::Curve;`. Since P4 there is NO TS mirror — the browser samples the WASM catalog (`nisps_curve_apply(+batch)`).
-- Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++ types (TS codegen returns at P5). **No declarative JSON UI.**
+- Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++ **and** TS types (`MF_MODES` derives params/ml-config from the generated schemas since P5; labels/ordering stay a manifold overlay). **No declarative JSON UI.**
 - WASM and firmware share the same C++; the browser MLP is runtime-shaped (`MLPCore<DynamicStorage>`, since P2): `nisps_ml_create` honours `(input, output, hidden[3])` with non-positive/null args defaulting to `32→[10,14,18]→126`; `nisps_ml_reshape` warm-starts a new shape. Firmware keeps compile-time `MLP<...>` (zero heap). Modes currently still use a slice of the default 126 outputs (per-mode dims become schema-real at P5).
 - Cross-platform parity: `scripts/parity-check.sh` enforces native vs WASM agreement within 1e-5.
 

@@ -2,8 +2,8 @@
 
 One C++20 NISPS core targets RP2350 firmware and the Manifold React/WASM browser app. Read
 `MAP.md`, `ALIGNMENT.md`, and `docs/AGENT-REFERENCE.md`; for Manifold UI work read
-`manifold/ONBOARDING.md` first. Parameter JSON schemas generate the C++ contracts
-(TS codegen returns at P5 of `docs/specs/plans/one-core-engine-refactor.md`).
+`manifold/ONBOARDING.md` first. Parameter JSON schemas generate both C++ and TypeScript
+contracts.
 
 ## Gates
 

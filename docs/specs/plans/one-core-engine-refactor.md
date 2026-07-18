@@ -179,12 +179,26 @@ Each phase ends green on its test gate and is independently landable. File phase
   `schema-modes.spec.ts` asserts dims/weight-count/param-count FROM the imported schemas for 4 modes; the
   existing shape-assuming specs were re-derived from schema constants. 33 e2e green.
 
-### P6 — VCV reunification (later; may slip)
+### P6 — VCV reunification (later; may slip) — ✅ landed 2026-07-18
 
-- `vcv/src/iml.hpp` deleted; module consumes `nisps/ml/` with `DynamicStorage` (its 8→16 runtime shape is
-  exactly the P2 case). `DetRng` replaced by `nisps/core/rng.hpp`. Closes vcv-module.md delta #5.
-- OSC server stays vcv-local (transport, not behaviour).
-- **Gate:** vcv builds; seeded train/infer parity vs native ctest.
+- ✅ The vendored `vcv/src/iml.hpp` (DetRng + 3D-weight runtime MLP + Dataset) is now a THIN Rack-free
+  adapter over `MLPCore<DynamicStorage>` + `nisps::Rng` + the core dataset; hidden `[16,24,16]` kept
+  (maps 1:1 onto the 3-hidden topology). Patch JSON weights went flat (version 2→3). The module's
+  double-buffered audio/worker threading discipline is unchanged (two self-contained adapter instances).
+  Closes vcv-module.md delta #5.
+- ✅ OSC server stayed vcv-local.
+- **Gate met:** `plugin.so` builds/links clean against the Rack SDK; new ctest
+  `test_vcv_iml_parity.cpp` — the adapter is memcmp-identical to driving the core directly across
+  construction/draw/train/inference/move_weights(pin mask).
+
+## 6. Execution wrap-up (2026-07-18)
+
+All six phases landed on main with green gates (P0 2026-07-13 → P6 2026-07-18). The plan flips to
+`status: executed` once the two OPERATOR items close (physical MEMLNaut required):
+- **Chokepoint A** — geometric-dislike feel spot-check on hardware (ergo `425f4a8f`), blocked on ergo bug
+  `10c3e55c` (explore/place wiring linker-GC'd out of the PAFSynth ELF — pre-existing, discovered in P3).
+- **Chokepoint B (timing half)** — audio-callback timing on hardware; the compile half (`.text` ±1%)
+  passed at P2.
 
 ## 4. Risks
 

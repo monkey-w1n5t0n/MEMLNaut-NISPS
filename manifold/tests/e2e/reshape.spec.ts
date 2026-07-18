@@ -1,76 +1,84 @@
 /**
- * Runtime-shaped net reshape (one-core-engine P2.3).
+ * Runtime-shaped net reshape (one-core-engine P2.3 + P5.3).
  *
- * The WASM MLP is runtime-shaped: it boots at the default over-provisioned
- * 32→[10,14,18]→126 head, and `engine.reshape({ inputSize })` swaps in a new net
- * at the requested arity, warm-started from the overlapping weights. This spec
- * drives the reshape through the debug probe (`__nisps.reshape`) and asserts:
+ * The WASM MLP is runtime-shaped. Since P5.3 the app reshapes the net to the
+ * BOOT MODE's schema `ml` config once WASM is ready, so the debug harness boots
+ * at the boot mode's dims (NOT the over-provisioned 32→126 default). This spec
+ * asserts FROM the imported schema — never hard-coded dim numbers — that:
  *
- *   1. default dims are 32 inputs / 126 outputs (unchanged by P2.3);
- *   2. reshape to 4 inputs succeeds and `describe()` reports 4/126;
- *   3. post-ML outputs stay bounded in [0,1] after the reshape;
- *   4. getWeights length shrinks by (32-4)*10 = 280 → 2868 (biases unchanged);
- *   5. the spine still propagates — distinct inputs → distinct bounded outputs.
+ *   1. the net boots at the boot mode's schema dims + weight count;
+ *   2. `engine.reshape(n)` to a DIFFERENT arity succeeds and `describe()` reports
+ *      the new input size while keeping the schema output size;
+ *   3. getWeights length tracks the new arity;
+ *   4. post-ML outputs stay bounded in [0,1] and the spine still propagates.
  */
 import { test, expect } from '@playwright/test';
-import { loadProbe, getOutputs, settleInputs, countChanged, allWithin } from './helpers';
+import { loadProbe, getOutputs, settleInputs, countChanged, allWithin, weightCountFromMl } from './helpers';
+import { PafSynthSchema } from '../../src/modes/generated';
 
-// Default: 32*10 + 10*14 + 14*18 + 18*126 weights + (10+14+18+126) biases = 3148.
-const DEFAULT_WEIGHT_COUNT = 3148;
-// Reshaping to 4 inputs only shrinks the first layer: 3148 - (32-4)*10 = 2868.
-const RESHAPED_WEIGHT_COUNT = 2868;
+// The boot mode (ConsoleApp `modeId` initial state) is paf_synth.
+const BOOT = PafSynthSchema.ml;
+const BOOT_INPUT = BOOT.input_size; // 4
+const BOOT_OUTPUT = BOOT.output_size; // 33
+const BOOT_WEIGHTS = weightCountFromMl(BOOT); // 4→[10,10,14]→33 = 809
+
+// A reshape target arity guaranteed to differ from the boot arity.
+const OTHER_INPUT = BOOT_INPUT + 6; // 10
+// Reshaping only the input arity shifts the first layer: (Δin)*hidden0.
+const OTHER_WEIGHTS = BOOT_WEIGHTS + (OTHER_INPUT - BOOT_INPUT) * BOOT.hidden_layers[0]!;
 
 test.beforeEach(async ({ page }) => {
   await loadProbe(page);
 });
 
 test.describe('reshape — runtime-shaped MLP', () => {
-  test('boots at the default 32 / 126 shape', async ({ page }) => {
+  test('boots at the boot mode schema shape', async ({ page }) => {
     const arch = await page.evaluate(() => window.__nisps!.describe());
-    expect(arch.inputSize).toBe(32);
-    expect(arch.outputSize).toBe(126);
+    expect(arch.inputSize).toBe(BOOT_INPUT);
+    expect(arch.outputSize).toBe(BOOT_OUTPUT);
+    expect(arch.hidden).toEqual([...BOOT.hidden_layers]);
 
     const len = await page.evaluate(() => window.__nisps!.getWeights().length);
-    expect(len).toBe(DEFAULT_WEIGHT_COUNT);
+    expect(len).toBe(BOOT_WEIGHTS);
   });
 
-  test('reshape to 4 inputs succeeds and describe reports 4 / 126', async ({ page }) => {
-    const result = await page.evaluate(() => window.__nisps!.reshape(4));
+  test('reshape to a new arity succeeds and describe reports it', async ({ page }) => {
+    const result = await page.evaluate((n) => window.__nisps!.reshape(n), OTHER_INPUT);
     expect(result).not.toBeNull();
-    expect(result!.inputSize).toBe(4);
-    expect(result!.outputSize).toBe(126);
+    expect(result!.inputSize).toBe(OTHER_INPUT);
+    expect(result!.outputSize).toBe(BOOT_OUTPUT);
 
     const arch = await page.evaluate(() => window.__nisps!.describe());
-    expect(arch.inputSize).toBe(4);
-    expect(arch.outputSize).toBe(126);
+    expect(arch.inputSize).toBe(OTHER_INPUT);
+    expect(arch.outputSize).toBe(BOOT_OUTPUT);
   });
 
   test('getWeights length changes with the new arity', async ({ page }) => {
     const before = await page.evaluate(() => window.__nisps!.getWeights().length);
-    expect(before).toBe(DEFAULT_WEIGHT_COUNT);
+    expect(before).toBe(BOOT_WEIGHTS);
 
-    await page.evaluate(() => window.__nisps!.reshape(4));
+    await page.evaluate((n) => window.__nisps!.reshape(n), OTHER_INPUT);
 
     const after = await page.evaluate(() => window.__nisps!.getWeights().length);
-    expect(after).toBe(RESHAPED_WEIGHT_COUNT);
+    expect(after).toBe(OTHER_WEIGHTS);
     expect(after).not.toBe(before);
   });
 
   test('outputs stay bounded after reshape', async ({ page }) => {
-    await page.evaluate(() => window.__nisps!.reshape(4));
+    await page.evaluate((n) => window.__nisps!.reshape(n), OTHER_INPUT);
     await page.evaluate(() => window.__nisps!.setInputs(0.3, 0.7));
     const outs = await getOutputs(page);
-    expect(outs.length).toBe(126);
+    expect(outs.length).toBe(BOOT_OUTPUT);
     expect(allWithin(outs, 0, 1)).toBe(true);
   });
 
   test('spine still propagates after reshape', async ({ page }) => {
-    await page.evaluate(() => window.__nisps!.reshape(4));
+    await page.evaluate((n) => window.__nisps!.reshape(n), OTHER_INPUT);
 
     const a = await settleInputs(page, 0.2, 0.8);
     const b = await settleInputs(page, 0.9, 0.1);
-    expect(a.length).toBe(126);
-    expect(b.length).toBe(126);
+    expect(a.length).toBe(BOOT_OUTPUT);
+    expect(b.length).toBe(BOOT_OUTPUT);
     expect(allWithin(a, 0, 1)).toBe(true);
     expect(allWithin(b, 0, 1)).toBe(true);
     // Distinct inputs must still move the mapping through the reshaped net.

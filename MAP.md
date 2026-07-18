@@ -48,7 +48,12 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   with snap/magnetism/minimap-demotion), `SplitStage`/`OutputStage`/`InputMini`/`Manifold` (canvas, rect↔circular
   + feedback markers), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers` (Learning/Inputs/
   Outputs/Settings/Help), `VerdictCluster` (mode-aware), `ReadoutStrip`, `OutputEditor`/`CurvePad`, `icons.tsx`
-  (monochrome currentColor SVG), `model.ts`, `output-mode.ts`.
+  (monochrome currentColor SVG), `model.ts` (`MF_MODES` catalogue — schema-backed modes DERIVED from
+  `manifold/src/modes/generated/`; carries per-mode `ml` net shape + `engineId`), `output-mode.ts`.
+- `manifold/src/modes/generated/` — codegen output (`*_schema.ts`, do NOT hand-edit): `ModeSchema`
+  consts (mode_id, engine_id, ml dims, params, voice_spaces, ui) — the SOURCE OF TRUTH for `MF_MODES`.
+  Switching mode reshapes the WASM net to the mode's `ml` dims (ConsoleApp P5.3; boot mode paf_synth →
+  4→[10,10,14]→33).
 - `manifold/src/dock/` — `OutputControlRow` (off/fixed/live + mute + solo/arm + min/max/curve), `output-state.ts`,
   `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel), `BackendAdvanced.tsx`.
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
@@ -95,7 +100,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - `schemas/midi_devices/<device>.json` (×6) — CC-controllable external synths (Moog Sub 37 / Sub Phatty, Creamware Pro-12 ASB, Elektron Analog Keys, ASM Hydrasynth, Roland JD-800). Each param: `{id, cc, label, min, max, default, group}`. Canonical source for both firmware + browser device pickers. Verified-CC provenance + sources live in `synth-midi-cc.json` (repo root).
 
 ### `codegen/` — schema → C++/TS code
-- `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`). Idempotent. (TS emitters retained but dormant; re-targeted at `manifold/src/modes/generated/` in P5.)
+- `codegen/generate.ts` — Bun script: validates schemas via ajv, emits per-mode C++ `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`) AND TS `manifold/src/modes/generated/<mode>_schema.ts` (`ModeSchema` consts; P5). Idempotent. The TS output is the SOURCE OF TRUTH consumed by `MF_MODES` (`manifold/src/console/model.ts`).
 - `codegen/generate-midi-devices.ts` — separate Bun script (isolated from the mode golden test): validates `schemas/midi_devices/` via ajv, emits `nisps/midi/generated/midi_devices.hpp` (no-heap `constexpr`) and `manifold/src/midi-devices/generated/{types,devices,index}.ts`. Idempotent.
 - `codegen/seed-midi-devices.ts` — one-time/idempotent seed deriving `schemas/midi_devices/*.json` from the `synth-midi-cc.json` research artifact (slugifies labels → ids, heuristic groups).
 - `codegen/templates/`, `codegen/tests/golden/` — reference templates + golden snapshot for paf_synth.
@@ -136,7 +141,7 @@ the "BUILD DELTAS" block at the top of `docs/specs/vcv-module.md`). `src/MEMLNau
 - **Parity check**: `bash scripts/parity-check.sh`.
 - **All tests**: `bash scripts/run-all-tests.sh`.
 - **Playwright**: `cd manifold && node node_modules/.bin/playwright test` (non-snap node runner on the VPS — BUILD-PLAN gotcha; `bunx playwright test` works elsewhere).
-- **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/`; TS target returns at P5 for manifold).
+- **Codegen**: `cd codegen && bun run generate.ts` (regenerates both `nisps/modes/generated/` C++ and `manifold/src/modes/generated/` TS).
 
 ## Conventions
 

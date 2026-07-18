@@ -58,6 +58,25 @@ import { useSettings, resolveInputMap } from '../settings/settings-store';
 import { useBackendManager } from '../backends';
 import { useInputLayer } from '../inputs';
 
+/**
+ * Instrument-mode debug seam, installed on `window.__mf` under `?debug=1`
+ * (see the effect in ConsoleApp). UI-level analogue of the engine
+ * `window.__nisps` probe — lets Playwright drive mode switches and read the
+ * rendered param count, since no in-UI mode picker exists yet.
+ */
+export interface MfDebugHook {
+  setMode: (id: string) => void;
+  getModeId: () => string;
+  paramCount: () => number;
+  modeIds: () => string[];
+}
+
+declare global {
+  interface Window {
+    __mf?: MfDebugHook;
+  }
+}
+
 let SNAP_ID = 0;
 
 /** Small pill-button style for the exploring-scratchpad banner controls. */
@@ -250,6 +269,20 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     if (engine) engine.audio.setBackend(modeEngineId(modeId) as Parameters<typeof engine.audio.setBackend>[0]);
   }, [engine, modeId]);
 
+  // Per-mode net dims (one-core-engine P5.3). On mode switch — and once WASM is
+  // ready on boot (this effect depends on `engine`, so it fires when the engine
+  // transitions null→ready with the boot mode) — reshape the runtime-shaped MLP
+  // to the active mode's schema `ml` config (warm-started; the C-side dataset +
+  // feedback reset, which the transient reset below also clears). NO confirm
+  // modal: switching instrument is already a deliberate act. The P2.3 axis-count
+  // modal stays for input-LAYOUT changes only (see the reshape-offer effect).
+  useEffect(() => {
+    if (!engine) return;
+    const { inputSize, outputSize, hidden, defaultSpread } = mode.ml;
+    engine.reshape({ inputSize, outputSize, hidden }, defaultSpread);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, modeId]);
+
   // reset transient state on mode switch
   useEffect(() => {
     setParams(mode.params.map((p) => ({ ...p })));
@@ -318,6 +351,27 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setReshapeTarget(null);
     if (engine && n != null) engine.reshape({ inputSize: n });
   };
+
+  // ---- Debug seam for instrument-mode switching (`?debug=1`) ------------------
+  // There is no instrument-mode picker in the UI yet (ctx.modes/setModeId are
+  // plumbed but unrendered), so Playwright drives mode switches through this
+  // window hook — the UI-level analogue of the engine `window.__nisps` probe.
+  // Exposes the current modeId, the rendered param count, and the mode ids so
+  // the schema-modes e2e can switch a mode and assert the derived shape.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('debug') !== '1') return;
+    window.__mf = {
+      setMode: (id: string) => setModeId(id),
+      getModeId: () => modeId,
+      paramCount: () => params.length,
+      modeIds: () => MF_MODES.map((m) => m.id),
+    };
+    return () => {
+      if (window.__mf) delete window.__mf;
+    };
+  }, [modeId, params]);
 
   // Drive a pad/joystick/manifold move through the input layer's XY-pad source,
   // then mirror the raw position into React state for readouts. The layer's loop

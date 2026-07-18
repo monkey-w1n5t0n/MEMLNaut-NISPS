@@ -108,9 +108,15 @@ decision. Buffers are reused frame-to-frame; never assume a fresh array.
   when touching anything cross-cutting:
   - `types.ts`: `Focus`, `OutputMode`, `DrawerKey`, `DrawerDepth`, `FeedbackModeUI`, `SoloMode`,
     `Pin`, `FeedbackMarker`, `Snapshot`, and **`ConsoleCtx`** (the flat context handed to the dock).
-  - `model.ts`: the static instrument catalogue `MF_MODES`, `MFParam`, `ParamStatus`
+  - `model.ts`: the instrument catalogue `MF_MODES`, `MFParam`, `ParamStatus`
     (`off|fixed|live`), `ParamGroup`, plus `shapeValues()` (applies min/max/curve to raw engine
-    outputs) and `seededGradient()`.
+    outputs) and `seededGradient()`. **Schema-backed modes are DERIVED from the codegen
+    schemas in `src/modes/generated/`** (one-core-engine P5.2) — real param names/groups/count,
+    plus each mode's `ml` net shape (`MFMode.ml`) and schema `engine_id` (`MFMode.engineId`)
+    come from schema truth. A thin manifold OVERLAY (`SCHEMA_MODES` in model.ts) supplies only
+    label/glyph/ModeClass/input/ordering. Two schema-less manifold-only modes (`visualizer`,
+    `c15` placeholder) stay hand-written on `DEFAULT_MODE_ML`. Do NOT hand-edit
+    `src/modes/generated/` — it is codegen output (`bun run codegen/generate.ts`).
 
 ### The Dock (right-edge rail) — `src/console/Dock.tsx` + `Drawers.tsx`
 - 48px right rail: **TOP** = mode selector (the 5 output modes, popover); **MIDDLE** = 5 drawer
@@ -214,6 +220,17 @@ a setting → `--r-*` tokens.
   (`wasm-worker.ts`) carries the current dims in its train message and re-creates its mirror net to
   match. Debug: `window.__nisps.reshape(nIn)` / `.describe()`. See the `manifold-mixed-inputs` memory
   for the locked design (adaptive slider viz when >2 dims is still pending).
+- **Per-mode net dims (P5.3):** switching INSTRUMENT mode reshapes the net to that mode's schema
+  `ml` config (`MFMode.ml` — input/hidden/output + spread) via a `ConsoleApp` effect keyed on
+  `[engine, modeId]`. No confirm modal (switching instrument is deliberate); the axis-count
+  `ReshapeModal` above is for input-LAYOUT changes only. The effect depends on `engine`, so on boot
+  it fires once WASM is ready and lands the boot mode's dims (**paf_synth → 4→[10,10,14]→33**, weights
+  809 — NOT the 32→126 default). The reshape-offer effect reads the engine's CURRENT `inputSize`
+  live, so a mode switch that changes arity doesn't spuriously prompt (its baseline tracks axis
+  COUNT, unchanged by a pure dim change). Non-schema modes restore `DEFAULT_MODE_ML` (32→126).
+  Debug seam for tests: under `?debug=1` ConsoleApp installs `window.__mf`
+  (`setMode`/`getModeId`/`paramCount`/`modeIds`) — the UI-level analogue of `__nisps`, since no
+  in-UI instrument picker exists yet (`ctx.modes`/`setModeId` are plumbed but unrendered).
 
 ### Feedback — `src/feedback/`
 - `controller.ts` — `FeedbackController`, framework-neutral, owned by ConsoleApp. **As of one-core-

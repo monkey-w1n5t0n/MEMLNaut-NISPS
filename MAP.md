@@ -27,7 +27,6 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
   - `settings_view.hpp` — `wire_settings(mode)`: adds on-device settings views to the MEMLNaut display carousel (TFT + rotary encoder). Joystick Dual/Single toggle for the 4-input ("two 2-D joystick") modes — "Single" pins ML input channels 2,3 to neutral via `ModeBase::set_input_pinned` (no net rebuild). Registered in the `.ino` after `addSystemInfoView()`.
 - `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` — symlinks (Arduino-CLI requires sketch-tree includes; preprocessor refuses `..` in headers).
 - `firmware/README.md` — structure + build instructions.
-- `firmware/MEMLCelium-upstream/` — **vendored** verbatim snapshot of the upstream `MusicallyEmbodiedML/MEMLNaut-NISPS` @ `main` Arduino sketch (pre-refactor monorepo, does NOT use `nisps/`), preset to `MODE_MEMLCELIUM`. Self-contained: upstream `memllib`@`e291192d` + `memlp`@`ea777502` vendored as plain files; `src/daisysp` in-tree. Built directly with `arduino-cli` (not the repo build scripts) — see its `README.md` for provenance + the compile command.
 - `firmware/useq-celium/` — standalone RP2040 firmware (PlatformIO, Arduino-Pico core) that turns a uSEQ module + CV expander into a USB→CV/gate converter driven by the manifold `cvgate` backend. `shared/protocol.h` is the v2 wire-protocol single source of truth (mirrored by `manifold/src/backends/useq-protocol.ts`); `main/` (USB serial → CV1–3 + GATE1–3, I2C → expander) and `expander/` (I2C slave → CV4–11). Wire spec: `docs/specs/useq-cv-protocol.md`. Restored from the April-2026 "uSEQ-Celium" mode.
 
 ### `manifold/` — Vite + React + TS convertible-mode app (the sole browser app)
@@ -76,9 +75,9 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   prototype), `rng.ts` (seeded).
 - `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius).
 - `manifold/src/serial/` — `memlnaut-serial.ts` Web Serial scaffold + `EditorPanel.tsx` (MEMLNaut Editor mode).
-- `manifold/src/engine/exploration.ts` (+ `jolt.ts`, `ou-explore.ts`) — Jolt press + OU explore gestures
-  (Learning drawer). Interim TS math from the retired playground via get/set-weights + the spine's
-  `setOutputMorph` hook; marked `P3 SWAP POINT` for the WASM bindings.
+- `manifold/src/engine/exploration.ts` — Jolt press + OU explore gestures (Learning drawer): a thin
+  timer-driver over the shared C++ core via the `nisps_ml_jolt_*`/`nisps_ml_ou_*` bindings (the interim
+  TS math and `jolt.ts`/`ou-explore.ts` were deleted when P3 landed).
 - `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/` — `smoke`,
   `probe-api` (15-test engine-contract port), `spine` (spine invariant + probe-survives-mode-switch).
   E2E on the VPS runs via non-snap node (see BUILD-PLAN). `manifold/tests/fixtures/` — golden parity
@@ -122,9 +121,9 @@ includes; no `nisps-core`.
 ### `.github/workflows/`
 - `ci.yml` — GitHub Actions: cmake build + ctest + WASM build + parity check + lint + Playwright (cpp-tests + manifold-tests jobs). Firmware compile is documented as manual.
 
-### Submodules (in `src/`)
-- `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI). **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`.
-- `src/daisysp/` — vendored DSP library. Used by some firmware glue; nisps replaced its PitchShifter with a custom granular impl.
+### `src/` — submodule + vendored trees
+- `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI), the only true submodule. **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`. ⚠ The pinned commit currently lives on no remote (ALIGNMENT defect 1 / plan §1).
+- `src/daisysp/` — vendored plain files (NOT a submodule). Zero remaining consumers — nisps replaced its PitchShifter with a custom granular impl; deletion planned (plan S8).
 
 ### Top-level docs
 - `CLAUDE.md` — long-form architecture narrative.
@@ -148,11 +147,11 @@ includes; no `nisps-core`.
 ## Conventions
 
 - Firmware mode selection is compile-time only — `#define MEMLNAUT_MODE_TYPE` in the `.ino`.
-- `nisps/` follows Chris's RP2350 perf rules globally: no heap, `static const float` for non-trivial constants, strict `.f` suffix, memory section attrs (`NISPS_AUDIO_MEM`, `NISPS_AUDIO_FUNC`, `NISPS_APP_SRAM`, `NISPS_HOT`, `NISPS_FORCE_INLINE`).
+- `nisps/` follows Chris's RP2350 perf rules globally: no heap, `static const float` for non-trivial constants, strict `.f` suffix. Of the `perf.hpp` section attrs only `NISPS_HOT`/`NISPS_FORCE_INLINE` are actually in use — `NISPS_AUDIO_MEM`/`NISPS_APP_SRAM`/`NISPS_AUDIO_FUNC` are dead or misshapen and slated for deletion (plan S21).
 - C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
 - `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`, plus the parameterised `centered_power` free function); generated mode headers re-export via `using Curve = ::nisps::Curve;`. Since P4 there is NO TS mirror — the browser samples the WASM catalog (`nisps_curve_apply(+batch)`).
 - Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++ **and** TS types (`MF_MODES` derives params/ml-config from the generated schemas since P5; labels/ordering stay a manifold overlay). **No declarative JSON UI.**
-- WASM and firmware share the same C++; the browser MLP is runtime-shaped (`MLPCore<DynamicStorage>`, since P2): `nisps_ml_create` honours `(input, output, hidden[3])` with non-positive/null args defaulting to `32→[10,14,18]→126`; `nisps_ml_reshape` warm-starts a new shape. Firmware keeps compile-time `MLP<...>` (zero heap). Modes currently still use a slice of the default 126 outputs (per-mode dims become schema-real at P5).
+- WASM and firmware share the same C++; the browser MLP is runtime-shaped (`MLPCore<DynamicStorage>`, since P2): `nisps_ml_create` honours `(input, output, hidden[3])` with non-positive/null args defaulting to `32→[10,14,18]→126`; `nisps_ml_reshape` warm-starts a new shape. Firmware keeps compile-time `MLP<...>` (zero heap). Per-mode dims are schema-real on both targets since P5.3 (the browser reshapes on mode switch).
 - Cross-platform parity: `scripts/parity-check.sh` enforces native vs WASM agreement within 1e-5.
 
 ## Gotchas
@@ -161,7 +160,7 @@ includes; no `nisps-core`.
 - Firmware sketch path is `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` (Arduino-CLI requires sketch dir name == sketch file name); `firmware/MEMLNaut-NISPS/src/{memllib,daisysp,nisps}` are symlinks because Arduino's preprocessor refuses `..` in includes from sketch headers.
 - `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` `#undef`s Arduino macros (`sq`, `min`, `max`, `abs`, `round`) before pulling nisps headers — engines use those identifiers as method names.
 - `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in the `.ino`; combining `inline` with `__not_in_flash` produces a comdat conflict at link time.
-- The host fallback of `NISPS_AUDIO_FUNC` in `nisps/core/perf.hpp` is misshapen for use as a function-name decorator (firmware path expands to `__not_in_flash_func` which takes only a name); firmware glue avoids the macro to dodge the inconsistency. See `ALIGNMENT.md`.
+- The host fallback of `NISPS_AUDIO_FUNC` in `nisps/core/perf.hpp` is misshapen for use as a function-name decorator (firmware path expands to `__not_in_flash_func` which takes only a name); `glue/midi_io.hpp:72` still uses it despite this. Deletion planned (plan S21/L13).
 - `nisps_modes_tests` builds against generated schemas under `nisps/modes/generated/`; if you add a new mode, regenerate via `bun run codegen/generate.ts` before building.
 
 ## Smells / strategic concerns

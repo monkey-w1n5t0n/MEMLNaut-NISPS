@@ -6,87 +6,110 @@
 
 A research platform for interactive ML control of audio. We're building it to figure out what works and what doesn't — different ergonomics and ergodynamics of parameter sets, modes, ML architectures, audio engines, UI, and UX. Therefore: keep most/all parameters tweakable, ML/engine/UI/UX should each be configurable on their own axis, and the codebase has to enable/assist agentic AI coding patterns (confident changes, verifiable without hardware).
 
-The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 codebase compiling to firmware AND WASM. Since 2026-07-13 (P1 of `docs/specs/plans/one-core-engine-refactor.md`) the sole browser app is the React Manifold; the SolidJS playground is archived (`archive/playground-solidjs`). JSON schemas remain the firmware↔browser parameter contract.
+**Target vision (operator, 2026-07-20):** (1) one C++20 NISPS core serving RP2350 firmware and the browser, performance-sensitive on the MCU; (2) firmware modes runnable as modes in Manifold; (3) Manifold defaults to curated presets/modes, with the maximalist surface behind an "advanced" dev mode used to author them; (4) PlatformIO for hardware, no more .ino; (5) Manifold doubles as interface/editor for the hardware MEMLNaut (settings, presets, training, examples, visualisation).
+
+The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 codebase compiling to firmware AND WASM. Since 2026-07-13 (P1) the sole browser app is the React Manifold. JSON schemas remain the firmware↔browser parameter contract. A full-repo audit (2026-07-21, `docs/specs/recon/simplification-audit-2026-07.md`) grounds the entries below; mitigations are phased in `docs/specs/plans/simplification-plan.md`.
 
 ## Top defects (ranked by mission impact)
 
-### 1. Browser-only audio engines incomplete (2026-04-29; updated 2026-07-13)
+### 1. The verification story is void: CI red for a month, unpushed load-bearing commits, ungated deploys (2026-07-21)
 
-**What.** C15 never got past a stubbed placeholder mode, and with the playground retired at P1 (2026-07-13) it has NO home on main — the stub UI, `c15.wasm`, and `c15-glue.js` live only on branch `archive/playground-solidjs`. Mic input for XIASRI / SoundAnalysisMIDI is likewise not wired in manifold.
+**What.** CI has been 100% failing on main since 2026-07-13: the memllib submodule pin (`b37fc53`, local branch `feat/nisps-core-swap`) is reachable from no remote, so GitHub checkout dies before any gate runs — and those three firmware-critical commits exist only on this one disk. Meanwhile push-to-main deploys straight to `meml.lnfinitemonkeys.org/next/` via webhook with no gate, shipping the *committed* `manifold/public/nisps.wasm`, which has no freshness check. All P4–P6 "gates green" claims rest on local runs.
 
-**Why it blocks the mission.** "Browser engines ⊇ firmware engines" was a non-negotiable. Without C15 + mic input, manifold can't fully demonstrate the modes; users can't audition XIASRI or SoundAnalysisMIDI in the browser.
+**Why it blocks the mission.** "Verifiable without hardware" and "confident agentic changes" are the mission's operating premises; both are currently fiction at the remote/deploy boundary. One disk failure loses firmware-critical code.
 
-**Rough cost.** ~2 days. Reviving C15 now means porting the archived bridge into manifold's engine host. Mic input requires the engine-host to expose an input stream to the worklet (small worklet refactor).
+**Rough cost.** Half a day (plan §1): push the branch to the `monkey-w1n5t0n/memllib` fork, repoint `.gitmodules`, confirm green, add codegen + WASM-freshness steps; deploy gating is an operator decision (plan §7.4).
 
-### 2. Per-iteration loss curve not plumbed through WASM (2026-04-29)
+### 2. The mode layer is not shared: WASM re-orchestrates modes by hand (2026-07-21)
 
-**What.** Stream 7's WASM C API exposes `_nisps_ml_train` but only returns the final loss; `MLP::loss_history()` exists in C++ but isn't reached. `lossHistory` in `mlStore` is a single-element array per training run.
+**What.** `nisps/modes/` — the CRTP layer binding ML config, engine, voice-space and I/O — compiles only into firmware. `nisps/wasm/bindings.cpp` includes engines and ML primitives but zero mode headers, and Manifold re-assembles mode behaviour (jolt stepping, OU, routing) in TS. "Firmware and WASM share the same modes" is true only at the engine level; every ModeBase behaviour must be mirrored browser-side by hand.
 
-**Why it blocks the mission.** Gradient flow / loss visualization is a core UX affordance for "is the network learning?" — a research-mode debugging tool that's been implemented end-to-end in C++ but stops at the WASM boundary.
+**Why it blocks the mission.** Vision bullet 2 is precisely this. Until the control-tick orchestration exists once in C++, every new mode behaviour is a dual implementation with drift risk.
 
-**Rough cost.** Half a day. Add `nisps_ml_train_with_history` (or extend the existing call) returning a pointer to the loss array; copy on the JS side.
+**Rough cost.** Spec first, then ~a week: storage-policy the ModeBase orchestration the way P2 did MLPCore (verified shape in plan §6.5a — *not* binding monolithic mode objects, which would contradict the locked two-instance RT architecture). Related honesty gap: Manifold currently catalogues 4 modes that structurally cannot run in the browser (no mic input, event-only engines) — plan §6.5b (absorbs the old C15/mic-input defect; C15 itself lives on `archive/playground-solidjs`).
 
-### 4. `NISPS_AUDIO_FUNC` host fallback is misshapen (2026-04-29)
+### 3. No curated/advanced split and no in-UI mode picker — the UI fights vision 3 (2026-07-21)
 
-**What.** `nisps/core/perf.hpp` defines `NISPS_AUDIO_FUNC(decl) decl` for the host but the firmware path `__not_in_flash_func(name)` takes only a function name (it stringifies into a section attribute). The two forms don't match. Stream 6 (firmware glue) avoided the macro to dodge the inconsistency, but it's still a footgun.
+**What.** Manifold is 100% dev-maximalist: five drawers of everything, no preset data model to author against, and mode switching exists only via the debug hook — there is no instrument picker in the UI at all (the plumbing, `ctx.modes`/`setModeId`, already exists unused). A stratum of decorative controls (training-param sliders, master volume, bpm, A/B, snapshots, fabricated gradient health) renders real-looking UI that drives nothing.
 
-**Why it blocks the mission.** Future agents touching `nisps/` will hit this. Either decoration form in the codebase is fine; what's wrong is that the same call site shape doesn't work both places.
+**Why it blocks the mission.** The default experience is supposed to be curated presets; the advanced surface is the authoring tool. Neither exists, and the decorative stratum actively misleads research use.
 
-**Rough cost.** Tiny. Pick one form and apply consistently:
-- Option A: `NISPS_AUDIO_FUNC` decorates a function name (e.g. `void NISPS_AUDIO_FUNC(my_callback)(...) { ... }`). Host stub: `#define NISPS_AUDIO_FUNC(name) name`.
-- Option B: separate `NISPS_AUDIO_FUNC_BEGIN` / `_END` markers around the function, or a different macro.
-Pick A. Update perf.hpp + every `nisps/` use site.
+**Rough cost.** Product-model decision first (plan §7.6), then incremental: picker is days; the curated-preset model seeds from `backends/presets.ts` + schemas; disclosure via per-drawer depth levels. Deleting the decorative stratum is part of the Phase-1 sweep.
 
-### 5. RMSProp deferred from `nisps/ml/` (2026-04-29)
+### 4. Arduino-CLI build machinery is actively hostile — vision 4 unstarted (2026-07-21)
 
-**What.** The legacy MLP supported both SGD and RMSProp paths. Stream 2 shipped only SGD as MVP. The architecture spec called for both. Documented as a follow-up Ergo task when needed.
+**What.** The build script sed-mutates the committed `.ino` to select variants (polluting history), the mode list is triple-bookkept (a `NISPS_ST_*` token-paste table is already silently missing the currently-active SLPWorkshop variant), a symlink forest works around Arduino's include rules, and the toolchain globally mutates the installed TFT_eSPI library. Firmware compilation is in no automated gate anywhere.
 
-**Why it blocks the mission.** Optimizer choice is one of the things research wants to vary. Not blocking for the current XOR-style fits, but as soon as we tune for harder loss landscapes, RMSProp will matter.
+**Why it blocks the mission.** Fragile-by-design builds are the opposite of "confident agentic changes"; the vision names PlatformIO explicitly. `firmware/useq-celium/` already proves the PIO pattern in-repo.
 
-**Rough cost.** A day. Port the firmware's RMSProp from `src/memlp/MLP.cpp:415-543` (decay 0.9, epsilon 1e-6, gradient accumulation, batch size). Add tests for batch training convergence.
+**Rough cost.** 2–3 days, one cut (plan §5): env-per-variant `platformio.ini`, delete ~400 lines of hackery, then a firmware CI job. Gated on the memllib ownership decision (plan §7.5).
+
+### 5. Manifold-as-hardware-editor is a facade (2026-07-21)
+
+**What.** Vision bullet 5 exists as a 237-line Web Serial shell: sound connect lifecycle, zero protocol (`saveModel`/`restoreModel`/`getSettings` are literal stubs), and firmware has no serial command surface or on-device persistence to talk to.
+
+**Why it blocks the mission.** The hardware research loop (train on device, inspect/curate in browser) is closed only by this bridge.
+
+**Rough cost.** Week+, spec-first (plan §6.5d). The right discipline already exists in-repo: useq-celium's C-header wire truth + TS mirror + parity test; settings payloads should derive from schema codegen.
+
+### 6. Dead mass and registry sprawl across every layer (2026-07-21)
+
+**What.** The audit's aggregate: ~40% of `feedback.hpp` is legacy modes nothing reaches; a dead four-way focus/altitude UI system; ~25 unconsumed ConsoleCtx fields; a dozen dead WASM API entries threaded through a 5-file registration chain; daisysp compiled into every firmware build with zero consumers; retired-playground artifacts and dead planning relics tracked at root; mode identity spread across ~6 hand-maintained registries with demonstrated drift; assorted stale specs presenting a deleted world as present tense.
+
+**Why it blocks the mission.** Every dead path is agent-confusing surface area and drift risk; the registries are dual-truth bugs waiting to fire (one already did: the selftest table).
+
+**Rough cost.** Plan phases 1–3 (~a week total, mostly mechanical deletions with green gates). Behaviour bugs found en route (dataset-cap divergence 100 vs 128 + OOB read, VCV 2-D input truncation, VCV audio-thread race + JSON) are plan §3.
+
+### 7. No performance measurement despite a performance-defined mission (2026-07-21)
+
+**What.** The "super performance-sensitive" constraint is enforced only by static discipline (no-heap lint — itself with proven false negatives — and section attrs, 3/5 of which are dead macros). No benchmark, no CPU-load assertion, no flash/RAM size report on either target; the 16 KB dead buffer was found by reading, not by any gate.
+
+**Rough cost.** ~A day for a host-side blocks-per-second benchmark + a per-variant size report in `build-firmware.sh` (plan §6.5f).
+
+### 8. Training-health telemetry: one product decision fragmented into four half-features (2026-07-21)
+
+**What.** A 16 KB loss-history buffer in every firmware MLP that nothing reads; a WASM worker faking a 1-element loss history; decorative gradient-health UI; and a real `get_layer_stats` API plumbed end-to-end and consumed by nobody.
+
+**Why it blocks the mission.** "Is the network learning?" is a core research affordance — currently it *looks* answered while being fake. Decide feature-or-delete once (plan §7.3) and collapse all four limbs accordingly.
+
+### 9. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
+
+**What.** `training.hpp` ships SGD only; the legacy firmware used RMSProp for `TrainBatch`. Optimizer choice is a research axis. Not blocking current fits; will matter for harder loss landscapes. Port target: upstream MusicallyEmbodiedML `memlp` (the in-repo `src/memlp` copy is deleted; use the GitHub remote or archive branch).
+
+**Rough cost.** A day, plus batch-convergence tests.
 
 ## Open mission questions
 
 ### Q1: Per-mode MLP architectures or one shared shape? (2026-04-29)
 
-Schemas declare per-mode `input_size`/`hidden_layers`/`output_size` (some hidden `[10, 10, 14]`, some `[10, 14, 18]`; inputs 4 or 10; outputs 24–56). As of P5.3 BOTH targets honour them: firmware compiles per-mode, and the browser now reshapes the runtime-shaped WASM net to the active mode's `ml` config on mode switch (was fixed at one 32→126 shape). This works for now. Is the mission served by maintaining per-mode shapes (research diversity) or by collapsing to one (simpler ops)?
+Schemas declare per-mode dims and since P5.3 both targets honour them. Is the mission served by maintaining per-mode shapes (research diversity) or collapsing to one (simpler ops)? Note the audit found all 9 mode schemas share copy-pasted ML defaults and 20 params are anonymous placeholders — the per-mode diversity is currently nominal (plan L40).
 
-### Q2: How to express "advanced" features (gradient flow, weight health) without cluttering modes? (2026-04-29)
+### Q2: Engine event taxonomy (2026-04-29)
 
-The retired playground reproduced the a-immersive "Advanced" toggle; manifold hides power features in drawers instead. Is this the right model, or should the mode UI itself decide what's exposed (some modes are "expert-only", some are simpler)?
+`ControlEvent` is a flat enum consumed by the two sequencer modes. Revisit when a third event-emitting mode lands.
 
-### Q3: Engine event taxonomy (2026-04-29)
+### Q3: Should Manifold stay desktop-first? (2026-04-29)
 
-`nisps/modes/base.hpp` exposes a `ControlEvent` ring buffer pop_events interface for sequencer modes (BreakOr, Elysiamorf). Currently events are a flat enum. As we add more event-emitting modes (custom MIDI mappings, lighting, networked control), how should the event vocabulary grow? Open question; revisit when we add the third event-emitting mode.
+Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user data exists.
 
-### Q4: Should the browser app (manifold) stay desktop-first? (2026-04-29)
+### Q4: Who owns memllib? (2026-07-21)
 
-The original a-immersive was mobile-first ("designed for touch / foldable phone use"). The SolidJS rewrite is desktop-first by default. If the research story is "the user holds a phone and pinches to zoom while a synth runs in their pocket", we'll need a responsive pass. Defer until we have user data.
+Fork-pin (PIO `lib_deps` on `monkey-w1n5t0n/memllib`), vendor the actually-used subset, or upstream the nisps-swap to MusicallyEmbodiedML? Requires the load-bearing-surface inventory (plan §5). Phase 0 pushes the branch either way.
+
+### Q5: Legacy feedback modes — delete or keep for A/B? (2026-07-21)
+
+`RandomiseOutputs`/`RandomiseMlp`/`Diffuse`/`on_drag` have no product consumer, but `docs/adr/rl-feedback-design.md` explicitly kept Diffuse for A/B comparison. Deleting reverses a recorded decision — operator call (plan §7.1).
 
 ## Deferred / accepted debt
 
-- **EOC effects chain integration** — out of v1 rewrite (recon flagged as legacy complexity).
-- **ShapeSeq sequencer** — gated behind `?shapeseq=1` in legacy; out of v1.
-- **Modular engine (Phase E)** — newer JS-side feature in legacy; out of v1.
-- **Engine configuration panel** (SPEC-controls Part 8) — backlog. Would let users tune network architecture, loss, optimizer at runtime. Currently compile-time only.
-- **VCV Rack module** — used to consume `nisps-core/`. Now gone. If revived, it'd consume `nisps/` directly via CMake; not currently maintained.
-- **Geometric-dislike deliberate divergences** (2026-07-14, one-core-engine P3; supersedes and RETRACTS the 2026-06-18 "Avoid = move_weights, geometric push not ported" note — the k-NN centroid push IS now ported, upstream `InterfaceRL` @ `0a541cc`, into `nisps/ml/{replay,geo_push}.hpp` + `feedback.hpp` `AvoidStyle::Geometric` default). Two divergences are by design:
-  1. The upstream `useRandom` degenerate branch (disliked action exactly on the centroid) draws from the controller's deterministic `nisps::Rng`, not libc `rand()` — native==WASM parity holds (parity Stage 6); the value is generated, never compared against upstream.
-  2. Upstream trains via async `optimise()` with shuffled `TrainBatch` over positive+geometric batches at two LRs; nisps collapses press+optimise into ONE synchronous `dislike_geometric()` that trains only the pressed negative's target (per-sample SGD, no shuffle). Behavioural — not bitwise — parity with firmware upstream, by design; `native == WASM` is pinned at 1e-5 instead.
-  Also: `RandomiseMlp` still uses `draw_weights(spread)` rather than the old asymmetric `RandomiseWeightsAndBiasesLin(-0.9,1.1,-0.9,0.3)` (unchanged accepted divergence).
-
-- **Manifold dock splits `state`/`muted`/`armed` into three fields, diverging from the deployed conflated `frozen`↔`muted`** (2026-06-28) — the deployed a-immersive override system maps the heatmap-popup `frozen` and the group-drawer `muted` onto ONE underlying field. The Manifold per-output model (`manifold/src/dock/output-state.ts`, folded onto `MFParam`) deliberately separates them: `status` carries the off/fixed/live tri-state, `muted` is downstream-silence (still computed + visible), `armed` is solo/focus-training. Cleaner semantics; intentional divergence (dock-spec §3.3, open choice 3). Note `muted`-downstream and the `soloMode` gradient-mask variants (mask-gradients / zero-loss / dont-care) are UI+state only so far — the engine C API exposes `set_focus` but not per-mode gradient masking nor a downstream mute gate yet (TODOs in `ConsoleApp.tsx` / `Drawers.tsx` reference rl-feedback-design §3 and dock-spec §3.3).
+- **EOC effects chain, ShapeSeq sequencer, modular engine (Phase E)** — legacy features consciously out of the v1 rewrite; revisit only if a mode wants them.
+- **Inputs multi-source composition** (2026-06-28, reaffirmed 2026-07-21) — mix-and-match pad+gamepad+MIDI is a recorded, unreversed decision; the UI currently enforces exclusive single-source and the composition machinery sits dormant *by design*. Schedule or keep dormant — but the inputs-spec must stop presenting composition as current behaviour (plan §8).
+- **Schema content is partially placeholder** (2026-07-21) — 20 anonymous "Param NN" slots across paf_synth/channel_strip/xiasri and copy-pasted ML defaults across all 9 modes. Name them during the first curated-preset pass per mode (plan §6.5c), or shrink `output_size` where the engine allows.
+- **Geometric-dislike deliberate divergences** (2026-07-14, one-core P3): (1) the degenerate-branch RNG draws from the controller's deterministic `nisps::Rng`, not libc `rand()` — native==WASM parity holds; (2) upstream's async shuffled two-LR `optimise()` is collapsed into one synchronous `dislike_geometric()` training only the pressed negative's target — behavioural, not bitwise, parity with firmware upstream, by design; (3) `RandomiseMlp` uses `draw_weights(spread)` rather than the old asymmetric ranges. All intentional.
+- **Manifold dock splits `state`/`muted`/`armed`** (2026-06-28) — deliberate divergence from the deployed conflated `frozen`↔`muted` model (dock-spec §3.3). `muted`-downstream and the `soloMode` gradient-mask variants remain UI-only; the C API exposes `set_focus` but no per-mode gradient masking yet. (The audit found `soloMode` behaviourally inert in the controller — plan L20 trims it until `train_masked` exists.)
 
 ## Recently resolved (delete after a few weeks)
 
-- 2026-07-18: Browser curve maths unified onto the canonical `nisps/core/math.hpp` catalog at P4. The retired TS mirror had silently divergent maths for `exp`/`log` (k=4 vs the C++ k=1-normalised pair), `sigmoid` (slope 8 vs 6) and `cubic` (smoothstep vs x³) — browser-shaped params now behave firmware-exact. `linear/square/sqrt/centred-power` were already identical; the four changed curves were re-baselined in `manifold/tests/fixtures/curves-golden.json`.
-
-- 2026-07-14: Defect "WASM MLP architecture is fixed" resolved by one-core-engine P2: `nisps/ml/` is storage-policied (`MLPCore<Storage>`); the browser MLP is runtime-shaped (`DynamicStorage`), `nisps_ml_create` honours dims, `nisps_ml_reshape` warm-starts. Firmware keeps the zero-heap fixed template (`.text` +0.30%, within contract).
-
-- 2026-04-29: Three-implementation ML duplication (firmware `memlp`, `nisps-core`, JS engine) collapsed to single `nisps/` C++ codebase.
-- 2026-04-29: Firmware mode forks (~280–400 lines duplicated across 8 modes) collapsed via `nisps/modes/base.hpp` CRTP scaffold; concrete modes are now ~50–130 lines.
-- 2026-04-29: meml-ues double-scaling MSE bug fixed in `nisps/ml/loss.hpp` + `mlp.hpp`.
-- 2026-04-29: `nisps-core/` retired; firmware is the canonical source of truth for ML.
-- 2026-04-29: `src/memlp/` submodule deleted.
-- 2026-04-29: Legacy playground variants (a-immersive.html, b-workbench, c-journey, designs.html, all `js/`) deleted in favor of SolidJS scaffold.
-- 2026-04-29: Native↔WASM parity verified within 1e-5 (max delta 2.4e-7) for representative ML + engine outputs.
+- 2026-07-21: Full-repo simplification audit landed (recon + plan + this rewrite). Superseded entries removed: "browser-only engines incomplete" (→ defect 2/plan 5b), "loss curve not plumbed" (→ defect 8), "NISPS_AUDIO_FUNC misshapen" (→ plan Phase 1, S21/L13), stale "VCV not currently maintained" note (vcv/ is active and consumes `nisps/` directly post-P6).
+- 2026-07-18: Browser curve maths unified onto the canonical `nisps/core/math.hpp` catalog at P4; four silently-divergent TS curves re-baselined.
+- 2026-07-14: WASM MLP fixed-architecture defect resolved by P2 (`MLPCore<Storage>`; browser runtime-shaped, firmware zero-heap fixed).

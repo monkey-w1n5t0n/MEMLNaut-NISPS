@@ -100,6 +100,7 @@ All specs below are stable or evolving (no aspirational ones in shipped features
 | `plans/BUILD-PLAN.md` | active | Manifold build resume anchor (dated 2026-06-27). Locked decisions: React app in `manifold/`, parity-tested TS engine from `playground/src`, staging deploy at `meml.lnfinitemonkeys.org/next`, default feedback mode = Explore-and-Place. |
 | `plans/playground-2.0-rewrite-plan.md` | executed | SolidJS clean-room rewrite plan (June 2026). Largely implemented in Manifold + playground foundation: one fullscreen instrument, Console interaction model, right-edge dock with three depths, snapshot DAG, control-point tri-state. |
 | `plans/one-core-engine-refactor.md` | active | Firmware+Manifold core reunification (dated 2026-07-13). Locked: retire `playground/`, all algorithms into `nisps/` C++ (geometric dislike, Jolt, OU, RNG, pipelines, curves), storage-policy MLP (fixed template on RP2350, runtime-shaped in WASM/VCV), codegen serves manifold, VCV last. Supersedes BUILD-PLAN's "multiple WASM modules" MLP decision. |
+| `plans/simplification-plan.md` | active | Phased burn-down of the 2026-07-21 simplification audit (proposal; phases gated on operator adoption). Phase 0 restores CI/verification (memllib pin unreachable, deploys ungated); then dead-mass deletion, behaviour bugs, registry consolidation, PlatformIO migration, vision-facing builds. §7 lists the operator decisions. |
 
 ---
 
@@ -115,6 +116,7 @@ All findings are dated 2026-06-27 unless otherwise noted; exempt from drift lint
 | `recon/midi-gamepad-inputs-worklog.md` | 2026-06-27 | Work log of `feat/midi-inputs` branch. Modular input sources (MIDI, gamepad), 32-input WASM foundation, gamepad→verdict wiring. Exclusive picker (not mixing) shipped; mixing engine groundwork done but UI deferred. |
 | `recon/upstream-firmware-survey.md` | 2026-06-27 | Git archaeology of the MusicallyEmbodiedML ecosystem. origin/main (C++20/SolidJS rewrite) and upstream/main (old `.ino` firmware) forked at `6efbe9c` (2026-04-14); 49 commits upstream not in origin are ports, not merges. |
 | `recon/playground-2026.md` | 2026-04-12 | Design intent snapshot of an unfinished playground UI redesign. Reference-only for SolidJS rewrite; do NOT merge into vanilla playground (those files moved on independently). |
+| `recon/simplification-audit-2026-07.md` | 2026-07-21 | Full-repo smell/bloat/spec audit vs the five-bullet one-core vision (66-agent workflow, adversarially verified). 113 findings: CI red since 2026-07-13, memllib pin unpushed, ungated deploys, mode layer unshared, no curated/advanced split, dead-mass inventory. Mitigations in `plans/simplification-plan.md`. |
 
 ---
 

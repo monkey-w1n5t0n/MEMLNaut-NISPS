@@ -26,8 +26,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include "../src/nisps/modes/base.hpp"
-#include "../src/memllib/interface/MIDIInOut.hpp"
+#include "nisps/modes/base.hpp"
+#include "interface/MIDIInOut.hpp"
 
 namespace nisps_firmware {
 

@@ -4,226 +4,64 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-SKETCH_PATH="${MEMLNAUT_FIRMWARE_SKETCH:-$REPO_ROOT/firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino}"
-SKETCH_NAME="$(basename "$SKETCH_PATH")"
-BUILD_DIR="${MEMLNAUT_FIRMWARE_BUILD_DIR:-/tmp/memlnaut-firmware-build}"
-UF2_PATH_DEFAULT="${MEMLNAUT_FIRMWARE_UF2:-$BUILD_DIR/${SKETCH_NAME}.uf2}"
-
-FQBN="${MEMLNAUT_FIRMWARE_FQBN:-rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3}"
-CXX20_BUILD_PROPERTY="${MEMLNAUT_FIRMWARE_CXX20_PROPERTY:-compiler.cpp.extra_flags=-std=gnu++20}"
-UF2_LABEL_CANDIDATES=("${MEMLNAUT_FIRMWARE_UF2_LABEL_1:-RP2350}" "${MEMLNAUT_FIRMWARE_UF2_LABEL_2:-RPI-RP2}" "${MEMLNAUT_FIRMWARE_UF2_LABEL_3:-RP2040}")
+# PlatformIO project directory (contains platformio.ini). One [env:<alias>]
+# per firmware variant defined there — that file IS the variant registry,
+# there is no separate in-source list to keep in sync.
+FIRMWARE_PROJECT_DIR="${MEMLNAUT_FIRMWARE_PROJECT_DIR:-$REPO_ROOT/firmware/MEMLNaut-NISPS}"
+PLATFORMIO_INI="$FIRMWARE_PROJECT_DIR/platformio.ini"
 
 FIRMWARE_VARIANTS=()
-ACTIVE_FIRMWARE_VARIANT=""
+ACTIVE_FIRMWARE_VARIANT=""  # platformio.ini's [platformio] default_envs, if set
 
-ensure_arduino_cli() {
-  if ! command -v arduino-cli >/dev/null 2>&1; then
-    echo "error: arduino-cli is not installed or not on PATH" >&2
-    exit 1
-  fi
-}
-
-ensure_git() {
-  if ! command -v git >/dev/null 2>&1; then
-    echo "error: git is not installed or not on PATH" >&2
-    exit 1
-  fi
-}
-
-ensure_submodules_ready() {
-  ensure_git
-
-  local status
-  status="$(git -C "$REPO_ROOT" submodule status --recursive)"
-  if grep -qE '^[+-]' <<<"$status"; then
-    echo "error: submodules are not initialized or not at the recorded revision" >&2
-    echo "run: git submodule update --init --recursive" >&2
-    exit 1
-  fi
-}
-
-resolve_path() {
-  local path="$1"
-
-  if [[ "$path" = /* ]]; then
-    printf '%s\n' "$path"
-  else
-    printf '%s\n' "$(pwd)/$path"
-  fi
-}
-
-find_boot_mount() {
-  local candidates=(
-    "/run/media/${USER}/RP2350"
-    "/run/media/${USER}/RPI-RP2"
-    "/media/${USER}/RP2350"
-    "/media/${USER}/RPI-RP2"
-    "/mnt/RP2350"
-    "/mnt/RPI-RP2"
-  )
-  local candidate
-
-  for candidate in "${candidates[@]}"; do
-    if [[ -d "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-
-  local base
-  for base in "/run/media/${USER}" "/media/${USER}" "/mnt"; do
-    [[ -d "$base" ]] || continue
-    candidate="$(find "$base" -maxdepth 2 -type f -name INFO_UF2.TXT -printf '%h\n' 2>/dev/null | head -n 1 || true)"
-    if [[ -n "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-is_known_uf2_label() {
-  local label="$1"
-  local candidate
-
-  for candidate in "${UF2_LABEL_CANDIDATES[@]}"; do
-    if [[ -n "$candidate" && "$label" == "$candidate" ]]; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-find_boot_block_device() {
-  local line
-  local dev_path=""
-  local dev_fstype=""
-  local dev_label=""
-  local dev_mountpoints=""
-
-  while IFS= read -r line; do
-    dev_path=""
-    dev_fstype=""
-    dev_label=""
-    dev_mountpoints=""
-    eval "$(
-      sed -E \
-        -e 's/(^|[[:space:]])PATH=/\1dev_path=/' \
-        -e 's/(^|[[:space:]])FSTYPE=/\1dev_fstype=/' \
-        -e 's/(^|[[:space:]])LABEL=/\1dev_label=/' \
-        -e 's/(^|[[:space:]])MOUNTPOINTS=/\1dev_mountpoints=/' \
-        <<<"$line"
-    )"
-
-    [[ -n "$dev_path" ]] || continue
-    [[ "$dev_fstype" == "vfat" || "$dev_fstype" == "msdos" || "$dev_fstype" == "fat" ]] || continue
-    is_known_uf2_label "$dev_label" || continue
-
-    printf '%s\n' "$dev_path"
-    return 0
-  done < <(lsblk -P -o PATH,FSTYPE,LABEL,MOUNTPOINTS 2>/dev/null || true)
-
-  return 1
-}
-
-mount_boot_block_device() {
-  local device_path="$1"
-  local mount_output=""
-  local mounted_path=""
-
-  if command -v udisksctl >/dev/null 2>&1; then
-    mount_output="$(udisksctl mount -b "$device_path" 2>/dev/null || true)"
-    mounted_path="$(sed -nE "s#.* at (.+)\.?#\1#p" <<<"$mount_output" | tail -n 1)"
-    if [[ -n "$mounted_path" && -d "$mounted_path" ]]; then
-      printf '%s\n' "$mounted_path"
-      return 0
-    fi
-  fi
-
-  return 1
-}
-
-ensure_boot_mount() {
-  local mountpoint=""
-  local device_path=""
-
-  mountpoint="$(find_boot_mount || true)"
-  if [[ -n "$mountpoint" ]]; then
-    printf '%s\n' "$mountpoint"
+ensure_pio() {
+  if command -v pio >/dev/null 2>&1; then
     return 0
   fi
-
-  device_path="$(find_boot_block_device || true)"
-  if [[ -z "$device_path" ]]; then
-    return 1
-  fi
-
-  mountpoint="$(mount_boot_block_device "$device_path" || true)"
-  if [[ -n "$mountpoint" ]]; then
-    printf '%s\n' "$mountpoint"
-    return 0
-  fi
-
-  mountpoint="$(find_boot_mount || true)"
-  if [[ -n "$mountpoint" ]]; then
-    printf '%s\n' "$mountpoint"
-    return 0
-  fi
-
-  return 1
+  echo "error: pio (PlatformIO Core) is not installed or not on PATH" >&2
+  echo "  This machine uses nix. Run commands through:" >&2
+  echo "      nix-shell -p platformio-core --run '<command>'" >&2
+  echo "  (NOT 'nix-shell -p platformio' — that package wraps the CLI in a" >&2
+  echo "  bubblewrap FHS sandbox that needs a real user namespace and fails" >&2
+  echo "  under containerised/sandboxed shells. platformio-core is the same" >&2
+  echo "  CLI, unwrapped, and works everywhere.)" >&2
+  exit 1
 }
 
-assert_boot_mount() {
-  local mountpoint="$1"
-
-  if [[ ! -d "$mountpoint" ]]; then
-    echo "error: bootloader mount does not exist: $mountpoint" >&2
-    exit 1
-  fi
-
-  if [[ ! -f "$mountpoint/INFO_UF2.TXT" && ! -f "$mountpoint/INDEX.HTM" ]]; then
-    echo "error: $mountpoint does not look like an RP2040/RP2350 UF2 boot volume" >&2
-    exit 1
-  fi
+# Runs `pio` against the firmware project dir without requiring the caller's
+# cwd to be there. Always goes through nix-shell so callers don't need pio
+# pre-installed on PATH.
+run_pio() {
+  ensure_pio
+  pio "$@" -d "$FIRMWARE_PROJECT_DIR"
 }
 
 load_firmware_variants() {
-  mapfile -t FIRMWARE_VARIANTS < <(
-    grep -E '^[[:space:]]*(//[[:space:]]*)?#define[[:space:]]+MEMLNAUT_MODE_TYPE[[:space:]]+MEMLNautMode[A-Za-z0-9_]+' "$SKETCH_PATH" \
-      | sed -E 's/^[[:space:]]*(\/\/[[:space:]]*)?#define[[:space:]]+MEMLNAUT_MODE_TYPE[[:space:]]+//'
-  )
+  if [[ ! -f "$PLATFORMIO_INI" ]]; then
+    echo "error: platformio.ini not found: $PLATFORMIO_INI" >&2
+    exit 1
+  fi
 
+  mapfile -t FIRMWARE_VARIANTS < <(
+    grep -E '^\[env:[A-Za-z0-9_]+\]' "$PLATFORMIO_INI" | sed -E 's/^\[env:([A-Za-z0-9_]+)\]$/\1/'
+  )
   if [[ ${#FIRMWARE_VARIANTS[@]} -eq 0 ]]; then
-    echo "error: could not find any MEMLNaut mode variants in $SKETCH_PATH" >&2
+    echo "error: no [env:<variant>] sections found in $PLATFORMIO_INI" >&2
     exit 1
   fi
 
   ACTIVE_FIRMWARE_VARIANT="$(
-    grep -E '^[[:space:]]*#define[[:space:]]+MEMLNAUT_MODE_TYPE[[:space:]]+MEMLNautMode[A-Za-z0-9_]+' "$SKETCH_PATH" \
-      | sed -E 's/^[[:space:]]*#define[[:space:]]+MEMLNAUT_MODE_TYPE[[:space:]]+//' \
-      | head -n 1
+    grep -E '^\s*default_envs\s*=' "$PLATFORMIO_INI" | head -n1 \
+      | sed -E 's/^\s*default_envs\s*=\s*//' | tr -d '[:space:]'
   )"
-}
-
-variant_display_name() {
-  local variant="$1"
-  printf '%s\n' "${variant#MEMLNautMode}"
-}
-
-variant_alias() {
-  variant_display_name "$1" | tr '[:upper:]' '[:lower:]'
 }
 
 resolve_firmware_variant() {
   local requested="$1"
-  local requested_lower
-  local variant
+  local requested_lower variant
 
   requested_lower="$(printf '%s' "$requested" | tr '[:upper:]' '[:lower:]')"
   for variant in "${FIRMWARE_VARIANTS[@]}"; do
-    if [[ "$requested" == "$variant" || "$requested_lower" == "$(printf '%s' "$variant" | tr '[:upper:]' '[:lower:]')" || "$requested_lower" == "$(variant_alias "$variant")" ]]; then
+    if [[ "$requested_lower" == "$(printf '%s' "$variant" | tr '[:upper:]' '[:lower:]')" ]]; then
       printf '%s\n' "$variant"
       return 0
     fi
@@ -248,9 +86,9 @@ choose_firmware_variant() {
     fi
 
     echo "error: unknown firmware variant: $requested" >&2
-    echo "available variants:" >&2
+    echo "available variants (from $PLATFORMIO_INI):" >&2
     for variant in "${FIRMWARE_VARIANTS[@]}"; do
-      echo "  - $(variant_display_name "$variant") ($variant)" >&2
+      echo "  - $variant" >&2
     done
     exit 1
   fi
@@ -260,9 +98,9 @@ choose_firmware_variant() {
     local idx=1
     for variant in "${FIRMWARE_VARIANTS[@]}"; do
       if [[ "$variant" == "$ACTIVE_FIRMWARE_VARIANT" ]]; then
-        printf '  %d) %s (%s, current)\n' "$idx" "$(variant_display_name "$variant")" "$variant" >&"$tty_fd"
+        printf '  %d) %s (default)\n' "$idx" "$variant" >&"$tty_fd"
       else
-        printf '  %d) %s (%s)\n' "$idx" "$(variant_display_name "$variant")" "$variant" >&"$tty_fd"
+        printf '  %d) %s\n' "$idx" "$variant" >&"$tty_fd"
       fi
       idx=$((idx + 1))
     done
@@ -286,52 +124,11 @@ choose_firmware_variant() {
   fi
 
   if [[ -n "$ACTIVE_FIRMWARE_VARIANT" ]]; then
-    echo "No variant specified and no interactive terminal available; using current variant: $(variant_display_name "$ACTIVE_FIRMWARE_VARIANT")" >&2
+    echo "No variant specified and no interactive terminal available; using platformio.ini's default_envs: $ACTIVE_FIRMWARE_VARIANT" >&2
     printf '%s\n' "$ACTIVE_FIRMWARE_VARIANT"
     return 0
   fi
 
-  echo "error: no variant specified and no active variant found in $SKETCH_PATH" >&2
+  echo "error: no variant specified, no interactive terminal, and no default_envs set in $PLATFORMIO_INI" >&2
   exit 1
-}
-
-set_firmware_variant() {
-  local requested="$1"
-  local selected
-
-  selected="$(choose_firmware_variant "$requested")"
-  "${PYTHON:-python3}" - "$SKETCH_PATH" "$selected" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-sketch_path = Path(sys.argv[1])
-selected = sys.argv[2]
-
-pattern = re.compile(r'^(\s*)(//\s*)?#define(\s+MEMLNAUT_MODE_TYPE\s+)(MEMLNautMode[A-Za-z0-9_]+)(\s*)$')
-lines = sketch_path.read_text().splitlines()
-updated = []
-found_selected = False
-
-for line in lines:
-    match = pattern.match(line)
-    if not match:
-        updated.append(line)
-        continue
-
-    indent, _, middle, variant, trailing = match.groups()
-    if variant == selected:
-        updated.append(f"{indent}#define{middle}{variant}{trailing}")
-        found_selected = True
-    else:
-        updated.append(f"{indent}// #define{middle}{variant}{trailing}")
-
-if not found_selected:
-    raise SystemExit(f"selected variant not found in sketch: {selected}")
-
-sketch_path.write_text("\n".join(updated) + "\n")
-PY
-
-  ACTIVE_FIRMWARE_VARIANT="$selected"
-  echo "Selected firmware variant: $(variant_display_name "$selected") ($selected)"
 }

@@ -15,17 +15,18 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `nisps/midi/generated/midi_devices.hpp` — codegen output: no-heap `constexpr` external-MIDI-synth templates (`nisps::midi::generated`; `MidiParam`/`MidiDevice` + `kMidiDevices` registry). Source = `schemas/midi_devices/`; do not edit by hand.
 - `nisps/CMakeLists.txt` + `nisps/build/` — host-target builds + ctest.
 
-### `firmware/` — Arduino sketch + hardware glue
-- `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` — entry point. Selects active mode at compile time via `#define MEMLNAUT_MODE_TYPE`. Forks on `NISPS_SELFTEST`: normal modes run the engine/ML path; the `SelfTest` variant delegates all four entry points to `glue/selftest.hpp`.
+### `firmware/` — PlatformIO project + hardware glue
+- `firmware/MEMLNaut-NISPS/platformio.ini` — **the variant registry**: one `[env:<alias>]` per firmware variant (16 of them), each passing `-DMEMLNAUT_MODE_TYPE=<alias>`; `selftest` passes `-DNISPS_SELFTEST=1` instead. There is no second list to keep in sync. Shared `[env]` base pins the platform wrapper + arduino-pico framework, sets `-std=gnu++20 -O3` (via `build_unflags`, because the framework appends its own `-std=gnu++17 -Os` AFTER project flags), reaches `nisps/` with `-I${PROJECT_DIR}/../..`, and carries the TFT_eSPI panel config as `-D` flags. Build: `pio run -e <alias>`, or `scripts/build-firmware.sh [--all]`.
+- `firmware/MEMLNaut-NISPS/src/main.cpp` — entry point (was `MEMLNaut-NISPS.ino`). Forks on `NISPS_SELFTEST`: normal modes run the engine/ML path; the `SelfTest` variant delegates all four entry points to `glue/selftest.hpp`.
 - `firmware/MEMLNaut-NISPS/glue/` — hardware bindings:
   - `audio_driver.hpp` — bridges memllib `AudioDriver` callback → `Mode::process(stereosample_t)`.
   - `peripherals.hpp` — joystick / pots / buttons → `Mode::set_input` and ML primitives. Wires the shared `FeedbackController` ExploreAndPlace lifecycle (MomA1 = enter/exit explore, MomA2 = freeze/place, TogB2 = commit; MomB1/MomB2 = reroll/nudge while exploring **or** grab/drop *reposition* while idle) plus the adaptive-learning gestures: **TogB1** = Jolt (held weight morph), **RVX1** = exploration amount (OU output walk). Reposition relocates an existing positive example's output to a new input position (`feedback.hpp` `begin_reposition`/`commit_reposition`) — no scratchpad, no weight restore.
   - `midi_io.hpp` — MIDI in → mode `note_on`/`update_bpm`/`set_playing`; drains `ControlEvent` ring → MIDI UART.
-  - `mode_select.hpp` — type aliases mapping firmware mode identifiers to `nisps::modes::*Mode` C++ types. Build script rewrites the active line. Includes the six `MEMLNautModeExtSynth*` external-synth variants (one per device template in `nisps/midi`, e.g. `MEMLNautModeExtSynthSub37`). Also defines the `MEMLNautModeSelfTest` pseudo-variant (tag type) + the `NISPS_ST_*`/`NISPS_ST_CAT` token-paste macros the `.ino` uses to compute `NISPS_SELFTEST`. Note: `src/nisps/` exposes each referenced top-level nisps subdir as a symlink — `midi` was added alongside `core/dsp/engines/ml/modes`.
+  - `mode_select.hpp` — type aliases mapping firmware mode identifiers to `nisps::modes::*Mode` C++ types, selected by the `-D` from platformio.ini. Includes the six `MEMLNautModeExtSynth*` external-synth variants (one per device template in `nisps/midi`, e.g. `MEMLNautModeExtSynthSub37`). The `NISPS_ST_*`/`NISPS_ST_CAT` token-paste table and the `SelfTestRig` tag type are GONE — selftest is now just an env with its own `-D`.
   - `selftest.hpp` — standalone guided hardware self-test rig (`SelfTest` variant; no engine/ML). Step-driven state machine on a `SelfTestView`: TFT prompts the operator through every control, auto-advances on detection, encoder-press skips. Ends with optional L/R/BOTH sine-sweep headphone check (core 1 block callback) + MIDI loopback-cable test. Lives firmware-side (touches TFT + raw pins) so it stays out of platform-agnostic `nisps/`.
   - `output_router.hpp` — top-level `drain_outputs()` entry point. (Inputs are wired directly by `peripherals.hpp`'s `bind_peripherals()`.)
   - `settings_view.hpp` — `wire_settings(mode)`: adds on-device settings views to the MEMLNaut display carousel (TFT + rotary encoder). Joystick Dual/Single toggle for the 4-input ("two 2-D joystick") modes — "Single" pins ML input channels 2,3 to neutral via `ModeBase::set_input_pinned` (no net rebuild). Registered in the `.ino` after `addSystemInfoView()`.
-- `firmware/MEMLNaut-NISPS/src/{memllib,nisps}` — symlinks (Arduino-CLI requires sketch-tree includes; preprocessor refuses `..` in headers).
+- `firmware/MEMLNaut-NISPS/lib/memllib/` — **vendored** memllib (was the `src/memllib` submodule): hardware abstraction (audio driver, TFT display, MIDI, peripherals), ~1.9 MB / 100 files, `examples/` dropped. `VENDORED.md` records the upstream commit and the re-sync procedure; `LICENSE` is MPL-2.0, copied verbatim. **Sources must sit under `lib/memllib/src/`** — PlatformIO's library builder falls back to a flat root-only scan without it and silently compiles nothing while still linking (see VENDORED.md).
 - `firmware/README.md` — structure + build instructions.
 - `firmware/useq-celium/` — standalone RP2040 firmware (PlatformIO, Arduino-Pico core) that turns a uSEQ module + CV expander into a USB→CV/gate converter driven by the manifold `cvgate` backend. `shared/protocol.h` is the v2 wire-protocol single source of truth (mirrored by `manifold/src/backends/useq-protocol.ts`); `main/` (USB serial → CV1–3 + GATE1–3, I2C → expander) and `expander/` (I2C slave → CV4–11). Wire spec: `docs/specs/useq-cv-protocol.md`. Restored from the April-2026 "uSEQ-Celium" mode.
 
@@ -127,7 +128,7 @@ includes; no `nisps-core`.
 - `ci.yml` — GitHub Actions: cmake build + ctest + WASM build + parity check + lint + Playwright (cpp-tests + manifold-tests jobs). Firmware compile is documented as manual.
 
 ### `src/` — submodule + vendored trees
-- `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI), the only true submodule. **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`. Pinned to `monkey-w1n5t0n/memllib` branch `feat/nisps-core-swap` (the operator's fork; upstream is `MusicallyEmbodiedML/memllib`). Ownership decision — vendor the load-bearing subset into this repo — lands with the PlatformIO migration (plan §5, §7.5).
+- **There are no submodules.** `src/memllib` was one until the Phase 4 PlatformIO migration; it is now vendored at `firmware/MEMLNaut-NISPS/lib/memllib/`. Fresh clones need no `git submodule` step.
 
 ### Top-level docs
 - `CLAUDE.md` — long-form architecture narrative.
@@ -150,7 +151,7 @@ includes; no `nisps-core`.
 
 ## Conventions
 
-- Firmware mode selection is compile-time only — `#define MEMLNAUT_MODE_TYPE` in the `.ino`.
+- Firmware mode selection is compile-time only — one `-DMEMLNAUT_MODE_TYPE` per `[env:]` in `platformio.ini`.
 - `nisps/` follows Chris's RP2350 perf rules: no heap, `static const float` for non-trivial constants, strict `.f` suffix. `perf.hpp` now carries only `NISPS_HOT`/`NISPS_FORCE_INLINE`; the three dead/misshapen SRAM-section macros were deleted in the 2026-07 sweep (S21/L13).
 - C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
 - `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`, plus the parameterised `centered_power` free function); generated mode headers re-export via `using Curve = ::nisps::Curve;`. Since P4 there is NO TS mirror — the browser samples the WASM catalog (`nisps_curve_apply(+batch)`).
@@ -160,10 +161,10 @@ includes; no `nisps-core`.
 
 ## Gotchas
 
-- `src/memllib` submodule is not auto-checked-out.
-- Firmware sketch path is `firmware/MEMLNaut-NISPS/MEMLNaut-NISPS.ino` (Arduino-CLI requires sketch dir name == sketch file name); `firmware/MEMLNaut-NISPS/src/{memllib,nisps}` are symlinks because Arduino's preprocessor refuses `..` in includes from sketch headers.
+- Firmware needs PlatformIO: `nix-shell -p platformio-core`. Use `platformio-core`, NOT `platformio` — the latter is nixpkgs' bubblewrap-wrapped FHS build and fails without a working user namespace. First build pulls ~1-2 GB into `~/.platformio`.
 - `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` `#undef`s Arduino macros (`sq`, `min`, `max`, `abs`, `round`) before pulling nisps headers — engines use those identifiers as method names.
-- `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in the `.ino`; combining `inline` with `__not_in_flash` produces a comdat conflict at link time.
+- `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in `src/main.cpp`; combining `inline` with `__not_in_flash` produces a comdat conflict at link time.
+- `pio run`'s own "Flash: NN%" console line double-counts `.data` on this board (PlatformIO's generic size checker counts every PROGBITS+ALLOC section). Compare `arm-none-eabi-size -A` — flash = `.text+.rodata` — before believing a size regression.
 - `nisps_modes_tests` builds against generated schemas under `nisps/modes/generated/`; if you add a new mode, regenerate via `bun run codegen/generate.ts` before building.
 
 ## Smells / strategic concerns

@@ -2,17 +2,23 @@ name: CI
 
 # Stream 11 verification pipeline.
 #
-# Two parallel jobs:
+# Three parallel jobs:
 #   * cpp-tests      — builds nisps host C++ tests, builds nisps.wasm, runs
 #                      the parity check, runs the lint script.
 #   * manifold-tests — typechecks the React manifold app, runs bun unit
 #                      tests, builds the production bundle, runs Playwright
 #                      e2e tests.
 #
-# Firmware compilation is NOT included in this workflow. Arduino-cli +
-# rp2040 board package add ~2 minutes per run, and the verification value
-# is low compared to the time cost; firmware build is documented as a
-# manual `scripts/build-firmware.sh` step in README.md / CLAUDE.md.
+#   * firmware-build — compiles three representative PlatformIO envs for the
+#                      RP2350 target.
+#
+# Firmware entered CI for the first time with the Phase 4 PlatformIO migration
+# (plan §5, S9). It was previously excluded because arduino-cli + the rp2040
+# board package cost ~2 minutes per run for "low verification value" — an
+# assessment that did not survive contact: the SelfTest variant sat broken for
+# an unknown period, calling a DisplayDriver method that did not exist at the
+# pinned memllib commit, and nothing noticed because nothing built it. PIO's
+# toolchain caches cleanly, so the cost is now a cache restore.
 
 on:
   push:
@@ -28,8 +34,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install build deps
         run: |
@@ -155,3 +159,56 @@ jobs:
           name: playwright-report
           path: manifold/playwright-report/
           retention-days: 7
+
+  firmware-build:
+    name: Firmware (RP2350, PlatformIO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The platform wrapper and the arduino-pico framework are fetched from
+      # git and total ~1-2 GB. Key on platformio.ini because that file pins
+      # both versions — change a pin, get a fresh toolchain.
+      - name: Cache PlatformIO toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/MEMLNaut-NISPS/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      # Three representative envs rather than all sixteen: they differ only in
+      # which mode type is instantiated, so a compile break is almost always
+      # common to all. slpworkshop is the shipped default, pafsynth is the
+      # heaviest RAM user, and selftest takes the separate NISPS_SELFTEST fork
+      # through main.cpp — the one that broke unnoticed before.
+      - name: Build representative firmware variants
+        working-directory: firmware/MEMLNaut-NISPS
+        run: pio run -e slpworkshop -e pafsynth -e selftest
+
+      # Sizes are reported, not asserted. A threshold would either be slack
+      # enough to be meaningless or tight enough to fail on unrelated work;
+      # this puts the numbers in the log so a jump is visible in review.
+      # Flash = .text + .rodata, RAM = .data + .bss + vector table +
+      # uninitialized — matching arduino-cli's convention, NOT PlatformIO's
+      # own console line, which double-counts .data on this board.
+      - name: Report flash/RAM per variant
+        working-directory: firmware/MEMLNaut-NISPS
+        run: |
+          SIZE=$(find ~/.platformio/packages -name 'arm-none-eabi-size' | head -1)
+          for e in slpworkshop pafsynth selftest; do
+            "$SIZE" -A ".pio/build/$e/firmware.elf" | awk -v e="$e" '
+              /^\.text/{t=$2} /^\.rodata/{r=$2} /^\.data/{d=$2}
+              /^\.bss/{b=$2} /^\.ram_vector_table/{v=$2}
+              /^\.uninitialized_data/{u=$2}
+              END{printf "%-14s flash=%-8d ram=%-8d\n", e, t+r, d+b+v+u}'
+          done

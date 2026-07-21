@@ -95,23 +95,32 @@ DESCRIPTIVE — it documents that engine voice spaces already square the value i
 - **S26** Schema surface honesty: per-field wire-or-delete pass (default_learning_rate/max_iterations both-platforms-or-neither; input_channels; per-param curves) per the verifier's corrected list.
 - **L38** one TS `applyCurve` (mapping.ts's spec-anchored formula survives); **ST4** one GROUP_COLOR source; **L8** extract shared `ratio_seq`/SeqClock/EventQueue for the sequencer engines; **L17** BaseBackend mirroring BaseSource for status/throttle plumbing; **ST12** shared codegen `lib.ts`; **L39** delete the clobbering seed script (git keeps it); **ST13** move `synth-midi-cc.json` under `schemas/midi_devices/`.
 
-## §5 Phase 4 — PlatformIO migration (vision 4) (~2–3 days) — A6, S2, L12, S9
+## §5 Phase 4 — PlatformIO migration (vision 4) — A6, S2, L12, S9
 
-One cut, no dual path. `firmware/useq-celium/` already proves the PIO + arduino-pico pattern in-repo.
+**BURNED DOWN 2026-07-21.** One cut, no dual path, as specified.
 
-- `platformio.ini` with one `[env]` per firmware variant passing `-DMEMLNAUT_MODE_TYPE=<alias>`; selftest becomes a plain `-DNISPS_SELFTEST=1` env. Deletes: the sed/python machinery in `firmware-common.sh` that **mutates the committed .ino**, the `.ino` comment-registry, the entire `NISPS_ST_*` token-paste table (already silently missing the currently-active SLPWorkshop variant — L12), the sketch-tree symlink forest, and the global TFT_eSPI library mutation (handled via PIO lib config/build flags instead).
-- **memllib consumption decision** (§7.5): **SETTLED — the submodule bump landed; the vendoring copy
-  is what remains.** See `../recon/memllib-usage-inventory.md`. Result: all 24 compiled TUs link, so
-  the vendoring surface is ~1.8 MB / 84 files — all of memllib bar `examples/`; there is no small
-  subset to lift. The operator chose "rebase then vendor", but on inspection **there was no rebase to
-  do**: all three fork commits touch only `examples/`, which is not in the sketch symlink forest and
-  is never compiled, and whose content is already ported into `nisps/ml/`. So the fork is dissolved
-  and the submodule is repointed at upstream, pinned to current `main` — verified by building all
-  three variants (+316 bytes flash, one `constexpr`→`const` fix in the `.ino` because upstream made
-  `kSampleRate` runtime-settable). That bump brings the `l r input swap` hardware fix and the
-  `NavigateToView` the SelfTest variant had already been written against. **Vendor from this
-  snapshot**, recording the upstream commit so a re-sync stays a documented diff.
-- Then **S9**: a CI job compiling 2–3 representative envs with cached toolchain — firmware enters an automated gate for the first time.
+- `firmware/MEMLNaut-NISPS/platformio.ini`: 16 `[env:]`, one per variant, each passing
+  `-DMEMLNAUT_MODE_TYPE`; `selftest` passes `-DNISPS_SELFTEST=1`. **The env list IS the registry** —
+  the `.ino` comment-registry and the `NISPS_ST_*` token-paste table (L12, already silently missing
+  the shipped variant) are gone, not migrated.
+- Deleted: the Python/sed `.ino`-mutation machinery, the sketch symlink forest, the global TFT_eSPI
+  `User_Setup.h` mutation (now `-D` flags, TFT_eSPI's own documented recipe), the UF2 boot-mount
+  detection stack (`upload_protocol = picotool` talks to the bootloader directly), and
+  `build-firmware-arch.sh` entirely. Scripts 683 → 435 lines.
+- memllib **vendored** at `lib/memllib/` from upstream `e291192`; the submodule is gone. Provenance
+  and re-sync procedure in `VENDORED.md`.
+- **S9 done**: a `firmware-build` CI job compiles three representative envs with a cached toolchain
+  and reports per-variant flash/RAM. Firmware is in an automated gate for the first time.
+
+Verified: **all 16 envs build from an empty cache**, and every one lands within ~520 bytes of the
+arduino-cli binary it replaces (flash and RAM), measured as `.text+.rodata` / `.data+.bss+…` rather
+than PlatformIO's console line, which double-counts `.data` on this board. What this does NOT prove
+is that the hardware boots — no flash+smoke test was possible. That remains an operator chokepoint.
+
+Two traps worth remembering, both recorded in `VENDORED.md` / `platformio.ini`: vendoring memllib's
+subdirs without a `src/` wrapper makes PlatformIO's library builder silently compile **nothing**
+while still linking; and project `build_flags` land *before* the framework's own `-std=gnu++17 -Os`,
+so `build_unflags` is required — appending our own flags is not enough.
 
 ## §6 Phase 5 — Vision-facing architecture (each item spec-first, own session)
 

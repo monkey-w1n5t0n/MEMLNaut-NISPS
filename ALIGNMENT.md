@@ -28,15 +28,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Product-model decision first (plan §7.6), then incremental: picker is days; the curated-preset model seeds from `backends/presets.ts` + schemas; disclosure via per-drawer depth levels. Deleting the decorative stratum is part of the Phase-1 sweep.
 
-### 3. Arduino-CLI build machinery is actively hostile — vision 4 unstarted (2026-07-21)
-
-**What.** The build script sed-mutates the committed `.ino` to select variants (polluting history), the mode list is triple-bookkept (a `NISPS_ST_*` token-paste table is already silently missing the currently-active SLPWorkshop variant), a symlink forest works around Arduino's include rules, and the toolchain globally mutates the installed TFT_eSPI library. Firmware compilation is in no automated gate anywhere.
-
-**Why it blocks the mission.** Fragile-by-design builds are the opposite of "confident agentic changes"; the vision names PlatformIO explicitly. `firmware/useq-celium/` already proves the PIO pattern in-repo.
-
-**Rough cost.** 2–3 days, one cut (plan §5): env-per-variant `platformio.ini`, delete ~400 lines of hackery, then a firmware CI job. Gated on the memllib ownership decision (plan §7.5).
-
-### 4. Manifold-as-hardware-editor is a facade (2026-07-21)
+### 3. Manifold-as-hardware-editor is a facade (2026-07-21)
 
 **What.** Vision bullet 5 exists as a 237-line Web Serial shell: sound connect lifecycle, zero protocol (`saveModel`/`restoreModel`/`getSettings` are literal stubs), and firmware has no serial command surface or on-device persistence to talk to.
 
@@ -44,7 +36,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Week+, spec-first (plan §6.5d). The right discipline already exists in-repo: useq-celium's C-header wire truth + TS mirror + parity test; settings payloads should derive from schema codegen.
 
-### 5. Dead mass and registry sprawl across every layer (2026-07-21)
+### 4. Dead mass and registry sprawl across every layer (2026-07-21)
 
 **What.** *Phase 1 landed 2026-07-21 and removed the bulk of this:* the dead focus/altitude UI system, the decorative control stratum, 12 dead WASM API entries across the 5-file registration chain, the vendored daisysp tree, retired-playground artifacts and root planning relics, 5 unused primitives, the duplicate backend editor and catalogue, `voice_space.hpp`, `fixed_buffer.hpp`, the dead perf-macro regime, and the OSC bridge twin. What remains is the *registry* half: mode identity spread across ~6 hand-maintained registries with demonstrated drift, MLP dims typed twice, per-mode schema blocks hand-written in C++, and assorted stale specs presenting a deleted world as present tense.
 
@@ -52,13 +44,13 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Plan phase 3 (~2–3 days, codegen takes ownership) plus the docs disposition pass (§8). The behaviour bugs found en route (dataset-cap divergence, VCV 2-D input truncation, VCV audio-thread race and JSON) were fixed in phase 2 on 2026-07-21.
 
-### 6. No performance measurement despite a performance-defined mission (2026-07-21)
+### 5. No performance measurement despite a performance-defined mission (2026-07-21)
 
-**What.** The "super performance-sensitive" constraint is enforced only by static discipline (no-heap lint — itself with proven false negatives — and section attrs, 3/5 of which are dead macros). No benchmark, no CPU-load assertion, no flash/RAM size report on either target; the 16 KB dead buffer was found by reading, not by any gate.
+**What.** The "super performance-sensitive" constraint is enforced only by static discipline (the no-heap lint — false negatives closed in Phase 2 — and section attrs). *Half-closed 2026-07-21:* the Phase 4 firmware CI job now reports per-variant flash/RAM on every push, so size regressions are at least visible. **Still missing: any measure of time.** No benchmark, no CPU-load assertion, no blocks-per-second number on either target — nothing would catch an engine getting 3x slower.
 
-**Rough cost.** ~A day for a host-side blocks-per-second benchmark + a per-variant size report in `build-firmware.sh` (plan §6.5f).
+**Rough cost.** ~Half a day now: a host-side blocks-per-second benchmark for `engine_process_block`, native + WASM (plan §6.5f).
 
-### 7. Training-health telemetry: decided, not yet built (2026-07-21)
+### 6. Training-health telemetry: decided, not yet built (2026-07-21)
 
 **What.** Four fragments of one feature. Fragment 3 (decorative gradient-health UI) was deleted in
 Phase 1. The other three stand: a 16 KB loss-history buffer in every firmware MLP that nothing
@@ -68,7 +60,7 @@ reads (`nisps/ml/mlp.hpp`); a WASM worker faking a **1-element** loss history
 
 **Decisions are now complete** (operator, §7.3 + L25): telemetry becomes **real, browser-only,
 behind a feature flag**; the fakes go; and the **firmware buffer stays** — it is the on-device
-record the hardware editor (defect 4) will want, and it costs flash we demonstrably have (16% RAM
+record the hardware editor (defect 3) will want, and it costs flash we demonstrably have (16% RAM
 on the largest variant). So the remaining work is one coherent job, not a judgement call: plumb
 `loss_history` through the C API (`Drawers.tsx:263` already marks the gap), replace the worker's
 fake with it, and put the display plus `get_layer_stats` behind the advanced-mode flag.
@@ -78,7 +70,7 @@ it *looks* answered while being fabricated — worse than absent.
 
 **Rough cost.** ~A day, spec-light: plan §6.5e, no longer gated on anything.
 
-### 8. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
+### 7. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
 
 **What.** `training.hpp` ships SGD only; the legacy firmware used RMSProp for `TrainBatch`. Optimizer choice is a research axis. Not blocking current fits; will matter for harder loss landscapes. Port target: upstream MusicallyEmbodiedML `memlp` (the in-repo `src/memlp` copy is deleted; use the GitHub remote or archive branch).
 
@@ -105,10 +97,10 @@ Operator decision: **vendor**, self-contained in this repo. The inventory
 subset — it is all of memllib bar `examples/` (~1.8 MB, 24/24 compiled TUs link). The fork is
 dissolved: its three commits touch only `examples/`, which the firmware never compiles and whose
 content already lives in `nisps/ml/{jolt,ou_noise,feedback,geo_push}.hpp`, so the submodule now
-points at upstream and is pinned to current `main` (verified: all three variants build, +316 bytes
-flash, and it brings the `l r input swap` hardware fix plus the `NavigateToView` the SelfTest
-variant was already written against). **Remaining: the vendoring copy itself**, which lands with the
-PlatformIO cut (plan §5). Delete this entry when it does.
+points at upstream and is pinned to current `main`. Verified by building: it brings the
+`l r input swap` hardware fix plus the `NavigateToView` the SelfTest variant was already written
+against, and costs **+216 bytes of a 16 MB flash**. **Remaining: the vendoring copy itself**, which
+lands with the PlatformIO cut (plan §5). Delete this entry when it does.
 
 ### Q5: Legacy feedback modes — delete or keep for A/B? (2026-07-21)
 
@@ -124,6 +116,13 @@ PlatformIO cut (plan §5). Delete this entry when it does.
 
 ## Recently resolved (delete after a few weeks)
 
-- 2026-07-21: Full-repo simplification audit landed (recon + plan + this rewrite). Superseded entries removed: "browser-only engines incomplete" (→ defect 2/plan 5b), "loss curve not plumbed" (→ defect 8), "NISPS_AUDIO_FUNC misshapen" (→ plan Phase 1, S21/L13), stale "VCV not currently maintained" note (vcv/ is active and consumes `nisps/` directly post-P6).
+- 2026-07-21: **Arduino-CLI build machinery (old defect 3) is gone.** Phase 4 replaced it with a
+  PlatformIO project: one `[env:]` per variant is now the only variant registry, the `.ino`-mutating
+  Python/sed machinery and the `NISPS_ST_*` token-paste table and the sketch symlink forest and the
+  global TFT_eSPI mutation are all deleted, memllib is vendored (no submodule), and firmware finally
+  entered CI — three representative envs per run, which is what would have caught the SelfTest
+  variant sitting broken. All 16 envs build; sizes match arduino-cli within ~520 bytes.
+
+- 2026-07-21: Full-repo simplification audit landed (recon + plan + this rewrite). Superseded entries removed: "browser-only engines incomplete" (→ defect 2/plan 5b), "loss curve not plumbed" (→ defect 7), "NISPS_AUDIO_FUNC misshapen" (→ plan Phase 1, S21/L13), stale "VCV not currently maintained" note (vcv/ is active and consumes `nisps/` directly post-P6).
 - 2026-07-18: Browser curve maths unified onto the canonical `nisps/core/math.hpp` catalog at P4; four silently-divergent TS curves re-baselined.
 - 2026-07-14: WASM MLP fixed-architecture defect resolved by P2 (`MLPCore<Storage>`; browser runtime-shaped, firmware zero-heap fixed).

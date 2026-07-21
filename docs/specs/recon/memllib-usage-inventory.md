@@ -83,21 +83,35 @@ lowest level. Every mode on the pinned commit sees its stereo input backwards.
 
 ## Verified: current upstream builds, and costs almost nothing
 
-Submodule moved to `e291192` (upstream `main`), all three variants built with `arduino-cli`:
+Submodule moved to `e291192` (upstream `main`).
 
-| variant | flash | Δ vs pin | RAM | Δ |
-|---|---|---|---|---|
-| SLPWorkshop | 145348 | +320 | 87388 | +4 |
-| PAFSynth | 145300 | +312 | 107060 | +4 |
-| SelfTest | 141840 | +320 | 12028 | +4 |
+**CORRECTION (2026-07-21, same day).** The first version of this table, and the numbers in commit
+`c19d846`'s message, were WRONG — SLPWorkshop 145348, PAFSynth 145300, SelfTest 141840, with a
+"+316 uniform delta". They were produced by building three variants in a row through a **shared
+incremental `arduino-cli` build directory** (`/tmp/memlnaut-firmware-build`), which reused stale
+objects and under-reported by roughly 75 KB. The error surfaced when the PlatformIO migration could
+not reproduce them; a clean-cache rebuild of the identical commit in a throwaway worktree confirmed
+it. **Never measure firmware size through a reused build directory.**
+
+Measured properly (clean build dir per measurement, SelfTest variant):
+
+| memllib pin | flash | RAM |
+|---|---|---|
+| `b37fc53` (old pin, pre-bump) | 216520 | 18480 |
+| `e291192` (upstream main) | 216736 | 18492 |
+| **delta** | **+216** | **+12** |
+
+The conclusion is unchanged and if anything stronger: the 31-commit upstream bump costs ~216 bytes
+of a 16 MB flash. The bulky new upstream code (`GrainDelayI16`, `ReverbI16`, `ModFXI16`,
+`CCSelectView`, `NameInputView`, `RLView`, `VUMeterView`, `PSRAMManager`) is header-only and
+unreferenced, so the linker drops all of it; the delta is the AudioDriver/DisplayDriver changes.
+
+Absolute sizes for every variant, post-bump, are in the Phase 4 migration commit — all 16 build,
+and none exceeds 2% of flash.
 
 Exactly **one** compile error had to be fixed: `MEMLNaut-NISPS.ino:169` used `kSampleRate` in a
 `constexpr`, and upstream `1997699 "mode sample rate"` made it a runtime `extern size_t` so a mode
 can choose its own rate. `constexpr` → `const`; it is a once-per-second diagnostic print.
-
-The +316-byte uniform delta is the AudioDriver/DisplayDriver changes. The bulky new upstream code
-(`GrainDelayI16`, `ReverbI16`, `ModFXI16`, `CCSelectView`, `NameInputView`, `RLView`, `VUMeterView`,
-`PSRAMManager`) is header-only and unreferenced, so the linker drops all of it.
 
 ## Where this leaves the vendoring
 

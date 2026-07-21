@@ -15,8 +15,9 @@
 //
 // This logic is INHERENTLY hardware-coupled (it draws to the TFT and reads raw
 // pins), so it lives firmware-side here in glue/, NOT under platform-agnostic
-// nisps/. It is selected at build time via the `SelfTest` variant (see
-// mode_select.hpp + the NISPS_SELFTEST fork in MEMLNaut-NISPS.ino).
+// nisps/. It is selected at build time via the `selftest` PlatformIO env (see
+// platformio.ini, which defines NISPS_SELFTEST=1; the fork lives in
+// src/main.cpp).
 //
 // Threading: core 0 owns the step state machine (driven from MEMLNaut's
 // loopCallback, ~5 ms) and the display. core 1 owns the audio sweep block
@@ -48,14 +49,14 @@
 #include <cstdio>
 #include <functional>
 
-#include "../src/memllib/PicoDefs.hpp"
-#include "../src/memllib/utils/perf.hpp"
-#include "../src/memllib/audio/AudioDriver.hpp"
-#include "../src/memllib/interface/MIDIInOut.hpp"
-#include "../src/memllib/hardware/memlnaut/MEMLNaut.hpp"
-#include "../src/memllib/hardware/memlnaut/Pins.hpp"
-#include "../src/memllib/hardware/memlnaut/display/View.hpp"
-#include "../src/nisps/dsp/osc.hpp"
+#include "PicoDefs.hpp"
+#include "utils/perf.hpp"
+#include "audio/AudioDriver.hpp"
+#include "interface/MIDIInOut.hpp"
+#include "hardware/memlnaut/MEMLNaut.hpp"
+#include "hardware/memlnaut/Pins.hpp"
+#include "hardware/memlnaut/display/View.hpp"
+#include "nisps/dsp/osc.hpp"
 
 // Inter-core boot-handshake flags. Defined in the .ino (shared by both the
 // normal-mode and self-test build paths); declared here so this header is

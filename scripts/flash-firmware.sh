@@ -8,70 +8,59 @@ source "$SCRIPT_DIR/firmware-common.sh"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/flash-firmware.sh
-  scripts/flash-firmware.sh [mountpoint]
-  scripts/flash-firmware.sh [uf2-path] [mountpoint]
+  scripts/flash-firmware.sh [variant]
+  scripts/flash-firmware.sh --variant VARIANT
 
-Defaults:
-  uf2-path   -> /tmp/memlnaut-firmware-build/MEMLNaut-NISPS.ino.uf2
-  mountpoint -> auto-detect from standard UF2 bootloader locations
+Builds (if stale) and flashes the given firmware variant via PlatformIO's
+`picotool` upload protocol (platformio.ini `upload_protocol = picotool`).
+picotool talks to the RP2040/2350 USB bootloader directly — no BOOTSEL-mode
+mount-point detection or UF2-file-copy step required.
+
+Put the board in bootloader mode (hold BOOTSEL while plugging in, or the
+board's reset-to-bootloader combo) before running this.
 EOF
 }
-
-uf2_path="$UF2_PATH_DEFAULT"
-mountpoint=""
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
 
-case $# in
-  0)
-    ;;
-  1)
-    if [[ -f "$1" || "$1" == *.uf2 ]]; then
-      uf2_path="$1"
-    else
-      mountpoint="$1"
-    fi
-    ;;
-  2)
-    uf2_path="$1"
-    mountpoint="$2"
-    ;;
-  *)
-    usage >&2
-    exit 1
-    ;;
-esac
+ensure_pio
 
-uf2_path="$(resolve_path "$uf2_path")"
-if [[ ! -f "$uf2_path" ]]; then
-  echo "error: UF2 file not found: $uf2_path" >&2
-  echo "run scripts/build-firmware.sh first, or pass an explicit UF2 path" >&2
-  exit 1
-fi
+variant_arg="${MEMLNAUT_FIRMWARE_VARIANT:-}"
 
-if [[ -z "$mountpoint" ]]; then
-  mountpoint="$(ensure_boot_mount || true)"
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --variant)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --variant requires a value" >&2
+        exit 1
+      fi
+      variant_arg="$2"
+      shift 2
+      ;;
+    --variant=*)
+      variant_arg="${1#*=}"
+      shift
+      ;;
+    *)
+      if [[ -z "$variant_arg" ]]; then
+        variant_arg="$1"
+        shift
+      else
+        usage >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
 
-if [[ -z "$mountpoint" ]]; then
-  echo "error: could not find or mount a UF2 bootloader volume" >&2
-  echo "put the board in bootloader mode, or pass the mountpoint explicitly" >&2
-  exit 1
-fi
-
-mountpoint="$(resolve_path "$mountpoint")"
-assert_boot_mount "$mountpoint"
+selected="$(choose_firmware_variant "$variant_arg")"
 
 echo "Flashing firmware:"
-echo "  uf2:       $uf2_path"
-echo "  mountpoint: $mountpoint"
+echo "  project: $FIRMWARE_PROJECT_DIR"
+echo "  variant: $selected"
+echo "  (board must be in BOOTSEL/bootloader mode)"
 
-cp "$uf2_path" "$mountpoint/"
-sync
-
-echo
-echo "Flash copy completed."
+run_pio run -e "$selected" -t upload

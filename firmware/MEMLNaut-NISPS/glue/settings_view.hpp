@@ -3,7 +3,7 @@
 // Adds entries to the MEMLNaut display carousel (the same DisplayDriver the
 // SystemView and SelfTest use). Navigation: rotate to move between views;
 // press to focus a view; rotate-while-focused to change its value; press
-// again to unfocus. See src/memllib/.../display/DisplayDriver.hpp.
+// again to unfocus. See lib/memllib/hardware/memlnaut/display/DisplayDriver.hpp.
 //
 // Currently provides:
 //   * Joystick: Dual / Single — for the 4-input ("two 2-D joystick") modes,
@@ -24,8 +24,8 @@
 #include <memory>
 #include <span>
 
-#include "../src/memllib/hardware/memlnaut/MEMLNaut.hpp"
-#include "../src/memllib/hardware/memlnaut/display/SingleSelectView.hpp"
+#include "hardware/memlnaut/MEMLNaut.hpp"
+#include "hardware/memlnaut/display/SingleSelectView.hpp"
 
 namespace nisps_firmware {
 

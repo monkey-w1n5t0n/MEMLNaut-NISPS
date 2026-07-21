@@ -46,9 +46,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "../src/nisps/core/perf.hpp"
-#include "../src/nisps/ml/feedback.hpp"
-#include "../src/memllib/hardware/memlnaut/MEMLNaut.hpp"
+#include "nisps/core/perf.hpp"
+#include "nisps/ml/feedback.hpp"
+#include "hardware/memlnaut/MEMLNaut.hpp"
 
 namespace nisps_firmware {
 

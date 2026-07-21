@@ -33,6 +33,12 @@
 .ai
 build
 
+# PlatformIO build artifacts (firmware/MEMLNaut-NISPS) — bootstrapped platform,
+# toolchain, and libraries live outside the repo in ~/.platformio; only
+# .pio/build (per-env objects/elf/uf2) and .pio/libdeps (fetched lib_deps)
+# land here, both disposable.
+.pio
+
 # OSC bridge compiled binaries (built via compile.sh or CI)
 manifold/osc-bridge/dist/
 manifold/osc-bridge/node_modules/

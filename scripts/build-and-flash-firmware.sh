@@ -6,12 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/build-and-flash-firmware.sh
   scripts/build-and-flash-firmware.sh [variant]
-  scripts/build-and-flash-firmware.sh --variant VARIANT [mountpoint]
+  scripts/build-and-flash-firmware.sh --variant VARIANT
 
-If no mountpoint is provided, the flash step auto-detects a standard UF2
-bootloader location such as /run/media/$USER/RP2350 or /run/media/$USER/RPI-RP2.
+Builds then flashes (via PlatformIO's picotool upload protocol) the given
+firmware variant. Put the board in bootloader mode first.
 EOF
 }
 
@@ -20,11 +19,12 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
+# shellcheck source=./firmware-common.sh
 source "$SCRIPT_DIR/firmware-common.sh"
+ensure_pio
 load_firmware_variants
 
 variant_arg="${MEMLNAUT_FIRMWARE_VARIANT:-}"
-mountpoint=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,27 +41,18 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      if [[ -z "$variant_arg" ]] && resolve_firmware_variant "$1" >/dev/null 2>&1; then
+      if [[ -z "$variant_arg" ]]; then
         variant_arg="$1"
-      elif [[ -z "$mountpoint" ]]; then
-        mountpoint="$1"
+        shift
       else
         usage >&2
         exit 1
       fi
-      shift
       ;;
   esac
 done
 
-if [[ -n "$variant_arg" ]]; then
-  "$SCRIPT_DIR/build-firmware.sh" --variant "$variant_arg"
-else
-  "$SCRIPT_DIR/build-firmware.sh"
-fi
+selected="$(choose_firmware_variant "$variant_arg")"
 
-if [[ -n "$mountpoint" ]]; then
-  "$SCRIPT_DIR/flash-firmware.sh" "$mountpoint"
-else
-  "$SCRIPT_DIR/flash-firmware.sh"
-fi
+"$SCRIPT_DIR/build-firmware.sh" --variant "$selected"
+"$SCRIPT_DIR/flash-firmware.sh" --variant "$selected"

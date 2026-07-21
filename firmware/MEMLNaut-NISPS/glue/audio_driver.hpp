@@ -17,9 +17,9 @@
 
 #include <Arduino.h>
 
-#include "../src/nisps/core/perf.hpp"
-#include "../src/nisps/core/types.hpp"
-#include "../src/memllib/audio/AudioDriver.hpp"
+#include "nisps/core/perf.hpp"
+#include "nisps/core/types.hpp"
+#include "audio/AudioDriver.hpp"
 
 namespace nisps_firmware {
 

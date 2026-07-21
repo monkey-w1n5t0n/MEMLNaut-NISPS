@@ -71,10 +71,20 @@ class RingBuffer {
    private:
     static constexpr std::size_t kMask = N - 1u;
 
+    // `buf_` MUST stay ahead of the atomics. `buf_[head & kMask]` is provably
+    // in bounds, but GCC 12/13 -Wstringop-overflow anchors the destination
+    // object to whichever member sits at offset 0; with the atomics first it
+    // reports the write as "1 byte into a region of size 0" against
+    // `head_._M_i` (size 8) at offset [16, 268] — offsets that are in fact
+    // exactly buf_[0..63]. A false positive, but -Werror makes it fatal, and
+    // it only fires on the CI toolchain (GCC 14 locally does not). Ordering
+    // buf_ first anchors the analysis correctly. Nothing depends on this
+    // layout: RingBuffer is never serialized, copied, or sent over a wire.
+    //
     // Head/tail use std::size_t and rely on natural unsigned wrap.
+    T buf_[N]{};
     std::atomic<std::size_t> head_;
     std::atomic<std::size_t> tail_;
-    T buf_[N]{};
 };
 
 }  // namespace nisps

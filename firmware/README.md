@@ -6,7 +6,6 @@ Thin shell around `nisps/`. The platform-agnostic ML / DSP / engines / modes liv
 - `glue/audio_driver.hpp` — bridges memllib's `AudioDriver` block callback to `Mode::process(stereosample_t)`. Templated trampoline so no virtual dispatch in audio path.
 - `glue/peripherals.hpp` — wires MEMLNaut joystick / pots / buttons to `Mode::set_input(idx, value)` and the ML primitives (`draw_weights`, `move_weights`, `train`, `reset`).
 - `glue/midi_io.hpp` — binds incoming MIDI to `mode.note_on/note_off/update_bpm/set_playing` (where supported); drains outgoing `ControlEvent`s from the mode's ring buffer to the MIDI UART.
-- `glue/input_router.hpp` — `wire_inputs()` entry point, currently a thin re-export over peripherals. Will grow into a schema-aware router.
 - `glue/output_router.hpp` — drains engine events + mode events; called from `loop1()`.
 - `glue/mode_select.hpp` — type aliases mapping `MEMLNautMode<Name>` identifiers to `nisps::modes::<Name>Mode` C++ types. Build script rewrites `MEMLNAUT_MODE_TYPE` between the alternatives.
 
@@ -24,7 +23,7 @@ Target: `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` with `compiler
 
 Arduino-CLI compiles every `*.cpp` / `*.hpp` reachable from the sketch directory and from any submodule under `src/`. Headers under `nisps/` are included via relative path (`#include "../../nisps/..."`). No `-I` flag injection needed.
 
-`src/memllib` and `src/daisysp` are git submodules; the `firmware-common.sh` wrapper rejects builds when submodules drift from the recorded revision.
+`src/memllib` is the only git submodule; the `firmware-common.sh` wrapper rejects builds when it drifts from the recorded revision.
 
 ## Verification
 

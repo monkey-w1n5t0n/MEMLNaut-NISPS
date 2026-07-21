@@ -3,7 +3,7 @@
 // The heavy lifting now lives under:
 //   - nisps/...                  — platform-agnostic ML, DSP, engines, modes
 //   - firmware/glue/...          — hardware bindings (audio driver, MIDI,
-//                                  peripherals, input/output routers)
+//                                  peripherals, output router)
 //
 // This file does only:
 //   1. Pick a mode at compile time (`MEMLNAUT_MODE_TYPE`).
@@ -27,10 +27,10 @@
 
 // ---- Glue ----
 #include "glue/audio_driver.hpp"
-#include "glue/input_router.hpp"
 #include "glue/midi_io.hpp"
 #include "glue/mode_select.hpp"
 #include "glue/output_router.hpp"
+#include "glue/peripherals.hpp"
 #include "glue/settings_view.hpp"
 
 // ---- Mode selection ----
@@ -131,7 +131,7 @@ void setup() {
     pinMode(33, OUTPUT);
 
     // Wire hardware → mode I/O channels.
-    nisps_firmware::wire_inputs(g_mode);
+    nisps_firmware::bind_peripherals(g_mode);
 
     WRITE_VOLATILE(g_iface_ready, true);
     Serial.println("Bound peripherals to mode.");

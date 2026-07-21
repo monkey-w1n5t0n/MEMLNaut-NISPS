@@ -61,16 +61,34 @@ inline constexpr std::uint64_t kFeedbackSalt = 0xFEEDBACC0DEull;
 // D=4, firmware D=2 — SRAM budget).
 inline constexpr std::size_t kFirmwareUndoDepth = 2u;
 
-// Number of analog input channels we forward to the mode. Modes with fewer
-// inputs ignore the surplus (set_input(idx, ...) silently rejects out-of-
-// range idx in ModeBase).
-inline constexpr std::size_t kAnalogInputCount = 4u;  // X, Y, Z, plus one pot
-
-// A small POD that the .ino owns. Captured by lambda below.
-template <typename Mode>
-struct PeripheralBindings {
-    Mode* mode = nullptr;
-};
+// Shared commit path for the two "commit the held output at the CURRENT
+// joystick input" gestures (MomB2 drop-reposition, TogB2 commit-place).
+// Captures the joystick input BEFORE the commit (commit_place restores the
+// real net), runs the caller-named commit, then stores the +1 example
+// (input → committed output) and warm-start trains — the CALLER owns
+// training. The commit is picked by the call site, not by feedback state:
+// dispatching on repositioning() here would change what TogB2 does when
+// pressed mid-reposition (today it takes the commit_place path).
+template <typename Mode, typename FB>
+inline void commit_and_train(Mode& mode, FB& feedback, bool reposition) {
+    // Capture the current joystick input — the DESTINATION position.
+    const auto in = mode.input_channels();
+    std::array<float, Mode::ML::kInput> features{};
+    for (std::size_t i = 0; i < Mode::ML::kInput; ++i) {
+        features[i] = (i < in.size()) ? in[i] : 0.f;
+    }
+    if (reposition) {
+        feedback.commit_reposition();      // no weight restore (net never set aside)
+    } else {
+        feedback.commit_place(mode.ml());  // restores the real net
+    }
+    const auto label = feedback.committed_output();  // valid post-commit
+    if (!label.empty()) {
+        mode.ml().add_example(
+            std::span<const float>(features.data(), Mode::ML::kInput), label);
+        (void)mode.ml().train();
+    }
+}
 
 // Wire all hardware → mode bindings. Must be called *after*
 // MEMLNaut::Initialize() (so MEMLNaut::Instance() is valid). The Mode
@@ -134,8 +152,6 @@ inline void bind_peripherals(Mode& mode) {
     static FB feedback(static_cast<std::uint64_t>(0xC0FFEEu) ^ kFeedbackSalt);
     feedback.set_mode(nisps::ml::FeedbackMode::ExploreAndPlace, mode.ml());
 
-    const float spread = mode.param_schema().default_spread;
-
     // MomA1: enter/exit explore toggle.
     meml->setMomA1Callback([&mode]() {
         if (feedback.explore_state() == nisps::ml::ExploreState::Idle) {
@@ -177,19 +193,7 @@ inline void bind_peripherals(Mode& mode) {
             return;
         }
         if (feedback.repositioning()) {
-            // Capture the current joystick input — the DESTINATION position.
-            const auto in = mode.input_channels();
-            std::array<float, Mode::ML::kInput> features{};
-            for (std::size_t i = 0; i < Mode::ML::kInput; ++i) {
-                features[i] = (i < in.size()) ? in[i] : 0.f;
-            }
-            feedback.commit_reposition();  // no weight restore (net never set aside)
-            const auto label = feedback.committed_output();  // the carried output
-            if (!label.empty()) {
-                mode.ml().add_example(
-                    std::span<const float>(features.data(), Mode::ML::kInput), label);
-                (void)mode.ml().train();
-            }
+            commit_and_train(mode, feedback, /*reposition=*/true);
         }
     });
 
@@ -216,20 +220,7 @@ inline void bind_peripherals(Mode& mode) {
     meml->setTogB2Callback([&mode](bool state) {
         if (!state) return;
         if (feedback.placing()) {
-            // Capture the current joystick input BEFORE the restore.
-            const auto in = mode.input_channels();
-            std::array<float, Mode::ML::kInput> features{};
-            for (std::size_t i = 0; i < Mode::ML::kInput; ++i) {
-                features[i] = (i < in.size()) ? in[i] : 0.f;
-            }
-            feedback.commit_place(mode.ml());  // restores the real net
-            // CALLER owns training: add the +1 example then warm-start train.
-            const auto label = feedback.committed_output();  // valid post-commit
-            if (!label.empty()) {
-                mode.ml().add_example(
-                    std::span<const float>(features.data(), Mode::ML::kInput), label);
-                (void)mode.ml().train();
-            }
+            commit_and_train(mode, feedback, /*reposition=*/false);
         } else {
             (void)mode.ml().train();
         }

@@ -4,7 +4,7 @@
 # build environment. Idempotent: safe to re-run.
 #
 # It will:
-#   1. Initialise the git submodules (memllib + daisysp).
+#   1. Initialise the git submodule (memllib).
 #   2. Install arduino-cli (to ~/.local/bin) if it is not already on PATH.
 #   3. Install the earlephilhower rp2040 core (provides the
 #      solderparty_rp2350_stamp_xl board + the ARM GCC toolchain).
@@ -48,7 +48,7 @@ warn() { printf '\033[1;33mwarning: %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[1;31merror: %s\033[0m\n' "$*" >&2; exit 1; }
 
 # ---- 1. submodules ------------------------------------------------------
-log "Initialising git submodules (memllib + daisysp)"
+log "Initialising git submodule (memllib)"
 command -v git >/dev/null 2>&1 || die "git is not installed"
 git -C "$REPO_ROOT" submodule update --init --recursive
 

@@ -146,12 +146,8 @@ public:
     OscServer& operator=(const OscServer&) = delete;
 
     // Register handlers before starting.
-    //   onState   — full JSON state snapshot   (/nisps/state    <s>)
-    //   onWeights — weights-only JSON           (/nisps/weights  <s>)
     //   onInput   — live input vector (browser drives the model) (/nisps/input <f…f>)
     //   onFeedback— verdict op JSON (thumbs/place/rand/clear)     (/nisps/feedback <s>)
-    void onState(StringCallback cb) { stateCallback_ = std::move(cb); }
-    void onWeights(StringCallback cb) { weightsCallback_ = std::move(cb); }
     void onInput(FloatVecCallback cb) { inputCallback_ = std::move(cb); }
     void onFeedback(StringCallback cb) { feedbackCallback_ = std::move(cb); }
 
@@ -253,18 +249,6 @@ public:
         sendPacket(msg);
     }
 
-    // Send a full JSON state snapshot (module → browser).
-    void sendState(const std::string& json) {
-        auto msg = osc::messageString("/nisps/state", json);
-        sendPacket(msg);
-    }
-
-    // Send weights-only JSON (module → browser).
-    void sendWeights(const std::string& json) {
-        auto msg = osc::messageString("/nisps/weights", json);
-        sendPacket(msg);
-    }
-
 private:
     void recvLoop() {
         uint8_t buf[65536];
@@ -289,19 +273,7 @@ private:
         if (tags.empty() || tags[0] != ',') return;
 
         // Dispatch based on address
-        if (address == "/nisps/state") {
-            // Expect a single string argument
-            if (tags.size() >= 2 && tags[1] == 's') {
-                std::string payload = osc::readString(buf, len, offset);
-                if (stateCallback_) stateCallback_(payload);
-            }
-        } else if (address == "/nisps/weights") {
-            // Expect a single string argument (JSON)
-            if (tags.size() >= 2 && tags[1] == 's') {
-                std::string payload = osc::readString(buf, len, offset);
-                if (weightsCallback_) weightsCallback_(payload);
-            }
-        } else if (address == "/nisps/feedback") {
+        if (address == "/nisps/feedback") {
             // Verdict op as a JSON string:
             //   {"op":"up|down|rand|clear","spread":f,"input":[…],"output":[…]}
             if (tags.size() >= 2 && tags[1] == 's') {
@@ -355,8 +327,6 @@ private:
     std::atomic<bool> running_{false};
 
     // Callbacks
-    StringCallback stateCallback_;
-    StringCallback weightsCallback_;
     StringCallback feedbackCallback_;
     FloatVecCallback inputCallback_;
 

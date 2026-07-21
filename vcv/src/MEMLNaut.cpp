@@ -78,12 +78,21 @@ struct MEMLNaut : Module {
     // ── ML Engine (double-buffered) ─────────────────────────────────
     // THREADING INVARIANT: only the audio thread touches `iml`; the worker
     // thread operates exclusively on `imlShadow`. Hand-off is through atomic-
-    // flagged staging buffers (see startOsc + workerLoop).
+    // flagged staging buffers (see stageForWorker + workerLoop) — the audio
+    // thread must never read imlShadow's members directly (see pendingWeights).
     nisps::IML<float> iml{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
     nisps::IML<float> imlShadow{NUM_ML_INPUTS, NUM_ML_OUTPUTS, {16, 24, 16}};
 
-    // Worker → Audio: staged weights ready for swap (core-exact flat layout)
+    // Worker → Audio: staged weights + example set ready for swap (core-exact
+    // flat weight layout). The worker deep-copies imlShadow's examples here
+    // BEFORE flipping weightsPending, so the audio thread never touches
+    // imlShadow directly — it only ever reads this completed private copy
+    // (same round-trip handshake as pendingWeights: the worker only writes
+    // these once weightsPending has been observed false, i.e. the audio
+    // thread has fully consumed the previous batch).
     nisps::IML<float>::Weights pendingWeights;
+    std::vector<std::vector<float>> pendingFeatures;
+    std::vector<std::vector<float>> pendingLabels;
     std::atomic<bool> weightsPending{false};
 
     // Audio → Worker: staged weight snapshot for the worker to start from
@@ -120,9 +129,7 @@ struct MEMLNaut : Module {
     float bridgedInputs[MAX_ML_INPUTS] = {};
     std::mutex bridgedInputMutex;
 
-    // OSC → Audio: staged JSON (state/weights) + staged feedback op
-    std::string oscStagedJson;
-    std::atomic<bool> oscJsonPending{false};
+    // OSC → Audio: staged feedback op
     StagedFeedback stagedFeedback;
     std::atomic<bool> feedbackPending{false};
     std::mutex feedbackMutex;
@@ -133,19 +140,10 @@ struct MEMLNaut : Module {
     int oscPort = OSC_DEFAULT_PORT;
     int oscSendCounter = 0;
     static constexpr int OSC_SEND_INTERVAL_SAMPLES = 4410; // ~100ms at 44.1kHz
-    std::atomic<bool> stateDirty{false}; // set after a weight swap → push /nisps/state
 
     void startOsc() {
         if (oscServer && oscServer->isRunning()) return;
         oscServer = std::make_unique<memlnaut::OscServer>();
-
-        // Full state / weights JSON → stage for the audio thread to apply.
-        oscServer->onState([this](const std::string& json) {
-            if (!oscJsonPending.load()) { oscStagedJson = json; oscJsonPending.store(true); }
-        });
-        oscServer->onWeights([this](const std::string& json) {
-            if (!oscJsonPending.load()) { oscStagedJson = json; oscJsonPending.store(true); }
-        });
 
         // Live input vector from the browser → drive the model inputs.
         oscServer->onInput([this](const std::vector<float>& values) {
@@ -237,16 +235,6 @@ struct MEMLNaut : Module {
         fb.hasInput = findArr("input", fb.input, MAX_ML_INPUTS) > 0;
         fb.hasOutput = findArr("output", fb.output, NUM_ML_OUTPUTS) > 0;
         return fb;
-    }
-
-    // Build a compact JSON state snapshot (for module → browser sync).
-    std::string buildStateJson() {
-        json_t* root = dataToJson();
-        char* str = json_dumps(root, JSON_COMPACT);
-        json_decref(root);
-        std::string out = str ? str : "{}";
-        free(str);
-        return out;
     }
 
     // ── Triggers ──────────────────────────────────────────────────────
@@ -361,7 +349,14 @@ struct MEMLNaut : Module {
                 std::this_thread::sleep_for(std::chrono::microseconds(100));
             if (shouldStop.load()) break;
 
+            // Deep-copy the example set alongside the weights BEFORE flipping
+            // the ready flag, so the audio thread's consumer below only ever
+            // reads a completed private copy — it must never read imlShadow's
+            // features_/labels_ directly, since the worker keeps mutating
+            // them (next job's load_examples, training, clear) concurrently.
             pendingWeights = imlShadow.get_weights();
+            pendingFeatures = imlShadow.get_example_features();
+            pendingLabels = imlShadow.get_example_labels();
             weightsPending.store(true);
 
             if (imlShadow.get_example_count() > 0) {
@@ -470,14 +465,6 @@ struct MEMLNaut : Module {
         lights[LIGHT_LEARN].setBrightness(learn ? 1.f : 0.f);
         lights[LIGHT_TRAINING].setBrightness(isTraining.load() ? 1.f : 0.f);
 
-        // Apply staged OSC state/weights JSON.
-        if (oscJsonPending.load()) {
-            json_error_t error;
-            json_t* root = json_loads(oscStagedJson.c_str(), 0, &error);
-            if (root) { dataFromJson(root); json_decref(root); }
-            oscJsonPending.store(false);
-        }
-
         // Apply staged remote feedback (browser verdict over the bridge) — routes
         // through the same paths as the panel buttons.
         if (feedbackPending.load()) {
@@ -507,16 +494,16 @@ struct MEMLNaut : Module {
             }
         }
 
-        // Apply new weights from the background thread.
+        // Apply new weights + example set from the background thread. Both
+        // were deep-copied into pendingWeights/pendingFeatures/pendingLabels
+        // by the worker before it set the flag — this thread never reads
+        // imlShadow directly (see workerLoop's staging comment).
         if (weightsPending.load()) {
             iml.set_weights(pendingWeights);
+            iml.load_examples(pendingFeatures, pendingLabels);
             weightsPending.store(false);
-            auto newFeats = imlShadow.get_example_features();
-            auto newLabels = imlShadow.get_example_labels();
-            iml.load_examples(newFeats, newLabels);
             for (int i = 0; i < NUM_ML_OUTPUTS; i++) prevOutputs[i] = cachedOutputs[i];
             crossfadeProgress = 0.f;
-            stateDirty.store(true); // push fresh /nisps/state to the browser
         }
 
         // RAND button → enqueue Randomize.
@@ -607,11 +594,8 @@ struct MEMLNaut : Module {
             derivedDelta = std::sqrt(delta);
         }
 
-        // OSC send (throttled to ~100ms), plus an immediate state push when dirty.
+        // OSC send (throttled to ~100ms).
         if (oscServer && oscServer->isRunning()) {
-            if (stateDirty.exchange(false)) {
-                oscServer->sendState(buildStateJson());
-            }
             oscSendCounter++;
             if (oscSendCounter >= OSC_SEND_INTERVAL_SAMPLES) {
                 oscSendCounter = 0;

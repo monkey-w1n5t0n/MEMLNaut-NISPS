@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memlnaut/schemas/mode.schema.json",
   "title": "MEMLNaut Mode Schema",
-  "description": "Describes the parameter contract, ML config, and UI hints for one MEMLNaut mode. Authoritative source: firmware C++ code under modes/ and voicespaces/. Codegen consumes this to emit C++ headers and TypeScript types.",
+  "description": "Meta-schema for one MEMLNaut mode: parameter contract, ML config, and UI hints. The schemas/modes/*.json files it validates are the canonical contract — codegen/generate.ts emits the C++ headers (nisps/modes/generated/) and TypeScript modules (manifold/src/modes/generated/) from them. Provenance notes and judgement calls live in schemas/modes/params_notes.md.",
   "type": "object",
   "required": [
     "mode_id",

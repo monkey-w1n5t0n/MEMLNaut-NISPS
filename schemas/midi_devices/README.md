@@ -10,7 +10,9 @@ browser engine from one set of files.
 - `<device>.json` — one template per device. Each param:
   `{ id, cc, label, min, max, default, group }` — `label` is what humans see, `cc`
   is the MIDI Control Change number, `group` is a coarse UI section.
-- Verified CC provenance + sources for every device live in `../../synth-midi-cc.json`.
+- `sources/synth-midi-cc.json` — verified CC provenance + sources for every device
+  (research artifact; kept out of the top-level dir because codegen globs `*.json`
+  there as device templates).
 
 Currently shipped (CC-controllable): `moog_sub37`, `moog_sub_phatty`,
 `creamware_pro12_asb`, `elektron_analog_keys`, `asm_hydrasynth`, `roland_jd800`.
@@ -25,8 +27,9 @@ Emits (do **not** hand-edit the outputs):
 - `nisps/midi/generated/midi_devices.hpp` — no-heap `constexpr` (firmware + WASM).
 - `manifold/src/midi-devices/generated/` — typed catalogue for the browser.
 
-Idempotent. To (re)derive these files from the research artifact:
-`bun run codegen/seed-midi-devices.ts`.
+Idempotent. The templates were originally machine-seeded from
+`sources/synth-midi-cc.json` (by `codegen/seed-midi-devices.ts`, since deleted — see git
+history) and are hand-tuned since; edit the `<device>.json` files directly.
 
 ## Using it
 

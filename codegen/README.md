@@ -1,67 +1,50 @@
-# MEMLNaut Mode-Schema Codegen
+# codegen — schemas → C++ + TypeScript
 
-Bun + TypeScript tool that turns `schemas/modes/*.json` into:
+Bun scripts that turn the JSON schemas under `schemas/` into generated code for both
+targets. The per-file inventory lives in `MAP.md` (§ `codegen/`) — this README only
+covers how to run it.
 
-- C++ headers under `nisps/modes/generated/<mode_id>_schema.hpp` (`constexpr` data, no runtime cost).
-- TypeScript modules under `playground/src/modes/generated/<mode_id>_schema.ts` (typed `ModeSchema` objects).
+- `generate.ts` — validates `schemas/modes/*.json` against `schemas/schema.json`, emits
+  `nisps/modes/generated/<mode>_schema.hpp` (+ `schema_types.hpp`) and
+  `manifold/src/modes/generated/<mode>_schema.ts` (+ `types.ts`, `index.ts`).
+- `generate-midi-devices.ts` — validates `schemas/midi_devices/*.json` against
+  `schemas/midi_device.schema.json`, emits `nisps/midi/generated/midi_devices.hpp` and
+  `manifold/src/midi-devices/generated/{types,devices,index}.ts`.
 
-The schemas are validated against `schemas/schema.json` (JSON Schema Draft 2020-12) on every run. Codegen exits non-zero if any schema fails validation.
+Both validate with ajv (Draft 2020-12), exit non-zero on failure, and are idempotent
+(re-running with unchanged schemas is byte-identical).
 
 ## Run
 
 ```bash
 cd codegen
-bun install        # one-shot, fetches ajv + types
-bun run generate.ts   # or: bun run generate
+bun install
+bun run generate.ts               # mode schemas
+bun run generate-midi-devices.ts  # MIDI device templates
 ```
 
-The script writes everything into the two output dirs in one shot. Re-running with no schema changes is a no-op (byte-identical output).
+Schema or codegen changes ship with the regenerated C++ **and** TypeScript in the same
+commit — CI re-runs both generators and fails on any diff.
 
-## Tests
+## Golden test
 
-`tests/golden_test.ts` regenerates from the live schemas into a temp dir and diffs against `tests/golden/`. The golden directory contains a snapshot of `paf_synth_schema.{hpp,ts}`. To refresh after intentional codegen changes:
-
-```bash
-bun run generate.ts
-cp ../nisps/modes/generated/paf_synth_schema.hpp tests/golden/
-cp ../playground/src/modes/generated/paf_synth_schema.ts tests/golden/
-```
-
-Run the test:
+`tests/golden_test.ts` re-runs `generate.ts` against the live output dirs, diffs
+`paf_synth_schema.{hpp,ts}` against the snapshots in `tests/golden/`, then re-runs to
+prove idempotency:
 
 ```bash
 bun run test
 ```
 
-## Adding a new mode
+After an intentional emission change, refresh the goldens:
 
-1. Drop a new `<mode_id>.json` into `schemas/modes/` (must validate against `schemas/schema.json`).
-2. Run `bun run generate.ts`.
-3. Commit the JSON + the regenerated C++/TS pair.
-
-## Layout
-
-```
-codegen/
-├── package.json         # ajv (+ formats) + bun-types
-├── tsconfig.json
-├── generate.ts          # ~400 lines, single entrypoint
-├── README.md            # this file
-├── templates/           # reference templates (NOT consumed — for review)
-│   ├── cpp_schema.hpp.template
-│   └── ts_schema.ts.template
-└── tests/
-    ├── golden_test.ts   # diffs latest output against tests/golden/
-    └── golden/
-        ├── paf_synth_schema.hpp
-        └── paf_synth_schema.ts
+```bash
+bun run generate.ts
+cp ../nisps/modes/generated/paf_synth_schema.hpp tests/golden/
+cp ../manifold/src/modes/generated/paf_synth_schema.ts tests/golden/
 ```
 
-## Conventions
+## Adding a mode / device
 
-- **C++ namespace**: `nisps::modes::generated`. All generated symbols are `inline constexpr` so `#include`-ing the header in multiple TUs is safe.
-- **C++ types**: `std::array`, `std::string_view`, `std::size_t`. No `std::vector`, no heap.
-- **`Curve` enum**: declared in `nisps/modes/generated/schema_types.hpp` as a temporary local copy. Once stream 1 lands `nisps/core/math.hpp`, replace the local enum with an `#include` (search for `TODO(stream-1)` in the generated header).
-- **Float literals**: emitted with explicit `.f` suffix and decimal point, per the perf contract (architecture §3.3).
-- **Order**: schemas are processed in alphabetical order of mode_id so output is stable.
-- **Naming**: `mode_id` is `snake_case` in JSON; the generated C++ const prefix is `k` + PascalCase (e.g. `kPafSynthParams`); TS const is PascalCase + `Schema` (e.g. `PafSynthSchema`).
+Drop the new JSON into `schemas/modes/` (or `schemas/midi_devices/`), run the matching
+generator, and commit the JSON plus the regenerated outputs together.

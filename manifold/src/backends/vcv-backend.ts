@@ -18,9 +18,8 @@
  *                               string — { op, spread, input[], output[] }
  *
  *   module → browser
- *     /nisps/output   <f…f>     module's live outputs (status / visualisation)
- *     /nisps/input    <f…f>     module's live inputs (echo / status)
- *     /nisps/state    <json>    module status snapshot (surfaced as a message)
+ *     /nisps/output   <f…f>     module's live outputs (proves the module is alive)
+ *     /nisps/input    <f…f>     module's live inputs (echo — same alive proof)
  *
  * The bridge process AND the VCV module must both be running — until the WS
  * connects we surface "bridge not running"; until the module replies we stay
@@ -71,13 +70,10 @@ export class VcvBackend implements OutputBackend {
   private lastSendMs = 0;
   private lastInputSent: [number, number] = [-1, -1];
 
-  /** Latest module-reported outputs (for visualisation), null until first echo. */
-  private moduleOutputs: number[] | null = null;
   private gotModuleReply = false;
 
   private statusState: BackendStatus = { state: 'idle', message: 'VCV idle' };
   private statusListeners = new Set<(s: BackendStatus) => void>();
-  private outputListeners = new Set<(v: number[]) => void>();
   private offConn: (() => void) | null = null;
   private offInfo: (() => void) | null = null;
   private offOutputs: (() => void) | null = null;
@@ -113,8 +109,8 @@ export class VcvBackend implements OutputBackend {
       }
     });
     // Module → browser: a reply on either channel proves the module is alive.
-    this.offOutputs = this.client.onOutputsReceived((v) => this.onModuleReply(v, true));
-    this.offInputs = this.client.onInputsReceived((v) => this.onModuleReply(v, false));
+    this.offOutputs = this.client.onOutputsReceived(() => this.onModuleReply());
+    this.offInputs = this.client.onInputsReceived(() => this.onModuleReply());
 
     this.setStatus({ state: 'connecting', message: `Connecting to VCV bridge (${this.client.url})…` });
     this.client.connect({ reconnect: true }).catch(() => {
@@ -208,25 +204,10 @@ export class VcvBackend implements OutputBackend {
     return spec?.bipolar ? v * 10 - 5 : v * 10;
   }
 
-  /** Latest module-reported output vector for visualisation (may be null). */
-  moduleStatusOutputs(): number[] | null {
-    return this.moduleOutputs;
-  }
-
-  /** Subscribe to module-reported outputs (visualisation feed). */
-  onModuleOutputs(cb: (v: number[]) => void): () => void {
-    this.outputListeners.add(cb);
-    return () => this.outputListeners.delete(cb);
-  }
-
-  private onModuleReply(v: number[], isOutput: boolean): void {
+  private onModuleReply(): void {
     if (!this.gotModuleReply) {
       this.gotModuleReply = true;
       this.setStatus({ state: 'ready', message: `VCV module connected (${this.client.url})` });
-    }
-    if (isOutput) {
-      this.moduleOutputs = v;
-      for (const cb of this.outputListeners) cb(v);
     }
   }
 

@@ -6,8 +6,8 @@
  *
  *   browser → bridge:
  *     { type: 'params', payload: [[name, value], ...] }   (per-param floats)
- *     { type: 'state',  payload: <JSON> }                  (full state)
- *     { type: 'weights',payload: <JSON> }                  (weights only)
+ *     { type: 'input',  payload: [f, ...] }                (input vector)
+ *     { type: 'feedback', payload: <op JSON> }             (verdict op)
  *   bridge → browser:
  *     { type: 'outputs', values: [...] }
  *     { type: 'inputs',  values: [...] }
@@ -111,16 +111,6 @@ export class NispsOscClient {
   // ── Send ───────────────────────────────────────────────────────────
   sendParams(params: OscParamBatch): void {
     this.send({ type: 'params', payload: params });
-  }
-
-  sendState(stateJson: object | string): void {
-    const payload = typeof stateJson === 'string' ? JSON.parse(stateJson) : stateJson;
-    this.send({ type: 'state', payload });
-  }
-
-  sendWeights(weightsObj: object | string): void {
-    const payload = typeof weightsObj === 'string' ? JSON.parse(weightsObj) : weightsObj;
-    this.send({ type: 'weights', payload });
   }
 
   /**

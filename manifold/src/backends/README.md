@@ -17,7 +17,7 @@ See `docs/specs/backends-spec.md` for the authoritative design.
 | `midi-backend.ts` | `WebMidiBackend` — real Web MIDI CC out (per-output CC#/channel/range/name, throttled + dead-zone). |
 | `osc-client.ts` | `NispsOscClient` — WS transport to the Deno OSC bridge (JSON protocol, auto-reconnect). |
 | `osc-backend.ts` | `OscBridgeBackend` — OSC out over WS; per-output address path + physical range. |
-| `vcv-backend.ts` | `VcvBackend` — drives + **trains** the VCV Rack NISPS module over the OSC↔WS bridge (streams `/nisps/input`, forwards the verdict loop to `/nisps/feedback`, receives `/nisps/output` + `/nisps/state`). |
+| `vcv-backend.ts` | `VcvBackend` — drives + **trains** the VCV Rack NISPS module over the OSC↔WS bridge (streams `/nisps/input`, forwards the verdict loop to `/nisps/feedback`, receives `/nisps/output` / `/nisps/input` as module-alive proof). |
 | `passthrough-backend.ts` | No-op sink for synth (plays in-engine) / particles (rAF consumer) / editor. |
 | `presets.ts` | Named per-backend output-config presets (localStorage, per-backend namespace). |
 | `useBackendManager.ts` | Thin React binding: builds `BackendContext` from the store, switches Mode, surfaces status. |
@@ -40,8 +40,7 @@ the OSC backend shows "bridge not running" (it auto-reconnects):
 cd manifold/osc-bridge
 deno run --allow-net bridge.ts
 #   --osc-host 127.0.0.1 --osc-port 9000 --ws-port 8765 --listen-port 9001
-# or, without Deno:
-node bridge.mjs
+# or, without Deno: use a compiled binary (compile.sh / the osc-bridge release)
 ```
 
 Default bridge URL: `ws://localhost:8765` (configurable in the OSC config panel).
@@ -60,8 +59,8 @@ When Mode = **VCV**, the browser is authoritative in *bridged mode*: the
   output[] }`), so the module's embedded net trains in lock-step with the
   browser session.
 
-It receives **`/nisps/output`** + **`/nisps/state`** back for status /
-visualisation. The verdict forwarding is gated in `BackendManager.forwardFeedback`
+It receives **`/nisps/output`** / **`/nisps/input`** back as proof the module is
+alive. The verdict forwarding is gated in `BackendManager.forwardFeedback`
 — a no-op unless VCV is the active backend (otherwise the browser engine is the
 learner). Both processes are required:
 

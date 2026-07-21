@@ -4,7 +4,7 @@
 // WebSocket server that bridges the browser webapp and OSC-capable software
 // (VCV Rack MEMLNaut module, SuperCollider, etc.).
 //
-// Webapp -> Bridge -> OSC target (param updates, state, weights)
+// Webapp -> Bridge -> OSC target (param updates, input vector, feedback)
 // OSC target -> Bridge -> Webapp (output values, input values)
 //
 // Run with Deno:
@@ -20,8 +20,6 @@
 //
 // OSC address format:
 //   /nisps/<param_name> <float>   (webapp -> target)
-//   /nisps/state <string>         (webapp -> target: full JSON state)
-//   /nisps/weights <string>       (webapp -> target: weights JSON)
 //   /nisps/input <f...f>          (webapp -> target: input vector, ONE message;
 //                                   also target -> webapp for visualisation)
 //   /nisps/feedback <string>      (webapp -> target: verdict op JSON —
@@ -253,17 +251,9 @@ function handleWs(ws: WebSocket): void {
     try {
       const data = JSON.parse(e.data as string);
 
-      // New structured message format: { type, payload }
+      // Structured message format: { type, payload }
       if (data && typeof data === "object" && data.type) {
         switch (data.type) {
-          case "state":
-            // Send full state JSON as OSC string to /nisps/state
-            sendOSCString(`${OSC_PREFIX}/state`, JSON.stringify(data.payload));
-            return;
-          case "weights":
-            // Send weights JSON as OSC string to /nisps/weights
-            sendOSCString(`${OSC_PREFIX}/weights`, JSON.stringify(data.payload));
-            return;
           case "input":
             // Current input VECTOR as ONE multi-float message to /nisps/input
             // (browser drives the VCV module's inputs in bridged mode).
@@ -277,7 +267,7 @@ function handleWs(ws: WebSocket): void {
             sendOSCString(`${OSC_PREFIX}/feedback`, JSON.stringify(data.payload));
             return;
           case "params":
-            // Legacy batch format embedded in structured message
+            // Per-param batch: one single-float message per [name, value] entry
             if (Array.isArray(data.payload)) {
               if (USE_BUNDLES) {
                 sendOSCBundle(data.payload);
@@ -288,17 +278,6 @@ function handleWs(ws: WebSocket): void {
               }
             }
             return;
-        }
-      }
-
-      // Legacy format: [[paramName, value], ...]
-      if (Array.isArray(data)) {
-        if (USE_BUNDLES) {
-          sendOSCBundle(data);
-        } else {
-          for (const [name, value] of data) {
-            sendOSC(`${OSC_PREFIX}/${name}`, value);
-          }
         }
       }
     } catch (err) {
@@ -319,23 +298,18 @@ async function udpReceiveLoop(): Promise<void> {
     const msg = parseOscMessage(data);
     if (!msg) continue;
 
-    // Relay parsed OSC messages to all connected WebSocket clients
-    const wsMsg: Record<string, unknown> = { type: "osc", address: msg.address };
-
+    // Relay the module's output/input vectors to all connected WebSocket
+    // clients. Other addresses have no browser receiver — drop them.
+    let type: "outputs" | "inputs";
     if (msg.address === `${OSC_PREFIX}/output` || msg.address === "/nisps/output") {
-      // Float array of outputs
-      wsMsg.type = "outputs";
-      wsMsg.values = msg.args.filter((a): a is number => typeof a === "number");
+      type = "outputs";
     } else if (msg.address === `${OSC_PREFIX}/input` || msg.address === "/nisps/input") {
-      // Float array of inputs
-      wsMsg.type = "inputs";
-      wsMsg.values = msg.args.filter((a): a is number => typeof a === "number");
+      type = "inputs";
     } else {
-      // Generic OSC message
-      wsMsg.args = msg.args;
+      continue;
     }
-
-    broadcastToWs(JSON.stringify(wsMsg));
+    const values = msg.args.filter((a): a is number => typeof a === "number");
+    broadcastToWs(JSON.stringify({ type, values }));
   }
 }
 
@@ -365,9 +339,9 @@ NISPS <-> OSC Bridge (bidirectional)
   Mode:         ${USE_BUNDLES ? "bundles" : "individual messages"}
 
   Webapp -> VCV:
-    params:  [[name, value], ...]  or  { type: "params", payload: [...] }
-    state:   { type: "state", payload: <JSON> }
-    weights: { type: "weights", payload: <JSON> }
+    params:   { type: "params", payload: [[name, value], ...] }
+    input:    { type: "input", payload: [f, ...] }
+    feedback: { type: "feedback", payload: <op JSON> }
 
   VCV -> Webapp:
     /nisps/output <f...f>  ->  { type: "outputs", values: [...] }

@@ -1,9 +1,14 @@
 /**
  * CurvePad — a square response-curve plot. Vertical drag reshapes the curve.
- * `curve` is 0..1 where ~0.43 reads as linear; mirrors the engine's applyCurve.
+ * `curve` is 0..1 where 0.5 is exactly linear.
+ *
+ * The preview draws the SAME `applyCurve` the output path uses
+ * (`backends/mapping.ts`) rather than re-deriving an exponent, so the knob, the
+ * on-screen bars and the value actually sent to a backend can never disagree.
  * Ported from `CurvePad.jsx`.
  */
 import { useEffect, useRef } from 'react';
+import { applyCurve } from '../backends/mapping';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 
 export interface CurvePadProps {
@@ -48,14 +53,13 @@ export function CurvePad({ curve = 0.5, onChange, size = 116 }: CurvePadProps) {
     ctx.setLineDash([]);
     const css = getComputedStyle(cv);
     const accent = css.getPropertyValue('--accent').trim() || '#ff6a00';
-    const e = 0.25 + curve * 1.75;
     ctx.strokeStyle = accent;
     ctx.lineWidth = 2;
     ctx.beginPath();
     const pad = 3;
     for (let p = 0; p <= 80; p++) {
       const xv = p / 80;
-      const yv = Math.pow(xv, e);
+      const yv = applyCurve(xv, curve);
       const px = pad + xv * (size - 2 * pad);
       const py = size - pad - yv * (size - 2 * pad);
       if (p === 0) ctx.moveTo(px, py);
@@ -95,7 +99,7 @@ export function CurvePad({ curve = 0.5, onChange, size = 116 }: CurvePadProps) {
         <span
           style={{ fontSize: 10, color: 'var(--fg-dim)', fontVariantNumeric: 'tabular-nums' }}
         >
-          {(0.25 + curve * 1.75).toFixed(2)}
+          {Math.pow(2, 4 * (curve - 0.5)).toFixed(2)}
         </span>
       </div>
       <canvas

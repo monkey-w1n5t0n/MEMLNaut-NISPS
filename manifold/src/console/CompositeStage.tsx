@@ -22,21 +22,13 @@ import { VirtualJoystick, XYPad } from '../primitives';
 import { Manifold } from './Manifold';
 import { OutputStage } from './OutputStage';
 import { MiniMeters } from './shared-ui';
+import { GROUP_COLOR } from './model';
 import type { MFMode, MFParam } from './model';
 import type { FeedbackMarker, Pin } from './types';
 
 const SNAPS = [0.14, 0.33, 0.5, 0.66, 0.86];
 const MAGNET = 0.026;
 const SHUT = 0.1;
-
-const GC: Record<string, string> = {
-  formant: '--accent',
-  pitch: '--accent-2',
-  amp: '--good',
-  filter: '--warn',
-  fx: '--info',
-  mod: '--accent-3',
-};
 
 const CORNERS: Record<string, CSSProperties> = {
   tl: { top: 62, left: 14 },
@@ -261,7 +253,7 @@ export function CompositeStage({
       >
         {params.map((p, i) => {
           const eff = values[i] ?? 0;
-          const gc = `var(${GC[p.group] || '--accent'})`;
+          const gc = `var(${GROUP_COLOR[p.group] || '--accent'})`;
           const dim = p.status === 'off';
           const set = (cx: number, el: HTMLDivElement) => {
             const r = el.getBoundingClientRect();

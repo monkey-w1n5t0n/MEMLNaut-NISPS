@@ -9,6 +9,7 @@
  */
 import { useRef } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import { GROUP_COLOR } from '../console/model';
 import type { MFParam, ParamStatus } from '../console/model';
 import { CurvePad } from '../console/CurvePad';
 
@@ -17,15 +18,6 @@ const STATE_META: { v: ParamStatus; label: string; color: string }[] = [
   { v: 'fixed', label: 'fixed', color: 'var(--accent-2)' },
   { v: 'live', label: 'live', color: 'var(--accent)' },
 ];
-
-const GROUP_COLOR: Record<string, string> = {
-  formant: '--accent',
-  pitch: '--accent-2',
-  amp: '--good',
-  filter: '--warn',
-  fx: '--info',
-  mod: '--accent-3',
-};
 
 /** A compact dual-thumb min/max range (min blue, max orange — dock-spec §3.1). */
 function DualRange({

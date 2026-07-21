@@ -6,16 +6,8 @@
  * Manifold ships a single "composite" altitude). MiniMeters survives — it is
  * the live glanceable output readout used by CompositeStage's minimap.
  */
+import { GROUP_COLOR } from './model';
 import type { MFParam } from './model';
-
-const MM_GROUP_COLOR: Record<string, string> = {
-  formant: '--accent',
-  pitch: '--accent-2',
-  amp: '--good',
-  filter: '--warn',
-  fx: '--info',
-  mod: '--accent-3',
-};
 
 /** MiniMeters — glanceable read-only output bars (no interaction). */
 export function MiniMeters({ params, values }: { params: MFParam[]; values: number[] }) {
@@ -41,7 +33,7 @@ export function MiniMeters({ params, values }: { params: MFParam[]; values: numb
               right: 0,
               bottom: 0,
               height: `${v * 100}%`,
-              background: `var(${MM_GROUP_COLOR[params[i]?.group] || '--accent'})`,
+              background: `var(${GROUP_COLOR[params[i]?.group] || '--accent'})`,
               opacity: 0.3 + v * 0.6,
             }}
           />

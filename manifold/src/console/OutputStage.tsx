@@ -6,16 +6,9 @@
 import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { MFParam, ParamStatus } from './model';
+import { GROUP_COLOR } from './model';
 import { OutputEditor } from './OutputEditor';
 
-const OUT_GROUP_COLOR: Record<string, string> = {
-  formant: '--accent',
-  pitch: '--accent-2',
-  amp: '--good',
-  filter: '--warn',
-  fx: '--info',
-  mod: '--accent-3',
-};
 const OUT_NEXT: Record<ParamStatus, ParamStatus> = { off: 'fixed', fixed: 'live', live: 'off' };
 
 export interface OutputStageProps {
@@ -94,7 +87,7 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
     >
       {params.map((p, i) => {
         const eff = values[i] ?? 0;
-        const gc = `var(${OUT_GROUP_COLOR[p.group] || '--accent'})`;
+        const gc = `var(${GROUP_COLOR[p.group] || '--accent'})`;
         const dim = p.status === 'off';
         const placeRight = i > params.length - 4;
         return (
@@ -119,7 +112,7 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
                   color:
                     p.status === 'live'
                       ? 'var(--fg-mute)'
-                      : `var(${OUT_GROUP_COLOR[p.group] || '--accent'})`,
+                      : `var(${GROUP_COLOR[p.group] || '--accent'})`,
                   overflow: 'hidden',
                   whiteSpace: 'nowrap',
                   textOverflow: 'ellipsis',

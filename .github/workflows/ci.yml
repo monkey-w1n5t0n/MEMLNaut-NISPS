@@ -70,10 +70,8 @@ jobs:
         run: bash scripts/parity-check.sh
 
       - name: Build WASM
-        env:
-          # The script defaults to /usr/lib/emscripten/emcc; the runner gets
-          # emcc on PATH via setup-emsdk. Override.
-          EMCC: emcc
+        # setup-emsdk puts emcc on PATH; build-wasm.sh picks it up via
+        # `command -v emcc`. No EMCC override needed.
         run: bash scripts/build-wasm.sh
 
       - name: Parity check (native vs WASM)

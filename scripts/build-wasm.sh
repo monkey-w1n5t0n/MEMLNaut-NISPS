@@ -18,9 +18,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/manifold/public"
 SRC="$ROOT/nisps/wasm/bindings.cpp"
 
+# EMCC may be a bare command name on PATH (emsdk installs it that way) or an
+# absolute path. Resolve the former before the existence check, which otherwise
+# looks for a file of that name in the CWD and always fails.
+if [[ "$EMCC" != */* ]]; then
+  EMCC="$(command -v "$EMCC" || echo "$EMCC")"
+fi
+
 if [[ ! -x "$EMCC" && ! -f "$EMCC" ]]; then
   echo "[build-wasm] emcc not found at $EMCC" >&2
-  echo "[build-wasm] set EMCC=/path/to/emcc and retry." >&2
+  echo "[build-wasm] set EMCC=/path/to/emcc (or put emcc on PATH) and retry." >&2
   exit 2
 fi
 

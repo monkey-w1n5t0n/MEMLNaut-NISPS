@@ -32,7 +32,6 @@ export interface NispsModule {
   // non-positive/null args fall back to the compiled defaults (32→[10,14,18]→126).
   _nisps_ml_create(input_size: number, output_size: number, hidden_ptr: number, n_hidden: number, seed: number): number;
   _nisps_ml_destroy(ml: number): void;
-  _nisps_ml_reset(ml: number): void;
   // Reshape = new net at the new dims, warm-started with the overlapping
   // weights; feedback state resets. Returns 1 on success (0 = no change).
   _nisps_ml_reshape(ml: number, input_size: number, output_size: number, hidden_ptr: number, n_hidden: number, spread: number): number;
@@ -50,14 +49,12 @@ export interface NispsModule {
 
   // ML examples.
   _nisps_ml_clear_examples(ml: number): void;
-  _nisps_ml_example_count(ml: number): number;
 
   // ML weights.
   _nisps_ml_weight_count(ml: number): number;
   _nisps_ml_get_weights(ml: number, out_ptr: number): void;
   _nisps_ml_set_weights(ml: number, in_ptr: number): void;
   _nisps_ml_draw_weights(ml: number, spread: number): void;
-  _nisps_ml_move_weights(ml: number, speed: number, spread: number, mask_ptr: number): void;
   _nisps_ml_get_layer_stats(ml: number, out_ptr: number): void;
   // Null ml reports the DEFAULT shape; a handle reports its runtime shape.
   _nisps_ml_describe(ml: number, out_ptr: number): void;
@@ -68,7 +65,6 @@ export interface NispsModule {
   _nisps_ml_feedback_set_mode(ml: number, mode: number): void;
   _nisps_ml_feedback_get_mode(ml: number): number;
   _nisps_ml_feedback_exploring(ml: number): number; // 1 = exploring
-  _nisps_ml_feedback_learning_paused(ml: number): number; // 1 = paused
   _nisps_ml_feedback_set_focus(ml: number, mask_ptr: number, n: number): void;
   _nisps_ml_feedback_down(
     ml: number,
@@ -78,7 +74,6 @@ export interface NispsModule {
     pin_mask_ptr: number,
   ): number;
   _nisps_ml_feedback_up(ml: number): number;
-  _nisps_ml_feedback_drag(ml: number): number;
   // Returns 1 if `out` holds a static-bypass vector (skip process()); else 0.
   _nisps_ml_feedback_static_output(ml: number, out_ptr: number): number;
 
@@ -94,8 +89,6 @@ export interface NispsModule {
   _nisps_ml_feedback_like(ml: number): void; // Exploring→Placing (freeze output)
   _nisps_ml_feedback_commit_place(ml: number): void; // Placing→Idle (restore real net)
   _nisps_ml_feedback_cancel_place(ml: number): void; // Placing→Exploring
-  _nisps_ml_feedback_placing(ml: number): number; // 1 = Placing
-  _nisps_ml_feedback_state(ml: number): number; // 0=Idle 1=Exploring 2=Placing
   _nisps_ml_feedback_undo_depth(ml: number): number;
   // Writes placed/committed output (outputSize floats) into out; returns 1 if written.
   _nisps_ml_feedback_placed_output(ml: number, out_ptr: number): number;
@@ -123,8 +116,6 @@ export interface NispsModule {
   _nisps_ml_jolt_step(ml: number): void;
   _nisps_ml_jolt_release(ml: number): void;
   _nisps_ml_jolt_active(ml: number): number; // 1 = held/active
-  _nisps_ml_jolt_lr_scale(ml: number): number; // post-release LR ramp multiplier
-  _nisps_ml_jolt_tick_lr_ramp(ml: number): void;
   _nisps_ml_explore_intensity(ml: number, level: number): void;
   _nisps_ml_explore_get_intensity(ml: number): number;
   _nisps_ml_explore_apply(ml: number, inout_ptr: number, n: number): void;
@@ -145,9 +136,6 @@ export interface NispsModule {
   // In place: processes the first n floats of inout_ptr.
   _nisps_output_process(p: number, inout_ptr: number, n: number, dt_s: number): void;
   _nisps_output_reset(p: number): void;
-  _nisps_pipeline_state_size(p: number): number;
-  _nisps_pipeline_save_state(p: number, out_ptr: number): void;
-  _nisps_pipeline_load_state(p: number, in_ptr: number, n: number): void;
 
   // Curve catalog (one-core-engine P4). ids 0..6 = nisps::Curve (param ignored);
   // id 7 = centred power (param = exponent). nisps/core/math.hpp is the single

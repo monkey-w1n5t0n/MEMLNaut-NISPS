@@ -52,9 +52,9 @@ export interface SpineState {
 
 /**
  * The spine doubles as the `EngineSink` consumed by `WasmIML`. WasmIML calls
- * `setState/setOutputs/setWeights/emit`; the spine merges into its state,
- * stashes the live output/weight buffers, and bumps the version counter so
- * `useSyncExternalStore` consumers re-read.
+ * `setState/setOutputs/emit`; the spine merges into its state, stashes the
+ * live output buffer, and bumps the version counter so `useSyncExternalStore`
+ * consumers re-read.
  */
 export class Spine implements EngineSink {
   private state_: SpineState = {
@@ -93,9 +93,8 @@ export class Spine implements EngineSink {
   private mlBuf: F32 = new Float32Array(126);
   private routedBuf: F32 | null = null;
 
-  // Last live output (post-ML, pre-routing) and weights, read imperatively.
+  // Last live output (post-ML, pre-routing), read imperatively.
   private liveOutputs: F32 = new Float32Array(126);
-  private liveWeights: F32 = new Float32Array(0);
 
   // Optional post-output transform, applied to the routed buffer AFTER the
   // output pipeline and BEFORE backend.send (exploration noise — see
@@ -146,11 +145,6 @@ export class Spine implements EngineSink {
   setOutputs(out: Float32Array): void {
     if (this.liveOutputs.length === out.length) this.liveOutputs.set(out);
     else this.liveOutputs = new Float32Array(out);
-    this.bump_();
-  }
-
-  setWeights(w: Float32Array): void {
-    this.liveWeights = w;
     this.bump_();
   }
 
@@ -331,10 +325,6 @@ export class Spine implements EngineSink {
   /** Live routed (post output-pipeline) vector. Reused — read, don't retain. */
   routedOutput(): Float32Array | null {
     return this.routedBuf;
-  }
-
-  weights(): Float32Array {
-    return this.liveWeights;
   }
 
   // ---- useSyncExternalStore plumbing ---------------------------------

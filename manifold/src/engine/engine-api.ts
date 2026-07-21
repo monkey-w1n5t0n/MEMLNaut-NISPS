@@ -26,16 +26,12 @@ export interface EngineFeedbackApi {
   thumbsUp(): number;
   /** Negative feedback (thumbs-down). Returns the FeedbackAction int. */
   thumbsDown(speed?: number, spread?: number, pinMask?: Uint8Array): number;
-  /** Drag (continuous perturbation) tick. */
-  drag(): number;
   setMode(mode: FeedbackMode): void;
   getMode(): FeedbackMode;
   /** Restrict feedback to a subset of outputs (solo / column-freeze). */
   setFocus(mask: Uint8Array | null): void;
   /** True while the controller is exploring (perturbed). */
   exploring(): boolean;
-  /** True while the controller has paused learning. */
-  learningPaused(): boolean;
 
   // ---- ExploreAndPlace lifecycle (shared C++ core; mode 'explore_and_place') --
   /** Idle→Exploring: snapshot the real net, randomise a scratchpad. */
@@ -54,10 +50,6 @@ export interface EngineFeedbackApi {
   commitPlace(): void;
   /** Placing→Exploring: back out without storing. */
   cancelPlace(): void;
-  /** True while Placing (the frozen output is held). */
-  placing(): boolean;
-  /** ExploreState int: 0=Idle 1=Exploring 2=Placing. */
-  exploreState(): number;
   /** Scratchpad undo-ring depth available to pop. */
   undoDepth(): number;
   /** The frozen placed / just-committed output (null if none). */
@@ -92,9 +84,6 @@ export interface EngineExploreApi {
   /** Release: freeze the weights where they landed (permanent). */
   joltRelease(): void;
   joltActive(): boolean;
-  /** Post-release LR-ramp multiplier (0 held → 1 over ~5 s of ticks). */
-  joltLrScale(): number;
-  joltTickLrRamp(): void;
   /** Exploration amount in [0,1]; 0 disables (inert — parity-safe). */
   setExploreIntensity(level: number): void;
   exploreIntensity(): number;
@@ -169,12 +158,10 @@ export class EngineApi {
           this.spine.routedOutput() ?? this.spine.outputs(),
           pinMask,
         ),
-      drag: () => this.iml.feedbackDrag(),
       setMode: (mode) => this.iml.feedbackSetMode(mode),
       getMode: () => this.iml.feedbackGetMode(),
       setFocus: (mask) => this.iml.feedbackSetFocus(mask),
       exploring: () => this.iml.feedbackExploring(),
-      learningPaused: () => this.iml.feedbackLearningPaused(),
       enterExplore: (spread = this.spread_) => this.iml.feedbackEnterExplore(spread),
       exitExplore: () => this.iml.feedbackExitExplore(),
       reroll: (spread = this.spread_) => this.iml.feedbackReroll(spread),
@@ -183,8 +170,6 @@ export class EngineApi {
       like: () => this.iml.feedbackLike(),
       commitPlace: () => this.iml.feedbackCommitPlace(),
       cancelPlace: () => this.iml.feedbackCancelPlace(),
-      placing: () => this.iml.feedbackPlacing(),
-      exploreState: () => this.iml.feedbackState(),
       undoDepth: () => this.iml.feedbackUndoDepth(),
       placedOutput: () => this.iml.feedbackPlacedOutput(),
       dislikeGeometric: (heardVec?: Float32Array, lr = 0) =>
@@ -200,8 +185,6 @@ export class EngineApi {
       joltStep: () => this.iml.joltStep(),
       joltRelease: () => this.iml.joltRelease(),
       joltActive: () => this.iml.joltActive(),
-      joltLrScale: () => this.iml.joltLrScale(),
-      joltTickLrRamp: () => this.iml.joltTickLrRamp(),
       setExploreIntensity: (level) => this.iml.setExploreIntensity(level),
       exploreIntensity: () => this.iml.exploreIntensity(),
       exploreApply: (inout) => this.iml.exploreApply(inout),

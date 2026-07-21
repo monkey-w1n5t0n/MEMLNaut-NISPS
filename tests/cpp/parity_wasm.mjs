@@ -100,7 +100,6 @@ function bind(Module) {
     weightCount: cwrap('nisps_ml_weight_count', 'number', ['number']),
     getWeights:  cwrap('nisps_ml_get_weights',  null,     ['number','number']),
     drawWeights: cwrap('nisps_ml_draw_weights', null,     ['number','number']),
-    moveWeights: cwrap('nisps_ml_move_weights', null,     ['number','number','number','number']),
     feedbackSetMode:      cwrap('nisps_ml_feedback_set_mode',      null,     ['number','number']),
     feedbackDown:         cwrap('nisps_ml_feedback_down',          'number', ['number','number','number','number','number']),
     feedbackUp:           cwrap('nisps_ml_feedback_up',            'number', ['number']),

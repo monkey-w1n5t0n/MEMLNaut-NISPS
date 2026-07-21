@@ -102,13 +102,6 @@ class NispsProcessor extends AudioWorkletProcessor {
    */
   private async init_(bytes: ArrayBuffer, sampleRate: number): Promise<void> {
     const memory = new WebAssembly.Memory({ initial: 128, maximum: 4096, shared: false });
-    const imports: WebAssembly.Imports = {
-      // Emscripten import "a" group; field names match the generated JS.
-      a: {
-        a: () => { throw new Error('wasm aborted'); },
-        b: () => false, // _emscripten_resize_heap returning 0 disables growth
-      },
-    };
 
     const compiled = await WebAssembly.compile(bytes);
     // Discover the actual import shape from the module — names like "a",
@@ -119,13 +112,20 @@ class NispsProcessor extends AudioWorkletProcessor {
       if (!reshaped[desc.module]) reshaped[desc.module] = {} as WebAssembly.ModuleImports;
       const mod = reshaped[desc.module] as WebAssembly.ModuleImports;
       if (desc.kind === 'function') {
-        if (desc.name === 'c') {
-          // unused
+        if (desc.name === 'a') {
+          // __abort_js
+          mod[desc.name] = () => { throw new Error('wasm aborted'); };
+        } else if (desc.name === 'b') {
+          // _emscripten_resize_heap: refuse growth in the worklet.
+          mod[desc.name] = (_size: number) => 0;
+        } else {
+          // Unknown import — fail loudly instead of silently returning 0, so a
+          // missing/renamed Emscripten import surfaces immediately instead of
+          // manifesting as silent audio corruption.
+          mod[desc.name] = (..._args: unknown[]) => {
+            throw new Error(`worklet: missing wasm import "${desc.module}.${desc.name}"`);
+          };
         }
-        mod[desc.name] = (() => {
-          // Generic stub: log + return 0.
-          return (..._args: unknown[]) => 0;
-        })();
       } else if (desc.kind === 'memory') {
         mod[desc.name] = memory;
       } else if (desc.kind === 'table') {
@@ -134,34 +134,12 @@ class NispsProcessor extends AudioWorkletProcessor {
         mod[desc.name] = new WebAssembly.Global({ value: 'i32', mutable: true }, 0);
       }
     }
-    // For known-needed Emscripten imports, supply real implementations.
-    for (const desc of importDesc) {
-      const mod = reshaped[desc.module] as WebAssembly.ModuleImports;
-      // __abort_js
-      if (desc.name === 'a' && desc.kind === 'function') {
-        mod[desc.name] = () => { throw new Error('wasm aborted'); };
-      }
-      // _emscripten_resize_heap
-      if (desc.name === 'b' && desc.kind === 'function') {
-        mod[desc.name] = (_size: number) => 0; // refuse growth in worklet
-      }
-    }
 
-    void imports; // silence unused
     const wasmInst = await WebAssembly.instantiate(compiled, reshaped);
 
     // Many Emscripten exports use single-letter mangled names. Discover
     // by reading the export descriptors.
     const exDesc = WebAssembly.Module.exports(compiled);
-    const exMap = new Map<string, string>(); // logical name → mangled
-    for (const e of exDesc) {
-      // The exports list includes both the original (with leading
-      // underscore for C funcs) and the mangled single-letter alias used
-      // in the import section. We only see the export side here, but
-      // Emscripten in modern versions also re-exports the C names with
-      // their leading-underscore form. Walk both.
-      exMap.set(e.name, e.name);
-    }
     const exports = wasmInst.exports as Record<string, WebAssembly.ExportValue>;
 
     function pickFn(...names: string[]): (...args: number[]) => number {

@@ -28,8 +28,6 @@ export interface EngineSink {
   setState(patch: EngineStatePatch): void;
   /** Publish a fresh output vector (already copied; caller may keep it). */
   setOutputs(out: Float32Array): void;
-  /** Publish a fresh flat weight array. */
-  setWeights(w: Float32Array): void;
   /** Emit a named engine event (`ml.*`, `mode.*`, …) with an optional payload. */
   emit(event: string, payload?: unknown): void;
 }
@@ -38,6 +36,5 @@ export interface EngineSink {
 export const noopSink: EngineSink = {
   setState() {},
   setOutputs() {},
-  setWeights() {},
   emit() {},
 };

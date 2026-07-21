@@ -548,18 +548,6 @@ void nisps_ml_draw_weights(void* ml, float spread) {
     h->mlp.draw_weights(spread);
 }
 
-EMSCRIPTEN_KEEPALIVE
-void nisps_ml_move_weights(void* ml, float speed, float spread,
-                          const uint8_t* output_pin_mask) {
-    if (!ml) return;
-    auto* h = static_cast<MLHandle*>(ml);
-    std::span<const std::uint8_t> mask;
-    if (output_pin_mask) {
-        mask = std::span<const std::uint8_t>(output_pin_mask, h->n_out());
-    }
-    h->mlp.move_weights(speed, spread, mask);
-}
-
 // ---------------------------------------------------------------------------
 // ML feedback — the "Down Action" state machine (Avoid / RandomiseOutputs /
 // RandomiseMlp). The controller decides WHAT transition happened (returns a
@@ -602,12 +590,6 @@ int nisps_ml_feedback_exploring(void* ml) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-int nisps_ml_feedback_learning_paused(void* ml) {
-    if (!ml) return 0;
-    return static_cast<MLHandle*>(ml)->feedback.learning_paused() ? 1 : 0;
-}
-
-EMSCRIPTEN_KEEPALIVE
 void nisps_ml_feedback_set_focus(void* ml, const uint8_t* mask, int n) {
     if (!ml) return;
     auto* h = static_cast<MLHandle*>(ml);
@@ -638,13 +620,6 @@ int nisps_ml_feedback_up(void* ml) {
     if (!ml) return 0;
     auto* h = static_cast<MLHandle*>(ml);
     return static_cast<int>(h->feedback.on_up(h->mlp));
-}
-
-EMSCRIPTEN_KEEPALIVE
-int nisps_ml_feedback_drag(void* ml) {
-    if (!ml) return 0;
-    auto* h = static_cast<MLHandle*>(ml);
-    return static_cast<int>(h->feedback.on_drag(h->mlp));
 }
 
 // If returns 1, `out` (n_out floats) holds the static bypass vector
@@ -736,20 +711,6 @@ void nisps_ml_feedback_cancel_place(void* ml) {
     if (!ml) return;
     auto* h = static_cast<MLHandle*>(ml);
     h->feedback.cancel_place();
-}
-
-// 1 if currently Placing (audition is the frozen vector), else 0.
-EMSCRIPTEN_KEEPALIVE
-int nisps_ml_feedback_placing(void* ml) {
-    if (!ml) return 0;
-    return static_cast<MLHandle*>(ml)->feedback.placing() ? 1 : 0;
-}
-
-// ExploreState int: 0=Idle 1=Exploring 2=Placing.
-EMSCRIPTEN_KEEPALIVE
-int nisps_ml_feedback_state(void* ml) {
-    if (!ml) return 0;
-    return static_cast<int>(static_cast<MLHandle*>(ml)->feedback.explore_state());
 }
 
 // Scratchpad undo-ring depth currently available to pop.
@@ -863,20 +824,6 @@ int nisps_ml_jolt_active(void* ml) {
     return static_cast<MLHandle*>(ml)->jolt.active() ? 1 : 0;
 }
 
-// Post-release learning-rate ramp: multiply the training LR by this (0 while
-// held, ramps back to 1 over ~5 s of ticks).
-EMSCRIPTEN_KEEPALIVE
-float nisps_ml_jolt_lr_scale(void* ml) {
-    if (!ml) return 1.f;
-    return static_cast<MLHandle*>(ml)->jolt.lr_scale();
-}
-
-EMSCRIPTEN_KEEPALIVE
-void nisps_ml_jolt_tick_lr_ramp(void* ml) {
-    if (!ml) return;
-    static_cast<MLHandle*>(ml)->jolt.tick_lr_ramp();
-}
-
 // Exploration amount in [0,1]; 0 disables (inert — parity-safe).
 EMSCRIPTEN_KEEPALIVE
 void nisps_ml_explore_intensity(void* ml, float level) {
@@ -914,27 +861,11 @@ void nisps_ml_get_layer_stats(void* ml, float* out_stats) {
     }
 }
 
-// Extra helper: lets JS query the example count without having to
-// shadow-track it. Useful when restoring from snapshot.
-EMSCRIPTEN_KEEPALIVE
-int nisps_ml_example_count(void* ml) {
-    if (!ml) return 0;
-    auto* h = static_cast<MLHandle*>(ml);
-    return static_cast<int>(h->mlp.example_count());
-}
-
 EMSCRIPTEN_KEEPALIVE
 void nisps_ml_clear_examples(void* ml) {
     if (!ml) return;
     auto* h = static_cast<MLHandle*>(ml);
     h->mlp.clear_examples();
-}
-
-EMSCRIPTEN_KEEPALIVE
-void nisps_ml_reset(void* ml) {
-    if (!ml) return;
-    auto* h = static_cast<MLHandle*>(ml);
-    h->mlp.reset();
 }
 
 // Architecture introspection — writes [in, h1, h2, h3, out, n_layers] into a
@@ -1068,34 +999,6 @@ EMSCRIPTEN_KEEPALIVE
 void nisps_output_reset(void* p) {
     if (!p) return;
     static_cast<PipelineHandle*>(p)->output.reset();
-}
-
-// Persistence: [input state (3)] + [output state (1 + 2*count)].
-EMSCRIPTEN_KEEPALIVE
-int nisps_pipeline_state_size(void* p) {
-    if (!p) return 0;
-    auto* h = static_cast<PipelineHandle*>(p);
-    return static_cast<int>(h->input.state_size() + h->output.state_size());
-}
-
-EMSCRIPTEN_KEEPALIVE
-void nisps_pipeline_save_state(void* p, float* out) {
-    if (!p || !out) return;
-    auto* h = static_cast<PipelineHandle*>(p);
-    const std::size_t in_n = h->input.state_size();
-    h->input.save_state(std::span<float>(out, in_n));
-    h->output.save_state(std::span<float>(out + in_n, h->output.state_size()));
-}
-
-EMSCRIPTEN_KEEPALIVE
-void nisps_pipeline_load_state(void* p, const float* in, int n) {
-    if (!p || !in || n <= 0) return;
-    auto* h = static_cast<PipelineHandle*>(p);
-    const std::size_t in_n = h->input.state_size();
-    const std::size_t total = static_cast<std::size_t>(n);
-    if (total < in_n) return;
-    h->input.load_state(std::span<const float>(in, in_n));
-    h->output.load_state(std::span<const float>(in + in_n, total - in_n));
 }
 
 // ---------------------------------------------------------------------------

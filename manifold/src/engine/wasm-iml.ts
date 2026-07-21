@@ -8,7 +8,7 @@
  *     `mlStore.__setState(produce(...))` / `mlStore.__setOutputs(...)` /
  *     `mlStore.__setWeights(...)` / `coreBus.emit(...)`, this class calls the
  *     injected {@link EngineSink} (`sink.setState({...})` with a PLAIN patch
- *     object — no `produce` mutator, `sink.setOutputs/setWeights/emit`).
+ *     object — no `produce` mutator, `sink.setOutputs/emit`).
  *   - Glue + WASM URLs resolve via `import.meta.env.BASE_URL` (not `/nisps.*`).
  *   - The `nisps_ml_feedback_*` C ABI (already exported by the WASM build) is
  *     now bound and surfaced via the `feedback*` methods. The playground never
@@ -233,7 +233,6 @@ export class WasmIML {
       ready: true,
     });
     this.sink.setOutputs(new Float32Array(this.arch_.outputSize));
-    this.publishWeights_();
 
     this.tryLoadFromStorage_();
   }
@@ -396,7 +395,6 @@ export class WasmIML {
       lossHistory: [],
     });
     this.sink.setOutputs(new Float32Array(this.arch_.outputSize));
-    this.publishWeights_();
     this.sink.emit('ml.reshaped', {
       inputSize: this.arch_.inputSize,
       outputSize: this.arch_.outputSize,
@@ -616,7 +614,6 @@ export class WasmIML {
     // The C++ MLP stores per-iter history but it isn't exposed via the WASM
     // bindings yet, so this is a single-element array.
     this.sink.setState({ lastLoss: loss, lossHistory: [loss] });
-    this.publishWeights_();
     this.sink.emit('ml.trained', { loss });
     this.scheduleSave_();
     return loss;
@@ -677,16 +674,8 @@ export class WasmIML {
 
   randomiseWeights(spread = 0.6): void {
     this.module._nisps_ml_draw_weights(this.mlHandle, spread);
-    this.publishWeights_();
     this.sink.emit('ml.delta_update', { reason: 'randomise' });
     this.scheduleSave_();
-  }
-
-  moveWeights(speed: number, spread: number, pinMask?: Uint8Array): void {
-    const maskPtr = this.writePinMask_(pinMask);
-    this.module._nisps_ml_move_weights(this.mlHandle, speed, spread, maskPtr);
-    this.publishWeights_();
-    this.sink.emit('ml.delta_update', { reason: 'thumbs_down' });
   }
 
   private writePinMask_(pinMask?: Uint8Array): number {
@@ -717,10 +706,6 @@ export class WasmIML {
     return this.module._nisps_ml_feedback_exploring(this.mlHandle) === 1;
   }
 
-  feedbackLearningPaused(): boolean {
-    return this.module._nisps_ml_feedback_learning_paused(this.mlHandle) === 1;
-  }
-
   /** Restrict feedback to a subset of outputs (solo / focus). null clears it. */
   feedbackSetFocus(mask: Uint8Array | null): void {
     if (!mask || mask.length === 0) {
@@ -735,7 +720,6 @@ export class WasmIML {
   /** Positive feedback (thumbs-up). Returns the FeedbackAction int. */
   feedbackUp(): number {
     const action = this.module._nisps_ml_feedback_up(this.mlHandle);
-    this.publishWeights_();
     this.sink.emit('feedback.up', { action });
     this.scheduleSave_();
     return action;
@@ -755,16 +739,8 @@ export class WasmIML {
     }
     const maskPtr = this.writePinMask_(pinMask);
     const action = this.module._nisps_ml_feedback_down(this.mlHandle, outPtr, speed, spread, maskPtr);
-    this.publishWeights_();
     this.sink.emit('feedback.down', { action });
     this.scheduleSave_();
-    return action;
-  }
-
-  /** Drag (continuous perturbation) tick. Returns the FeedbackAction int. */
-  feedbackDrag(): number {
-    const action = this.module._nisps_ml_feedback_drag(this.mlHandle);
-    this.publishWeights_();
     return action;
   }
 
@@ -784,38 +760,32 @@ export class WasmIML {
 
   // ---- ExploreAndPlace lifecycle (shared C++ core; mode 'explore_and_place') --
   // The C++ core owns the weight snapshot / scratchpad / undo ring; THIS class
-  // only forwards calls + republishes weights. Example-storage + training stay
-  // with the caller (FeedbackController.ts), preserving the "caller owns
-  // training" contract.
+  // only forwards calls. Example-storage + training stay with the caller
+  // (FeedbackController.ts), preserving the "caller owns training" contract.
 
   /** Idle→Exploring: snapshot the real net, randomise a scratchpad. */
   feedbackEnterExplore(spread: number): void {
     this.module._nisps_ml_feedback_enter_explore(this.mlHandle, spread);
-    this.publishWeights_();
   }
 
   /** Exploring→Idle: restore the real net, discard the scratchpad. */
   feedbackExitExplore(): void {
     this.module._nisps_ml_feedback_exit_explore(this.mlHandle);
-    this.publishWeights_();
   }
 
   /** Exploring scratchpad op: re-randomise (undoable). */
   feedbackReroll(spread: number): void {
     this.module._nisps_ml_feedback_reroll(this.mlHandle, spread);
-    this.publishWeights_();
   }
 
   /** Exploring scratchpad op: small bounded perturbation (undoable). */
   feedbackNudge(amount: number): void {
     this.module._nisps_ml_feedback_nudge(this.mlHandle, amount);
-    this.publishWeights_();
   }
 
   /** Exploring scratchpad op: undo the last reroll/nudge. */
   feedbackUndo(): void {
     this.module._nisps_ml_feedback_undo(this.mlHandle);
-    this.publishWeights_();
   }
 
   /** Exploring→Placing: freeze the scratchpad output at its current input. */
@@ -826,21 +796,11 @@ export class WasmIML {
   /** Placing→Idle: restore the real net. Caller then stores +1 + trains. */
   feedbackCommitPlace(): void {
     this.module._nisps_ml_feedback_commit_place(this.mlHandle);
-    this.publishWeights_();
   }
 
   /** Placing→Exploring: back out without storing. */
   feedbackCancelPlace(): void {
     this.module._nisps_ml_feedback_cancel_place(this.mlHandle);
-  }
-
-  feedbackPlacing(): boolean {
-    return this.module._nisps_ml_feedback_placing(this.mlHandle) === 1;
-  }
-
-  /** ExploreState: 0=Idle 1=Exploring 2=Placing. */
-  feedbackState(): number {
-    return this.module._nisps_ml_feedback_state(this.mlHandle);
   }
 
   feedbackUndoDepth(): number {
@@ -867,7 +827,7 @@ export class WasmIML {
    * Geometric dislike: push the current mapping away from the liked centroid.
    * `heardVec` is the kDefaultOutputs vector the user is HEARING (post-pipeline —
    * with a null/raw vector the cold-start has a zero MSE derivative and is inert).
-   * `lr <= 0` uses the C++ controller default. Mutates weights → republishes.
+   * `lr <= 0` uses the C++ controller default. Mutates weights in place.
    * Returns the FeedbackAction int (14=GeometricPush, 15=GeometricColdStart).
    */
   feedbackDislikeGeometric(heardVec?: Float32Array, lr = 0): number {
@@ -879,7 +839,6 @@ export class WasmIML {
       outPtr = this.feedbackBuf.ptr;
     }
     const action = this.module._nisps_ml_feedback_dislike_geometric(this.mlHandle, outPtr, lr);
-    this.publishWeights_();
     this.sink.emit('feedback.down', { action });
     this.scheduleSave_();
     return action;
@@ -925,10 +884,9 @@ export class WasmIML {
   }
 
   /** One ~200 Hz morph tick while held (no-op when inactive). C-side get→glide→
-   *  set of the flat weights; republish so weight-health views + persistence follow. */
+   *  set of the flat weights; scheduleSave_ persists the result. */
   joltStep(): void {
     this.module._nisps_ml_jolt_step(this.mlHandle);
-    this.publishWeights_();
     this.scheduleSave_();
   }
 
@@ -939,15 +897,6 @@ export class WasmIML {
 
   joltActive(): boolean {
     return this.module._nisps_ml_jolt_active(this.mlHandle) === 1;
-  }
-
-  /** Post-release LR-ramp multiplier (0 while held → 1 over ~5 s of ticks). */
-  joltLrScale(): number {
-    return this.module._nisps_ml_jolt_lr_scale(this.mlHandle);
-  }
-
-  joltTickLrRamp(): void {
-    this.module._nisps_ml_jolt_tick_lr_ramp(this.mlHandle);
   }
 
   /** Exploration amount in [0,1]; 0 disables (inert — parity-safe). */
@@ -987,7 +936,6 @@ export class WasmIML {
     }
     this.weightsBuf.view.set(w as Float32Array, 0);
     this.module._nisps_ml_set_weights(this.mlHandle, this.weightsBuf.ptr);
-    this.publishWeights_();
   }
 
   getLayerStats(): LayerStats[] {
@@ -1008,20 +956,6 @@ export class WasmIML {
   getLayerStatsFlat(): Float32Array {
     this.module._nisps_ml_get_layer_stats(this.mlHandle, this.statsBuf.ptr);
     return new Float32Array(this.statsBuf.view);
-  }
-
-  // -------------------------------------------------------------------
-  // Misc
-  // -------------------------------------------------------------------
-
-  reset(): void {
-    this.module._nisps_ml_reset(this.mlHandle);
-    this.dataset.clear();
-    this.lastLoss_ = null;
-    this.sink.setState({ exampleCount: 0, lastLoss: null, lossHistory: [] });
-    this.publishWeights_();
-    this.sink.emit('ml.examples_cleared', undefined);
-    this.scheduleSave_();
   }
 
   // -------------------------------------------------------------------
@@ -1088,10 +1022,5 @@ export class WasmIML {
     } catch (err) {
       console.warn('[wasm-iml] tryLoadFromStorage failed:', err);
     }
-  }
-
-  private publishWeights_(): void {
-    const w = this.getWeights();
-    this.sink.setWeights(w);
   }
 }

@@ -39,7 +39,7 @@ bun run test:e2e     # Playwright smoke (needs `bun run build` first; runs again
 - **E2E on the VPS** needs a non-snap node runner (bun is snap-confined and hides libs from
   Chromium): `PLAYWRIGHT_BROWSERS_PATH=/home/w1n5t0n/snap/bun-js/87/.cache/ms-playwright node node_modules/.bin/playwright test`. Preview via bun is fine. The smoke spec (`tests/e2e/smoke.spec.ts`)
   asserts: engine WASM loads, spine invariant (setInputs → outputs change), feedback runs, console
-  renders, **no "C15" in the bundle**, no console errors. `shot.spec.ts` takes screenshots.
+  renders, **no "C15" in the bundle**, no console errors.
 - **Deploy is automatic on push to GitHub `main`, but gated on CI** → webhook → waits for the
   `CI` workflow to conclude `success` on that exact SHA → builds `manifold/` → rsyncs to the live
   `/next/` subdir. A red or missing CI run aborts the deploy (fail-closed, 20 min timeout);
@@ -99,15 +99,24 @@ decision. Buffers are reused frame-to-frame; never assume a fresh array.
   (`outputMode`/`midiOutputId`/`oscUrl`/`vcvUrl`), and UI flags (`sandwich`, `split`, `stripPinned`,
   `snapshots`, `markers`, `health`, `rev`). Builds the flat `ConsoleCtx` passed to the Dock + drawers.
 
-### The "convertible" Stages (one renders at a time, chosen by `focus` + `outputMode`)
+### The Stages (one renders at a time)
+**There is no `focus` axis any more.** The focus/altitude system (`AltitudeNav`, `SplitStage`,
+`ReadoutStrip`, `InputMini`, `CompactAxis`) was deleted in the 2026-07 simplification audit —
+Manifold ships a single "composite" altitude. Selection is now a plain three-way in `ConsoleApp`:
+`sandwich` wins, else `outputMode==='particles'`, else CompositeStage.
+
 | Stage | File | Renders when | What it is |
 |---|---|---|---|
-| Manifold | `Manifold.tsx` | `focus==='in'` (default input view) | Full-bleed 2D input surface; canvas trail + pins + feedback markers; pointer → `onMove`. **Double-click the input mark → follow-mouse mode** (self-contained state; a window `pointermove` listener maps the whole viewport onto this surface's space so the knob tracks the cursor across the entire UI; Esc / second double-click exits). |
-| OutputStage | `OutputStage.tsx` | `focus==='out'` | Full-bleed output columns; drag bars set value; `InputMini` docked in a corner. |
-| SplitStage | `SplitStage.tsx` | `focus==='split'` | Manifold left, OutputStage right, equal width. |
-| CompositeStage | `CompositeStage.tsx` | `focus==='composite'` (**app default / hero**) | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |
-| SandwichStage | `SandwichStage.tsx` | `sandwich===true` (overrides) | 3D parameter-landscape view (input → MLP heatmap grid → outputs); drag to orbit. |
+| CompositeStage | `CompositeStage.tsx` | **default / hero** | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |
+| SandwichStage | `SandwichStage.tsx` | `sandwich===true` (wins over the others) | Three-pane layout: `Manifold` input surface left, 3D parameter-landscape centre (input → MLP heatmap grid → outputs, drag to orbit), compact `OutputStage` right. |
 | ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400-particle Canvas2D port) + macro-axis bar + corner joystick. |
+
+`Manifold.tsx` and `OutputStage.tsx` are no longer top-level stages — they are panes composed by
+CompositeStage/SandwichStage. `Manifold.tsx` is the full-bleed 2D input surface (canvas trail + pins
++ feedback markers; pointer → `onMove`; **double-click the input mark → follow-mouse mode**, a window
+`pointermove` listener mapping the whole viewport onto this surface's space, Esc or a second
+double-click exits). `OutputStage.tsx` is the output columns; drag a bar to set value, and it takes a
+`compact` prop for the narrow pane.
 
 - **Output modes** (the TOP dock selector, NOT the same axis as `focus`): `src/console/output-mode.ts`
   defines `OUTPUT_MODES` = **particles** (default) / midi / osc / synth / editor, each mapping to a
@@ -144,7 +153,6 @@ decision. Buffers are reused frame-to-frame; never assume a fresh array.
     · curve pad · live value. **Writes eagerly to the shared `MFParam` store via `onChange`.**
   - `OutputsBackendConfig.tsx` — preset bar (save/restore/rename/delete) + per-backend config (MIDI
     CC#/channel, OSC path/range, VCV polarity).
-  - `BackendAdvanced.tsx` — full-depth modal version of the same editors.
 
 ### Primitives — `src/primitives/` (barrel: `index.ts`)
 `Button`, `Slider`, `PillToggle`, `Panel`, `Badge`, `Switch`, `StatusLine`, `XYPad`,
@@ -152,12 +160,10 @@ decision. Buffers are reused frame-to-frame; never assume a fresh array.
 Side-effect import of `styles/primitives.css` styles the range inputs.
 
 ### Other shared UI files
-- `shared-ui.tsx` — `AltitudeNav` (focus IN/DUAL/OUT/FLEX switcher) + `MiniMeters` (read-only output bars).
+- `shared-ui.tsx` — `MiniMeters` (read-only output bars). `AltitudeNav`/`CompactAxis` were deleted with the focus system.
 - `icons.tsx` — monochrome inline-SVG icons (mode icons + drawer icons + `GLYPH_FALLBACK` for when monochrome is off).
-- `ReadoutStrip.tsx` — thin horizontal heatmap strip (pinned, `focus==='in'`); same per-output control as OutputStage.
 - `VerdictCluster.tsx` — floating bottom-centre feedback UI (perturb ▽ / undo ↺ / commit △ + A/B); labels adapt to feedback mode.
 - `CurvePad.tsx` — square canvas curve editor (vertical drag reshapes [0,1]; ~0.43 ≈ linear). Used in OutputEditor + OutputControlRow.
-- `InputMini.tsx` — compact XYPad/joystick docked in a corner when input is demoted.
 - `OutputEditor.tsx` — inline min/max/curve popup for a single output (hover/click on a bar).
 
 ### Styling — `src/styles/`
@@ -310,8 +316,8 @@ All in `docs/specs/` (at the repo root, not under `manifold/`), with subdirector
 - `plans/BUILD-PLAN.md` — locked decisions + the 12-step build sequence + spec pointers (the resume anchor).
 - `engine-architecture.md` — full engine/spine/WASM design.
 - `dock-spec.md` — dock + drawers spec. `inputs-spec.md` — mixed-input design. `backends-spec.md` — backends.
-- `docs/adr/rl-feedback-design.md` + `feedback-modes-port-spec.md` + `recon/findings-feedback-behaviour.md` — feedback modes (Mode 1/Mode 2).
-- `aimmersive-clone-spec.md` / `recon/playground-2026.md` — the a-immersive feature parity target.
+- `docs/adr/rl-feedback-design.md` + `plans/feedback-modes-port-spec.md` (executed) + `recon/findings-feedback-behaviour.md` — feedback modes (Mode 1/Mode 2).
+- `_archive/aimmersive-clone-spec.md` / `recon/playground-2026.md` — the a-immersive feature parity target (archived reference).
 - `src/backends/README.md` — backend wiring notes.
 
 **Memories** (auto-loaded): `manifold-build` (status + locked decisions), `manifold-mixed-inputs`

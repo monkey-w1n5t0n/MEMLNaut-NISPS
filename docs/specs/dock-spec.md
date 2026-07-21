@@ -6,9 +6,29 @@ layer: behavioural
 
 # Dock Spec — Console Right-Dock Drawers + Per-Output Controls
 
-*Workstream D. Read-only design, 2026-06-27. Target app: `manifold/` (Vite + React + TS), wired to the parity-tested TS engine (`playground/src`) via the headless `EngineApi` boundary (`engine-architecture.md` §2). Citations are `file:line`. British spelling in product copy. The built-in synth is the **"Powerful Synth Engine"** — the string "C15" MUST NEVER appear in the UI.*
+*Workstream D. Designed 2026-06-27; built 2026-06-28 with operator-directed restructuring.
+British spelling in product copy. The built-in synth is the **"Powerful Synth Engine"** — the
+string "C15" MUST NEVER appear in the UI.*
 
-This spec replaces the placeholder Shape/Feel/Route/Health/Help drawers in `ConsoleApp.jsx` (`recon/findings-design-and-manifold.md` §2 — keyboard `1-5` map drawers, `\` toggles depth) with the real dock contents.
+> **Grounding note (2026-07-21).** Treat every `file:line` cite in the body as historical
+> grounding: `playground/*` died with the retired SolidJS playground, `aimmersive-clone-spec.md`
+> is archived at `_archive/aimmersive-clone-spec.md`, and `engine-architecture.md` was trimmed
+> 2026-07 (its cited § numbers are gone). What shipped diverges from the prescription in shape
+> but not in substance:
+>
+> - **Drawer roster**: the operator restructured the dock during the build — a top **Mode
+>   selector** plus five drawers (`learn`, `inputs`, `route`, `settings`, `help` —
+>   `manifold/src/console/Dock.tsx`/`Drawers.tsx`). The §0 six-icon roster (SYNTH/VISUAL as
+>   drawers) became per-Mode config inside the Outputs drawer instead.
+> - **Depths**: two shipped, not three — `condensed` (360px side panel) and `expanded` (centred
+>   modal). The separate FULL "advanced backend modal" (§4, `<BackendAdvanced/>`) was built,
+>   then deleted as a duplicate editor (2026-07 sweep, S18); the sole per-backend editor is
+>   `manifold/src/dock/OutputsBackendConfig.tsx` in the Outputs drawer.
+> - **The per-output control row** (§3, the heart of this spec) shipped essentially as designed:
+>   `manifold/src/dock/OutputControlRow.tsx` + `output-state.ts` (off/fixed/live + mute +
+>   solo/arm + min/max/curve).
+> - The feedback surface shipped richer than §1 (Explore-and-Place with reroll/nudge/place, plus
+>   geometric dislike) — see `docs/adr/rl-feedback-design.md` and `nisps/ml/feedback.hpp`.
 
 ---
 
@@ -47,18 +67,18 @@ Owns *how the model learns from your gestures*: the feedback-mode selector, the 
 
 ### 1.1 FEEDBACK_MODE selector ("Down Action")
 
-The `+` (up) verdict is always "keep this" (`addExample` + train, `findings-feedback-behaviour.md:102`); the `−` (down) verdict is **selectable** among the ported feedback modes (`feedback-modes-port-spec.md` §1; `FeedbackController<MLP_T>`). The new 2-mode product surface (per the prompt's "Mode 1 / Mode 2"):
+The `+` (up) verdict is always "keep this" (`addExample` + train, `findings-feedback-behaviour.md:102`); the `−` (down) verdict is **selectable** among the ported feedback modes (`plans/feedback-modes-port-spec.md` §1; `FeedbackController<MLP_T>`). The new 2-mode product surface (per the prompt's "Mode 1 / Mode 2"):
 
 | Selector label (UI copy) | Engine `FeedbackMode` | Behaviour |
 |---|---|---|
-| **Push away** (Mode 1) | `Avoid` (`feedback.hpp` enum, `findings-feedback-behaviour.md:90`) | down → geometric-dislike: perturbs the mapping away from what you disliked. In the deployed core this routes to `move_weights(speed, spread, pinMask)` (`feedback-modes-port-spec.md` §2.5 — the true k-NN centroid push is firmware-only, out of scope). |
+| **Push away** (Mode 1) | `Avoid` (`feedback.hpp` enum, `findings-feedback-behaviour.md:90`) | down → geometric-dislike: perturbs the mapping away from what you disliked. In the deployed core this routes to `move_weights(speed, spread, pinMask)` (`plans/feedback-modes-port-spec.md` §2.5 — the true k-NN centroid push is firmware-only, out of scope). |
 | **Explore & place** (Mode 2) | `RandomiseMlp` (`findings-feedback-behaviour.md:122`) | down → snapshot + `draw_weights(spread)` re-rolls the whole net into a scratchpad you audition by moving the joystick; `+`/drag commits a `+1` example at the chosen input and **restores the real net** (`findings-feedback-behaviour.md:135-146`); down-again **cancels** (restore snapshot). |
 
 - A third engine mode `RandomiseOutputs` (bypass MLP, hold a static random vector, `findings-feedback-behaviour.md:111`) exists in the core but is **not** surfaced as a product mode in v1 — expose it only behind `?debug=1` as "Static roll". **(Open choice 1.)**
 - **Peek**: a 2-segment pill (`Push away` / `Explore & place`), the current mode highlighted in `--accent`. This pill is *also* mirrored next to the Verdict cluster (`VerdictCluster`, `findings-design-and-manifold.md:50`) so it is reachable during live play without opening the drawer — matching how a-immersive puts the `rl-label` above the RL buttons (`aimmersive-clone-spec.md:283`).
 - **Expand**: the pill + a one-line plain-English description of the active mode + an **"exploring…" indicator** that lights when `engine.feedback.exploring()` is true (`findings-feedback-behaviour.md:237`), reusing the `<NoiseRing>` colour ramp (off/active/high, `aimmersive-clone-spec.md:98`). While exploring in Mode 2, training is paused (`learning_paused()`, `findings-feedback-behaviour.md:48`) — show a small "learning paused" badge.
 - **FULL**: the feedback lab — a diagram of the active state machine (idle → exploring → commit/cancel), the raw `FeedbackAction` log of the last presses (`findings-feedback-behaviour.md:90` enum), plus the spread/tame "Health lab" sliders (§1.3) for radical exploration tuning.
-- **Bind point**: `engine.feedback.setMode(mode)` → `nisps_ml_feedback_set_mode` (`feedback-modes-port-spec.md` §4). Switching mode while exploring auto-aborts and restores the net (`set_mode` calls `abort_explore`, `findings-feedback-behaviour.md:96`). Persist `feedbackMode` in the session blob.
+- **Bind point**: `engine.feedback.setMode(mode)` → `nisps_ml_feedback_set_mode` (`plans/feedback-modes-port-spec.md` §4). Switching mode while exploring auto-aborts and restores the net (`set_mode` calls `abort_explore`, `findings-feedback-behaviour.md:96`). Persist `feedbackMode` in the session blob.
 
 ### 1.2 SOLO / arm variant chooser
 
@@ -323,7 +343,7 @@ Shared leaf primitives live in `shared/primitives/` (`<Slider>`, `<DualRangeSlid
 
 | UI surface | EngineApi call | Engine route |
 |---|---|---|
-| Feedback-mode pill | `engine.feedback.setMode(m)` | `nisps_ml_feedback_set_mode` (`feedback-modes-port-spec.md` §4) |
+| Feedback-mode pill | `engine.feedback.setMode(m)` | `nisps_ml_feedback_set_mode` (`plans/feedback-modes-port-spec.md` §4) |
 | `−` verdict | `engine.feedback.thumbsDown()` | dispatch on mode → `on_down` (`findings-feedback-behaviour.md:90`) |
 | `+` verdict | `engine.feedback.thumbsUp()` | `addExample` + train, or `CommitStore` when exploring |
 | Arm (S) | `engine.feedback.setFocus(mask)` | `nisps_ml_feedback_set_focus` + `buildPinMask` |
@@ -363,7 +383,7 @@ The design reasoning, drawer model, tri-state/mute/arm separation and per-output
   `mapping.ts`), not imported from the deployed snapshot.
 - **`--dock-width` and min-thumb `#4488ff` are deployed-a-immersive values, absent from the Manifold tokens** —
   use Manifold tokens (`manifold-export/tokens/`) or add the missing ones deliberately.
-- A few `findings-feedback-behaviour.md:NN` citations are out of range / point at `feedback-modes-port-spec.md`
+- A few `findings-feedback-behaviour.md:NN` citations are out of range / point at `plans/feedback-modes-port-spec.md`
   instead (`learning_paused()` = `feedback.hpp:85` / port-spec:238; `exploring()` = `feedback.hpp:84`).
 - The React `<EngineProvider>`/`useEngine` pattern is in `findings-design-and-manifold.md §4`, not
   `engine-architecture.md §2.2` (that doc is SolidJS).

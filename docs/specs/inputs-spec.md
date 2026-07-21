@@ -2,12 +2,38 @@
 kind: spec
 stability: evolving
 layer: binding
-counterpart: aimmersive-clone-spec.md
 ---
 
 # Inputs Spec — Modular Input Layer (Workstream F)
 
-*Status: implementation-ready spec for the `manifold/` React app. Scope: the modular input layer — sources (XY pad, MIDI input, gamepad single/double-stick), how they compose into an N-dimensional input vector, the MLP-rebuild-on-input-change mechanism, the binding to the reactive spine, and the dock INPUTS panel. Read alongside `recon/findings-engine-surface.md` (the fixed-2-input gap), `engine-architecture.md` (the `EngineApi` seam — note that doc says SolidJS/`playground2`; this app is React/`manifold/`), and `aimmersive-clone-spec.md` (existing gamepad/MIDI/joystick behaviour). British spelling in product copy. The built-in synth is always shown as the "Powerful Synth Engine" — never "C15".*
+*Scope: the modular input layer of the `manifold/` React app — sources (XY pad, MIDI input,
+gamepad single/double-stick), how they compose into an N-dimensional input vector, the
+MLP-reshape-on-input-change mechanism, the binding to the reactive spine, and the dock INPUTS
+panel. British spelling in product copy. The built-in synth is always shown as the "Powerful
+Synth Engine" — never "C15".*
+
+> **Grounding note (2026-07-21).** This spec was written 2026-06-28 and implemented; the body is
+> kept for the behavioural intent, but treat it as follows:
+>
+> - **Every `file:line` cite below is historical grounding, not a live pointer.** `playground/*`
+>   files died with the retired SolidJS playground (branch `archive/playground-solidjs`);
+>   `aimmersive-clone-spec.md` is archived at `_archive/aimmersive-clone-spec.md`;
+>   `engine-architecture.md` was trimmed 2026-07 so its cited line numbers no longer exist;
+>   `findings-*` recon docs are immutable snapshots of the pre-refactor world.
+> - **What shipped** lives in `manifold/src/inputs/` (not the proposed `engine/input/`):
+>   `input-layer.ts` (single rAF compose loop), `xy-pad-source` / `gamepad-source` /
+>   `midi-input-source`, `useInputLayer.ts` React binding. See `MAP.md` §manifold.
+> - **§4's option analysis was overtaken by events.** The recommendation (Option B, multiple
+>   fixed-shape WASM modules) never shipped: one-core-engine P2 made the ONE parity-tested core
+>   runtime-shaped in the browser (`MLPCore<DynamicStorage>`, `nisps_ml_reshape` warm-start) — so
+>   honest N-dim nets landed via Option A's shape *without* the divergent-second-core cost that
+>   §4 rejected it for. The shipped layer feeds axes into dedicated input slots of an
+>   over-provisioned 32-input head and offers a warm-started reshape when the active axis count
+>   changes (reset-on-reshape modal).
+> - **Source composition**: the engine layer composes multiple sources, but the dock currently
+>   exposes an exclusive one-at-a-time picker (`InputMode` = internal | gamepad | midi).
+>   Mix-and-match UI is an unreversed decision with groundwork deliberately laid — operator
+>   decision pending (`plans/simplification-plan.md` §7.7).
 
 ---
 

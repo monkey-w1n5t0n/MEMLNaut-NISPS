@@ -1,12 +1,19 @@
 ---
 kind: spec
-stability: evolving
-layer: behavioural
+deprecated-by: 2026-07-21
+superseded-by: MAIN.md
 ---
 
-I now have a thorough, complete understanding of the entire deployed app — DOM, CSS theme tokens, all interaction handlers, state model, engine call points, persistence, and the help-modal copy. I have everything needed to write the faithful clone spec. Let me write it now.
+# NISPS Immersive (`a-immersive.html`) — SolidJS Clone Spec (Archived)
 
-# NISPS Immersive (`a-immersive.html`) — SolidJS Clone Spec
+**Note:** This specced a faithful SolidJS clone of the deployed vanilla a-immersive app — a
+product that was never built. The SolidJS playground target was retired 2026-07-13 (branch
+`archive/playground-solidjs`, tag `playground-solidjs-final`); the current browser app is the
+Manifold convertible Console (`manifold/`), covered by the live corpus (`../MAIN.md`). The
+vanilla a-immersive app it describes remains deployed at `meml.lnfinitemonkeys.org/`, so this
+survives as a behavioural reference for that app, frozen as of 2026-06-27. File paths cited
+below (e.g. `/home/w1n5t0n/deployments/meml-aimmersive/`) refer to that deployment, not this
+repo.
 
 This is a faithful, component-by-component rebuild spec for the deployed vanilla-JS app at `/home/w1n5t0n/deployments/meml-aimmersive/`. Source of truth: `a-immersive.html` (446-line DOM), `css/a-immersive.css` (2538 lines), `js/a-app.js` (4521-line module), and supporting modules under `js/nisps/`, `js/ui/`, `js/synth/`, `js/midi/`, `js/audio/`. Goal: a from-scratch SolidJS reimplementation that matches the look and behaviour 1:1, binding to a shared engine layer (the WASM IML + synth engines) rather than re-porting it.
 

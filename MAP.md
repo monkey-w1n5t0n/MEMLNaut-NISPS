@@ -65,8 +65,13 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   config (`dock/OutputsBackendConfig.tsx`) reads it for the device picker + param-select that fills the CC table.
 - `manifold/src/inputs/` — modular INPUT layer feeding the ML head. The Inputs dock picks ONE exclusive mode
   (`InputMode` = `internal` | `gamepad` | `midi`; Internal/XY-pad is default). `input-layer.ts` owns a single rAF
-  loop composing the active source's axes → reduced to the engine arity (fixed 2-in WASM → even/odd blend) → one
-  `setInputs`, plus an `onReducedInput` callback the manifold tracks. Sources: `xy-pad-source` (push-driven),
+  loop composing the active source's axes → **one dedicated engine input slot per axis, 1:1, no blending** → one
+  `setInputs`, plus an `onReducedInput` callback the manifold tracks. The WASM net is over-provisioned to a
+  32-input head (`MAX_AXES`, `nisps/wasm/bindings.cpp`); unused slots are zero-padded and a zero input is inert,
+  so idle sources cannot perturb the net. Mean-blending was removed deliberately — it diluted every source and
+  biased the net toward idle sources' resting values. Changing the ACTIVE axis count offers a reshape
+  (`ConsoleApp` → `ReshapeModal`): new net at the new arity, warm-started from overlapping weights, examples and
+  feedback state reset; declining keeps the over-provisioned head. Sources: `xy-pad-source` (push-driven),
   `gamepad-source` (sticks→axes single/double; buttons emit press+release actions, bound in `ConsoleApp` to
   verdicts — LB/RB=down/up, X/Y/B=randomise/nudge/undo, A-hold=reposition), `midi-input-source` (device picker +
   BATCH "MIDI Learn": every CC swept while armed becomes an axis, shown as read-only meters). `useInputLayer.ts`

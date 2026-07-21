@@ -12,7 +12,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. A research pl
 1. **RP2350 firmware** for the MEMLNaut hardware platform (`firmware/`).
 2. **WASM** in the Manifold React browser app (`manifold/`) — same engines + ML, run through an AudioWorklet.
 
-(The former SolidJS playground was retired 2026-07-13 at P1 of `docs/specs/plans/one-core-engine-refactor.md`; archived on branch `archive/playground-solidjs`, tag `playground-solidjs-final`. The browser-only C15 engine currently lives only there.) Parameter contracts are JSON schemas (`schemas/`) with codegen producing the C++ headers (TS emission returns at P5).
+(The former SolidJS playground was retired 2026-07-13 at P1 of `docs/specs/plans/one-core-engine-refactor.md`; archived on branch `archive/playground-solidjs`, tag `playground-solidjs-final`. The browser-only C15 engine currently lives only there.) Parameter contracts are JSON schemas (`schemas/`) with codegen producing the C++ headers AND the TypeScript modules (both live since P5; CI fails if either is stale).
 
 Project documentation: https://musicallyembodiedml.github.io/memlnaut/approaches/nisps
 
@@ -43,7 +43,7 @@ Tests: 4 executables (`nisps_core_tests`, `nisps_dsp_engine_tests`, `nisps_modes
 
 These rules apply to **all** code under `nisps/`. They are inert in WASM but kept globally for consistency.
 
-- **No heap.** No `new`, `malloc`, `std::vector` in hot paths. Use `nisps::FixedBuffer<T, N>` or `std::array<T, N>`.
+- **No heap.** No `new`, `malloc`, `std::vector` in hot paths. Use `std::array<T, N>`. (`nisps::FixedBuffer` is gone — deleted in the Phase 1 sweep; `std::array` was doing the same job.)
 - **Constants discipline.** Float literals >255 used in hot paths must be `static const float val = X.f;` not inline.
 - **`.f` suffix on all float literals.** No double promotion in audio/inference paths.
 - **Hot-path attributes.** Apply `NISPS_HOT` / `NISPS_FORCE_INLINE` (from `nisps/core/perf.hpp`). The SRAM-section macros were deleted in the 2026-07 sweep — they had no real use sites.
@@ -113,13 +113,13 @@ Two WASM instances at runtime:
 
 C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `manifold/public/`).
 
-The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_ml_create` honours `(input, output, hidden[3])`; non-positive/null args default to `32→[10,14,18]→126`. `nisps_ml_reshape` swaps in a new shape warm-started from the overlapping weights (examples + feedback state reset). Modes currently still slice the default 126 outputs; per-mode dims become schema-real at P5.
+The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_ml_create` honours `(input, output, hidden[3])`; non-positive/null args default to `32→[10,14,18]→126`. `nisps_ml_reshape` swaps in a new shape warm-started from the overlapping weights (examples + feedback state reset). Per-mode dims have been schema-real since P5.3 on both targets — modes no longer slice a shared 126-wide default.
 
 ### Known limitations
 
 - Loss history not yet plumbed through C API; only the final loss of a training run reaches TS.
 - Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired in manifold.
-- C15 has no home on main (see `ALIGNMENT.md` defect #1).
+- C15 has no home on main (see `ALIGNMENT.md` defect 1, browser mode coverage).
 - (P3, 2026-07-14) The browser Jolt/OU gestures and the geometric dislike run the C++ core through WASM: `nisps_ml_jolt_*`, `nisps_ml_explore_*`, `nisps_ml_feedback_dislike_geometric` — no TS gesture math remains.
 
 ## URL parameters (manifold)

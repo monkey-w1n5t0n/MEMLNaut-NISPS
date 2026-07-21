@@ -1,12 +1,17 @@
 ---
-kind: spec
-stability: evolving
-layer: cross-cutting
+kind: plan
+status: executed
 ---
 
-I have complete grounding now. I'll write the implementation-ready spec.
-
 # Implementation Spec — "Down Action" Negative-Feedback Feature in the `nisps/` Core
+
+**Executed 2026-06/07; not authority for current behaviour.** The port landed, then evolved past
+this document: the surviving truth is `docs/adr/rl-feedback-design.md` (which explicitly
+supersedes §2.5/§7's AVOID-out-of-scope decision — the geometric push WAS ported, via
+`nisps/ml/geo_push.hpp` + `nisps/ml/replay.hpp`) plus the code itself, `nisps/ml/feedback.hpp`
+(now `FeedbackControllerCore<FbStorage>`, storage-policied, with ExploreAndPlace added). The
+`playground/` paths below refer to the retired SolidJS app (branch `archive/playground-solidjs`);
+the browser driver is now `manifold/src/feedback/controller.ts`.
 
 ## 0. Provenance
 

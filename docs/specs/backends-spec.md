@@ -2,12 +2,25 @@
 kind: spec
 stability: evolving
 layer: binding
-counterpart: aimmersive-clone-spec.md
 ---
 
 # Output Backends — Specification
 
-*Workstream E. Design-only, read-only audit 2026-06-27. The new app is Vite + React + TS in `manifold/`, wired to the parity-tested TS engine lifted from `playground/src`. British spelling in product copy. The built-in synth is the **"Powerful Synth Engine"** — the string "C15" must never reach the user.*
+*Workstream E. Designed 2026-06-27 against the pre-refactor tree; largely built (see the
+Implementation status section at the end). British spelling in product copy. The built-in synth
+is the **"Powerful Synth Engine"** — the string "C15" must never reach the user.*
+
+> **Grounding note (2026-07-21).** Treat every `file:line` cite in the body as historical
+> grounding, not a live pointer: `playground/*` died with the retired SolidJS playground (branch
+> `archive/playground-solidjs`); `aimmersive-clone-spec.md` is archived at
+> `_archive/aimmersive-clone-spec.md`; `/home/w1n5t0n/deployments/meml-aimmersive/*` cites refer
+> to the still-deployed vanilla app *outside this repo*; VCV line numbers pre-date the P6
+> reunification. The shipped backends live at `manifold/src/backends/` (not the proposed
+> `engine/backends/`); the shipped bridge protocol is **`/nisps/input` + `/nisps/output` +
+> `/nisps/feedback` only** — the `/nisps/state` / `/nisps/weights` / `/nisps/examples`
+> full-state-sync legs described below were **deleted 2026-07-21** (zero consumers on either
+> side; Rack patch save/load owns persistence). The current protocol contract is
+> `vcv-module.md` §Browser Bridge.
 
 > **Naming guard (non-negotiable).** The codename `C15` survives only in internal module/file names that the user never sees (`c15-adapter.js`, `c15-bridge.js`). Every label, tooltip, dock entry, menu item, status string, and aria-label says **"Powerful Synth Engine"** (or just "Synth"). A lint allowlist + a Playwright assertion (`expect(page).not.toContainText('C15')`) enforce this across `manifold/` and the VCV panel SVG/strings.
 
@@ -133,18 +146,20 @@ A `WebMidiBackend` wrapping the salvaged `midi-output.js` (Web MIDI API, `sendBa
 
 An `OscBridgeBackend` that **salvages the existing OSC bridge** rather than reinventing it. Two pieces already exist and are good:
 
-- **Browser client:** `deployments/meml-aimmersive/js/synth/osc-output.js` (param-named WS messages, 50 ms/0.002 dead-zone) and the richer `js/nisps/osc-client.js` (`NispsOscClient` — `EventTarget`, `sendState`/`sendWeights`/`sendParams`, `onOutputsReceived`/`onInputsReceived`, auto-reconnect with backoff). Lift `osc-client.js` as the transport (it already speaks the bridge protocol and is bidirectional).
-- **Bridge server:** `deployments/meml-aimmersive/osc-bridge/bridge.ts` — a Deno WebSocket↔UDP-OSC bridge, zero-dependency OSC encode/decode, bidirectional. Keep it as-is; it is the canonical transport between browser and any OSC target (VCV, SuperCollider).
+- **Browser client:** `deployments/meml-aimmersive/js/synth/osc-output.js` (param-named WS messages, 50 ms/0.002 dead-zone) and the richer `js/nisps/osc-client.js` (`NispsOscClient` — `EventTarget`, auto-reconnect with backoff). The shipped transport is `manifold/src/backends/osc-client.ts` (`sendParams` / `sendInput` / `sendFeedback` — the legacy `sendState`/`sendWeights` legs were deleted with the full-state sync).
+- **Bridge server:** the repo's canonical bridge is `manifold/osc-bridge/bridge.ts` — a Deno WebSocket↔UDP-OSC bridge, zero-dependency OSC encode/decode, bidirectional (WS verbs: `params`, `input`, `feedback`).
 
-**OSC path + range contract (salvaged from `bridge.ts`):**
+**OSC path + range contract (the live set):**
 
 | Direction | Address | Args | Meaning |
 |---|---|---|---|
 | browser→target | `/nisps/<param_name>` | `f` | one param, **post-baseline-mapping value** (see §3) |
-| browser→target | `/nisps/state` | `s` | full JSON state (weights + examples + config) |
-| browser→target | `/nisps/weights` | `s` | weights-only JSON |
+| browser→target | `/nisps/input` | `f…f` | input vector → drives model inputs (VCV bridged mode) |
+| browser→target | `/nisps/feedback` | `s` | verdict op JSON (`up` / `down` / `rand` / `clear`) |
 | target→browser | `/nisps/output` | `f…f` | output vector (visualisation / monitoring) |
-| target→browser | `/nisps/input` | `f…f` | input vector → drives model inputs |
+| target→browser | `/nisps/input` | `f…f` | input vector echo |
+
+(The 2026-06 design also carried `/nisps/state` and `/nisps/weights` full-JSON sync — deleted, see the grounding note.)
 
 **Ranges:** OSC floats are sent in the param's mapped range by default (`applyGroupOverride` applied before send, matching `osc-output.js`), with a per-backend toggle to send **raw normalised 0..1** instead (some OSC targets want 0..1 and do their own scaling). Address prefix (`/nisps`), target host/port (default `127.0.0.1:9000`), and listen port (default `9001`) are configurable — `bridge.ts` already exposes `--osc-host/--osc-port/--osc-prefix/--ws-port/--listen-port`.
 
@@ -163,7 +178,7 @@ For browser-side CV/gate there is no native hardware path, so this backend has *
 
 The headline new backend. A first-class **VCV Rack 2 module** (`MEMLNaut`) with **8 CV inputs → model → 16 CV outputs**, an **LED ring around each of the 16 outputs**, and a **browser↔VCV bridge** so the tool is controllable AND trainable from both inside Rack and entirely from the browser. Full design in §5–§7.
 
-The browser-side adapter `VcvBridgeBackend` reuses `NispsOscClient` (§2.4) as transport. When active in **bridged mode**, the browser supplies inputs in real time (`/nisps/input`) and the verdict/example loop is mirrored over the bridge (`/nisps/state`, `/nisps/weights`, new `/nisps/feedback`).
+The browser-side adapter (shipped as `manifold/src/backends/vcv-backend.ts`) reuses the OSC client (§2.4) as transport. When active in **bridged mode**, the browser supplies inputs in real time (`/nisps/input`) and forwards verdicts to the module's embedded learner (`/nisps/feedback`).
 
 ---
 
@@ -355,26 +370,26 @@ Mapping rule: `ringColor = kRingPalette[paramMeta[i].group % paletteLen]`, so ou
 - **Threading model** (`MEMLNaut.cpp:67–312`): audio-thread `iml` + worker-thread `imlShadow`, job queue (Train/Perturb/Randomize/Clear), atomic weight hand-off, single-writer invariant. Already correct; just resize the I/O.
 - **Inference-rate decimation + slew + post-swap crossfade** (`:447–499`).
 - **Verdict loop** (`:412–445`): `+`/`−` buttons and `+TRIG`/`−TRIG` gated by LEARN. `+` → add example (current inputs→current outputs) + enqueue Train + decay noise ×0.97; `−` → bump noise (cap `0.3(1−s)+0.05s`) + enqueue Perturb. Identical semantics to the browser verdict loop.
-- **Serialization** (`dataToJson`/`dataFromJson`, `:548–696`) + **`.nisps` preset save/load** (`:862–924`) + **OSC server** (`osc_server.hpp`). The `.nisps` format is the shared interchange with the browser (`vcv/NISPS-FORMAT.md`).
+- **Serialization** (`dataToJson`/`dataFromJson`) + **`.nisps` preset save/load** + **OSC server** (`osc_server.hpp`). The `.nisps` v3 format is specified in `vcv-module.md` §State Persistence (the separate `vcv/NISPS-FORMAT.md` was deleted).
 - Per-output / per-input **range menu** (uni/bipolar, attenuverter) (`:818–843`).
 
-### 5.5 Plugin scaffold files
+### 5.5 Plugin scaffold files (as they exist today)
 ```
 vcv/
-├── plugin.json          # slug MEMLNaut (exists) — bump version; tags Controller/Utility/Random
-├── Makefile             # VCV SDK Makefile (exists); RACK_DIR-driven
-├── Makefile.dist        # dist packaging (exists)
+├── plugin.json          # slug MEMLNaut; tags Controller/Utility/Random
+├── Makefile             # VCV SDK Makefile; RACK_DIR-driven (make dist via the SDK's plugin.mk)
 ├── src/
-│   ├── plugin.{hpp,cpp} # plugin init / model registration (exist)
-│   ├── MEMLNaut.cpp     # module — resize 8 in / 16 out (edit)
-│   ├── LedRing.hpp      # NEW — LED-ring widget (§5.3)
-│   ├── palette.hpp      # NEW — ring colour table from colors.css (§5.3)
-│   └── osc_server.hpp   # OSC server (exists; extend with /nisps/feedback §7)
-├── res/
-│   ├── MEMLNaut.svg / -wide.svg / -expander.svg   # panels (exist; redraw for 8/16 layout)
-├── test/smoke_test.cpp  # exists
-├── plugin.json, SPEC.md, BUILDING.md, README.md, NISPS-FORMAT.md  (exist)
+│   ├── plugin.{hpp,cpp} # plugin init / model registration
+│   ├── MEMLNaut.cpp     # module — 8 in / 16 out
+│   ├── iml.hpp          # thin adapter over the shared nisps/ core (P6)
+│   ├── LedRing.hpp      # LED-ring widget (§5.3)
+│   ├── palette.hpp      # ring colour table from the design tokens (§5.3)
+│   └── osc_server.hpp   # OSC server (transport-only; /nisps/feedback per §7)
+├── res/                 # MEMLNaut.svg / -wide.svg / -expander.svg
+├── BUILDING.md, DISTRIBUTION.md, README.md
 ```
+(The 2026-06 draft also listed `Makefile.dist`, `test/smoke_test.cpp`, `SPEC.md` and
+`NISPS-FORMAT.md` — all since deleted or absorbed; the module spec is `vcv-module.md`.)
 
 ---
 
@@ -387,7 +402,7 @@ The existing salvage path is **WebSocket↔UDP-OSC** (`osc-bridge/bridge.ts` + `
 
 | Option | How | Pros | Cons |
 |---|---|---|---|
-| **A. WS↔OSC bridge server (recommended)** | Browser ⇄ `bridge.ts` (Deno WS server, localhost:8765) ⇄ UDP OSC ⇄ module's `osc_server.hpp` (port 9000/9001) | Already built + bidirectional; standard OSC; works with SuperCollider/Max too; no browser perms | Needs a helper process running locally (Deno or the compiled `bridge.mjs`) |
+| **A. WS↔OSC bridge server (recommended)** | Browser ⇄ `bridge.ts` (Deno WS server, localhost:8765) ⇄ UDP OSC ⇄ module's `osc_server.hpp` | Already built + bidirectional; standard OSC; works with SuperCollider/Max too; no browser perms | Needs a helper process running locally (Deno, or a compiled `nisps-osc-bridge` binary from `compile.sh`) |
 | **B. Direct WebMIDI** | Browser ⇄ Web MIDI ⇄ a virtual MIDI port ⇄ a tiny MIDI-in path in the module | No helper process if a virtual MIDI port exists; browser-native | 7-bit/14-bit only — too coarse for weights/state; really only for live CC; module would need MIDI parsing |
 | **C. Native (module hosts a WS server)** | The VCV module itself opens a WebSocket/HTTP server; browser connects directly | No external bridge process | Adds a WS/TLS stack inside the plugin; COOP/COEP + mixed-content (`https://` page → `ws://localhost`) friction; more attack surface in the audio plugin |
 
@@ -395,37 +410,35 @@ The existing salvage path is **WebSocket↔UDP-OSC** (`osc-bridge/bridge.ts` + `
 
 ### 6.2 Two modes
 - **Standalone:** module runs entirely inside Rack (CV in → model → CV out; verdict via panel buttons/triggers). No browser. Works today.
-- **Bridged:** browser connects via the bridge. In bridged mode **the browser supplies inputs in real time** — the Manifold pointer / joystick / pads stream `/nisps/input <f…f>` to the module, which uses them instead of (or blended with, configurable) the physical CV-in jacks. The module streams `/nisps/output` and `/nisps/input` back at ~100 ms (`MEMLNaut.cpp:536`) for browser visualisation. State/weights sync both ways via `/nisps/state` + `/nisps/weights` (already staged atomically into the audio thread, `:360–384`).
+- **Bridged:** browser connects via the bridge. In bridged mode **the browser supplies inputs in real time** — the Manifold pointer / joystick / pads stream `/nisps/input <f…f>` to the module, which uses them instead of the physical CV-in jacks. The module streams `/nisps/output` and `/nisps/input` back at ~100 ms for browser visualisation.
 
 ### 6.3 Coherence model
-One model, one owner of weights at a time. The bridge sends **whole-model snapshots** (`/nisps/state`, `/nisps/weights`) on any structural change (train completes, randomize, clear, load preset), and **continuous I/O vectors** (`/nisps/input`, `/nisps/output`) for live feel. Last-writer-wins on weights with a short "training in progress" lock (the module already coalesces jobs at queue depth 1). The browser's `WasmIML` and the module's `nisps::IML` use the **same `.nisps` weight layout** (`vcv/NISPS-FORMAT.md`), so a snapshot from either side loads losslessly — *provided the architectures match*. **Caveat / open choice:** the browser engine is fixed `MLP<2,…,126>` while the module is `8→{16,24,16}→16`. For true weight transfer the bridged session must run a **matched architecture** (e.g. a browser mode configured to 8-in/16-out, within the modular envelope) — otherwise the bridge degrades to I/O + example transfer only (no raw-weight sync). Flag this explicitly.
+**One model — the module's.** In bridged mode the browser acts as a remote controller and
+trainer for the module's embedded learner: it streams inputs and forwards verdicts
+(`/nisps/feedback`), and reads the module's live I/O back. There is **no weight or state sync**
+between the browser's own WASM net and the module — the 2026-06 whole-model-snapshot design
+(`/nisps/state` / `/nisps/weights`, last-writer-wins, matched-architecture weight transfer) was
+deleted 2026-07-21 with zero consumers on either side. Persistence belongs to the Rack patch and
+`.nisps` files (`vcv-module.md`).
 
 ---
 
 ## 7. Training over the bridge — both directions
 
-The verdict loop (place examples / thumbs-up / thumbs-down / undo) must work from **either** end and stay coherent. Add one OSC address and a small `RemoteTrainingBridge`:
+The verdict loop works from **either** end, on the module's model. The shipped surface:
 
-```ts
-// manifold/src/engine/backends/backend.ts
-export interface RemoteTrainingBridge {
-  thumbsUp(): void;                 // add current (input,output) example + train
-  thumbsDown(): void;               // perturb weights (explore)
-  addExample(input: Float32Array, output: Float32Array): void;
-  randomise(spread: number): void;
-  clear(): void;
-  undo(): void;
-  onState(cb: (s: NispsState) => void): () => void;   // remote → local sync
-}
-```
+- OSC verb `/nisps/feedback <s>` carrying a JSON op — **`up` / `down` / `rand` / `clear`**
+  (optional `spread`, `input`/`output` vectors). The module's `osc_server.hpp` `onFeedback`
+  callback stages the op atomically for the audio thread, which routes it through the **same**
+  job/`add_example` paths the panel buttons use.
+- **Browser → VCV training:** thumbs-up in the Manifold → `vcv-backend.ts` `sendFeedback('up')`
+  → the module's worker trains its shadow instance → atomic weight swap. The browser observes
+  the result through the live `/nisps/output` stream (not through weight sync — §6.3).
+- **VCV panel training** works exactly as in standalone mode; the browser sees the new mapping
+  through the output stream.
 
-New OSC verb: `/nisps/feedback <s>` carrying `{"op":"up|down|rand|clear|undo","spread":f,"input":[…],"output":[…]}`. The module's `osc_server.hpp` gets an `onFeedback` callback (mirroring the existing `onState`/`onWeights` at `MEMLNaut.cpp:120–132`) that stages the op atomically for the audio thread, which routes it through the **same** `enqueueJob`/`add_example` path the panel buttons use (`:412–445`). So:
-
-- **Browser → VCV training:** user clicks thumbs-up in the Manifold → `VcvBridgeBackend.remote.thumbsUp()` → `/nisps/feedback {op:up,input,output}` → module stages → worker trains `imlShadow` → atomic weight swap → module streams `/nisps/state` back → browser `WasmIML.setWeights` updates so the UI/heatmap reflect the new mapping. The browser need not run its own training in bridged mode (or runs it and pushes weights; configurable — see §6.3 caveat).
-- **VCV → browser training:** user presses `+`/`−` on the panel (or sends `+TRIG`) → module trains/perturbs → streams `/nisps/state` → browser applies, so the verdict placed in Rack appears in the browser's example list and weight-health view.
-- **Example placing over the bridge:** either side can `addExample`; examples ride in `/nisps/state` (the module already serializes `examples.features`/`examples.labels`, `:587–604`) so the dataset stays in sync. Undo is local-history on each side, but a remote undo can be sent as `/nisps/feedback {op:undo}` to roll the module's last job (module keeps a one-deep snapshot, matching the browser undo stack semantics).
-
-**Result:** the tool is fully controllable and trainable from inside VCV Rack and entirely from the browser, with the verdict loop and example-placing working either way over the same bridge.
+The 2026-06 design's richer `RemoteTrainingBridge` (remote `addExample`, `undo`, `onState`
+callbacks) was never built; its state-sync legs are deleted (§6.3).
 
 ---
 
@@ -436,11 +449,13 @@ Backends live under `manifold/src/engine/backends/`; lifted JS (`c15-*`, `param-
 
 ### OSC bridge server
 ```bash
-cd osc-bridge
-deno run --allow-net bridge.ts           # or the compiled bridge.mjs
+cd manifold/osc-bridge
+deno run --allow-net --unstable-net bridge.ts
 #   --osc-host 127.0.0.1 --osc-port 9000 --ws-port 8765 --listen-port 9001
 ```
-Ship `bridge.mjs` (already compiled) + `compile.sh` so users without Deno can run it via Node. Surface "bridge not running" in the OSC/VCV backend status (the client auto-reconnects).
+For users without Deno, `compile.sh` cross-compiles standalone `nisps-osc-bridge-<platform>`
+binaries into `dist/` via `deno compile`. Surface "bridge not running" in the OSC/VCV backend
+status (the client auto-reconnects).
 
 ### VCV module
 ```bash
@@ -448,9 +463,12 @@ cd vcv
 export RACK_DIR=/path/to/Rack-SDK            # VCV Rack 2 SDK
 make                                          # builds plugin.so/.dylib/.dll
 make install                                  # copies into the VCV user plugins dir
-# distribution: make dist   (per Makefile.dist; produces the .vcvplugin)
+# distribution: make dist   (SDK plugin.mk; produces the .vcvplugin — see vcv/DISTRIBUTION.md)
 ```
-Per the search, the standard flow is `export RACK_DIR=…; make clean; make dist` ([Plugin Development Tutorial](https://vcvrack.com/manual/PluginDevelopmentTutorial)). Requires the VCV Rack 2 SDK; nisps-core is header-only C++20 (symlinked under `vcv/dep/` per `SPEC.md`). Ship v2-only (rationale in `SPEC.md`'s v1-compat section). License caveat: VCV SDK is GPLv3, nisps-core is MPL-2.0 — combined binary is effectively GPL; not submitting to the VCV Library initially (`SPEC.md` §License).
+Requires the VCV Rack 2 SDK; the shared `nisps/` core is header-only C++20, reached via relative
+includes from `vcv/src/` (see `vcv/BUILDING.md`). Ship v2-only (rationale in `vcv-module.md`).
+License caveat: VCV SDK is GPLv3 — the combined binary is effectively GPL; not submitting to the
+VCV Library initially.
 
 ---
 
@@ -472,9 +490,9 @@ Per the search, the standard flow is `export RACK_DIR=…; make clean; make dist
 - MIDI: `/home/w1n5t0n/deployments/meml-aimmersive/js/midi/midi-output.js` (`:114` batch throttle), `…/midi/midi-cc-map.js`
 - OSC client: `/home/w1n5t0n/deployments/meml-aimmersive/js/nisps/osc-client.js`; param-named client `…/js/synth/osc-output.js` (`:97`)
 - OSC bridge server: `/home/w1n5t0n/deployments/meml-aimmersive/osc-bridge/bridge.ts` (addresses `:298–305`, encode/decode `:70–182`), `bridge.mjs`, `compile.sh`
-- VCV module: `/home/w1n5t0n/src/MEMLNaut-NISPS/vcv/src/MEMLNaut.cpp` (threading `:67–312`, verdict `:412–445`, ranges `:818–843`, display `:699`, LED `:804`), `…/vcv/src/osc_server.hpp`, `…/vcv/plugin.json`, `…/docs/specs/vcv-module.md`, `…/vcv/Makefile`, `…/vcv/NISPS-FORMAT.md`, `…/vcv/res/*.svg`
+- VCV module: `/home/w1n5t0n/src/MEMLNaut-NISPS/vcv/src/MEMLNaut.cpp` (line numbers are pre-P6 grounding), `…/vcv/src/osc_server.hpp`, `…/vcv/plugin.json`, `…/docs/specs/vcv-module.md`, `…/vcv/Makefile`, `…/vcv/res/*.svg`
 - Design tokens (ring palette): `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/redesign/manifold-export/tokens/colors.css`
-- Spine/engine context: `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/specs/engine-architecture.md` (§2), `…/recon/findings-design-and-manifold.md` (§4), `…/recon/findings-engine-surface.md`, `…/aimmersive-clone-spec.md` (routeOutputs §6, §7 visual table, §10)
+- Spine/engine context: `/home/w1n5t0n/src/MEMLNaut-NISPS/docs/specs/engine-architecture.md` (trimmed 2026-07), `…/recon/findings-design-and-manifold.md` (§4), `…/recon/findings-engine-surface.md`, `…/_archive/aimmersive-clone-spec.md` (routeOutputs §6, §7 visual table, §10)
 
 Sources (VCV SDK / widgets): [VCV custom lights](https://community.vcvrack.com/t/how-to-use-custom-lights/1941), [Migrate2 (drawLayer/layer 1)](https://vcvrack.com/manual/Migrate2), [Plugin Development Tutorial (RACK_DIR/make dist)](https://vcvrack.com/manual/PluginDevelopmentTutorial), [Plugin API Guide](https://vcvrack.com/manual/PluginGuide).
 ---
@@ -500,10 +518,13 @@ spine; WebMIDI out with per-output CC#/ch/name/range; OSC-over-WS to the Deno br
 The Outputs dock panel specialises per backend (`manifold/src/dock/OutputsBackendConfig.tsx`) with named presets
 (`manifold/src/backends/presets.ts`). Audio gated via `engine.audio.setMuted` on non-synth modes.
 
-**VCV module** — see `docs/specs/vcv-module.md` "⚠️ BUILD DELTAS (2026-06-28)" for the authoritative build target: 8 inputs ×
-16 outputs, an LED ring per output (drawLayer + nvgArc), palette from the frontend tokens, WS↔OSC bridge
-(browser OSC backend → `manifold/osc-bridge/` Deno relay → the module's OSC server), bidirectional training, and
-the `nisps-core`→`nisps/` core-path repoint. The existing `vcv/` module (2→12) is evolved, not rebuilt.
+**VCV module** — built: 8 inputs × 16 outputs, an LED ring per output (drawLayer + nvgArc), palette from the
+frontend tokens, WS↔OSC bridge (browser VCV backend → `manifold/osc-bridge/` Deno relay → the module's OSC
+server), bidirectional training over `/nisps/feedback`, and (P6, 2026-07-18) the core reunification onto
+`nisps::ml::MLPCore<DynamicStorage>`. Authoritative module contract: `vcv-module.md`.
 
-**Still TODO** (clear in-code): the VCV↔browser bridge browser-side wiring to the new `/nisps/feedback` verb;
-the particle backend is a no-op passthrough pending the `visualizer.js` faithful port; CV/gate transport.
+**Update 2026-07-21:** the earlier TODOs closed — `/nisps/feedback` browser-side wiring shipped
+(`vcv-backend.ts` `sendFeedback`); the flow-field port shipped (`manifold/src/console/flow-field.ts` +
+`ParticleStage`; `particle-backend.ts` is a deliberate no-op transport because the visualiser reads the spine
+directly, and selecting it gates the synth audio); CV/gate shipped as the `cvgate` uSEQ Web Serial backend
+(`manifold/src/backends/cv-backend.ts`, protocol spec `useq-cv-protocol.md`) rather than the §2.5 designs.

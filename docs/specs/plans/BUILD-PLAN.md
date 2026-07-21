@@ -1,13 +1,15 @@
 ---
 kind: plan
-status: active
+status: executed
 ---
 
 # Manifold — Build Plan & Locked Decisions (resume anchor)
 
-*Dated 2026-06-27. This is the single resume anchor for the Manifold convertible-app build. Read this + the
-specs it points to before continuing. Mission: one working browser instrument putting the NEW Manifold
-"convertible" front-end on top of the REAL parity-tested ML+audio engine.*
+*Dated 2026-06-27. **Executed** — the Manifold app was built, deployed to `/next/`, and is the sole
+browser app; current ground truth is `MAP.md` §manifold + `manifold/ONBOARDING.md` (the manual
+redeploy recipe below is superseded by the CI-gated push-to-main webhook). What survives from here:
+the VPS non-snap-node Playwright invocation (now in `MAP.md` Entry points) and the locked
+naming/copy decisions (never "C15", British spelling).*
 
 ## Locked decisions (operator-confirmed 2026-06-27)
 | Decision | Choice |
@@ -32,8 +34,8 @@ specs it points to before continuing. Mission: one working browser instrument pu
 - `inputs-spec.md` — modular XY/WebMIDI/gamepad; multiple-WASM-module reshape with warm-start.
 - `recon/findings-{feedback-behaviour,engine-surface,design-and-manifold}.md` — Phase-1 audits.
 - `recon/upstream-firmware-survey.md` — git topology; latest InterfaceRL = `0a541cc`.
-- `plans/playground-2.0-rewrite-plan.md`, `engine-architecture.md`, `aimmersive-clone-spec.md`,
-  `feedback-modes-port-spec.md` — the prior planning corpus.
+- `plans/playground-2.0-rewrite-plan.md`, `engine-architecture.md`, `_archive/aimmersive-clone-spec.md`,
+  `plans/feedback-modes-port-spec.md` — the prior planning corpus.
 
 ## Reactive spine → React (load-bearing, from findings-design-and-manifold.md §4)
 Spine lives BELOW React in an external store: `setInput` action derives processed→ml→routed eagerly+synchronously

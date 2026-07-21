@@ -1,38 +1,45 @@
 ---
-kind: spec
-stability: aspirational
-layer: behavioural
+kind: plan
+status: active
 ---
 
 # Manifold Parity Features — Session Presets · Pins · Jolt · OU-Explore · Control Surface
 
-*Status: draft — awaiting review. Date: 2026-07-12.*
-*Scope: prescriptive spec for porting five playground features into `manifold/`. Spec only — no
-implementation is authorised by this document; break into ergo issues after sign-off.*
+*Date: 2026-07-12; status updated 2026-07-21. Prescriptive plan for porting five playground
+features into `manifold/`. Now part-executed:*
 
-**Traces up to:** `playground-2.0-rewrite-plan.md` §2.3 (Feel drawer), §2.6 (pins), §3.8
-(composed-layers presets); `engine-architecture.md` §3.2 (fanout, control-point tri-state), §3.8
-(persist helper); `docs/specs/slp-workshop-firmware.md` §3–4 (Jolt / OU-explore, Part I shipped in
-firmware); `dock-spec.md` (drawer depths, tri-state semantics); BUILD-PLAN locked decisions
+- ***§3 Jolt and §4 OU-explore: EXECUTED by other means*** *— one-core-engine P3 landed the core
+  bindings (this document's own preferred route, §0 principle 1). The shipped C ABI is
+  `nisps_ml_jolt_{press,step,release,active}` and `nisps_ml_explore_{intensity,get_intensity,apply}`
+  — not the §3.2/§4.2 names proposed below — driven by `manifold/src/engine/exploration.ts`.
+  §3/§4 are kept as behavioural reference; the code wins.*
+- ***§1 session presets, §2 pins, §5 control surface: NOT implemented.*** *These remain the live
+  prescription, feeding the curated/advanced-split work (`simplification-plan.md` §6.5c).*
+
+**Traces up to:** `playground-2.0-rewrite-plan.md` (superseded plan — its target died but these
+sections are still the cited design source) §2.3 (Feel drawer), §2.6 (pins), §3.2 (fanout,
+control-point tri-state), §3.8 (composed-layers presets, persist helper);
+`../slp-workshop-firmware.md` §3–4 (Jolt / OU-explore, Part I shipped in firmware);
+`../dock-spec.md` (drawer depths, tri-state semantics); BUILD-PLAN locked decisions
 (parity-tested engine; British spelling; the synth is "Powerful Synth Engine", never the forbidden
 string).
 
 **Reference implementations:** the playground versions are the behavioural ground truth for
-constants and algorithms — `playground/src/features/session-preset.ts`,
-`stores/session-store.ts` (pins), `ml/jolt.ts`, `output/ou-explore.ts`, `stores/control-store.ts` +
-`features/control-routing.ts`. Where this spec and the playground disagree, this spec wins (each
-divergence is called out and justified inline).
+constants and algorithms — `src/features/session-preset.ts`, `src/stores/session-store.ts` (pins),
+`src/ml/jolt.ts`, `src/output/ou-explore.ts`, `src/stores/control-store.ts` +
+`src/features/control-routing.ts`, all on the retired-playground archive (branch
+`archive/playground-solidjs`, tag `playground-solidjs-final` — these files no longer exist on
+main). Where this spec and the playground disagree, this spec wins (each divergence is called out
+and justified inline).
 
 ---
 
 ## 0. Principles applied throughout
 
 1. **C++ owns gesture math where a C++ class exists.** `nisps::ml::Jolt` and
-   `nisps::ml::OUNoise<N>` already exist (`nisps/ml/jolt.hpp`, `nisps/ml/ou_noise.hpp`) but are
-   not exposed to WASM. Manifold binds them rather than re-porting to TS — this closes two
-   documented `--- C++ GAP ---` items and buys deterministic, firmware-parity noise for free.
-   (The playground's TS reimplementations used `Math.random()`; that shortcut is *not* carried
-   over.)
+   `nisps::ml::OUNoise<N>` (`nisps/ml/jolt.hpp`, `nisps/ml/ou_noise.hpp`) are bound to WASM
+   rather than re-ported to TS — deterministic, firmware-parity noise for free. *(Done — this
+   landed via one-core-engine P3; see the status block above.)*
 2. **No new mechanisms where an existing one already expresses the idea.** Param pins are the
    existing `off|fixed|live` tri-state + arm mask, not a parallel pin system (§2.2).
 3. **Transparent defaults.** Every default constant appears in this spec as a number with its
@@ -40,7 +47,7 @@ divergence is called out and justified inline).
    the user should never wonder what an axis is secretly doing.
 4. **One persistence pattern.** All new persisted state goes through a single versioned
    `persist<T>(key, version, migrate)` helper modelled on `settings-store.ts`
-   (localStorage, debounced 200 ms), per `engine-architecture.md` §3.8.
+   (localStorage, debounced 200 ms), per `playground-2.0-rewrite-plan.md` §3.8.
 5. **Probe parity.** Each feature activates its currently-inert `window.__nisps` methods
    (`manifold/src/debug/probe.ts`) so Playwright can drive it headlessly. New e2e specs are part
    of each feature's acceptance criteria.
@@ -51,8 +58,8 @@ divergence is called out and justified inline).
 
 ### 1.1 Model
 
-Adopt the composed-layers model prescribed by `engine-architecture.md` §3.8 rather than the
-playground's monolithic `SessionPresetPayload`. A preset is a bundle of independently optional
+Adopt the composed-layers model prescribed by `playground-2.0-rewrite-plan.md` §3.8 rather than
+the playground's monolithic `SessionPresetPayload`. A preset is a bundle of independently optional
 layers:
 
 ```ts
@@ -222,7 +229,7 @@ The Jolt instance lives beside the MLP handle inside the WASM module (one per ne
 the session seed so runs are reproducible. Parity CI: extend `tests/cpp/parity_check.cpp` with a
 golden jolt sequence (seed → press → k steps → weight vector) asserted native-vs-WASM.
 
-### 3.3 Constants (defaults — from `nisps/ml/jolt.hpp:42–49`, upstream-verbatim)
+### 3.3 Constants (defaults — from `nisps/ml/jolt.hpp` `JoltParams`, upstream-verbatim)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -402,7 +409,7 @@ non-zero offset.
 
 ### 5.5 Fanout (architecture requirement)
 
-Per `engine-architecture.md` §3.2: resolution is a memoised derivation per target param — in
+Per `playground-2.0-rewrite-plan.md` §3.2: resolution is a memoised derivation per target param — in
 React terms one `useMemo` producing the resolved record + an effect per target store that
 writes only on change. The playground's `JSON.stringify`-signature-inside-effect pattern
 (`control-routing.ts:34`) is explicitly **not** ported. Resolution runs off the render cycle for

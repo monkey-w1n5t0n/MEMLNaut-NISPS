@@ -8,7 +8,7 @@
 ## Prerequisites
 
 - **VCV Rack 2 SDK** — download from https://vcvrack.com/manual/PluginDevelopmentTutorial or build from source
-- **C++20 compiler** — GCC 10+, Clang 11+, or MSVC 19.29+ (required by nisps-core for `std::span` and concepts)
+- **C++20 compiler** — GCC 10+, Clang 11+, or MSVC 19.29+ (required by the `nisps/` core for `std::span` and concepts)
 - **GNU Make**
 
 ## Build Steps
@@ -24,7 +24,7 @@ make
 # This produces plugin.so (Linux), plugin.dylib (macOS), or plugin.dll (Windows)
 ```
 
-The Makefile adds `-std=c++20` and includes nisps-core headers from `../nisps-core/include`. The VCV SDK's default `-std=c++11` flag is filtered out to avoid conflicts.
+The Makefile adds `-std=c++20`; the shared `nisps/` core is reached via relative `../../nisps/…` includes from `src/` (no extra `-I`). The VCV SDK's default `-std=c++11` flag is filtered out to avoid conflicts.
 
 ## Local Installation
 
@@ -65,5 +65,5 @@ The VCV Library submission process handles multi-platform builds automatically v
 ## Troubleshooting
 
 - **`-std=c++11` conflicts**: The Makefile filters this out, but if you see C++20 errors, verify your `RACK_DIR` points to a v2 SDK and that your compiler supports C++20.
-- **nisps-core not found**: The include path assumes nisps-core is at `../nisps-core/include` relative to the `vcv/` directory. Verify the path or adjust `-I` in the Makefile.
+- **nisps headers not found**: `src/iml.hpp` reaches the core via `../../nisps/…` relative includes, so the plugin must be built from a full `MEMLNaut-NISPS` checkout (a standalone copy of `vcv/` will not compile).
 - **Plugin not appearing**: Check that the built `.so`/`.dylib`/`.dll` is in the correct plugins directory and that `plugin.json` is alongside it.

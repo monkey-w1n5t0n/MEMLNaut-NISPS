@@ -8,9 +8,7 @@
     "input_size": 4,
     "hidden_layers": [10, 10, 14],
     "output_size": 24,
-    "default_spread": 0.6,
-    "default_learning_rate": 1.0,
-    "default_max_iterations": 1000
+    "default_spread": 0.6
   },
   "params": [
     { "name": "pre_gain",      "label": "Pre Gain",       "min": 0.0, "max": 1.0, "default": 0.5, "curve": "square", "group": "gain" },

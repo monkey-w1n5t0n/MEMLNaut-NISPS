@@ -37,8 +37,6 @@ struct MLConfig {
     std::size_t input_size;
     std::size_t output_size;
     float default_spread;
-    float default_learning_rate;
-    std::size_t default_max_iterations;
 };
 
 enum class PrimaryInput : unsigned char {
@@ -73,8 +71,6 @@ struct ParamSchema {
     std::span<const std::size_t>                        hidden_layers;
     std::size_t                                         output_size;
     float                                                default_spread;
-    float                                                default_learning_rate;
-    std::size_t                                          default_max_iterations;
     std::span<const ::nisps::modes::generated::Param>    params;
     std::span<const std::string_view>                    voice_spaces;
     ::nisps::modes::generated::UIConfig                  ui;

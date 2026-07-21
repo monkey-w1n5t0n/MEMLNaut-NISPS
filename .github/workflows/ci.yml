@@ -116,7 +116,7 @@ jobs:
           bun run generate-midi-devices.ts
           bun run tests/golden_test.ts
           cd ..
-          GEN_DIRS="nisps/modes/generated nisps/midi/generated \
+          GEN_DIRS="nisps/modes/generated nisps/midi/generated nisps/ml/generated \
                     manifold/src/modes/generated manifold/src/midi-devices/generated"
           git add -N $GEN_DIRS
           if ! git diff --exit-code -- $GEN_DIRS; then

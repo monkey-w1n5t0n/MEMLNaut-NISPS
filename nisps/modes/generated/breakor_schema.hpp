@@ -27,8 +27,6 @@ inline constexpr MLConfig kBreakorMLConfig = {
     4u,
     56u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kBreakorParamCount = 56u;
@@ -558,8 +556,6 @@ inline constexpr ::nisps::ParamSchema kBreakorSchema = {
     std::span<const std::size_t>(kBreakorHiddenLayers),
     kBreakorMLConfig.output_size,
     kBreakorMLConfig.default_spread,
-    kBreakorMLConfig.default_learning_rate,
-    kBreakorMLConfig.default_max_iterations,
     std::span<const Param>(kBreakorParams),
     std::span<const std::string_view>(kBreakorVoiceSpaces),
     kBreakorUI,

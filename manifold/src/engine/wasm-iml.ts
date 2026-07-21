@@ -19,6 +19,7 @@
  */
 
 import { Dataset } from './dataset';
+import { ML_TRAIN_DEFAULTS } from '../modes/generated/ml_defaults';
 import {
   anchorModeToInt,
   momentumModeToInt,
@@ -180,6 +181,13 @@ export class WasmIML {
   dataset!: Dataset;
   private readonly sink: EngineSink;
   private lastLoss_: number | null = null;
+  // JS-side mirror of the training-hyperparameter default, seeded from the
+  // ONE generated constant (S26, docs/specs/recon/simplification-audit-2026-07
+  // .md) rather than hardcoded literals. `setTrainConfig` updates this AND the
+  // WASM handle's own copy (nisps_ml_set_train_config) so train()/trainAsync()
+  // fall back to a genuinely runtime-configurable default, not just a JS
+  // literal.
+  private trainConfig = { ...ML_TRAIN_DEFAULTS };
   private trainer: WasmTrainer | null = null;
   private storageKey: string;
   private saveTimer: number | null = null;
@@ -620,7 +628,22 @@ export class WasmIML {
     this.module._nisps_ml_add_example(this.mlHandle, this.featuresBuf.ptr, this.labelsBuf.ptr);
   }
 
-  train(lr = 1.0, maxIter = 1000, minErr = 0.001, sampleWeights?: Float32Array): number {
+  /** Persist a new training-hyperparameter default (S26): updates the JS-side
+   *  mirror used as the train()/trainAsync() fallback AND the WASM handle's
+   *  own copy via the C API, so the underlying MLP is genuinely
+   *  runtime-configurable rather than just remembering a number to pass on
+   *  each call. */
+  setTrainConfig(lr: number, maxIter: number, minErr: number): void {
+    this.trainConfig = { learningRate: lr, maxIterations: maxIter, minError: minErr };
+    this.module._nisps_ml_set_train_config(this.mlHandle, lr, maxIter, minErr);
+  }
+
+  train(
+    lr = this.trainConfig.learningRate,
+    maxIter = this.trainConfig.maxIterations,
+    minErr = this.trainConfig.minError,
+    sampleWeights?: Float32Array,
+  ): number {
     if (this.dataset.isEmpty()) {
       this.lastLoss_ = 0;
       this.sink.setState({ lastLoss: 0 });
@@ -653,7 +676,12 @@ export class WasmIML {
     return loss;
   }
 
-  async trainAsync(lr = 1.0, maxIter = 1000, minErr = 0.001, sampleWeights?: Float32Array): Promise<number> {
+  async trainAsync(
+    lr = this.trainConfig.learningRate,
+    maxIter = this.trainConfig.maxIterations,
+    minErr = this.trainConfig.minError,
+    sampleWeights?: Float32Array,
+  ): Promise<number> {
     if (this.dataset.isEmpty()) {
       this.lastLoss_ = 0;
       return 0;

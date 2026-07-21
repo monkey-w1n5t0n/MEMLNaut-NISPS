@@ -57,8 +57,12 @@ namespace nisps::modes {
 // instantiation (see the file-header comment for why these are hand-named
 // rather than codegen'd): 4 joystick inputs -> [10,14,18] hidden -> NOut
 // (device-CC-count-driven) outputs, matching every other 4-joystick-input
-// mode's schema defaults (default_spread 0.6, default_learning_rate 1.0,
-// default_max_iterations 1000).
+// mode's schema default_spread (0.6). The training hyperparameter defaults
+// (learning_rate/max_iterations/min_error) are no longer part of
+// `ParamSchema` at all (S26) — they live once, globally, in
+// `nisps::ml::generated::kMlTrainDefaults` (nisps/ml/generated/
+// ml_defaults.hpp) and are wired via `nisps::ml::MLPCore::TrainConfig`'s
+// default member initialisers instead.
 namespace ext_synth_defaults {
 inline constexpr std::size_t kInputSize = 4u;
 inline constexpr std::array<std::string_view, 4> kInputChannels{
@@ -66,8 +70,6 @@ inline constexpr std::array<std::string_view, 4> kInputChannels{
     std::string_view{"joy_z"}, std::string_view{"joy_w"}};
 inline constexpr std::array<std::size_t, 3> kHiddenLayers{10u, 14u, 18u};
 inline constexpr float       kDefaultSpread        = 0.6f;
-inline constexpr float       kDefaultLearningRate  = 1.0f;
-inline constexpr std::size_t kDefaultMaxIterations = 1000u;
 }  // namespace ext_synth_defaults
 
 // The net-shape alias every instantiation uses (mirrors S6/S25's per-mode
@@ -185,8 +187,6 @@ class ExternalSynthMIDIMode : public ModeBase<
         std::span<const std::size_t>(ext_synth_defaults::kHiddenLayers),
         NOut,
         ext_synth_defaults::kDefaultSpread,
-        ext_synth_defaults::kDefaultLearningRate,
-        ext_synth_defaults::kDefaultMaxIterations,
         std::span<const generated::Param>(kNoParams),
         std::span<const std::string_view>(kNoVoiceSpaces),
         kUI,

@@ -45,6 +45,9 @@ export interface NispsModule {
   // ML training.
   _nisps_ml_add_example(ml: number, features_ptr: number, labels_ptr: number): void;
   _nisps_ml_train(ml: number, lr: number, max_iter: number, min_err: number, sample_weights_ptr: number): number;
+  // Persist a new training-hyperparameter default on the handle (S26) — mirrors
+  // nisps::ml::MLPCore::set_train_config. Does not train.
+  _nisps_ml_set_train_config(ml: number, lr: number, max_iter: number, min_err: number): void;
   _nisps_ml_eval_loss(ml: number): number;
 
   // ML examples.

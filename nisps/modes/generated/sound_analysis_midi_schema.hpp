@@ -33,8 +33,6 @@ inline constexpr MLConfig kSoundAnalysisMidiMLConfig = {
     10u,
     8u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kSoundAnalysisMidiParamCount = 8u;
@@ -132,8 +130,6 @@ inline constexpr ::nisps::ParamSchema kSoundAnalysisMidiSchema = {
     std::span<const std::size_t>(kSoundAnalysisMidiHiddenLayers),
     kSoundAnalysisMidiMLConfig.output_size,
     kSoundAnalysisMidiMLConfig.default_spread,
-    kSoundAnalysisMidiMLConfig.default_learning_rate,
-    kSoundAnalysisMidiMLConfig.default_max_iterations,
     std::span<const Param>(kSoundAnalysisMidiParams),
     std::span<const std::string_view>(kSoundAnalysisMidiVoiceSpaces),
     kSoundAnalysisMidiUI,

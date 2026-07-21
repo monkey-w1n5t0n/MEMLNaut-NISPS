@@ -34,8 +34,6 @@ export interface MLConfig {
   readonly hidden_layers: readonly number[];
   readonly output_size: number;
   readonly default_spread: number;
-  readonly default_learning_rate: number;
-  readonly default_max_iterations: number;
 }
 
 export interface UIConfig {

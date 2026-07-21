@@ -16,6 +16,7 @@
  */
 
 import { EngineHost } from './engine-host';
+import { ML_TRAIN_DEFAULTS } from '../modes/generated/ml_defaults';
 import type { InputConfig, OutputConfig } from './pipeline-types';
 import { Spine, type BackendSend } from './spine';
 import type { EngineId, FeedbackMode, LayerStats } from './types';
@@ -106,6 +107,8 @@ export interface EngineApiOptions {
   maxExamples?: number;
   /** Default learning rate for thumbsUp/train. */
   learningRate?: number;
+  /** Default max training iterations for train/trainAsync. */
+  maxIterations?: number;
   /** Default RL move speed / spread for thumbsDown. */
   noiseCap?: number;
   spread?: number;
@@ -123,6 +126,7 @@ export class EngineApi {
   private host: EngineHost;
 
   private learningRate: number;
+  private maxIterations: number;
   private noiseCap: number;
   private spread_: number;
 
@@ -134,9 +138,15 @@ export class EngineApi {
     this.iml = iml;
     this.spine = spine;
     this.host = host;
-    this.learningRate = opts.learningRate ?? 1.0;
+    this.learningRate = opts.learningRate ?? ML_TRAIN_DEFAULTS.learningRate;
+    this.maxIterations = opts.maxIterations ?? ML_TRAIN_DEFAULTS.maxIterations;
     this.noiseCap = opts.noiseCap ?? 0.3;
     this.spread_ = opts.spread ?? 0.6;
+    // Persist the configured default on the underlying MLP too (S26) — makes
+    // the WASM engine's OWN training config match EngineApi's knobs, the same
+    // real runtime-configurability firmware/VCV get for free from
+    // MLPCore::TrainConfig's default member initialisers.
+    this.iml.setTrainConfig(this.learningRate, this.maxIterations, ML_TRAIN_DEFAULTS.minError);
     if (opts.debugClockDt !== undefined) this.spine.setFixedDt(opts.debugClockDt);
 
     // Wire the spine's backend.send to push routed params into the worklet.
@@ -291,11 +301,11 @@ export class EngineApi {
   }
 
   train(): number {
-    return this.iml.train(this.learningRate);
+    return this.iml.train(this.learningRate, this.maxIterations);
   }
 
   trainAsync(): Promise<number> {
-    return this.iml.trainAsync(this.learningRate);
+    return this.iml.trainAsync(this.learningRate, this.maxIterations);
   }
 
   randomise(spread = this.spread_): void {

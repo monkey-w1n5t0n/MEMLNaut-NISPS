@@ -502,6 +502,20 @@ float nisps_ml_train(void* ml, float lr, int max_iter, float min_err,
     return h->mlp.train(lr, static_cast<std::size_t>(max_iter), min_err, weights);
 }
 
+// Persist a new training-hyperparameter default on the handle itself (S26):
+// mirrors nisps::ml::MLPCore::set_train_config so the browser MLP is
+// genuinely runtime-configurable, not just JS remembering a number to pass on
+// each nisps_ml_train() call. Does not train; only reconfigures the no-arg
+// train() fallback (unused WASM-side today, but keeps the handle's own state
+// consistent with firmware/VCV, which carry the same knob).
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_set_train_config(void* ml, float lr, int max_iter, float min_err) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    if (max_iter <= 0) max_iter = 1;
+    h->mlp.set_train_config(lr, static_cast<std::size_t>(max_iter), min_err);
+}
+
 EMSCRIPTEN_KEEPALIVE
 float nisps_ml_eval_loss(void* ml) {
     if (!ml) return 0.f;

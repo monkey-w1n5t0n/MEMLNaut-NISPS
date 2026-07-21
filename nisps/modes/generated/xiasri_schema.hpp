@@ -27,8 +27,6 @@ inline constexpr MLConfig kXiasriMLConfig = {
     4u,
     24u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kXiasriParamCount = 24u;
@@ -272,8 +270,6 @@ inline constexpr ::nisps::ParamSchema kXiasriSchema = {
     std::span<const std::size_t>(kXiasriHiddenLayers),
     kXiasriMLConfig.output_size,
     kXiasriMLConfig.default_spread,
-    kXiasriMLConfig.default_learning_rate,
-    kXiasriMLConfig.default_max_iterations,
     std::span<const Param>(kXiasriParams),
     std::span<const std::string_view>(kXiasriVoiceSpaces),
     kXiasriUI,

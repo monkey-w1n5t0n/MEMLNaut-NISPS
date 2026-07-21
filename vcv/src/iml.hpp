@@ -45,6 +45,7 @@
 #include "../../nisps/core/rng.hpp"
 #include "../../nisps/ml/dynamic_storage.hpp"
 #include "../../nisps/ml/mlp.hpp"
+#include "../../nisps/ml/generated/ml_defaults.hpp"
 
 namespace nisps {
 
@@ -77,11 +78,23 @@ class IML {
     // are unchanged. `hidden` MUST carry exactly three sizes (the core topology
     // is fixed at three hidden layers); fewer are padded from the default,
     // extras ignored.
+    // BEHAVIOUR CHANGE (S26, docs/specs/recon/simplification-audit-2026-07.md):
+    // these three defaults used to be private to this adapter (200 / 0.1 /
+    // 0.00001) and disagreed with the firmware/WASM default (1000 / 1.0 /
+    // 0.001) that every other target already used. They now come from the
+    // ONE shared generated constant (schemas/ml_defaults.json ->
+    // nisps::ml::generated::kMlTrainDefaults) instead of a private copy.
+    // `MEMLNaut.cpp` constructs `IML` with only 3 positional args, so this is
+    // a REAL runtime behaviour change for the module: 5x more max iterations,
+    // 10x the learning rate, and a 100x looser (larger) early-stop threshold.
     explicit IML(std::size_t n_inputs, std::size_t n_outputs,
                  std::vector<std::size_t> hidden = {16u, 24u, 16u},
-                 std::size_t max_iterations = 200u,
-                 Float learning_rate = static_cast<Float>(0.1),
-                 Float convergence_threshold = static_cast<Float>(0.00001),
+                 std::size_t max_iterations =
+                     ::nisps::ml::generated::kMlTrainDefaults.max_iterations,
+                 Float learning_rate = static_cast<Float>(
+                     ::nisps::ml::generated::kMlTrainDefaults.learning_rate),
+                 Float convergence_threshold = static_cast<Float>(
+                     ::nisps::ml::generated::kMlTrainDefaults.min_error),
                  std::uint64_t seed = 0xC0FFEEu)
         : n_inputs_(n_inputs),
           n_outputs_(n_outputs),

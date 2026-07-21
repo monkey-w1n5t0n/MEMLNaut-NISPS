@@ -27,8 +27,6 @@ inline constexpr MLConfig kSlpWorkshopMLConfig = {
     4u,
     56u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kSlpWorkshopParamCount = 56u;
@@ -560,8 +558,6 @@ inline constexpr ::nisps::ParamSchema kSlpWorkshopSchema = {
     std::span<const std::size_t>(kSlpWorkshopHiddenLayers),
     kSlpWorkshopMLConfig.output_size,
     kSlpWorkshopMLConfig.default_spread,
-    kSlpWorkshopMLConfig.default_learning_rate,
-    kSlpWorkshopMLConfig.default_max_iterations,
     std::span<const Param>(kSlpWorkshopParams),
     std::span<const std::string_view>(kSlpWorkshopVoiceSpaces),
     kSlpWorkshopUI,

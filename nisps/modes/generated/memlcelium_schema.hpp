@@ -27,8 +27,6 @@ inline constexpr MLConfig kMemlceliumMLConfig = {
     4u,
     56u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kMemlceliumParamCount = 56u;
@@ -560,8 +558,6 @@ inline constexpr ::nisps::ParamSchema kMemlceliumSchema = {
     std::span<const std::size_t>(kMemlceliumHiddenLayers),
     kMemlceliumMLConfig.output_size,
     kMemlceliumMLConfig.default_spread,
-    kMemlceliumMLConfig.default_learning_rate,
-    kMemlceliumMLConfig.default_max_iterations,
     std::span<const Param>(kMemlceliumParams),
     std::span<const std::string_view>(kMemlceliumVoiceSpaces),
     kMemlceliumUI,

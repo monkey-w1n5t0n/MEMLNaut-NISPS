@@ -19,9 +19,7 @@
     "input_size": 10,
     "hidden_layers": [10, 10, 14],
     "output_size": 8,
-    "default_spread": 0.6,
-    "default_learning_rate": 1.0,
-    "default_max_iterations": 1000
+    "default_spread": 0.6
   },
   "params": [
     { "name": "midi_cc0", "label": "MIDI CC 0", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear", "group": "midi" },

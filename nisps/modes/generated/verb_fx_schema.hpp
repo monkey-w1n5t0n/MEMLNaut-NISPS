@@ -27,8 +27,6 @@ inline constexpr MLConfig kVerbFxMLConfig = {
     4u,
     47u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kVerbFxParamCount = 47u;
@@ -490,8 +488,6 @@ inline constexpr ::nisps::ParamSchema kVerbFxSchema = {
     std::span<const std::size_t>(kVerbFxHiddenLayers),
     kVerbFxMLConfig.output_size,
     kVerbFxMLConfig.default_spread,
-    kVerbFxMLConfig.default_learning_rate,
-    kVerbFxMLConfig.default_max_iterations,
     std::span<const Param>(kVerbFxParams),
     std::span<const std::string_view>(kVerbFxVoiceSpaces),
     kVerbFxUI,

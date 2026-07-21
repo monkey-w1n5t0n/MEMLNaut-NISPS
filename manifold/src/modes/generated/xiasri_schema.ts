@@ -46,8 +46,6 @@ export const XiasriSchema: ModeSchema = {
     ],
     output_size: 24,
     default_spread: 0.6,
-    default_learning_rate: 1,
-    default_max_iterations: 1000,
   },
   params: [
     {

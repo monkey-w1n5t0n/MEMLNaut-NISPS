@@ -48,6 +48,7 @@
 #include "../core/concepts.hpp"
 #include "../core/perf.hpp"
 #include "../core/rng.hpp"
+#include "generated/ml_defaults.hpp"
 #include "activations.hpp"
 #include "init.hpp"
 #include "loss.hpp"
@@ -57,6 +58,30 @@
 #include "training.hpp"
 
 namespace nisps::ml {
+
+// Per-instance training-hyperparameter config (S26, docs/specs/recon/
+// simplification-audit-2026-07.md): the ONE learning_rate/max_iterations/
+// min_error default used to be duplicated identically across all nine
+// schemas/modes/*.json (unread at runtime), hardcoded again in this file's
+// no-arg train() overload, again in manifold's wasm-iml.ts TS default
+// parameters, and a FOURTH time (diverging: 0.1/200/0.00001) in vcv/src/
+// iml.hpp. Default member initialisers below pull the single generated
+// constant (schemas/ml_defaults.json -> nisps/ml/generated/ml_defaults.hpp)
+// so every MLPCore instance — firmware, WASM handle, VCV adapter — starts
+// pre-configured identically; `set_train_config` makes it runtime-overridable,
+// same as the codebase-wide decision requires.
+//
+// Note on layering: ml_defaults.hpp is generated into nisps/ml/generated/, NOT
+// alongside schema_types.hpp in nisps/modes/generated/ where the rest of the
+// codegen output lives. Training hyperparameters are an ML fact, not a mode
+// fact, and nisps/ml sits below nisps/modes — emitting them there would make
+// this file include upward. The TS side has no equivalent layering to respect
+// and keeps all generated output in one directory.
+struct TrainConfig {
+    float       learning_rate  = ::nisps::ml::generated::kMlTrainDefaults.learning_rate;
+    std::size_t max_iterations = ::nisps::ml::generated::kMlTrainDefaults.max_iterations;
+    float       min_error      = ::nisps::ml::generated::kMlTrainDefaults.min_error;
+};
 
 // Activation of layer L in the fixed 4-layer topology.
 template <std::size_t L>
@@ -139,10 +164,23 @@ class MLPCore : public Storage {
         for (std::size_t i = 0; i < n_out; ++i) dsl[l_off + i] = labels[i];
     }
 
-    // Concept-required no-arg overload.
+    // Concept-required no-arg overload. Reads the runtime-configurable
+    // `train_config_` (default-initialised from the single generated default;
+    // see `TrainConfig` above) rather than hardcoding numbers here.
     float train() noexcept {
-        return train(1.f, 1000u, 0.001f, std::span<const float>{});
+        return train(train_config_.learning_rate, train_config_.max_iterations,
+                    train_config_.min_error, std::span<const float>{});
     }
+
+    // Runtime knob for the no-arg train() overload (S26). Does not affect the
+    // explicit-argument train() below, which stays the always-available
+    // explicit path.
+    void set_train_config(float lr, std::size_t max_iter, float min_err) noexcept {
+        train_config_.learning_rate  = lr;
+        train_config_.max_iterations = max_iter;
+        train_config_.min_error      = min_err;
+    }
+    const TrainConfig& train_config() const noexcept { return train_config_; }
 
     // Full SGD training. `sample_weights`, if non-empty, must size to the
     // current example count and sum to 1.0 (caller's responsibility — we
@@ -556,6 +594,7 @@ class MLPCore : public Storage {
     std::size_t dataset_count_      = 0u;
     std::size_t dataset_head_       = 0u;
     std::size_t loss_history_count_ = 0u;
+    TrainConfig train_config_{};
 
     Rng rng_;
 };

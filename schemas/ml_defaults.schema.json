@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memlnaut/schemas/ml_defaults.schema.json",
+  "title": "MEMLNaut ML Training Defaults",
+  "description": "Single, global declaration of the MLP training-hyperparameter defaults (learning rate, max iterations, min-error/convergence threshold) — ONE value per field, shared by every mode on every platform (firmware, WASM/manifold, VCV). This is only the DEFAULT: codegen/generate.ts emits it to nisps/modes/generated/ml_defaults.hpp (C++) and manifold/src/modes/generated/ml_defaults.ts (TS), and nisps::ml::MLPCore::set_train_config()/train_config() (nisps/ml/mlp.hpp) makes it overridable at runtime on every target. Per-mode ml.default_spread stays separate — it is genuinely per-mode-tuned, unlike these.",
+  "type": "object",
+  "required": ["learning_rate", "max_iterations", "min_error"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "_note": {
+      "type": "string",
+      "description": "Free-text provenance note from the schema author."
+    },
+    "learning_rate": {
+      "type": "number",
+      "exclusiveMinimum": 0.0,
+      "description": "SGD learning rate the no-arg train() falls back to."
+    },
+    "max_iterations": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Epoch cap for the no-arg train() fallback."
+    },
+    "min_error": {
+      "type": "number",
+      "minimum": 0.0,
+      "description": "Early-stop threshold: training stops once epoch loss drops below this value."
+    }
+  }
+}

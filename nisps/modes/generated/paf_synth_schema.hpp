@@ -27,8 +27,6 @@ inline constexpr MLConfig kPafSynthMLConfig = {
     4u,
     33u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kPafSynthParamCount = 33u;
@@ -359,8 +357,6 @@ inline constexpr ::nisps::ParamSchema kPafSynthSchema = {
     std::span<const std::size_t>(kPafSynthHiddenLayers),
     kPafSynthMLConfig.output_size,
     kPafSynthMLConfig.default_spread,
-    kPafSynthMLConfig.default_learning_rate,
-    kPafSynthMLConfig.default_max_iterations,
     std::span<const Param>(kPafSynthParams),
     std::span<const std::string_view>(kPafSynthVoiceSpaces),
     kPafSynthUI,

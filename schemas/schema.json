@@ -36,9 +36,7 @@
         "input_size",
         "hidden_layers",
         "output_size",
-        "default_spread",
-        "default_learning_rate",
-        "default_max_iterations"
+        "default_spread"
       ],
       "additionalProperties": false,
       "properties": {
@@ -58,9 +56,7 @@
           "minItems": 1
         },
         "output_size": { "type": "integer", "minimum": 1 },
-        "default_spread": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
-        "default_learning_rate": { "type": "number", "exclusiveMinimum": 0.0 },
-        "default_max_iterations": { "type": "integer", "minimum": 1 }
+        "default_spread": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
       }
     },
     "params": {

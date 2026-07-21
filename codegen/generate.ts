@@ -50,8 +50,6 @@ interface ModeSchema {
     hidden_layers: number[];
     output_size: number;
     default_spread: number;
-    default_learning_rate: number;
-    default_max_iterations: number;
   };
   params: Array<{
     name: string;
@@ -71,6 +69,24 @@ interface ModeSchema {
   };
 }
 
+/**
+ * The ONE global training-hyperparameter default (schemas/ml_defaults.json,
+ * validated against schemas/ml_defaults.schema.json) — NOT per-mode, unlike
+ * everything else in ModeSchema. See S26 (docs/specs/recon/
+ * simplification-audit-2026-07.md): learning_rate/max_iterations/min_error
+ * used to be duplicated per-mode (identically, unread at runtime) plus
+ * hardcoded separately in nisps/ml/mlp.hpp, manifold/src/engine/wasm-iml.ts,
+ * and vcv/src/iml.hpp. Now declared once here and consumed by
+ * `nisps::ml::MLPCore`'s `TrainConfig` default member initialisers.
+ */
+interface MlTrainDefaults {
+  $schema?: string;
+  _note?: string;
+  learning_rate: number;
+  max_iterations: number;
+  min_error: number;
+}
+
 // ----- Path resolution ------------------------------------------------------
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +94,15 @@ const REPO_ROOT = resolve(__dirname, "..");
 const SCHEMAS_DIR = join(REPO_ROOT, "schemas");
 const MODES_DIR = join(SCHEMAS_DIR, "modes");
 const META_SCHEMA_PATH = join(SCHEMAS_DIR, "schema.json");
+const ML_DEFAULTS_PATH = join(SCHEMAS_DIR, "ml_defaults.json");
+const ML_DEFAULTS_SCHEMA_PATH = join(SCHEMAS_DIR, "ml_defaults.schema.json");
 const CPP_OUT_DIR = join(REPO_ROOT, "nisps", "modes", "generated");
+// The training defaults are an ML fact, not a mode fact, and `nisps/ml` sits
+// BELOW `nisps/modes` in the layering MAP.md documents — emitting them into
+// modes/generated/ would make mlp.hpp include upward. They get their own
+// output dir on the C++ side. The TS side has no such layering to respect, so
+// it keeps everything generated under one directory.
+const CPP_ML_OUT_DIR = join(REPO_ROOT, "nisps", "ml", "generated");
 const TS_OUT_DIR = join(REPO_ROOT, "manifold", "src", "modes", "generated");
 
 // ----- Helpers --------------------------------------------------------------
@@ -173,8 +197,6 @@ function emitSchemaTypesHpp(): string {
     "    std::size_t input_size;",
     "    std::size_t output_size;",
     "    float default_spread;",
-    "    float default_learning_rate;",
-    "    std::size_t default_max_iterations;",
     "};",
     "",
     "enum class PrimaryInput : unsigned char {",
@@ -209,8 +231,6 @@ function emitSchemaTypesHpp(): string {
     "    std::span<const std::size_t>                        hidden_layers;",
     "    std::size_t                                         output_size;",
     "    float                                                default_spread;",
-    "    float                                                default_learning_rate;",
-    "    std::size_t                                          default_max_iterations;",
     "    std::span<const ::nisps::modes::generated::Param>    params;",
     "    std::span<const std::string_view>                    voice_spaces;",
     "    ::nisps::modes::generated::UIConfig                  ui;",
@@ -261,8 +281,6 @@ function emitSharedTsTypes(): string {
     "  readonly hidden_layers: readonly number[];",
     "  readonly output_size: number;",
     "  readonly default_spread: number;",
-    "  readonly default_learning_rate: number;",
-    "  readonly default_max_iterations: number;",
     "}",
     "",
     "export interface UIConfig {",
@@ -325,8 +343,6 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
   lines.push(`    ${schema.ml.input_size}u,`);
   lines.push(`    ${schema.ml.output_size}u,`);
   lines.push(`    ${cppFloatLit(schema.ml.default_spread)},`);
-  lines.push(`    ${cppFloatLit(schema.ml.default_learning_rate)},`);
-  lines.push(`    ${schema.ml.default_max_iterations}u,`);
   lines.push("};");
   lines.push("");
 
@@ -399,8 +415,6 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
   lines.push(`    std::span<const std::size_t>(${constName}HiddenLayers),`);
   lines.push(`    ${constName}MLConfig.output_size,`);
   lines.push(`    ${constName}MLConfig.default_spread,`);
-  lines.push(`    ${constName}MLConfig.default_learning_rate,`);
-  lines.push(`    ${constName}MLConfig.default_max_iterations,`);
   lines.push(`    std::span<const Param>(${constName}Params),`);
   lines.push(`    std::span<const std::string_view>(${constName}VoiceSpaces),`);
   lines.push(`    ${constName}UI,`);
@@ -452,8 +466,6 @@ function emitModeTs(schema: ModeSchema, sourceFile: string): string {
   lines.push("    ],");
   lines.push(`    output_size: ${schema.ml.output_size},`);
   lines.push(`    default_spread: ${schema.ml.default_spread},`);
-  lines.push(`    default_learning_rate: ${schema.ml.default_learning_rate},`);
-  lines.push(`    default_max_iterations: ${schema.ml.default_max_iterations},`);
   lines.push("  },");
   lines.push("  params: [");
   for (const p of schema.params) {
@@ -519,6 +531,73 @@ function emitTsIndex(modeIds: string[]): string {
   return lines.join("\n");
 }
 
+// ----- Global ML-defaults emission (S26) ------------------------------------
+// The ONE learning_rate/max_iterations/min_error default (schemas/ml_defaults.
+// json), NOT per-mode — emitted once, alongside schema_types.hpp/types.ts,
+// rather than once per mode file like everything else in this module.
+
+const AUTOGEN_BANNER_ML_DEFAULTS = (lang: "C++" | "TS"): string =>
+  `// AUTOGENERATED (${lang}) — do not edit. Source: schemas/ml_defaults.json. ` +
+  "Run `bun run codegen/generate.ts` to regenerate.";
+
+function emitMlDefaultsHpp(d: MlTrainDefaults): string {
+  return [
+    AUTOGEN_BANNER_ML_DEFAULTS("C++"),
+    "// The ONE global training-hyperparameter default, shared by every mode on",
+    "// every platform (firmware/WASM/VCV) — see docs/specs/recon/",
+    "// simplification-audit-2026-07.md S26. Consumed by",
+    "// nisps::ml::MLPCore::TrainConfig's default member initialisers",
+    "// (nisps/ml/mlp.hpp); nisps_ml_set_train_config() and",
+    "// nisps::ml::MLPCore::set_train_config() make it runtime-overridable.",
+    "#ifndef NISPS_ML_GENERATED_ML_DEFAULTS_HPP",
+    "#define NISPS_ML_GENERATED_ML_DEFAULTS_HPP",
+    "",
+    "#include <cstddef>",
+    "",
+    "namespace nisps::ml::generated {",
+    "",
+    "struct MlTrainDefaults {",
+    "    float       learning_rate;",
+    "    std::size_t max_iterations;",
+    "    float       min_error;",
+    "};",
+    "",
+    "inline constexpr MlTrainDefaults kMlTrainDefaults = {",
+    `    ${cppFloatLit(d.learning_rate)},`,
+    `    ${d.max_iterations}u,`,
+    `    ${cppFloatLit(d.min_error)},`,
+    "};",
+    "",
+    "}  // namespace nisps::ml::generated",
+    "",
+    "#endif  // NISPS_ML_GENERATED_ML_DEFAULTS_HPP",
+    "",
+  ].join("\n");
+}
+
+function emitMlDefaultsTs(d: MlTrainDefaults): string {
+  return [
+    AUTOGEN_BANNER_ML_DEFAULTS("TS"),
+    "// The ONE global training-hyperparameter default, shared by every mode on",
+    "// every platform — see docs/specs/recon/simplification-audit-2026-07.md S26.",
+    "// Consumed by WasmIML's train()/trainAsync() default parameters and",
+    "// EngineApi's learningRate/maxIterations options (manifold/src/engine/).",
+    "",
+    "export interface MlTrainDefaults {",
+    "  readonly learningRate: number;",
+    "  readonly maxIterations: number;",
+    "  readonly minError: number;",
+    "}",
+    "",
+    "export const ML_TRAIN_DEFAULTS: MlTrainDefaults = {",
+    `  learningRate: ${d.learning_rate},`,
+    `  maxIterations: ${d.max_iterations},`,
+    `  minError: ${d.min_error},`,
+    "};",
+    "",
+  ].join("\n");
+}
+
 // ----- Driver --------------------------------------------------------------
 
 function main(): number {
@@ -538,6 +617,29 @@ function main(): number {
     allowUnionTypes: true,
   });
   const validate = ajv.compile<ModeSchema>(metaSchema);
+
+  // 1b. Load, compile, and validate the ONE global ML training default
+  // (schemas/ml_defaults.json against schemas/ml_defaults.schema.json — S26,
+  // NOT per-mode, so it lives outside the modeFiles loop below).
+  if (!existsSync(ML_DEFAULTS_SCHEMA_PATH)) {
+    console.error(`error: ml-defaults meta-schema not found at ${ML_DEFAULTS_SCHEMA_PATH}`);
+    return 1;
+  }
+  if (!existsSync(ML_DEFAULTS_PATH)) {
+    console.error(`error: ml-defaults data not found at ${ML_DEFAULTS_PATH}`);
+    return 1;
+  }
+  const mlDefaultsSchema = readJSON<AnySchemaObject>(ML_DEFAULTS_SCHEMA_PATH);
+  const validateMlDefaults = ajv.compile<MlTrainDefaults>(mlDefaultsSchema);
+  const mlDefaultsRaw = readJSON<unknown>(ML_DEFAULTS_PATH);
+  if (!validateMlDefaults(mlDefaultsRaw)) {
+    console.error(`error: ${ML_DEFAULTS_PATH}: schema validation failed:`);
+    for (const err of validateMlDefaults.errors ?? []) {
+      console.error(`  ${err.instancePath || "<root>"} ${err.message}`);
+    }
+    return 1;
+  }
+  const mlDefaults = mlDefaultsRaw as MlTrainDefaults;
 
   // 2. Discover all mode schemas
   if (!existsSync(MODES_DIR)) {
@@ -620,6 +722,8 @@ function main(): number {
   // 4. Emit C++ outputs
   ensureDir(CPP_OUT_DIR);
   writeFileSync(join(CPP_OUT_DIR, "schema_types.hpp"), emitSchemaTypesHpp());
+  ensureDir(CPP_ML_OUT_DIR);
+  writeFileSync(join(CPP_ML_OUT_DIR, "ml_defaults.hpp"), emitMlDefaultsHpp(mlDefaults));
   for (const { source, schema } of schemas) {
     const out = join(CPP_OUT_DIR, `${schema.mode_id}_schema.hpp`);
     writeFileSync(out, emitModeHpp(schema, source));
@@ -628,6 +732,7 @@ function main(): number {
   // 5. Emit TS outputs
   ensureDir(TS_OUT_DIR);
   writeFileSync(join(TS_OUT_DIR, "types.ts"), emitSharedTsTypes());
+  writeFileSync(join(TS_OUT_DIR, "ml_defaults.ts"), emitMlDefaultsTs(mlDefaults));
   for (const { source, schema } of schemas) {
     const out = join(TS_OUT_DIR, `${schema.mode_id}_schema.ts`);
     writeFileSync(out, emitModeTs(schema, source));

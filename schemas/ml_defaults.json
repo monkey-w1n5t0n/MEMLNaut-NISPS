@@ -1,0 +1,7 @@
+{
+  "$schema": "ml_defaults.schema.json",
+  "_note": "The ONE default learning rate / max iterations / min-error for training, shared by every mode on every platform (audit S26, docs/specs/recon/simplification-audit-2026-07.md). Values preserve the numbers previously hardcoded in nisps/ml/mlp.hpp's no-arg train() and manifold/src/engine/wasm-iml.ts's TS default parameters, so wiring this up is numerically a no-op for firmware and WASM. It is NOT a no-op for vcv/src/iml.hpp, whose own private defaults (200 / 0.1 / 0.00001) diverged and have been deleted in the same change (see vcv/src/iml.hpp's IML constructor comment) — a real behaviour change to the VCV module.",
+  "learning_rate": 1.0,
+  "max_iterations": 1000,
+  "min_error": 0.001
+}

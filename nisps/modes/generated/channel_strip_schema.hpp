@@ -27,8 +27,6 @@ inline constexpr MLConfig kChannelStripMLConfig = {
     4u,
     24u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kChannelStripParamCount = 24u;
@@ -277,8 +275,6 @@ inline constexpr ::nisps::ParamSchema kChannelStripSchema = {
     std::span<const std::size_t>(kChannelStripHiddenLayers),
     kChannelStripMLConfig.output_size,
     kChannelStripMLConfig.default_spread,
-    kChannelStripMLConfig.default_learning_rate,
-    kChannelStripMLConfig.default_max_iterations,
     std::span<const Param>(kChannelStripParams),
     std::span<const std::string_view>(kChannelStripVoiceSpaces),
     kChannelStripUI,

@@ -27,8 +27,6 @@ inline constexpr MLConfig kElysiamorfMLConfig = {
     4u,
     40u,
     0.6f,
-    1.0f,
-    1000u,
 };
 
 inline constexpr std::size_t kElysiamorfParamCount = 40u;
@@ -414,8 +412,6 @@ inline constexpr ::nisps::ParamSchema kElysiamorfSchema = {
     std::span<const std::size_t>(kElysiamorfHiddenLayers),
     kElysiamorfMLConfig.output_size,
     kElysiamorfMLConfig.default_spread,
-    kElysiamorfMLConfig.default_learning_rate,
-    kElysiamorfMLConfig.default_max_iterations,
     std::span<const Param>(kElysiamorfParams),
     std::span<const std::string_view>(kElysiamorfVoiceSpaces),
     kElysiamorfUI,

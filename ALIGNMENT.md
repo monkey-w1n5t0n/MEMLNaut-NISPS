@@ -58,11 +58,25 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** ~A day for a host-side blocks-per-second benchmark + a per-variant size report in `build-firmware.sh` (plan §6.5f).
 
-### 7. Training-health telemetry: one product decision fragmented into four half-features (2026-07-21)
+### 7. Training-health telemetry: decided, not yet built (2026-07-21)
 
-**What.** A 16 KB loss-history buffer in every firmware MLP that nothing reads; a WASM worker faking a 1-element loss history; decorative gradient-health UI; and a real `get_layer_stats` API plumbed end-to-end and consumed by nobody.
+**What.** Four fragments of one feature. Fragment 3 (decorative gradient-health UI) was deleted in
+Phase 1. The other three stand: a 16 KB loss-history buffer in every firmware MLP that nothing
+reads (`nisps/ml/mlp.hpp`); a WASM worker faking a **1-element** loss history
+(`manifold/src/engine/wasm-worker.ts:310`, `new Float32Array([loss])`); and a real `layer_stats` /
+`nisps_ml_get_layer_stats` API plumbed end-to-end and consumed by nobody.
 
-**Why it blocks the mission.** "Is the network learning?" is a core research affordance — currently it *looks* answered while being fake. Decide feature-or-delete once (plan §7.3) and collapse all four limbs accordingly.
+**Decisions are now complete** (operator, §7.3 + L25): telemetry becomes **real, browser-only,
+behind a feature flag**; the fakes go; and the **firmware buffer stays** — it is the on-device
+record the hardware editor (defect 4) will want, and it costs flash we demonstrably have (16% RAM
+on the largest variant). So the remaining work is one coherent job, not a judgement call: plumb
+`loss_history` through the C API (`Drawers.tsx:263` already marks the gap), replace the worker's
+fake with it, and put the display plus `get_layer_stats` behind the advanced-mode flag.
+
+**Why it blocks the mission.** "Is the network learning?" is a core research affordance, and today
+it *looks* answered while being fabricated — worse than absent.
+
+**Rough cost.** ~A day, spec-light: plan §6.5e, no longer gated on anything.
 
 ### 8. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
 

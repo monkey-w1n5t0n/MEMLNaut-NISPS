@@ -185,6 +185,10 @@ class MEMLCeliumEngine {
         const float p2 = v0_paf2_.play(freq2, freq2 + (v0_paf2_cf_ * freq2),
                                        v0_paf2_bw_, v0_paf_vib_, v0_paf_vfr_, v0_paf2_shift_, true);
         float v0 = (p0 + p1 + p2) * v0_env;
+        // Feedback tap: voice 0's own enveloped output, one block behind (see
+        // fbsmooth above) — matches firmware's `feedback = v0 * feedbackGain;`
+        // taken at this same point (post-envelope, pre voice-1/mix/shape).
+        feedback_ = v0 * feedback_gain_;
 
         // ----- Voice 1 -----
         const float v1_env = v1_amp_env_.play();
@@ -293,6 +297,16 @@ class MEMLCeliumEngine {
     float feedback_       = 0.f;
     float fbzm1_          = 0.f;
     float fb_smooth_alpha_ = 0.5f;
+    // Restored 2026-07-21 (finding L7): firmware history shows this went
+    // 0.1f (live, `modes/AudioApps/MEMLCeliumAudioApp.hpp` @ d095688) -> "0;
+    // //0.1f" (explicitly muted, value preserved in comment) -> the write
+    // was dropped entirely when the engine was ported to nisps/engines/ at
+    // the 2026-04-29 rewrite (8d0d47b) — feedback_/fbzm1_/fb_smooth_alpha_
+    // kept being read in process() but nothing wrote feedback_, so the path
+    // was silently inert. Operator decision: port it back live at 0.1f, not
+    // muted. Not schema-exposed — a single fixed value (MEMLCelium has no
+    // voice spaces to vary it by, unlike PAFSynth's feedback_gain_).
+    float feedback_gain_   = 0.1f;
 };
 
 static_assert(AudioEngine<MEMLCeliumEngine>, "MEMLCeliumEngine must satisfy AudioEngine");

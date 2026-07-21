@@ -568,7 +568,7 @@ template <std::size_t NIn,
           std::size_t NHidden2,
           std::size_t NHidden3,
           std::size_t NOut,
-          std::size_t NMaxExamples  = 128u,
+          std::size_t NMaxExamples  = kDefaultMaxExamples,
           std::size_t NMaxIterTrain = 4096u>
 using MLP = MLPCore<
     FixedStorage<NIn, NHidden1, NHidden2, NHidden3, NOut, NMaxExamples, NMaxIterTrain>>;

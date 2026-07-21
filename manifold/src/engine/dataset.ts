@@ -42,7 +42,19 @@ export class Dataset {
   private labels_: Float32Array = new Float32Array(0);
   private size_ = 0;
 
-  constructor(maxSize = 100) {
+  /**
+   * `maxSize` has NO default on purpose: this store mirrors the C++ MLP's
+   * example ring buffer 1:1 (FIFO eviction order, sample-weight indexing),
+   * so its cap must always come from the C++ side's actual `max_examples()`
+   * (via `nisps_ml_describe`) rather than a value picked independently here.
+   * A default invited exactly that divergence — see S35
+   * (docs/specs/recon/simplification-audit-2026-07.md): the JS mirror
+   * defaulted to 100 while the C++ ring defaulted to 128, so train() and
+   * trainAsync() silently trained on different data past 100 examples, and
+   * sample-weight buffers sized to the JS side's count read out of bounds
+   * on the C++ side once its count exceeded that.
+   */
+  constructor(maxSize: number) {
     if (maxSize <= 0) throw new Error('Dataset.maxSize must be > 0');
     this.maxSize = maxSize;
   }

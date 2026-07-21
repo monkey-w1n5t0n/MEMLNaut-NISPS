@@ -7,19 +7,12 @@
  * The WASM module is loaded from manifold/public/nisps.{js,wasm} —
  * scripts/build-wasm.sh must have run first.
  *
- * Output blob format matches parity_check.cpp:
- *   uint32 magic = 'NPRT'
- *   uint32 version = 1
- *   uint32 n_floats
- *   float32[n_floats] payload
- *
- * Payload order:
- *   126 outputs (stage 1: post-process at (0.25, 0.75))
- *    12 weights (probed at fixed indices)
- *   126 outputs (stage 2: post-train, re-process)
- *     1 final training loss
- *     2 PAFSynth L+R means (silence input, 128 samples)
- *     2 ChannelStrip L+R means (0.25 input, 128 samples)
+ * Blob format and payload order are defined by parity_check.cpp — its header
+ * and `---- Stage N ----` sections are the authoritative stage list (seven
+ * stages: ML inference, ML training, PAFSynth, ChannelStrip, feedback
+ * controller, geometric dislike, pipelines + curves). Format: magic 'NPRT',
+ * version 5, n_floats, float32 payload. Keep the two drivers in lockstep and
+ * bump VERSION in both (and in parity_diff.mjs) on any layout change.
  *
  * Exit codes:
  *   0 success
@@ -197,13 +190,17 @@ async function main() {
   const api = bind(Module);
 
   // Verify dimensions match the native side. A null handle reports the
-  // DEFAULT shape (what create() yields for non-positive args).
-  const dimsBuf = api.malloc(6 * 4);
+  // DEFAULT shape (what create() yields for non-positive args). 7 ints:
+  // [in, h1, h2, h3, out, n_layers, max_examples] (S35 — the buffer size
+  // and view length below MUST track nisps_ml_describe's actual output or
+  // this silently overflows the WASM heap by 4 bytes).
+  const dimsBuf = api.malloc(7 * 4);
   api.describe(0, dimsBuf);
-  const dims = new Int32Array(Module.HEAP32.buffer, dimsBuf, 6).slice();
+  const dims = new Int32Array(Module.HEAP32.buffer, dimsBuf, 7).slice();
   api.free(dimsBuf);
-  // Expect: [32, 10, 14, 18, 126, 4]  (32-input max for mix-and-match)
-  const expectedDims = [32, 10, 14, 18, 126, 4];
+  // Expect: [32, 10, 14, 18, 126, 4, 128]  (32-input max for mix-and-match;
+  // 128 = nisps::ml::kDefaultMaxExamples, nisps/ml/storage.hpp)
+  const expectedDims = [32, 10, 14, 18, 126, 4, 128];
   for (let i = 0; i < expectedDims.length; ++i) {
     if (dims[i] !== expectedDims[i]) {
       console.error(`[parity_wasm] WASM build has dim[${i}]=${dims[i]}, native expected ${expectedDims[i]}`);

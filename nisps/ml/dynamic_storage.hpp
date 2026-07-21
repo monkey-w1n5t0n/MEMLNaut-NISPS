@@ -27,7 +27,7 @@
 #include <new>
 #include <span>
 
-#include "storage.hpp"  // kMlpNumLayers
+#include "storage.hpp"  // kMlpNumLayers, kDefaultMaxExamples
 
 namespace nisps::ml {
 
@@ -40,7 +40,7 @@ class DynamicStorage {
     DynamicStorage(std::size_t n_in,
                    std::span<const std::size_t> hidden,
                    std::size_t n_out,
-                   std::size_t max_examples  = 128u,
+                   std::size_t max_examples  = kDefaultMaxExamples,
                    std::size_t max_iter_train = 4096u) noexcept {
         if (hidden.size() != 3u || n_in == 0u || n_out == 0u ||
             hidden[0] == 0u || hidden[1] == 0u || hidden[2] == 0u) {

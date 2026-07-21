@@ -868,10 +868,14 @@ void nisps_ml_clear_examples(void* ml) {
     h->mlp.clear_examples();
 }
 
-// Architecture introspection — writes [in, h1, h2, h3, out, n_layers] into a
-// caller-supplied int buffer. Always 6 ints. With a null handle it reports
-// the DEFAULT shape (what create() yields for non-positive args); with a
-// handle it reports that instance's actual runtime shape.
+// Architecture introspection — writes [in, h1, h2, h3, out, n_layers,
+// max_examples] into a caller-supplied int buffer. Always 7 ints. With a
+// null handle it reports the DEFAULT shape (what create() yields for
+// non-positive args); with a handle it reports that instance's actual
+// runtime shape. max_examples is the example-store (dataset) ring-buffer
+// capacity (nisps::ml::kDefaultMaxExamples, nisps/ml/storage.hpp) — the
+// single source of truth the TS Dataset mirror sizes itself to instead of
+// hardcoding a second, potentially-divergent number (S35).
 EMSCRIPTEN_KEEPALIVE
 void nisps_ml_describe(void* ml, int* out_dims) {
     if (!out_dims) return;
@@ -882,6 +886,7 @@ void nisps_ml_describe(void* ml, int* out_dims) {
         out_dims[3] = static_cast<int>(kDefaultHidden[2]);
         out_dims[4] = static_cast<int>(kDefaultOutputs);
         out_dims[5] = static_cast<int>(BrowserMLP::kNumLayers);
+        out_dims[6] = static_cast<int>(nisps::ml::kDefaultMaxExamples);
         return;
     }
     auto* h = static_cast<MLHandle*>(ml);
@@ -891,6 +896,7 @@ void nisps_ml_describe(void* ml, int* out_dims) {
     out_dims[3] = static_cast<int>(h->mlp.fan_out(2u));
     out_dims[4] = static_cast<int>(h->mlp.n_out());
     out_dims[5] = static_cast<int>(BrowserMLP::kNumLayers);
+    out_dims[6] = static_cast<int>(h->mlp.max_examples());
 }
 
 // ---------------------------------------------------------------------------

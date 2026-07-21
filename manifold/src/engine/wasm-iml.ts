@@ -41,6 +41,14 @@ import { createTrainer, type WasmTrainer } from './wasm-worker';
 /** Default architecture matches `nisps/wasm/bindings.cpp` instantiation. */
 const DEFAULT_INPUT_SIZE = 2;
 const DEFAULT_OUTPUT_SIZE = 126;
+/**
+ * Placeholder only — overwritten by `init_()` with the live value read from
+ * `nisps_ml_describe` (out_dims[6]). Matches `nisps::ml::kDefaultMaxExamples`
+ * (nisps/ml/storage.hpp), the single source of truth for the C++ example-
+ * store ring-buffer capacity. Do NOT hardcode a different number for the JS
+ * `Dataset` mirror's cap — see S35 (docs/specs/recon/simplification-audit-2026-07.md).
+ */
+const DEFAULT_MAX_EXAMPLES = 128;
 
 /** Base-aware absolute URL for an asset served from `public/`. Resolves against
  *  `document.baseURI` (the page URL) so a `base: './'` build works under any
@@ -116,6 +124,15 @@ export interface WasmIMLOptions {
   seed?: number;
   /** localStorage key the loaded weights/dataset will be persisted under. */
   storageKey?: string;
+  /**
+   * Currently a no-op: `nisps_ml_create` has no max_examples parameter, so
+   * the C++ example-store ring buffer is always sized to
+   * `nisps::ml::kDefaultMaxExamples`, and the JS `Dataset` mirror must match
+   * it exactly (S35) — there is no way to honour a caller-supplied override
+   * without also plumbing one through the C API. Kept on the options type so
+   * a future create()-side max_examples parameter has somewhere to land;
+   * unused today.
+   */
   maxExamples?: number;
   /** Injected side-effect boundary. Defaults to a no-op sink (headless use). */
   sink?: EngineSink;
@@ -131,6 +148,7 @@ export class WasmIML {
     hidden: [10, 14, 18],
     outputSize: DEFAULT_OUTPUT_SIZE,
     numLayers: 4,
+    maxExamples: DEFAULT_MAX_EXAMPLES,
   };
 
   private featuresBuf!: HeapBuffer;
@@ -153,7 +171,13 @@ export class WasmIML {
   private curveBuf!: HeapBuffer;   // curve batch scratch (chunked)
   private static CURVE_CHUNK = 256;
 
-  readonly dataset: Dataset;
+  // Constructed in init_(), once the live max_examples() is known from
+  // nisps_ml_describe — NOT in the constructor, which runs before the WASM
+  // module is loaded. Sizing this any other way (e.g. a hardcoded literal)
+  // is exactly the S35 bug: it must always match the C++ ring buffer's
+  // actual capacity or train()/trainAsync() silently diverge and
+  // sample-weight buffers sized to it read out of bounds C++-side.
+  dataset!: Dataset;
   private readonly sink: EngineSink;
   private lastLoss_: number | null = null;
   private trainer: WasmTrainer | null = null;
@@ -164,7 +188,6 @@ export class WasmIML {
   static MAX_BATCH = 4096;
 
   private constructor(opts: WasmIMLOptions) {
-    this.dataset = new Dataset(opts.maxExamples ?? 100);
     this.storageKey = opts.storageKey ?? 'nisps:wasm-iml';
     this.sink = opts.sink ?? noopSink;
   }
@@ -184,9 +207,10 @@ export class WasmIML {
     // Default shape (null handle). Since one-core-engine P2 the MLP is
     // runtime-shaped: create() honours requested dims; we pass the caller's
     // sizes (falling back to the defaults) and re-describe the instance.
-    this.describePtr = this.module._malloc(6 * 4);
+    // 7 ints: [in, h1, h2, h3, out, n_layers, max_examples] (S35).
+    this.describePtr = this.module._malloc(7 * 4);
     this.module._nisps_ml_describe(0, this.describePtr);
-    const defaults = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 6);
+    const defaults = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 7);
     const wantedIn = opts.inputSize ?? defaults[0];
     const wantedOut = opts.outputSize ?? defaults[4];
 
@@ -195,13 +219,18 @@ export class WasmIML {
     if (!this.mlHandle) throw new Error('[wasm-iml] nisps_ml_create returned null');
 
     this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
-    const dims = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 6);
+    const dims = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 7);
     this.arch_ = {
       inputSize: dims[0],
       hidden: [dims[1], dims[2], dims[3]],
       outputSize: dims[4],
       numLayers: dims[5],
+      maxExamples: dims[6],
     };
+
+    // The JS Dataset mirror's cap MUST equal the C++ ring buffer's actual
+    // max_examples() — read from describe(), never hardcoded (S35).
+    this.dataset = new Dataset(this.arch_.maxExamples);
 
     this.weightCount_ = this.module._nisps_ml_weight_count(this.mlHandle);
 
@@ -327,14 +356,19 @@ export class WasmIML {
 
     // Re-describe the (new) instance and refresh the weight count.
     this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
-    const d = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 6);
+    const d = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 7);
     this.arch_ = {
       inputSize: d[0],
       hidden: [d[1], d[2], d[3]],
       outputSize: d[4],
       numLayers: d[5],
+      maxExamples: d[6],
     };
     this.weightCount_ = this.module._nisps_ml_weight_count(this.mlHandle);
+    // nisps_ml_reshape never varies max_examples (no such parameter exists on
+    // that C API) — it always reconstructs at kDefaultMaxExamples, same as
+    // create(). The Dataset mirror's cap is therefore still correct; only its
+    // contents are cleared below, matching the C++ side's dataset reset.
 
     // Reallocate every dim-dependent heap buffer. Freeing first then reallocating
     // means a later malloc may sbrk-grow the heap and detach earlier views, so we

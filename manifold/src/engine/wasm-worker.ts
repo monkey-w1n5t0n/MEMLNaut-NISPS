@@ -212,9 +212,15 @@ if (isWorker) {
     workerSeed = seed >>> 0;
     mlHandle = mod._nisps_ml_create(0, 0, 0, 0, workerSeed);
     weightCount = mod._nisps_ml_weight_count(mlHandle);
-    const dPtr = mod._malloc(6 * 4);
+    // 7 ints: [in, h1, h2, h3, out, n_layers, max_examples] — the buffer size
+    // and view length here MUST track nisps_ml_describe's actual output
+    // (nisps/wasm/bindings.cpp) or this overflows the WASM heap by 4 bytes
+    // (S35, docs/specs/recon/simplification-audit-2026-07.md). This worker
+    // doesn't use max_examples (it never touches the dataset), but describe()
+    // always writes all 7 regardless of what the caller reads.
+    const dPtr = mod._malloc(7 * 4);
     mod._nisps_ml_describe(mlHandle, dPtr);
-    const d = new Int32Array(mod.HEAP32.buffer, dPtr, 6);
+    const d = new Int32Array(mod.HEAP32.buffer, dPtr, 7);
     netInputSize = d[0];
     netOutputSize = d[4];
     netHidden = [d[1], d[2], d[3]];

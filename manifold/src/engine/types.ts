@@ -56,7 +56,11 @@ export interface NispsModule {
   _nisps_ml_set_weights(ml: number, in_ptr: number): void;
   _nisps_ml_draw_weights(ml: number, spread: number): void;
   _nisps_ml_get_layer_stats(ml: number, out_ptr: number): void;
-  // Null ml reports the DEFAULT shape; a handle reports its runtime shape.
+  // Writes 7 ints: [in, h1, h2, h3, out, n_layers, max_examples]. Null ml
+  // reports the DEFAULT shape; a handle reports its runtime shape.
+  // max_examples is the C++ example-store ring-buffer capacity — the JS
+  // `Dataset` mirror MUST be sized to this value, not a hardcoded literal
+  // (see S35, docs/specs/recon/simplification-audit-2026-07.md).
   _nisps_ml_describe(ml: number, out_ptr: number): void;
 
   // ML feedback — the "Down Action" state machine (Avoid / RandomiseOutputs /
@@ -169,6 +173,8 @@ export interface MLArchitecture {
   hidden: [number, number, number];
   outputSize: number;
   numLayers: number;
+  /** C++ example-store ring-buffer capacity — sizes the JS `Dataset` mirror. */
+  maxExamples: number;
 }
 
 /** Per-layer weight health record (one per layer). */

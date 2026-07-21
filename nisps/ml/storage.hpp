@@ -47,12 +47,21 @@ namespace nisps::ml {
 
 inline constexpr std::size_t kMlpNumLayers = 4u;
 
+// Default example-store capacity, named ONCE and shared by FixedStorage's
+// compile-time default (below) and DynamicStorage's runtime-default
+// constructor argument (nisps/ml/dynamic_storage.hpp). `nisps_ml_describe`
+// (nisps/wasm/bindings.cpp) reports the live instance's max_examples() so
+// the Manifold TS side (manifold/src/engine/wasm-iml.ts) can size its JS
+// Dataset mirror to match instead of hardcoding a second, divergent number
+// (see docs/specs/recon/simplification-audit-2026-07.md S35).
+inline constexpr std::size_t kDefaultMaxExamples = 128u;
+
 template <std::size_t NIn,
           std::size_t NHidden1,
           std::size_t NHidden2,
           std::size_t NHidden3,
           std::size_t NOut,
-          std::size_t NMaxExamples  = 128u,
+          std::size_t NMaxExamples  = kDefaultMaxExamples,
           std::size_t NMaxIterTrain = 4096u>
 class FixedStorage {
    public:

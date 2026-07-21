@@ -100,7 +100,15 @@ DESCRIPTIVE — it documents that engine voice spaces already square the value i
 One cut, no dual path. `firmware/useq-celium/` already proves the PIO + arduino-pico pattern in-repo.
 
 - `platformio.ini` with one `[env]` per firmware variant passing `-DMEMLNAUT_MODE_TYPE=<alias>`; selftest becomes a plain `-DNISPS_SELFTEST=1` env. Deletes: the sed/python machinery in `firmware-common.sh` that **mutates the committed .ino**, the `.ino` comment-registry, the entire `NISPS_ST_*` token-paste table (already silently missing the currently-active SLPWorkshop variant — L12), the sketch-tree symlink forest, and the global TFT_eSPI library mutation (handled via PIO lib config/build flags instead).
-- **memllib consumption decision** (§7.5, depends on Phase 0.1): PIO `lib_deps` pin on the fork vs vendoring the actually-used subset. Prerequisite task: inventory which memllib surface (AudioDriver, MEMLNaut board, display/menu, MIDI) is load-bearing.
+- **memllib consumption decision** (§7.5): the prerequisite inventory is DONE —
+  `../recon/memllib-usage-inventory.md`, built from the firmware linker map rather than grep. Result:
+  all 24 compiled TUs are linked, so "the load-bearing subset" is ~1.8 MB / 84 files — essentially
+  all of memllib minus `examples/`. There is no small subset to lift. It also surfaced a
+  consequence that was not visible when §7.5 was decided: memllib is the LAB's shared library and
+  our fork is 3 commits ahead but **31 behind** (+2034/−153 across the files we link, including
+  `new staticmlp`, `jolts`, `verb`). Vendoring freezes that gap permanently. Recommended: rebase the
+  three NISPS commits onto upstream `main` first, THEN vendor — it is the only moment that merge is
+  cheap. Operator call before the cut.
 - Then **S9**: a CI job compiling 2–3 representative envs with cached toolchain — firmware enters an automated gate for the first time.
 
 ## §6 Phase 5 — Vision-facing architecture (each item spec-first, own session)

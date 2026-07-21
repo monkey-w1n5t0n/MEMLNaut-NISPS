@@ -12,15 +12,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 ## Top defects (ranked by mission impact)
 
-### 1. The verification story is void: CI red for a month, unpushed load-bearing commits, ungated deploys (2026-07-21)
-
-**What.** CI has been 100% failing on main since 2026-07-13: the memllib submodule pin (`b37fc53`, local branch `feat/nisps-core-swap`) is reachable from no remote, so GitHub checkout dies before any gate runs — and those three firmware-critical commits exist only on this one disk. Meanwhile push-to-main deploys straight to `meml.lnfinitemonkeys.org/next/` via webhook with no gate, shipping the *committed* `manifold/public/nisps.wasm`, which has no freshness check. All P4–P6 "gates green" claims rest on local runs.
-
-**Why it blocks the mission.** "Verifiable without hardware" and "confident agentic changes" are the mission's operating premises; both are currently fiction at the remote/deploy boundary. One disk failure loses firmware-critical code.
-
-**Rough cost.** Half a day (plan §1): push the branch to the `monkey-w1n5t0n/memllib` fork, repoint `.gitmodules`, confirm green, add codegen + WASM-freshness steps; deploy gating is an operator decision (plan §7.4).
-
-### 2. The mode layer is not shared: WASM re-orchestrates modes by hand (2026-07-21)
+### 1. The mode layer is not shared: WASM re-orchestrates modes by hand (2026-07-21)
 
 **What.** `nisps/modes/` — the CRTP layer binding ML config, engine, voice-space and I/O — compiles only into firmware. `nisps/wasm/bindings.cpp` includes engines and ML primitives but zero mode headers, and Manifold re-assembles mode behaviour (jolt stepping, OU, routing) in TS. "Firmware and WASM share the same modes" is true only at the engine level; every ModeBase behaviour must be mirrored browser-side by hand.
 
@@ -28,7 +20,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Spec first, then ~a week: storage-policy the ModeBase orchestration the way P2 did MLPCore (verified shape in plan §6.5a — *not* binding monolithic mode objects, which would contradict the locked two-instance RT architecture). Related honesty gap: Manifold currently catalogues 4 modes that structurally cannot run in the browser (no mic input, event-only engines) — plan §6.5b (absorbs the old C15/mic-input defect; C15 itself lives on `archive/playground-solidjs`).
 
-### 3. No curated/advanced split and no in-UI mode picker — the UI fights vision 3 (2026-07-21)
+### 2. No curated/advanced split and no in-UI mode picker — the UI fights vision 3 (2026-07-21)
 
 **What.** Manifold is 100% dev-maximalist: five drawers of everything, no preset data model to author against, and mode switching exists only via the debug hook — there is no instrument picker in the UI at all (the plumbing, `ctx.modes`/`setModeId`, already exists unused). A stratum of decorative controls (training-param sliders, master volume, bpm, A/B, snapshots, fabricated gradient health) renders real-looking UI that drives nothing.
 
@@ -36,7 +28,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Product-model decision first (plan §7.6), then incremental: picker is days; the curated-preset model seeds from `backends/presets.ts` + schemas; disclosure via per-drawer depth levels. Deleting the decorative stratum is part of the Phase-1 sweep.
 
-### 4. Arduino-CLI build machinery is actively hostile — vision 4 unstarted (2026-07-21)
+### 3. Arduino-CLI build machinery is actively hostile — vision 4 unstarted (2026-07-21)
 
 **What.** The build script sed-mutates the committed `.ino` to select variants (polluting history), the mode list is triple-bookkept (a `NISPS_ST_*` token-paste table is already silently missing the currently-active SLPWorkshop variant), a symlink forest works around Arduino's include rules, and the toolchain globally mutates the installed TFT_eSPI library. Firmware compilation is in no automated gate anywhere.
 
@@ -44,7 +36,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** 2–3 days, one cut (plan §5): env-per-variant `platformio.ini`, delete ~400 lines of hackery, then a firmware CI job. Gated on the memllib ownership decision (plan §7.5).
 
-### 5. Manifold-as-hardware-editor is a facade (2026-07-21)
+### 4. Manifold-as-hardware-editor is a facade (2026-07-21)
 
 **What.** Vision bullet 5 exists as a 237-line Web Serial shell: sound connect lifecycle, zero protocol (`saveModel`/`restoreModel`/`getSettings` are literal stubs), and firmware has no serial command surface or on-device persistence to talk to.
 
@@ -52,7 +44,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Week+, spec-first (plan §6.5d). The right discipline already exists in-repo: useq-celium's C-header wire truth + TS mirror + parity test; settings payloads should derive from schema codegen.
 
-### 6. Dead mass and registry sprawl across every layer (2026-07-21)
+### 5. Dead mass and registry sprawl across every layer (2026-07-21)
 
 **What.** The audit's aggregate: ~40% of `feedback.hpp` is legacy modes nothing reaches; a dead four-way focus/altitude UI system; ~25 unconsumed ConsoleCtx fields; a dozen dead WASM API entries threaded through a 5-file registration chain; daisysp compiled into every firmware build with zero consumers; retired-playground artifacts and dead planning relics tracked at root; mode identity spread across ~6 hand-maintained registries with demonstrated drift; assorted stale specs presenting a deleted world as present tense.
 
@@ -60,19 +52,19 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Plan phases 1–3 (~a week total, mostly mechanical deletions with green gates). Behaviour bugs found en route (dataset-cap divergence 100 vs 128 + OOB read, VCV 2-D input truncation, VCV audio-thread race + JSON) are plan §3.
 
-### 7. No performance measurement despite a performance-defined mission (2026-07-21)
+### 6. No performance measurement despite a performance-defined mission (2026-07-21)
 
 **What.** The "super performance-sensitive" constraint is enforced only by static discipline (no-heap lint — itself with proven false negatives — and section attrs, 3/5 of which are dead macros). No benchmark, no CPU-load assertion, no flash/RAM size report on either target; the 16 KB dead buffer was found by reading, not by any gate.
 
 **Rough cost.** ~A day for a host-side blocks-per-second benchmark + a per-variant size report in `build-firmware.sh` (plan §6.5f).
 
-### 8. Training-health telemetry: one product decision fragmented into four half-features (2026-07-21)
+### 7. Training-health telemetry: one product decision fragmented into four half-features (2026-07-21)
 
 **What.** A 16 KB loss-history buffer in every firmware MLP that nothing reads; a WASM worker faking a 1-element loss history; decorative gradient-health UI; and a real `get_layer_stats` API plumbed end-to-end and consumed by nobody.
 
 **Why it blocks the mission.** "Is the network learning?" is a core research affordance — currently it *looks* answered while being fake. Decide feature-or-delete once (plan §7.3) and collapse all four limbs accordingly.
 
-### 9. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
+### 8. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
 
 **What.** `training.hpp` ships SGD only; the legacy firmware used RMSProp for `TrainBatch`. Optimizer choice is a research axis. Not blocking current fits; will matter for harder loss landscapes. Port target: upstream MusicallyEmbodiedML `memlp` (the in-repo `src/memlp` copy is deleted; use the GitHub remote or archive branch).
 

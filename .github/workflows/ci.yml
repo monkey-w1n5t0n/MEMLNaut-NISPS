@@ -59,6 +59,16 @@ jobs:
           CMAKE_BUILD_PARALLEL_LEVEL: '4'
         run: bash scripts/build-cpp-tests.sh
 
+      # Freshness gate. manifold/public/nisps.{js,wasm} are TRACKED artifacts:
+      # the VPS webhook builds only manifold/, so vite copies whatever is
+      # committed into the production bundle. Prove the committed artifact
+      # still agrees with the C++ we just built, BEFORE the rebuild below
+      # overwrites it. A stale commit fails here instead of silently shipping.
+      - name: WASM freshness gate (committed artifact vs native)
+        env:
+          NISPS_PARITY_NO_BUILD: '1'
+        run: bash scripts/parity-check.sh
+
       - name: Build WASM
         env:
           # The script defaults to /usr/lib/emscripten/emcc; the runner gets
@@ -96,6 +106,25 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # Enforces the "schema changes ship with regenerated C++ AND TypeScript
+      # in the same change" rule. Regenerate from schemas/ and fail if the
+      # committed outputs differ; then run the codegen golden test.
+      - name: Codegen is committed and idempotent
+        run: |
+          cd codegen
+          bun install --frozen-lockfile
+          bun run generate.ts
+          bun run generate-midi-devices.ts
+          bun run tests/golden_test.ts
+          cd ..
+          GEN_DIRS="nisps/modes/generated nisps/midi/generated \
+                    manifold/src/modes/generated manifold/src/midi-devices/generated"
+          git add -N $GEN_DIRS
+          if ! git diff --exit-code -- $GEN_DIRS; then
+            echo "::error::Generated outputs are stale. Run codegen and commit the result." >&2
+            exit 1
+          fi
 
       - name: Install manifold deps
         working-directory: manifold

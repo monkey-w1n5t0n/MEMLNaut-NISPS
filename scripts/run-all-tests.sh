@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# scripts/run-all-tests.sh — master entrypoint that exercises every check
-# stream 11 owns. Designed to be the single command CI invokes.
+# scripts/run-all-tests.sh — master local entrypoint that exercises every
+# check the repo owns. CI (.github/workflows/ci.yml) does NOT invoke this
+# script; it re-lists the same stages as discrete steps so failures are
+# attributable per-step. Keep the two in sync when adding a stage.
 #
 # Stages (each fails fast):
 #   1. C++ build + ctest  → scripts/build-cpp-tests.sh

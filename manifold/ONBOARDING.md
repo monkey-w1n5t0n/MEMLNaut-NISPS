@@ -40,9 +40,17 @@ bun run test:e2e     # Playwright smoke (needs `bun run build` first; runs again
   Chromium): `PLAYWRIGHT_BROWSERS_PATH=/home/w1n5t0n/snap/bun-js/87/.cache/ms-playwright node node_modules/.bin/playwright test`. Preview via bun is fine. The smoke spec (`tests/e2e/smoke.spec.ts`)
   asserts: engine WASM loads, spine invariant (setInputs → outputs change), feedback runs, console
   renders, **no "C15" in the bundle**, no console errors. `shot.spec.ts` takes screenshots.
-- **Deploy is automatic on push to GitHub `main`** → webhook → builds `manifold/` → rsyncs to the
-  live `/next/` subdir. See the `manifold-deploy-pipeline` memory for the full chain and gotchas
-  (the `cp index.html a-immersive.html` 403 workaround; git-ignored `bun.lock`).
+- **Deploy is automatic on push to GitHub `main`, but gated on CI** → webhook → waits for the
+  `CI` workflow to conclude `success` on that exact SHA → builds `manifold/` → rsyncs to the live
+  `/next/` subdir. A red or missing CI run aborts the deploy (fail-closed, 20 min timeout);
+  `MEML_SKIP_CI_GATE=1` bypasses it for an emergency hand-deploy. The gate lives VPS-side in
+  `~/.config/webhooks/meml-deploy.sh` (not in this repo) — added 2026-07-21 per the simplification
+  audit. See the `manifold-deploy-pipeline` memory for the full chain and gotchas (the
+  `cp index.html a-immersive.html` 403 workaround; git-ignored `bun.lock`).
+- **`manifold/public/nisps.{js,wasm}` are tracked artifacts that ship to production** — the webhook
+  builds only `manifold/`, so vite copies whatever is committed. CI's *WASM freshness gate* runs
+  the parity harness against the committed artifact before rebuilding it, so a stale commit fails
+  loudly. Rebuild with `scripts/build-wasm.sh` and commit it whenever `nisps/` changes.
 - **`?debug=1`** installs `window.__nisps` (synchronous probe for Playwright/console — see
   `src/debug/probe.ts`). **`base: './'`** in `vite.config.ts` keeps asset URLs relative so one
   `dist/` mounts at both `/` and `/next/`. **WASM URLs must resolve via `document.baseURI`**, never

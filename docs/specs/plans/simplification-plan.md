@@ -17,6 +17,14 @@ status: active
 
 ## §1 Phase 0 — Restore verification (URGENT, ~half day) — S7, S24, S31, S32; critic gaps 1–3
 
+**BURNED DOWN 2026-07-21.** All five items landed: memllib `feat/nisps-core-swap` pushed to
+`monkey-w1n5t0n/memllib` and `.gitmodules` repointed (pin `b37fc53` now reachable — data-loss risk
+closed); the compensating error paragraph in `build-firmware-arch.sh` deleted; codegen dirty-diff +
+golden test added to the `manifold-tests` CI job; a WASM freshness gate (parity harness vs the
+*committed* artifact) added to `cpp-tests` before the rebuild; and the VPS webhook
+(`~/.config/webhooks/meml-deploy.sh`, not in this repo) now blocks the deploy unless the `CI`
+workflow concluded `success` on that exact SHA — fail-closed, `MEML_SKIP_CI_GATE=1` to override.
+
 CI has been 100% red on main since 2026-07-13; the cause and the data-loss risk are the same object.
 
 1. **Push `feat/nisps-core-swap` to the `monkey-w1n5t0n/memllib` fork** (3 commits incl. pin `b37fc53` currently existing only on this disk); repoint `.gitmodules` to the fork URL; verify a fresh clone + `submodules: recursive` checkout succeeds; delete the compensating error-message paragraph in `scripts/build-firmware-arch.sh` (S7).

@@ -122,7 +122,7 @@ includes; no `nisps-core`.
 - `ci.yml` — GitHub Actions: cmake build + ctest + WASM build + parity check + lint + Playwright (cpp-tests + manifold-tests jobs). Firmware compile is documented as manual.
 
 ### `src/` — submodule + vendored trees
-- `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI), the only true submodule. **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`. ⚠ The pinned commit currently lives on no remote (ALIGNMENT defect 1 / plan §1).
+- `src/memllib/` — hardware abstraction (audio driver, peripherals, MIDI), the only true submodule. **Not auto-initialized** — fresh clones need `git submodule update --init --recursive`. Pinned to `monkey-w1n5t0n/memllib` branch `feat/nisps-core-swap` (the operator's fork; upstream is `MusicallyEmbodiedML/memllib`). Ownership decision — vendor the load-bearing subset into this repo — lands with the PlatformIO migration (plan §5, §7.5).
 - `src/daisysp/` — vendored plain files (NOT a submodule). Zero remaining consumers — nisps replaced its PitchShifter with a custom granular impl; deletion planned (plan S8).
 
 ### Top-level docs

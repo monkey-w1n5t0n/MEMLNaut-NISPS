@@ -66,17 +66,12 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   fi
 fi
 
-# ---- 3. submodule sanity (the orphan-pin footgun) -----------------------
-# memllib provides the audio/synth/hardware tree; if its pin is unreachable the
-# build cannot be assembled. Fail loudly with the fix rather than 100 cryptic
-# missing-header errors deep in the compile.
+# ---- 3. submodule bring-up ----------------------------------------------
+# memllib provides the audio/synth/hardware tree the sketch compiles against.
 log "Checking the memllib submodule"
-if ! git -C "$REPO_ROOT" submodule update --init --recursive 2>/tmp/mf-submod.err; then
-  cat /tmp/mf-submod.err >&2 || true
-  die "git submodule update failed. If this is the 'not our ref' / unreachable-pin error, the recorded memllib commit is on an unpushed branch (feat/nisps-core-swap). Push that memllib branch to a reachable remote, or bump the submodule pointer to a published commit, then re-run."
-fi
+git -C "$REPO_ROOT" submodule update --init --recursive
 if [[ ! -e "$REPO_ROOT/firmware/MEMLNaut-NISPS/src/memllib/hardware/memlnaut" ]]; then
-  die "src/memllib looks empty after submodule init — the memllib pin is unreachable. See the message above."
+  die "src/memllib looks empty after submodule init — check the submodule pin and remote."
 fi
 
 # ---- 4. toolchain bring-up (delegates the heavy lifting) ----------------

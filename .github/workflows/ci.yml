@@ -16,9 +16,9 @@ name: CI
 
 on:
   push:
-    branches: [main, port-solidjs]
+    branches: [main]
   pull_request:
-    branches: [main, port-solidjs]
+    branches: [main]
   workflow_dispatch:
 
 jobs:

@@ -12,7 +12,7 @@ name: VCV Rack plugin (cross-platform)
 
 on:
   push:
-    branches: [main, feat/manifold-mission, feat/vcv-dist]
+    branches: [main]
     paths:
       - 'vcv/**'
       - '.github/workflows/vcv-plugin.yml'

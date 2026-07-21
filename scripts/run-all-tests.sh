@@ -9,11 +9,23 @@
 #   2. WASM build          → scripts/build-wasm.sh
 #   3. Parity check        → scripts/parity-check.sh
 #   4. Lint                → scripts/lint-cpp.sh
-#   5. Manifold tests      → cd manifold && typecheck + build + bun test + playwright
+#   5. Manifold tests      → codegen golden + curve drift, then
+#                            cd manifold && typecheck + build + bun test + playwright
+#   6. Engine bench SMOKE   → scripts/bench-engines.sh --smoke --native-only
+#
+# Stage 6 is REPORTING ONLY and deliberately tiny (~0.15 s, native only, no
+# emcc). It exists so the benchmark cannot rot unnoticed the way an unbuilt
+# firmware variant did, and so every full local run leaves a rough throughput
+# table in the log. It does NOT gate: a smoke-sized run has a ±30% noise floor
+# and a wall-clock threshold on shared hardware is either meaningless or flaky
+# (same reasoning as the firmware flash/RAM CI job). For numbers you can
+# actually compare, run scripts/bench-engines.sh on its own — it defaults to
+# best-of-3 × 150 ms per engine on both targets and takes --compare.
 #
 # Flags via env:
 #   NISPS_SKIP_PLAYWRIGHT=1   skip the Playwright leg (useful in C++-only loops)
 #   NISPS_SKIP_WASM=1         skip WASM build + parity (no emcc available)
+#   NISPS_SKIP_BENCH=1        skip the engine-bench smoke report
 #   NISPS_LINT_STRICT=1       treat lint warnings as failures
 #   PLAYWRIGHT_BROWSERS_PATH  respected (on the VPS point it at the snap-bun
 #                             browser cache — see docs/specs/plans/BUILD-PLAN.md)
@@ -27,33 +39,36 @@ cd "$ROOT"
 
 stage() { printf '\n=== %s ===\n' "$1"; }
 
-stage "1/5 C++ build + ctest"
+stage "1/6 C++ build + ctest"
 "$ROOT/scripts/build-cpp-tests.sh"
 
 if [[ "${NISPS_SKIP_WASM:-0}" != "1" ]]; then
-    stage "2/5 WASM build"
+    stage "2/6 WASM build"
     "$ROOT/scripts/build-wasm.sh"
 
-    stage "3/5 parity check"
+    stage "3/6 parity check"
     "$ROOT/scripts/parity-check.sh"
 else
-    stage "2/5 WASM build (skipped: NISPS_SKIP_WASM=1)"
-    stage "3/5 parity check (skipped: NISPS_SKIP_WASM=1)"
+    stage "2/6 WASM build (skipped: NISPS_SKIP_WASM=1)"
+    stage "3/6 parity check (skipped: NISPS_SKIP_WASM=1)"
 fi
 
-stage "4/5 lint"
+stage "4/6 lint"
 "$ROOT/scripts/lint-cpp.sh"
 
 if [[ "${NISPS_SKIP_PLAYWRIGHT:-0}" != "1" ]]; then
-    stage "5/5 manifold tests"
+    stage "5/6 manifold tests"
     if ! command -v bun >/dev/null 2>&1; then
         echo "[run-all-tests] bun not on PATH; skipping manifold stage"
     else
         (
-            # Codegen idempotence golden (C++ + manifold TS outputs).
+            # Codegen idempotence golden (C++ + manifold TS outputs), then the
+            # curve drift check: the schemas' declared per-voice-space response
+            # curves vs what nisps/engines/*.hpp actually computes.
             cd "$ROOT/codegen"
             bun install --frozen-lockfile 2>/dev/null || bun install
             bun run tests/golden_test.ts
+            bun run tests/curve_drift_test.ts
         )
         (
             cd "$ROOT/manifold"
@@ -69,7 +84,16 @@ if [[ "${NISPS_SKIP_PLAYWRIGHT:-0}" != "1" ]]; then
         )
     fi
 else
-    stage "5/5 manifold tests (skipped: NISPS_SKIP_PLAYWRIGHT=1)"
+    stage "5/6 manifold tests (skipped: NISPS_SKIP_PLAYWRIGHT=1)"
+fi
+
+# Report-only. See the stage list at the top of this file for why it does not
+# gate and why it is smoke-sized here.
+if [[ "${NISPS_SKIP_BENCH:-0}" != "1" ]]; then
+    stage "6/6 engine bench (report only, does not gate)"
+    NISPS_BENCH_NO_BUILD=1 "$ROOT/scripts/bench-engines.sh" --smoke --native-only
+else
+    stage "6/6 engine bench (skipped: NISPS_SKIP_BENCH=1)"
 fi
 
 stage "ALL GREEN"

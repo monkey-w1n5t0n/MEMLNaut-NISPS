@@ -33,6 +33,17 @@ struct Param {
     std::string_view group;
 };
 
+// One (voice space, param) slot where the engine applies a curve OTHER
+// than that param's default. The curve is a property of the pair, not of
+// the mode — apply_ssl4k() squares slot 11 where apply_neve66() does not.
+// DESCRIPTIVE: the engine's voice space is still the only place a curve
+// is applied, and it is applied exactly once.
+struct CurveOverride {
+    std::size_t voice_space;
+    std::size_t param;
+    Curve       curve;
+};
+
 struct MLConfig {
     std::size_t input_size;
     std::size_t output_size;
@@ -73,8 +84,20 @@ struct ParamSchema {
     float                                                default_spread;
     std::span<const ::nisps::modes::generated::Param>    params;
     std::span<const std::string_view>                    voice_spaces;
+    std::span<const ::nisps::modes::generated::CurveOverride> curve_overrides;
     ::nisps::modes::generated::UIConfig                  ui;
 };
+
+// The curve voice space `vs` applies to output slot `param`: the param's
+// default unless this mode declares a deviation for that voice space.
+// Linear scan — the table has tens of rows and this is not a hot path.
+constexpr ::nisps::Curve effective_curve(const ParamSchema& s, std::size_t vs,
+                                         std::size_t param) noexcept {
+    for (const auto& o : s.curve_overrides) {
+        if (o.voice_space == vs && o.param == param) return o.curve;
+    }
+    return s.params[param].curve;
+}
 
 }  // namespace nisps
 

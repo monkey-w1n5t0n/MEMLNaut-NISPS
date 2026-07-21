@@ -542,6 +542,8 @@ inline constexpr std::array<std::string_view, kSlpWorkshopVoiceSpaceCount> kSlpW
     "Direct",
 }};
 
+inline constexpr std::array<CurveOverride, 0> kSlpWorkshopCurveOverrides = {};
+
 inline constexpr UIConfig kSlpWorkshopUI = {
     PrimaryInput::XYPad,
     false,
@@ -560,6 +562,7 @@ inline constexpr ::nisps::ParamSchema kSlpWorkshopSchema = {
     kSlpWorkshopMLConfig.default_spread,
     std::span<const Param>(kSlpWorkshopParams),
     std::span<const std::string_view>(kSlpWorkshopVoiceSpaces),
+    std::span<const CurveOverride>(kSlpWorkshopCurveOverrides),
     kSlpWorkshopUI,
 };
 

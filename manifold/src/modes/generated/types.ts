@@ -28,6 +28,20 @@ export interface Param {
   readonly group: string;
 }
 
+/**
+ * One (voice space, param) slot where the engine applies a curve OTHER than
+ * that param's default. The curve is a property of the pair, not of the mode
+ * — apply_ssl4k() squares slot 11 where apply_neve66() does not. DESCRIPTIVE:
+ * the engine's voice space is still the only place a curve is applied, and it
+ * is applied exactly once. Indices match `ModeSchema.voice_spaces` /
+ * `ModeSchema.params`.
+ */
+export interface CurveOverride {
+  readonly voice_space: number;
+  readonly param: number;
+  readonly curve: Curve;
+}
+
 export interface MLConfig {
   readonly input_channels: readonly string[];
   readonly input_size: number;
@@ -48,5 +62,21 @@ export interface ModeSchema {
   readonly ml: MLConfig;
   readonly params: readonly Param[];
   readonly voice_spaces: readonly string[];
+  readonly curve_overrides: readonly CurveOverride[];
   readonly ui: UIConfig;
+}
+
+/**
+ * The curve voice space `voiceSpace` applies to output slot `param`: the
+ * param's default unless this mode declares a deviation for that voice space.
+ */
+export function effectiveCurve(
+  schema: ModeSchema,
+  voiceSpace: number,
+  param: number,
+): Curve {
+  for (const o of schema.curve_overrides) {
+    if (o.voice_space === voiceSpace && o.param === param) return o.curve;
+  }
+  return schema.params[param]!.curve;
 }

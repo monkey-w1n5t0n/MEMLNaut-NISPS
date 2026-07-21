@@ -5,7 +5,27 @@ This document captures provenance and judgement calls for each mode schema. Read
 ## Conventions
 
 - All `params` ranges are **normalised `[0,1]`**. The firmware voice spaces apply per-mode scaling (e.g. `peak0Freq = 200.f + (params[1] * params[1] * 1800.f)`); we expose the NN-output-space here, not the engine-state-space, because the same NN slot drives different engine values across voice spaces.
-- `curve` is a hint about the dominant scaling pattern, not a hard contract: `square` indicates the dominant voice space squares the value (`p * p`), `linear` indicates direct passthrough.
+- `curve` is **descriptive, and verified**. It records what the engine already does; the curve is applied exactly once, inside the voice space. Nothing downstream re-applies it. `params[].curve` is the mode-wide DEFAULT; a voice space that deviates declares the delta in `voice_spaces[].curve_overrides` (name → curve), and only the delta. `codegen/tests/curve_drift_test.ts` cross-checks every (voice space × param) slot against `nisps/engines/*.hpp` source on every run — see below.
+
+### What `square` / `sqrt` / `linear` mean, exactly
+
+The drift check needs a total, decidable predicate, so:
+
+- `square` — the engine multiplies **that slot by itself** (`p[n] * p[n]`, or via a `const float v = p[n]` alias, or memlcelium's `sq()` lambda).
+- `sqrt` — the engine passes **that slot alone** through `std::sqrt`.
+- `linear` — everything else.
+
+"Everything else" deliberately swallows three shapes the `Curve` enum cannot express, and they are declared `linear` by definition rather than by oversight:
+
+1. **Quantisation.** `muls[static_cast<int>(p[n] * 3.999999f) & 3]`, `idx_clamp(p[7] * 3.999999f, 5)` — the underlying response is linear, then stepped. Every `Neve 80` frequency and every sequencer ratio is this.
+2. **Compound self-products.** paf_synth's Elderstar/Ipeleiades compute `factor = 1.f + (p[17] + p[27] * 0.6f)` and then use `factor * factor`. No single slot is squared; two slots are terms inside a squared sum. `linear`.
+3. **Trigonometric combination.** paf_synth Magnetarch folds `p[0] + p[7] + p[8]` through `sin()`. `linear`.
+
+Anything the extractor cannot place in one of these buckets is a **hard error**, not a silent `linear`. That is the whole point: a regex over `p[N] * p[N]` would have missed the alias form, the `sq()` lambda, loop-generated indices and `smooth_params_[N]` — all four are live in this codebase.
+
+### Voice-space ordering is load-bearing
+
+`voice_spaces[i]` **is** `VoiceSpace` ordinal `i` — `ModeBase::set_voice_space(idx)` casts the index straight to the enum. The drift check asserts the schema's names equal the engine's `kVoiceSpaceNames`, in order. Note that paf_synth's enum order (`Ellipticacacia`=QuadDetune, `Rowantares`=VS1, `Neemeda`=VS2, `Aquillow`=Perc, `Magnetarch`=Single1, `Elderstar`=QuadOct, `Ipeleiades`=QuadDist) is **not** the order of the `apply_*` functions in the source file.
 - `output_size` matches the actual number of params consumed in `ProcessParams()`. Where the firmware's templated NPARAMS is larger than what's consumed, we follow consumption (see `elysiamorf`).
 
 ## Per-mode notes
@@ -13,11 +33,12 @@ This document captures provenance and judgement calls for each mode schema. Read
 ### paf_synth (33 params, 7 voice spaces)
 - Source of truth: `PAFSynthAudioApp.hpp` + `voicespaces/VoiceSpace*.hpp`.
 - Voice space 1 (Rowantares) uses param indices 2,3,5,6,8,9,11,12,14,15,17,19,20,26,27,28,29,30,31,32 — 20 of 33 slots have a clear meaning. Other voice spaces use overlapping but not identical subsets. We named the meaningful slots after the dominant Rowantares mapping; unused-by-VS1 slots get generic `pXX` names. A future cleanup could canonicalise these names per-voice-space, but the schema is mode-wide so a single canonical name set is correct.
-- `curve` of `square` indicates voice spaces consistently apply `params[i] * params[i]` to that slot.
+- The mode-wide `curve` default is **Rowantares** (`voice_spaces[1]`), matching the naming convention above — not `voice_spaces[0]`. All six other voice spaces carry `curve_overrides`. This reads oddly in the override tables (`Ellipticacacia.paf0_shift: square` means "QuadDetune squares slot 14, which VS1 calls paf0_shift and uses as a formant shift"); that is the pre-existing per-mode-naming wart above surfacing, not a bug in the table.
 
 ### channel_strip (24 params, 6 voice spaces)
 - Source of truth: `ChannelStripAudioApp.hpp` + `voicespaces/ChannelStrip/basic.hpp`.
 - All 6 voice spaces touch the same param indices (0,1,4,5,6,7,8,10,11,12,13,14..19,23). Indices 2,3,9,20,21,22 are NN-output slots with no engine effect — exposed as raw `pXX` for future voice-space designers.
+- The mode-wide `curve` default is **WannabeNeve66** (`voice_spaces[0]`). Deviations: SSL 4K/9K additionally square `comp_ratio`; MaleVox/FemaleVox do not square `comp_release`; Neve 80 replaces every frequency/ratio with a stepped lookup, so only the two gains stay squared.
 
 ### xiasri (24 params, 0 voice spaces — direct mapping)
 - Source of truth: `XIASRIAudioApp.hpp::Process()`.
@@ -28,12 +49,14 @@ This document captures provenance and judgement calls for each mode schema. Read
 - Source of truth: `modes/AudioApps/VerbFXAudioApp.hpp` + `voicespaces/VerbFX/*.hpp`.
 - The "Default" voice space is fully exposed; other voice spaces remap the same 47 slots with different scalings.
 - Hidden layers tweaked to `[10, 14, 18]` for the larger output size.
+- The mode-wide `curve` default is **Default** (`voice_spaces[0]`), the only all-linear voice space. The other **eleven** all deviate — Soft/Chamber/Granular square the comb and allpass feedbacks and the filterbank resonances; Cathedral/Shimmer/Diffuse/Metallic `sqrt` them; Dark and Bright split the filterbank by index (`i < 4` one way, the rest the other); Granular is Soft with four late slots re-mapped. This is by far the biggest gap the 2026-07 audit's "declaration is lossy" finding was pointing at: the schema previously said "nothing is curved" for all twelve.
+- Slot 44 (`delay_to_verb`) is read by no voice space at all. Left declared for layout stability; flagged here rather than in `ALIGNMENT.md` because it is one dead slot, not a strategic defect.
 
 ### memlcelium (56 params, 0 effective voice spaces)
 - Source of truth: `modes/AudioApps/MEMLCeliumAudioApp.hpp::ProcessParams()`.
 - Voice spaces are commented out in firmware; we expose a "Direct" placeholder.
 - Param 0-13 = sequencer (2 RatioSeq tracks × 7), 14-55 = synth (matches `kFocusSeq`/`kFocusSyn` mask).
-- Some env params are scaled with `sqParam()` (squared) — flagged with `curve: "square"`.
+- Some env params are scaled with an `sq()` lambda over an **implicit** index counter that starts at `i = 14` and advances through `params[i++]` (`nisps/engines/memlcelium.hpp`). Slots 21, 22, 27, 29, 31, 50, 52, 54 come out squared. No index literal appears in the source, so this is exactly the case a `p[N] * p[N]` regex misses; the drift check models the counter instead.
 
 ### breakor (56 params, 0 voice spaces)
 - Source of truth: `modes/AudioApps/BreakOrAudioApp.hpp` + `RatioSeqEngine::updateParams()`.

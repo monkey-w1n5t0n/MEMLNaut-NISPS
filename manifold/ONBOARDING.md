@@ -127,7 +127,8 @@ double-click exits). `OutputStage.tsx` is the output columns; drag a bar to set 
     `Pin`, `FeedbackMarker`, `Snapshot`, and **`ConsoleCtx`** (the flat context handed to the dock).
   - `model.ts`: the instrument catalogue `MF_MODES`, `MFParam`, `ParamStatus`
     (`off|fixed|live`), `ParamGroup`, plus `shapeValues()` (applies min/max/curve to raw engine
-    outputs) and `seededGradient()`. **Schema-backed modes are DERIVED from the codegen
+    outputs) and `modeEngineId()`. (`seededGradient()` is GONE — it was the fabricated
+    gradient-health source, deleted in the 2026-07 sweep, S16.) **Schema-backed modes are DERIVED from the codegen
     schemas in `src/modes/generated/`** (one-core-engine P5.2) — real param names/groups/count,
     plus each mode's `ml` net shape (`MFMode.ml`) and schema `engine_id` (`MFMode.engineId`)
     come from schema truth. A thin manifold OVERLAY (`SCHEMA_MODES` in model.ts) supplies only
@@ -141,6 +142,12 @@ double-click exits). `OutputStage.tsx` is the output columns; drag a bar to set 
 - Five drawers (`DRAWERS` in `Drawers.tsx`, each has `.render(ctx, depth)` — condensed 360px panel
   vs expanded 80vw×80vh modal):
   - **learn** — feedback mode (explore-and-place / geometric-dislike) + solo mode + per-output arm.
+    At `expanded` depth ONLY it also renders `TrainingHealth.tsx`: the real per-iteration loss
+    curve (`EngineApi.lossHistory()` ← `nisps_ml_loss_history` ← `MLPCore::loss_history`) plus
+    the per-layer weight-health table (`getLayerStats`). **`depth === 'expanded'` is Manifold's
+    advanced-surface flag** — there is no separate feature-flag mechanism, so put advanced
+    surface there rather than inventing one. The panel renders "no training run yet" when the
+    core has no history; it never synthesises a curve.
   - **inputs** — enable/configure input sources (XY pad / MIDI / gamepad).
   - **route** (label "Outputs") — per-output control matrix + per-backend config.
   - **settings** — icon style (monochrome/colour), input-map shape (xy/joystick/rect/circular), corner radius.
@@ -155,9 +162,10 @@ double-click exits). `OutputStage.tsx` is the output columns; drag a bar to set 
     CC#/channel, OSC path/range, VCV polarity).
 
 ### Primitives — `src/primitives/` (barrel: `index.ts`)
-`Button`, `Slider`, `PillToggle`, `Panel`, `Badge`, `Switch`, `StatusLine`, `XYPad`,
-`VirtualJoystick`, `ControlAxis`, `CurvePlot`, `Sparkline`. Dumb, reusable, no engine knowledge.
-Side-effect import of `styles/primitives.css` styles the range inputs.
+Seven: `Button`, `Slider`, `PillToggle`, `Badge`, `Switch`, `XYPad`, `VirtualJoystick`. Dumb,
+reusable, no engine knowledge. Side-effect import of `styles/primitives.css` styles the range
+inputs. `Panel`/`StatusLine`/`ControlAxis`/`CurvePlot`/`Sparkline` were **deleted** in the 2026-07
+sweep (L22, zero consumers) — don't cite them.
 
 ### Other shared UI files
 - `shared-ui.tsx` — `MiniMeters` (read-only output bars). `AltitudeNav`/`CompactAxis` were deleted with the focus system.
@@ -185,15 +193,19 @@ a setting → `--r-*` tokens.
   `setInputConfig`/`setOutputConfig` (state itself lives in the WASM pipeline handle since P4).
 - `engine-api.ts` — **`EngineApi`, the framework-neutral facade** everything in the UI talks to:
   `setInput/setInputs`, `getOutputs/routedOutput`, training (`addExample/train/trainAsync/evalLoss`),
-  weights (`getWeights/setWeights/process/randomise`), `subscribe/version/on`, plus nested
-  `.feedback` and `.audio` facades.
+  weights (`getWeights/setWeights/process/randomise`), telemetry
+  (`lossHistory/getLayerStats`), `subscribe/version/on`, plus nested `.feedback` and `.audio`
+  facades. **`lossHistory()` reads SPINE STATE, not the MLP handle** — an async train runs on the
+  worker's mirror net, so the main handle's own history is empty for those runs; both paths
+  publish to the spine.
 - `EngineProvider.tsx` / `useEngine.ts` — the **only** React coupling. `useEngine()` returns the API
   (null until WASM ready); `useEngineVersion()` = `useSyncExternalStore(subscribe, version)`.
 - `engine-host.ts` — main-thread audio wiring: AudioContext (user-gesture gated), fetch `nisps.wasm`,
   register + feed the worklet.
 - `wasm-iml.ts` (**~750 lines**) — the ML interface to `nisps.wasm`: one MLP handle, dataset, heap
   buffers, feedback C-ABI bindings (`nisps_ml_feedback_*`), lazy training worker.
-- `wasm-worker.ts` — off-thread training worker. `worklet/nisps-processor.ts` — the AudioWorklet's
+- `wasm-worker.ts` — off-thread training worker; returns weights, final loss, and the real
+  per-iteration loss curve read off its own mirror handle. `worklet/nisps-processor.ts` — the AudioWorklet's
   separate WASM instance (raw `WebAssembly.instantiate`, no Emscripten glue; 128-sample blocks).
 - **Input/output pipelines + curves live in the C++/WASM core (one-core-engine P4).** The input chain
   (invert → deadzone → circular clamp → momentum-modulated zoom → centred power → EMA → momentum) and

@@ -2,11 +2,13 @@
 # scripts/build-cpp-tests.sh — configure + build the host C++ test suite.
 #
 # Output: nisps/build/{nisps_core_tests,nisps_dsp_engine_tests,
-#                     nisps_modes_tests,nisps_golden_tests,nisps_parity_check}
+#                     nisps_modes_tests,nisps_golden_tests,nisps_parity_check,
+#                     nisps_engine_bench}
 #
-# Adds CTest registration for the first four. parity_check is invoked by
-# scripts/parity-check.sh (orchestrates native+WASM together) and is NOT
-# part of the ctest pipeline.
+# Adds CTest registration for the first four. The last two are standalone:
+# parity_check is invoked by scripts/parity-check.sh (orchestrates native+WASM
+# together), and engine_bench by scripts/bench-engines.sh (measures time and
+# asserts nothing, so it has no pass/fail for ctest to report).
 #
 # Honours these env vars:
 #   CMAKE_BUILD_TYPE  default Release; pass Debug for stepping

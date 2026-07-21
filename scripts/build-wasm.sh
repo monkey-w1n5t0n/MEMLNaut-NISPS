@@ -42,6 +42,7 @@ EXPORTED_FUNCS='[
   "_nisps_ml_create","_nisps_ml_destroy","_nisps_ml_reshape",
   "_nisps_ml_set_input","_nisps_ml_process","_nisps_ml_outputs","_nisps_ml_infer_batch",
   "_nisps_ml_add_example","_nisps_ml_train","_nisps_ml_set_train_config","_nisps_ml_eval_loss",
+  "_nisps_ml_loss_history",
   "_nisps_ml_clear_examples",
   "_nisps_ml_weight_count","_nisps_ml_get_weights","_nisps_ml_set_weights",
   "_nisps_ml_draw_weights",

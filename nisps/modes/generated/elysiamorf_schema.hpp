@@ -396,6 +396,8 @@ inline constexpr std::array<Param, kElysiamorfParamCount> kElysiamorfParams = {{
 inline constexpr std::size_t kElysiamorfVoiceSpaceCount = 0u;
 inline constexpr std::array<std::string_view, 0> kElysiamorfVoiceSpaces = {};
 
+inline constexpr std::array<CurveOverride, 0> kElysiamorfCurveOverrides = {};
+
 inline constexpr UIConfig kElysiamorfUI = {
     PrimaryInput::XYPad,
     false,
@@ -414,6 +416,7 @@ inline constexpr ::nisps::ParamSchema kElysiamorfSchema = {
     kElysiamorfMLConfig.default_spread,
     std::span<const Param>(kElysiamorfParams),
     std::span<const std::string_view>(kElysiamorfVoiceSpaces),
+    std::span<const CurveOverride>(kElysiamorfCurveOverrides),
     kElysiamorfUI,
 };
 

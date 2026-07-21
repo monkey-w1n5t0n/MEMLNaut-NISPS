@@ -114,6 +114,8 @@ inline constexpr std::array<Param, kSoundAnalysisMidiParamCount> kSoundAnalysisM
 inline constexpr std::size_t kSoundAnalysisMidiVoiceSpaceCount = 0u;
 inline constexpr std::array<std::string_view, 0> kSoundAnalysisMidiVoiceSpaces = {};
 
+inline constexpr std::array<CurveOverride, 0> kSoundAnalysisMidiCurveOverrides = {};
+
 inline constexpr UIConfig kSoundAnalysisMidiUI = {
     PrimaryInput::AudioIn,
     false,
@@ -132,6 +134,7 @@ inline constexpr ::nisps::ParamSchema kSoundAnalysisMidiSchema = {
     kSoundAnalysisMidiMLConfig.default_spread,
     std::span<const Param>(kSoundAnalysisMidiParams),
     std::span<const std::string_view>(kSoundAnalysisMidiVoiceSpaces),
+    std::span<const CurveOverride>(kSoundAnalysisMidiCurveOverrides),
     kSoundAnalysisMidiUI,
 };
 

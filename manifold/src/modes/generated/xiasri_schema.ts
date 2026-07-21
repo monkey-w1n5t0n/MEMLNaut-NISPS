@@ -268,6 +268,7 @@ export const XiasriSchema: ModeSchema = {
   voice_spaces: [
     'Direct',
   ],
+  curve_overrides: [],
   ui: {
     primary_input: 'joystick',
     show_voice_space_selector: false,

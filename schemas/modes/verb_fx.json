@@ -61,17 +61,78 @@
   ],
   "voice_spaces": [
     "Default",
-    "Resonant",
-    "Soft",
-    "Cathedral",
-    "Shimmer",
-    "Chamber",
-    "Metallic",
-    "Granular",
-    "Diffuse",
-    "Dark",
-    "Bright",
-    "Harmonic"
+    { "name": "Resonant", "curve_overrides": {
+      "fbank_res0": "sqrt", "fbank_res1": "sqrt", "fbank_res2": "sqrt", "fbank_res3": "sqrt",
+      "fbank_res4": "sqrt", "fbank_res5": "sqrt", "fbank_res6": "sqrt", "fbank_res7": "sqrt"
+    } },
+    { "name": "Soft", "curve_overrides": {
+      "lp0_fb": "square", "lp1_fb": "square", "lp2_fb": "square", "lp3_fb": "square",
+      "lp4_fb": "square", "lp5_fb": "square", "lp6_fb": "square", "lp7_fb": "square",
+      "allp0_fb": "square", "allp1_fb": "square", "allp2_fb": "square", "allp3_fb": "square",
+      "fbank_res0": "square", "fbank_res1": "square", "fbank_res2": "square", "fbank_res3": "square",
+      "fbank_res4": "square", "fbank_res5": "square", "fbank_res6": "square", "fbank_res7": "square",
+      "delay0_fb": "square", "delay1_fb": "square", "delay2_fb": "square"
+    } },
+    { "name": "Cathedral", "curve_overrides": {
+      "lp0_fb": "sqrt", "lp1_fb": "sqrt", "lp2_fb": "sqrt", "lp3_fb": "sqrt",
+      "lp4_fb": "sqrt", "lp5_fb": "sqrt", "lp6_fb": "sqrt", "lp7_fb": "sqrt",
+      "allp0_fb": "sqrt", "allp1_fb": "sqrt", "allp2_fb": "sqrt", "allp3_fb": "sqrt",
+      "delay0_time": "sqrt", "delay0_fb": "sqrt", "delay1_time": "sqrt", "delay1_fb": "sqrt",
+      "delay2_time": "sqrt", "delay2_fb": "sqrt", "verb_vs_delay": "square"
+    } },
+    { "name": "Shimmer", "curve_overrides": {
+      "lp0_fb": "sqrt", "lp1_fb": "sqrt", "lp2_fb": "sqrt", "lp3_fb": "sqrt",
+      "lp4_fb": "sqrt", "lp5_fb": "sqrt", "lp6_fb": "sqrt", "lp7_fb": "sqrt",
+      "allp0_fb": "sqrt", "allp1_fb": "sqrt", "allp2_fb": "sqrt", "allp3_fb": "sqrt",
+      "fbank_res0": "sqrt", "fbank_res1": "sqrt", "fbank_res2": "sqrt", "fbank_res3": "sqrt",
+      "fbank_res4": "sqrt", "fbank_res5": "sqrt", "fbank_res6": "sqrt", "fbank_res7": "sqrt",
+      "delay0_fb": "sqrt", "delay1_fb": "sqrt", "delay2_fb": "sqrt", "verb_vs_delay": "square"
+    } },
+    { "name": "Chamber", "curve_overrides": {
+      "lp0_fb": "square", "lp1_fb": "square", "lp2_fb": "square", "lp3_fb": "square",
+      "lp4_fb": "square", "lp5_fb": "square", "lp6_fb": "square", "lp7_fb": "square",
+      "allp0_fb": "square", "allp1_fb": "square", "allp2_fb": "square", "allp3_fb": "square",
+      "fbank_res0": "square", "fbank_res1": "square", "fbank_res2": "square", "fbank_res3": "square",
+      "fbank_res4": "square", "fbank_res5": "square", "fbank_res6": "square", "fbank_res7": "square",
+      "delay0_time": "square", "delay0_fb": "square", "delay1_time": "square", "delay1_fb": "square",
+      "delay2_time": "square", "delay2_fb": "square"
+    } },
+    { "name": "Metallic", "curve_overrides": {
+      "allp0_fb": "sqrt", "allp1_fb": "sqrt", "allp2_fb": "sqrt", "allp3_fb": "sqrt",
+      "fbank_res0": "sqrt", "fbank_res1": "square", "fbank_res2": "sqrt", "fbank_res3": "square",
+      "fbank_res4": "sqrt", "fbank_res5": "square", "fbank_res6": "sqrt", "fbank_res7": "square"
+    } },
+    { "name": "Granular", "curve_overrides": {
+      "lp0_fb": "square", "lp1_fb": "square", "lp2_fb": "square", "lp3_fb": "square",
+      "lp4_fb": "square", "lp5_fb": "square", "lp6_fb": "square", "lp7_fb": "square",
+      "allp0_fb": "square", "allp1_fb": "square", "allp2_fb": "square", "allp3_fb": "square",
+      "fbank_res0": "square", "fbank_res1": "square", "fbank_res2": "square", "fbank_res3": "square",
+      "fbank_res4": "square", "fbank_res5": "square", "fbank_res6": "square", "fbank_res7": "square",
+      "delay0_fb": "square", "delay1_fb": "square", "delay2_fb": "sqrt", "verb_vs_delay": "sqrt",
+      "delay_morph": "square", "delay_blend": "sqrt"
+    } },
+    { "name": "Diffuse", "curve_overrides": {
+      "fb_delay_xfade": "sqrt", "allp0_fb": "sqrt", "allp1_fb": "sqrt", "allp2_fb": "sqrt",
+      "allp3_fb": "sqrt", "fbank_res0": "square", "fbank_res1": "square", "fbank_res2": "square",
+      "fbank_res3": "square", "fbank_res4": "square", "fbank_res5": "square", "fbank_res6": "square",
+      "fbank_res7": "square", "delay0_fb": "sqrt", "delay1_fb": "sqrt", "delay2_fb": "sqrt"
+    } },
+    { "name": "Dark", "curve_overrides": {
+      "fbank_f0": "square", "fbank_f1": "square", "fbank_f2": "square", "fbank_f3": "square",
+      "fbank_f4": "square", "fbank_f5": "square", "fbank_f6": "square", "fbank_f7": "square",
+      "fbank_res0": "sqrt", "fbank_res1": "sqrt", "fbank_res2": "sqrt", "fbank_res3": "sqrt",
+      "fbank_res4": "square", "fbank_res5": "square", "fbank_res6": "square", "fbank_res7": "square"
+    } },
+    { "name": "Bright", "curve_overrides": {
+      "fbank_f0": "sqrt", "fbank_f1": "sqrt", "fbank_f2": "sqrt", "fbank_f3": "sqrt",
+      "fbank_f4": "sqrt", "fbank_f5": "sqrt", "fbank_f6": "sqrt", "fbank_f7": "sqrt",
+      "fbank_res0": "square", "fbank_res1": "square", "fbank_res2": "square", "fbank_res3": "square",
+      "fbank_res4": "sqrt", "fbank_res5": "sqrt", "fbank_res6": "sqrt", "fbank_res7": "sqrt"
+    } },
+    { "name": "Harmonic", "curve_overrides": {
+      "fbank_res0": "sqrt", "fbank_res1": "sqrt", "fbank_res2": "sqrt", "fbank_res3": "sqrt",
+      "fbank_res4": "sqrt", "fbank_res5": "sqrt", "fbank_res6": "sqrt", "fbank_res7": "sqrt"
+    } }
   ],
   "ui": {
     "primary_input": "joystick",

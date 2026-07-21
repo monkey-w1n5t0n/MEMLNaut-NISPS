@@ -46,13 +46,36 @@
     { "name": "env_release","label": "Env Release",     "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear", "group": "envelope" }
   ],
   "voice_spaces": [
-    "Ellipticacacia",
+    { "name": "Ellipticacacia", "curve_overrides": {
+      "paf0_vib": "linear", "paf1_vib": "linear", "paf0_vfr": "linear", "paf1_vfr": "linear",
+      "paf0_shift": "square", "dl1mix": "linear", "p18": "square", "dlfb": "square",
+      "env_decay": "linear", "shape_gain": "linear", "shape_asym": "linear", "rm_gain": "linear"
+    } },
     "Rowantares",
-    "Neemeda",
-    "Aquillow",
-    "Magnetarch",
-    "Elderstar",
-    "Ipeleiades"
+    { "name": "Neemeda", "curve_overrides": {
+      "p10": "square", "p13": "square", "p23": "square", "p24": "square"
+    } },
+    { "name": "Aquillow", "curve_overrides": {
+      "p10": "square", "p13": "square", "p23": "square", "p24": "square",
+      "shape_gain": "linear", "shape_asym": "linear", "rm_gain": "linear", "env_release": "square"
+    } },
+    { "name": "Magnetarch", "curve_overrides": {
+      "paf0_bw": "square", "paf0_vib": "linear", "paf1_vib": "linear", "paf0_vfr": "linear",
+      "paf1_vfr": "linear", "dl1mix": "linear", "env_decay": "linear", "shape_gain": "linear",
+      "shape_asym": "linear", "rm_gain": "linear"
+    } },
+    { "name": "Elderstar", "curve_overrides": {
+      "paf0_vib": "linear", "paf1_vib": "linear", "paf0_vfr": "linear", "paf1_vfr": "linear",
+      "paf0_shift": "square", "dl1mix": "linear", "p18": "square", "dlfb": "square",
+      "p21": "square", "p22": "square", "p23": "square", "shape_gain": "linear",
+      "shape_asym": "linear", "rm_gain": "linear"
+    } },
+    { "name": "Ipeleiades", "curve_overrides": {
+      "paf0_vib": "linear", "paf1_vib": "linear", "paf0_vfr": "linear", "paf1_vfr": "linear",
+      "paf0_shift": "square", "dl1mix": "linear", "p18": "square", "p21": "square",
+      "p22": "square", "p23": "square", "shape_gain": "linear", "shape_asym": "linear",
+      "rm_gain": "linear"
+    } }
   ],
   "ui": {
     "primary_input": "xy_pad",

@@ -49,6 +49,11 @@ export interface NispsModule {
   // nisps::ml::MLPCore::set_train_config. Does not train.
   _nisps_ml_set_train_config(ml: number, lr: number, max_iter: number, min_err: number): void;
   _nisps_ml_eval_loss(ml: number): number;
+  // Per-iteration loss recorded by the LAST _nisps_ml_train call on this
+  // handle. Returns the TOTAL entry count and writes min(count, max) floats
+  // into out_ptr; out_ptr=0 / max=0 queries the count without copying (that
+  // is how JS sizes its heap buffer instead of mirroring the C++ history cap).
+  _nisps_ml_loss_history(ml: number, out_ptr: number, max: number): number;
 
   // ML examples.
   _nisps_ml_clear_examples(ml: number): void;
@@ -270,8 +275,9 @@ export type WorkerResponse =
       requestId: number;
       loss: number;
       weights: Float32Array;
-      // Loss curve (per-iteration). Currently always single-element — the C++
-      // MLP exposes loss_history but the WASM bridge does not yet plumb it.
+      // Loss curve: one entry per SGD iteration the worker's net actually ran,
+      // read out of the core via `_nisps_ml_loss_history`. Length <= maxIter
+      // (training stops early once epoch loss < minErr).
       lossHistory: Float32Array;
     }
   | {

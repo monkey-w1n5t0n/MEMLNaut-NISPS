@@ -56,7 +56,7 @@ See `bindings.cpp` for the full list. Summary:
 | ML I/O    | `nisps_ml_set_input`, `nisps_ml_process`, `nisps_ml_outputs`, `nisps_ml_infer_batch` |
 | Training  | `nisps_ml_add_example`, `nisps_ml_train`, `nisps_ml_eval_loss`, `nisps_ml_clear_examples` |
 | Weights   | `nisps_ml_weight_count`, `nisps_ml_get_weights`, `nisps_ml_set_weights`, `nisps_ml_draw_weights` |
-| Diag      | `nisps_ml_get_layer_stats`, `nisps_ml_describe`                              |
+| Diag      | `nisps_ml_get_layer_stats`, `nisps_ml_loss_history`, `nisps_ml_describe`      |
 | Engines   | `nisps_engine_create`, `nisps_engine_destroy`, `nisps_engine_set_params`, `nisps_engine_process_block` |
 
 Engine-id strings follow the C++ `engine_id()` constexpr accessors:

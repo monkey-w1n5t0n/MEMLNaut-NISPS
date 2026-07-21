@@ -49,12 +49,16 @@ export type DrawerDepth = 'condensed' | 'expanded';
  *
  * `modes` / `setModeId` are KEPT despite having no renderer today — this is
  * the exact plumbing the Phase-5 instrument-mode picker is built on (A7/A3),
- * not dead code. `busy` / `addingExample` / `onAddExample` / `onTrain` / `loss`
- * are ALSO kept even though no drawer reads them either: unlike the fields
- * above they drive real engine calls (engine.addExample / engine.train /
- * engine.evalLoss), so — pending confirmation either way — they read as
- * unfinished plumbing rather than confirmed-dead decoration; deleting them
- * was out of this pass's authorized scope.
+ * not dead code. `busy` / `addingExample` / `onAddExample` / `onTrain` are ALSO
+ * kept even though no drawer reads them either: unlike the fields above they
+ * drive real engine calls (engine.addExample / engine.train), so — pending
+ * confirmation either way — they read as unfinished plumbing rather than
+ * confirmed-dead decoration.
+ *
+ * `loss` was DELETED with §6.5e (2026-07-21): it was a synthetic series (an
+ * `evalLoss` sample when finite, otherwise `prev * 0.82` or a literal 0.5) that
+ * no drawer read. The real per-iteration curve now comes straight from the core
+ * — see `TrainingHealth.tsx` / `EngineApi.lossHistory()`.
  */
 export interface ConsoleCtx {
   modes: MFMode[];
@@ -63,7 +67,6 @@ export interface ConsoleCtx {
   mode: MFMode;
 
   datasetCount: number;
-  loss: number[];
   busy: boolean;
   addingExample: boolean;
   onAddExample: () => void;

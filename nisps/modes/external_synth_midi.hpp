@@ -177,6 +177,7 @@ class ExternalSynthMIDIMode : public ModeBase<
 
     static constexpr std::array<generated::Param, 0> kNoParams{};
     static constexpr std::array<std::string_view, 0> kNoVoiceSpaces{};
+    static constexpr std::array<generated::CurveOverride, 0> kNoCurveOverrides{};
     static constexpr generated::UIConfig kUI{generated::PrimaryInput::Joystick, false, false};
 
     static inline constexpr ParamSchema kSchema = ParamSchema{
@@ -189,6 +190,7 @@ class ExternalSynthMIDIMode : public ModeBase<
         ext_synth_defaults::kDefaultSpread,
         std::span<const generated::Param>(kNoParams),
         std::span<const std::string_view>(kNoVoiceSpaces),
+        std::span<const generated::CurveOverride>(kNoCurveOverrides),
         kUI,
     };
 };

@@ -588,6 +588,7 @@ export const MemlceliumSchema: ModeSchema = {
   voice_spaces: [
     'Direct',
   ],
+  curve_overrides: [],
   ui: {
     primary_input: 'xy_pad',
     show_voice_space_selector: false,

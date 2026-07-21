@@ -341,6 +341,70 @@ inline constexpr std::array<std::string_view, kPafSynthVoiceSpaceCount> kPafSynt
     "Ipeleiades",
 }};
 
+inline constexpr std::array<CurveOverride, 61u> kPafSynthCurveOverrides = {{
+    CurveOverride{0u, 8u, Curve::linear},  // Ellipticacacia.paf0_vib
+    CurveOverride{0u, 9u, Curve::linear},  // Ellipticacacia.paf1_vib
+    CurveOverride{0u, 11u, Curve::linear},  // Ellipticacacia.paf0_vfr
+    CurveOverride{0u, 12u, Curve::linear},  // Ellipticacacia.paf1_vfr
+    CurveOverride{0u, 14u, Curve::square},  // Ellipticacacia.paf0_shift
+    CurveOverride{0u, 17u, Curve::linear},  // Ellipticacacia.dl1mix
+    CurveOverride{0u, 18u, Curve::square},  // Ellipticacacia.p18
+    CurveOverride{0u, 19u, Curve::square},  // Ellipticacacia.dlfb
+    CurveOverride{0u, 20u, Curve::linear},  // Ellipticacacia.env_decay
+    CurveOverride{0u, 26u, Curve::linear},  // Ellipticacacia.shape_gain
+    CurveOverride{0u, 27u, Curve::linear},  // Ellipticacacia.shape_asym
+    CurveOverride{0u, 29u, Curve::linear},  // Ellipticacacia.rm_gain
+    CurveOverride{2u, 10u, Curve::square},  // Neemeda.p10
+    CurveOverride{2u, 13u, Curve::square},  // Neemeda.p13
+    CurveOverride{2u, 23u, Curve::square},  // Neemeda.p23
+    CurveOverride{2u, 24u, Curve::square},  // Neemeda.p24
+    CurveOverride{3u, 10u, Curve::square},  // Aquillow.p10
+    CurveOverride{3u, 13u, Curve::square},  // Aquillow.p13
+    CurveOverride{3u, 23u, Curve::square},  // Aquillow.p23
+    CurveOverride{3u, 24u, Curve::square},  // Aquillow.p24
+    CurveOverride{3u, 26u, Curve::linear},  // Aquillow.shape_gain
+    CurveOverride{3u, 27u, Curve::linear},  // Aquillow.shape_asym
+    CurveOverride{3u, 29u, Curve::linear},  // Aquillow.rm_gain
+    CurveOverride{3u, 32u, Curve::square},  // Aquillow.env_release
+    CurveOverride{4u, 5u, Curve::square},  // Magnetarch.paf0_bw
+    CurveOverride{4u, 8u, Curve::linear},  // Magnetarch.paf0_vib
+    CurveOverride{4u, 9u, Curve::linear},  // Magnetarch.paf1_vib
+    CurveOverride{4u, 11u, Curve::linear},  // Magnetarch.paf0_vfr
+    CurveOverride{4u, 12u, Curve::linear},  // Magnetarch.paf1_vfr
+    CurveOverride{4u, 17u, Curve::linear},  // Magnetarch.dl1mix
+    CurveOverride{4u, 20u, Curve::linear},  // Magnetarch.env_decay
+    CurveOverride{4u, 26u, Curve::linear},  // Magnetarch.shape_gain
+    CurveOverride{4u, 27u, Curve::linear},  // Magnetarch.shape_asym
+    CurveOverride{4u, 29u, Curve::linear},  // Magnetarch.rm_gain
+    CurveOverride{5u, 8u, Curve::linear},  // Elderstar.paf0_vib
+    CurveOverride{5u, 9u, Curve::linear},  // Elderstar.paf1_vib
+    CurveOverride{5u, 11u, Curve::linear},  // Elderstar.paf0_vfr
+    CurveOverride{5u, 12u, Curve::linear},  // Elderstar.paf1_vfr
+    CurveOverride{5u, 14u, Curve::square},  // Elderstar.paf0_shift
+    CurveOverride{5u, 17u, Curve::linear},  // Elderstar.dl1mix
+    CurveOverride{5u, 18u, Curve::square},  // Elderstar.p18
+    CurveOverride{5u, 19u, Curve::square},  // Elderstar.dlfb
+    CurveOverride{5u, 21u, Curve::square},  // Elderstar.p21
+    CurveOverride{5u, 22u, Curve::square},  // Elderstar.p22
+    CurveOverride{5u, 23u, Curve::square},  // Elderstar.p23
+    CurveOverride{5u, 26u, Curve::linear},  // Elderstar.shape_gain
+    CurveOverride{5u, 27u, Curve::linear},  // Elderstar.shape_asym
+    CurveOverride{5u, 29u, Curve::linear},  // Elderstar.rm_gain
+    CurveOverride{6u, 8u, Curve::linear},  // Ipeleiades.paf0_vib
+    CurveOverride{6u, 9u, Curve::linear},  // Ipeleiades.paf1_vib
+    CurveOverride{6u, 11u, Curve::linear},  // Ipeleiades.paf0_vfr
+    CurveOverride{6u, 12u, Curve::linear},  // Ipeleiades.paf1_vfr
+    CurveOverride{6u, 14u, Curve::square},  // Ipeleiades.paf0_shift
+    CurveOverride{6u, 17u, Curve::linear},  // Ipeleiades.dl1mix
+    CurveOverride{6u, 18u, Curve::square},  // Ipeleiades.p18
+    CurveOverride{6u, 21u, Curve::square},  // Ipeleiades.p21
+    CurveOverride{6u, 22u, Curve::square},  // Ipeleiades.p22
+    CurveOverride{6u, 23u, Curve::square},  // Ipeleiades.p23
+    CurveOverride{6u, 26u, Curve::linear},  // Ipeleiades.shape_gain
+    CurveOverride{6u, 27u, Curve::linear},  // Ipeleiades.shape_asym
+    CurveOverride{6u, 29u, Curve::linear},  // Ipeleiades.rm_gain
+}};
+
 inline constexpr UIConfig kPafSynthUI = {
     PrimaryInput::XYPad,
     true,
@@ -359,6 +423,7 @@ inline constexpr ::nisps::ParamSchema kPafSynthSchema = {
     kPafSynthMLConfig.default_spread,
     std::span<const Param>(kPafSynthParams),
     std::span<const std::string_view>(kPafSynthVoiceSpaces),
+    std::span<const CurveOverride>(kPafSynthCurveOverrides),
     kPafSynthUI,
 };
 

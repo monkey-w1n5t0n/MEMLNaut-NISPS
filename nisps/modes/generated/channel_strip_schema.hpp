@@ -259,6 +259,20 @@ inline constexpr std::array<std::string_view, kChannelStripVoiceSpaceCount> kCha
     "Neve 80",
 }};
 
+inline constexpr std::array<CurveOverride, 11u> kChannelStripCurveOverrides = {{
+    CurveOverride{1u, 11u, Curve::square},  // SSL 4K G-ist.comp_ratio
+    CurveOverride{2u, 11u, Curve::square},  // SSL 9K-inda.comp_ratio
+    CurveOverride{3u, 13u, Curve::linear},  // MaleVox.comp_release
+    CurveOverride{4u, 13u, Curve::linear},  // FemaleVox.comp_release
+    CurveOverride{5u, 1u, Curve::linear},  // Neve 80.peak0_freq
+    CurveOverride{5u, 4u, Curve::linear},  // Neve 80.peak1_freq
+    CurveOverride{5u, 7u, Curve::linear},  // Neve 80.in_lpf_cutoff
+    CurveOverride{5u, 8u, Curve::linear},  // Neve 80.in_hpf_cutoff
+    CurveOverride{5u, 13u, Curve::linear},  // Neve 80.comp_release
+    CurveOverride{5u, 14u, Curve::linear},  // Neve 80.lowshelf_freq
+    CurveOverride{5u, 17u, Curve::linear},  // Neve 80.highshelf_freq
+}};
+
 inline constexpr UIConfig kChannelStripUI = {
     PrimaryInput::Joystick,
     true,
@@ -277,6 +291,7 @@ inline constexpr ::nisps::ParamSchema kChannelStripSchema = {
     kChannelStripMLConfig.default_spread,
     std::span<const Param>(kChannelStripParams),
     std::span<const std::string_view>(kChannelStripVoiceSpaces),
+    std::span<const CurveOverride>(kChannelStripCurveOverrides),
     kChannelStripUI,
 };
 

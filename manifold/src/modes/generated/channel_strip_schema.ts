@@ -273,6 +273,19 @@ export const ChannelStripSchema: ModeSchema = {
     'FemaleVox',
     'Neve 80',
   ],
+  curve_overrides: [
+    { voice_space: 1, param: 11, curve: 'square' },  // SSL 4K G-ist.comp_ratio
+    { voice_space: 2, param: 11, curve: 'square' },  // SSL 9K-inda.comp_ratio
+    { voice_space: 3, param: 13, curve: 'linear' },  // MaleVox.comp_release
+    { voice_space: 4, param: 13, curve: 'linear' },  // FemaleVox.comp_release
+    { voice_space: 5, param: 1, curve: 'linear' },  // Neve 80.peak0_freq
+    { voice_space: 5, param: 4, curve: 'linear' },  // Neve 80.peak1_freq
+    { voice_space: 5, param: 7, curve: 'linear' },  // Neve 80.in_lpf_cutoff
+    { voice_space: 5, param: 8, curve: 'linear' },  // Neve 80.in_hpf_cutoff
+    { voice_space: 5, param: 13, curve: 'linear' },  // Neve 80.comp_release
+    { voice_space: 5, param: 14, curve: 'linear' },  // Neve 80.lowshelf_freq
+    { voice_space: 5, param: 17, curve: 'linear' },  // Neve 80.highshelf_freq
+  ],
   ui: {
     primary_input: 'joystick',
     show_voice_space_selector: true,

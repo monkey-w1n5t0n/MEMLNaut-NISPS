@@ -21,7 +21,56 @@
 #include "nisps/core/types.hpp"
 #include "audio/AudioDriver.hpp"
 
+#include "codec_config.hpp"
+
 namespace nisps_firmware {
+
+// ---------------------------------------------------------------------------
+// Driver configuration — the active mode decides how the codec is set up.
+//
+// `Mode::driver_config()` (nisps/modes/base.hpp) returns the mode's engine's
+// `nisps::DriverConfig`, or the mode's own override when the engine isn't what
+// consumes the audio input. Nothing here knows which mode is compiled in: the
+// two entry points below are the whole of the glue, and a mode that expresses
+// no opinion gets `nisps::DriverConfig{}`'s defaults, which reproduce the
+// firmware's historical hardcoded codec setup.
+// ---------------------------------------------------------------------------
+
+// Field-for-field translation into memllib's codec struct, after clamping to
+// what the SGTL5000 can represent (see codec_config.hpp — that part is
+// host-tested in tests/cpp/test_mode_driver_config.cpp).
+inline AudioDriver::codec_config_t to_codec_config(const nisps::DriverConfig& cfg) noexcept {
+    const nisps::DriverConfig c = clamp_driver_config(cfg);
+    AudioDriver::codec_config_t out{};
+    out.mic_input     = c.mic_input;
+    out.line_level    = static_cast<size_t>(c.line_level);
+    out.mic_gain_dB   = static_cast<size_t>(c.mic_gain_db);
+    out.output_volume = c.output_volume;
+    return out;
+}
+
+// Publish the mode's preferred sample rate to the driver.
+//
+// MUST run before `set_sys_clock_khz(AudioDriver::GetSysClockSpeed(), ...)` —
+// the system clock is derived from the rate, and `GetSysClockSpeed()` panics on
+// a rate it has no divider for. `select_sample_rate` therefore resolves
+// "don't care" (0) and anything unsupported to 48 kHz rather than letting it
+// reach the driver. Called on core 0 in setup(), i.e. before core 1 gets past
+// its `g_serial_ready` handshake and reads `GetSampleRate()`.
+template <typename Mode>
+inline void apply_mode_sample_rate(const Mode& mode) noexcept {
+    AudioDriver::SetSampleRate(
+        static_cast<size_t>(select_sample_rate(mode.driver_config().sample_rate)));
+}
+
+// Bring the audio driver up configured for the active mode: codec input source
+// (mic vs line), input gain step, mic pre-amp gain, analog output volume.
+// Replaces the old parameterless `AudioDriver::Setup()`, which hardcoded line
+// input for every variant regardless of what the mode's engine asked for.
+template <typename Mode>
+inline bool setup_audio_driver(const Mode& mode) {
+    return AudioDriver::Setup(to_codec_config(mode.driver_config()));
+}
 
 // Pointer to the active mode. The audio block callback reads through this.
 // Set during setup1() before AudioDriver::Setup() is called. Marked

@@ -364,6 +364,69 @@ export const PafSynthSchema: ModeSchema = {
     'Elderstar',
     'Ipeleiades',
   ],
+  curve_overrides: [
+    { voice_space: 0, param: 8, curve: 'linear' },  // Ellipticacacia.paf0_vib
+    { voice_space: 0, param: 9, curve: 'linear' },  // Ellipticacacia.paf1_vib
+    { voice_space: 0, param: 11, curve: 'linear' },  // Ellipticacacia.paf0_vfr
+    { voice_space: 0, param: 12, curve: 'linear' },  // Ellipticacacia.paf1_vfr
+    { voice_space: 0, param: 14, curve: 'square' },  // Ellipticacacia.paf0_shift
+    { voice_space: 0, param: 17, curve: 'linear' },  // Ellipticacacia.dl1mix
+    { voice_space: 0, param: 18, curve: 'square' },  // Ellipticacacia.p18
+    { voice_space: 0, param: 19, curve: 'square' },  // Ellipticacacia.dlfb
+    { voice_space: 0, param: 20, curve: 'linear' },  // Ellipticacacia.env_decay
+    { voice_space: 0, param: 26, curve: 'linear' },  // Ellipticacacia.shape_gain
+    { voice_space: 0, param: 27, curve: 'linear' },  // Ellipticacacia.shape_asym
+    { voice_space: 0, param: 29, curve: 'linear' },  // Ellipticacacia.rm_gain
+    { voice_space: 2, param: 10, curve: 'square' },  // Neemeda.p10
+    { voice_space: 2, param: 13, curve: 'square' },  // Neemeda.p13
+    { voice_space: 2, param: 23, curve: 'square' },  // Neemeda.p23
+    { voice_space: 2, param: 24, curve: 'square' },  // Neemeda.p24
+    { voice_space: 3, param: 10, curve: 'square' },  // Aquillow.p10
+    { voice_space: 3, param: 13, curve: 'square' },  // Aquillow.p13
+    { voice_space: 3, param: 23, curve: 'square' },  // Aquillow.p23
+    { voice_space: 3, param: 24, curve: 'square' },  // Aquillow.p24
+    { voice_space: 3, param: 26, curve: 'linear' },  // Aquillow.shape_gain
+    { voice_space: 3, param: 27, curve: 'linear' },  // Aquillow.shape_asym
+    { voice_space: 3, param: 29, curve: 'linear' },  // Aquillow.rm_gain
+    { voice_space: 3, param: 32, curve: 'square' },  // Aquillow.env_release
+    { voice_space: 4, param: 5, curve: 'square' },  // Magnetarch.paf0_bw
+    { voice_space: 4, param: 8, curve: 'linear' },  // Magnetarch.paf0_vib
+    { voice_space: 4, param: 9, curve: 'linear' },  // Magnetarch.paf1_vib
+    { voice_space: 4, param: 11, curve: 'linear' },  // Magnetarch.paf0_vfr
+    { voice_space: 4, param: 12, curve: 'linear' },  // Magnetarch.paf1_vfr
+    { voice_space: 4, param: 17, curve: 'linear' },  // Magnetarch.dl1mix
+    { voice_space: 4, param: 20, curve: 'linear' },  // Magnetarch.env_decay
+    { voice_space: 4, param: 26, curve: 'linear' },  // Magnetarch.shape_gain
+    { voice_space: 4, param: 27, curve: 'linear' },  // Magnetarch.shape_asym
+    { voice_space: 4, param: 29, curve: 'linear' },  // Magnetarch.rm_gain
+    { voice_space: 5, param: 8, curve: 'linear' },  // Elderstar.paf0_vib
+    { voice_space: 5, param: 9, curve: 'linear' },  // Elderstar.paf1_vib
+    { voice_space: 5, param: 11, curve: 'linear' },  // Elderstar.paf0_vfr
+    { voice_space: 5, param: 12, curve: 'linear' },  // Elderstar.paf1_vfr
+    { voice_space: 5, param: 14, curve: 'square' },  // Elderstar.paf0_shift
+    { voice_space: 5, param: 17, curve: 'linear' },  // Elderstar.dl1mix
+    { voice_space: 5, param: 18, curve: 'square' },  // Elderstar.p18
+    { voice_space: 5, param: 19, curve: 'square' },  // Elderstar.dlfb
+    { voice_space: 5, param: 21, curve: 'square' },  // Elderstar.p21
+    { voice_space: 5, param: 22, curve: 'square' },  // Elderstar.p22
+    { voice_space: 5, param: 23, curve: 'square' },  // Elderstar.p23
+    { voice_space: 5, param: 26, curve: 'linear' },  // Elderstar.shape_gain
+    { voice_space: 5, param: 27, curve: 'linear' },  // Elderstar.shape_asym
+    { voice_space: 5, param: 29, curve: 'linear' },  // Elderstar.rm_gain
+    { voice_space: 6, param: 8, curve: 'linear' },  // Ipeleiades.paf0_vib
+    { voice_space: 6, param: 9, curve: 'linear' },  // Ipeleiades.paf1_vib
+    { voice_space: 6, param: 11, curve: 'linear' },  // Ipeleiades.paf0_vfr
+    { voice_space: 6, param: 12, curve: 'linear' },  // Ipeleiades.paf1_vfr
+    { voice_space: 6, param: 14, curve: 'square' },  // Ipeleiades.paf0_shift
+    { voice_space: 6, param: 17, curve: 'linear' },  // Ipeleiades.dl1mix
+    { voice_space: 6, param: 18, curve: 'square' },  // Ipeleiades.p18
+    { voice_space: 6, param: 21, curve: 'square' },  // Ipeleiades.p21
+    { voice_space: 6, param: 22, curve: 'square' },  // Ipeleiades.p22
+    { voice_space: 6, param: 23, curve: 'square' },  // Ipeleiades.p23
+    { voice_space: 6, param: 26, curve: 'linear' },  // Ipeleiades.shape_gain
+    { voice_space: 6, param: 27, curve: 'linear' },  // Ipeleiades.shape_asym
+    { voice_space: 6, param: 29, curve: 'linear' },  // Ipeleiades.rm_gain
+  ],
   ui: {
     primary_input: 'xy_pad',
     show_voice_space_selector: true,

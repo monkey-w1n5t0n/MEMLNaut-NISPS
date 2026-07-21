@@ -59,6 +59,48 @@ NISPS_TEST(mlp_xor_converges) {
     NISPS_EXPECT(m.loss_history().size() >= 1u);
 }
 
+// The loss history is the ONLY on-device record of how a fit went (firmware)
+// and the source the browser's training-health panel reads through
+// `nisps_ml_loss_history` (simplification-plan §6.5e). Pin its contract:
+// one entry per iteration actually run, last entry == the value train()
+// returned, and a fresh run replaces rather than appends.
+NISPS_TEST(mlp_loss_history_records_every_iteration) {
+    using M = nisps::ml::MLP<2, 4, 4, 4, 1, 4, 64>;
+    M m(11ull);
+    m.draw_weights(1.f);
+
+    std::array<float, 2> x{0.25f, 0.75f};
+    std::array<float, 1> y{0.9f};
+    m.add_example(std::span<const float>(x), std::span<const float>(y));
+
+    // min_err = 0 ⇒ the early-out never fires, so we run exactly max_iter.
+    const float loss = m.train(/*lr=*/0.2f, /*max_iter=*/12u, /*min_err=*/0.f);
+    NISPS_EXPECT(m.loss_history().size() == 12u);
+    NISPS_EXPECT_NEAR(m.loss_history()[11], loss, 1e-6);
+    // A real fit descends.
+    NISPS_EXPECT(m.loss_history()[11] < m.loss_history()[0]);
+
+    // A second run REPLACES the curve (it describes exactly one training run).
+    m.train(/*lr=*/0.2f, /*max_iter=*/3u, /*min_err=*/0.f);
+    NISPS_EXPECT(m.loss_history().size() == 3u);
+
+    // The single-step geometric-dislike path does NOT record — a dislike must
+    // not overwrite the last fit's curve with a 1-point one.
+    std::array<float, 1> target{0.1f};
+    m.train_targets(std::span<const float>(x), std::span<const float>(target), 0.05f);
+    NISPS_EXPECT(m.loss_history().size() == 3u);
+
+    // Early convergence truncates: an absurd min_err stops after iteration 1.
+    m.train(/*lr=*/0.2f, /*max_iter=*/50u, /*min_err=*/1e9f);
+    NISPS_EXPECT(m.loss_history().size() == 1u);
+
+    // Bounded by the storage cap, never past it.
+    M capped(11ull);
+    capped.add_example(std::span<const float>(x), std::span<const float>(y));
+    capped.train(/*lr=*/0.2f, /*max_iter=*/200u, /*min_err=*/0.f);
+    NISPS_EXPECT(capped.loss_history().size() == 64u);
+}
+
 NISPS_TEST(mlp_train_with_no_examples_returns_zero) {
     using M = nisps::ml::MLP<2, 4, 4, 4, 1, 4, 8>;
     M m(0ull);

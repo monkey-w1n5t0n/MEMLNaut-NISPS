@@ -540,6 +540,8 @@ inline constexpr std::array<Param, kBreakorParamCount> kBreakorParams = {{
 inline constexpr std::size_t kBreakorVoiceSpaceCount = 0u;
 inline constexpr std::array<std::string_view, 0> kBreakorVoiceSpaces = {};
 
+inline constexpr std::array<CurveOverride, 0> kBreakorCurveOverrides = {};
+
 inline constexpr UIConfig kBreakorUI = {
     PrimaryInput::XYPad,
     false,
@@ -558,6 +560,7 @@ inline constexpr ::nisps::ParamSchema kBreakorSchema = {
     kBreakorMLConfig.default_spread,
     std::span<const Param>(kBreakorParams),
     std::span<const std::string_view>(kBreakorVoiceSpaces),
+    std::span<const CurveOverride>(kBreakorCurveOverrides),
     kBreakorUI,
 };
 

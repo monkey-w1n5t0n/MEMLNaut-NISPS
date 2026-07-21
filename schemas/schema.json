@@ -78,7 +78,8 @@
           "default": { "type": "number" },
           "curve": {
             "type": "string",
-            "enum": ["linear", "exp", "log", "square", "sqrt", "sigmoid", "cubic"]
+            "enum": ["linear", "exp", "log", "square", "sqrt", "sigmoid", "cubic"],
+            "description": "DEFAULT response curve the engine applies to this slot. Descriptive, not prescriptive: the curve is applied exactly once, inside the engine's voice space. Voice spaces that deviate declare the delta in voice_spaces[].curve_overrides. Verified against engine source by codegen/tests/curve_drift_test.ts."
           },
           "group": { "type": "string" },
           "_note": { "type": "string" }
@@ -87,8 +88,30 @@
     },
     "voice_spaces": {
       "type": "array",
-      "items": { "type": "string" },
-      "description": "Names of C++ voice space lambdas the mode supports. May be empty for engines with no voice spaces (e.g. sequencers)."
+      "description": "Voice spaces the mode supports, in the engine's VoiceSpace enum order (index i here == VoiceSpace ordinal i). A bare string is a voice space that applies every param's default `curve`; the object form additionally declares the slots where THIS voice space deviates. Only deltas are listed — the resolved per-voice-space table is codegen output.",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["name", "curve_overrides"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "curve_overrides": {
+                "type": "object",
+                "minProperties": 1,
+                "description": "param name -> the curve THIS voice space applies, where it differs from that param's default `curve`. Redundant entries (same as the default) are a codegen error.",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": ["linear", "exp", "log", "square", "sqrt", "sigmoid", "cubic"]
+                }
+              },
+              "_note": { "type": "string" }
+            }
+          }
+        ]
+      }
     },
     "ui": {
       "type": "object",

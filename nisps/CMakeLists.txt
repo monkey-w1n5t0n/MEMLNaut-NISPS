@@ -123,8 +123,15 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mode_voice_space.cpp
         ${NISPS_TEST_DIR}/test_mode_breakor_events.cpp
         ${NISPS_TEST_DIR}/test_mode_learning.cpp
+        ${NISPS_TEST_DIR}/test_mode_curve_overrides.cpp
+        ${NISPS_TEST_DIR}/test_mode_driver_config.cpp
     )
     target_link_libraries(nisps_modes_tests PRIVATE nisps_core)
+    # test_mode_driver_config.cpp also covers the firmware-side codec clamping
+    # (firmware/MEMLNaut-NISPS/glue/codec_config.hpp — deliberately Arduino-free
+    # so it is host-testable). That header includes "nisps/core/types.hpp" the
+    # way the firmware does, so the repo root has to be on the include path.
+    target_include_directories(nisps_modes_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         target_compile_options(nisps_modes_tests PRIVATE
@@ -162,6 +169,25 @@ if(NOT EMSCRIPTEN)
     set_tests_properties(nisps_golden_tests PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
     )
+
+    # ---------------------------------------------------------------------
+    # Standalone engine throughput benchmark. NOT registered with ctest: it
+    # measures time and asserts nothing, so it has no pass/fail to report and
+    # a per-block timing loop has no place in a gate every change pays for.
+    # Driven by scripts/bench-engines.sh, which also compiles the SAME source
+    # to WASM via emcc for the cross-target comparison.
+    # ---------------------------------------------------------------------
+    add_executable(nisps_engine_bench
+        ${NISPS_TEST_DIR}/engine_bench.cpp
+    )
+    target_link_libraries(nisps_engine_bench PRIVATE nisps_core)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(nisps_engine_bench PRIVATE
+            -Wall -Wextra -Werror -Wpedantic -O3
+        )
+    elseif(MSVC)
+        target_compile_options(nisps_engine_bench PRIVATE /W4 /WX)
+    endif()
 
     # Standalone parity-check runner. NOT registered with ctest — it's
     # invoked from scripts/parity-check.sh which orchestrates native+WASM

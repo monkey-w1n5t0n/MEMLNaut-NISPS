@@ -73,6 +73,11 @@ concept Mode = requires(T m, std::size_t idx, float v, stereosample_t s, float s
     { T::input_channel_count() }  -> std::convertible_to<std::size_t>;        // constexpr
     { T::param_schema() }         -> std::same_as<const ParamSchema&>;        // constexpr ref
     { m.setup(sr) }               -> std::same_as<void>;
+    // Audio-driver setup the mode wants (codec input source / gain staging /
+    // sample rate). Defaults to the mode's audio engine's config; a mode whose
+    // audio INPUT is consumed by something other than that engine overrides it
+    // (see ModeBase::driver_config). Platform glue reads this at mode start.
+    { m.driver_config() }         -> std::convertible_to<DriverConfig>;
     { m.set_input(idx, v) }       -> std::same_as<void>;
     { m.tick_control() }          -> std::same_as<void>;                       // non-RT
     { m.process(s) }              -> std::same_as<stereosample_t>;             // RT

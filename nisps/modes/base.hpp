@@ -82,6 +82,8 @@ struct ModeRoutesOutputsToEngine : std::true_type {};
 //   void on_setup(float sample_rate) noexcept     // optional hook
 //   void on_pre_inference() noexcept              // optional, before ml_.process()
 //   void on_post_inference() noexcept             // optional, after engine.set_params()
+//   DriverConfig on_driver_config() const noexcept // optional, overrides the
+//                                                  // engine's driver config
 //
 // Derived classes may choose the engine type (`EngineT`) and ML type
 // (`MLPType`) freely; both must satisfy `MLEngine` and `AudioEngine`
@@ -136,6 +138,27 @@ class ModeBase {
         }
         if constexpr (requires(Derived& d, float s) { d.on_setup(s); }) {
             static_cast<Derived&>(*this).on_setup(sample_rate);
+        }
+    }
+
+    // ---- Audio-driver configuration ----
+    //
+    // What the platform's audio driver should be set up as for this mode:
+    // codec input source (mic vs line), gain staging, preferred sample rate.
+    // Firmware glue reads this at mode start; see
+    // firmware/MEMLNaut-NISPS/glue/audio_driver.hpp.
+    //
+    // Default = whatever the mode's audio engine advertises, so a mode that
+    // does not care says NOTHING and inherits the engine's (or, for
+    // NoOpEngine, `DriverConfig{}`'s) values. A mode whose audio INPUT is
+    // consumed by something other than `engine_` — e.g. SoundAnalysisMIDIMode,
+    // whose engine is a silent NoOp while a separately-composed AnalysisEngine
+    // owns the microphone — declares `on_driver_config()` and that wins.
+    DriverConfig driver_config() const noexcept {
+        if constexpr (requires(const Derived& d) { d.on_driver_config(); }) {
+            return static_cast<const Derived&>(*this).on_driver_config();
+        } else {
+            return engine_.driver_config();
         }
     }
 

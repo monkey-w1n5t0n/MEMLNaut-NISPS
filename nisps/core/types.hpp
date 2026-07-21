@@ -53,14 +53,20 @@ struct stereosample_t {
 //
 // `mic_input`     true ⇒ codec is configured for mic-level input
 // `mic_gain_db`   dB of pre-amp gain when `mic_input` is true
-// `line_level`    1..15 ish — codec line-input gain step
+// `line_level`    0..15 — codec line-input full-scale step (0 = 3.12 Vp-p /
+//                 least sensitive, 15 = 0.24 Vp-p / most sensitive)
 // `output_volume` 0..1 — analog out master
 // `sample_rate`   preferred rate (Hz); 0 means "don't care"
+//
+// The member defaults ARE the "engine expresses no opinion" configuration:
+// they reproduce the firmware's historical hardcoded codec setup
+// (`AudioDriver::Setup()` in memllib), so wiring a mode's config through the
+// driver is a no-op for an engine that declares nothing.
 struct DriverConfig {
     bool     mic_input     = false;
     std::uint8_t mic_gain_db   = 0;
-    std::uint8_t line_level    = 0;
-    float    output_volume = 1.f;
+    std::uint8_t line_level    = 3;
+    float    output_volume = 0.8f;
     float    sample_rate   = 0.f;
 };
 

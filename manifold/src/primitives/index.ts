@@ -8,8 +8,10 @@
  * register those rules.
  *
  * Panel / StatusLine / ControlAxis / CurvePlot / Sparkline were deleted
- * 2026-07 (simplification audit L22) — zero consumers repo-wide. Sparkline/
- * CurvePlot may return with the deferred training-health diagnostics suite.
+ * 2026-07 (simplification audit L22) — zero consumers repo-wide. They stay
+ * deleted: the training-health diagnostics suite landed (§6.5e) and its loss
+ * plot is ~30 lines of inline SVG in `console/TrainingHealth.tsx`, its only
+ * consumer. Resurrect a primitive when a SECOND caller exists, not before.
  */
 import '../styles/primitives.css';
 

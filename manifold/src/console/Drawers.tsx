@@ -31,6 +31,7 @@ import { outputModeDescriptor } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
 import type { UnfocusedIconColour, InputMapMode } from '../settings/settings-store';
 import { EditorPanel } from '../serial/EditorPanel';
+import { TrainingHealth } from './TrainingHealth';
 import {
   LearningIcon,
   InputsIcon,
@@ -259,12 +260,9 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
             anchor and restores the real net.
           </p>
           <Switch checked={ctx.spread} onChange={ctx.setSpread} label="Xavier (centered) weight regime" />
-          {/* TODO(dock-spec §1.3): real LossPlot / WeightHealth / LayerStats / GradientFlow need
-              nisps_ml_loss_history plumbed through the C API. Diagnostics suite deferred. */}
-          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0 }}>
-            Loss plot · weight-health · layer-stats · gradient-flow land here once the loss-history C API
-            is plumbed (dock-spec §1.3).
-          </p>
+
+          <SectionLabel>Training health</SectionLabel>
+          <TrainingHealth />
         </>
       )}
     </>

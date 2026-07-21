@@ -26,7 +26,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Why it blocks the mission.** The default experience is supposed to be curated presets; the advanced surface is the authoring tool. Neither exists, and the decorative stratum actively misleads research use.
 
-**Rough cost.** Product-model decision first (plan §7.6), then incremental: picker is days; the curated-preset model seeds from `backends/presets.ts` + schemas; disclosure via per-drawer depth levels. Deleting the decorative stratum is part of the Phase-1 sweep.
+**Rough cost.** Product-model decision first (plan §7.6), then incremental: picker is days; the curated-preset model seeds from `backends/presets.ts` + schemas; disclosure via per-drawer depth levels — which as of §6.5e (2026-07-21) has its first genuinely advanced-only consumer, the training-health panel, so the mechanism is proven rather than theoretical. The decorative stratum itself went in the Phase-1 sweep.
 
 ### 3. Manifold-as-hardware-editor is a facade (2026-07-21)
 
@@ -44,33 +44,26 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Rough cost.** Plan phase 3 (~2–3 days, codegen takes ownership) plus the docs disposition pass (§8). The behaviour bugs found en route (dataset-cap divergence, VCV 2-D input truncation, VCV audio-thread race and JSON) were fixed in phase 2 on 2026-07-21.
 
-### 5. No performance measurement despite a performance-defined mission (2026-07-21)
+### 5. Performance is measured on the host but not on the target that constrains it (2026-07-21)
 
-**What.** The "super performance-sensitive" constraint is enforced only by static discipline (the no-heap lint — false negatives closed in Phase 2 — and section attrs). *Half-closed 2026-07-21:* the Phase 4 firmware CI job now reports per-variant flash/RAM on every push, so size regressions are at least visible. **Still missing: any measure of time.** No benchmark, no CPU-load assertion, no blocks-per-second number on either target — nothing would catch an engine getting 3x slower.
+**What.** *Mostly closed 2026-07-21.* Size: the Phase 4 firmware CI job reports per-variant
+flash/RAM on every push. Time: `scripts/bench-engines.sh` now reports per-engine ns/sample,
+blocks/s and realtime factor on native AND WASM from one source
+(`tests/cpp/engine_bench.cpp`), engines driven into a working state, with `--compare` for
+per-engine deltas and a report step in CI. An engine getting 3x slower is now visible.
 
-**Rough cost.** ~Half a day now: a host-side blocks-per-second benchmark for `engine_process_block`, native + WASM (plan §6.5f).
+**What is left.** The numbers are HOST numbers. The mission's performance constraint is the
+**RP2350 at 150 MHz**, and nothing measures there — a host realtime factor of 100x says
+nothing about whether an engine fits in the MCU's per-block budget, and the two targets have
+different FPU, cache and memory behaviour. The honest next step is an on-device timing report
+(cycle counter around the audio callback, published over the existing display/serial surface),
+which lands naturally with the hardware editor (defect 3) since that is what gives firmware a
+command surface to report through.
 
-### 6. Training-health telemetry: decided, not yet built (2026-07-21)
+**Rough cost.** Host half is done. On-device: ~a day, and it wants defect 3's serial protocol
+to have somewhere to send the number.
 
-**What.** Four fragments of one feature. Fragment 3 (decorative gradient-health UI) was deleted in
-Phase 1. The other three stand: a 16 KB loss-history buffer in every firmware MLP that nothing
-reads (`nisps/ml/mlp.hpp`); a WASM worker faking a **1-element** loss history
-(`manifold/src/engine/wasm-worker.ts:310`, `new Float32Array([loss])`); and a real `layer_stats` /
-`nisps_ml_get_layer_stats` API plumbed end-to-end and consumed by nobody.
-
-**Decisions are now complete** (operator, §7.3 + L25): telemetry becomes **real, browser-only,
-behind a feature flag**; the fakes go; and the **firmware buffer stays** — it is the on-device
-record the hardware editor (defect 3) will want, and it costs flash we demonstrably have (16% RAM
-on the largest variant). So the remaining work is one coherent job, not a judgement call: plumb
-`loss_history` through the C API (`Drawers.tsx:263` already marks the gap), replace the worker's
-fake with it, and put the display plus `get_layer_stats` behind the advanced-mode flag.
-
-**Why it blocks the mission.** "Is the network learning?" is a core research affordance, and today
-it *looks* answered while being fabricated — worse than absent.
-
-**Rough cost.** ~A day, spec-light: plan §6.5e, no longer gated on anything.
-
-### 7. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
+### 6. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
 
 **What.** `training.hpp` ships SGD only; the legacy firmware used RMSProp for `TrainBatch`. Optimizer choice is a research axis. Not blocking current fits; will matter for harder loss landscapes. Port target: upstream MusicallyEmbodiedML `memlp` (the in-repo `src/memlp` copy is deleted; use the GitHub remote or archive branch).
 
@@ -90,22 +83,6 @@ Schemas declare per-mode dims and since P5.3 both targets honour them. Is the mi
 
 Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user data exists.
 
-### Q4: Who owns memllib? — DECIDED, half-executed (2026-07-21)
-
-Operator decision: **vendor**, self-contained in this repo. The inventory
-(`docs/specs/recon/memllib-usage-inventory.md`) settled the shape: there is no small load-bearing
-subset — it is all of memllib bar `examples/` (~1.8 MB, 24/24 compiled TUs link). The fork is
-dissolved: its three commits touch only `examples/`, which the firmware never compiles and whose
-content already lives in `nisps/ml/{jolt,ou_noise,feedback,geo_push}.hpp`, so the submodule now
-points at upstream and is pinned to current `main`. Verified by building: it brings the
-`l r input swap` hardware fix plus the `NavigateToView` the SelfTest variant was already written
-against, and costs **+216 bytes of a 16 MB flash**. **Remaining: the vendoring copy itself**, which
-lands with the PlatformIO cut (plan §5). Delete this entry when it does.
-
-### Q5: Legacy feedback modes — delete or keep for A/B? (2026-07-21)
-
-`RandomiseOutputs`/`RandomiseMlp`/`Diffuse`/`on_drag` have no product consumer, but `docs/adr/rl-feedback-design.md` explicitly kept Diffuse for A/B comparison. Deleting reverses a recorded decision — operator call (plan §7.1).
-
 ## Deferred / accepted debt
 
 - **EOC effects chain, ShapeSeq sequencer, modular engine (Phase E)** — legacy features consciously out of the v1 rewrite; revisit only if a mode wants them.
@@ -115,6 +92,26 @@ lands with the PlatformIO cut (plan §5). Delete this entry when it does.
 - **Manifold dock splits `state`/`muted`/`armed`** (2026-06-28) — deliberate divergence from the deployed conflated `frozen`↔`muted` model (dock-spec §3.3). `muted`-downstream and the `soloMode` gradient-mask variants remain UI-only; the C API exposes `set_focus` but no per-mode gradient masking yet. (The audit found `soloMode` behaviourally inert in the controller — plan L20 trims it until `train_masked` exists.)
 
 ## Recently resolved (delete after a few weeks)
+
+- 2026-07-21: **Q4 (who owns memllib) closed.** Vendored at `firmware/MEMLNaut-NISPS/lib/memllib/`
+  from upstream `e291192`; the submodule and the fork are both gone. **Q5 (legacy feedback modes)
+  closed** — operator kept all four (`RandomiseOutputs`/`RandomiseMlp`/`Diffuse`/`on_drag`) as
+  building blocks for comparing how instruments feel under different behaviours, which upholds
+  rather than reverses `docs/adr/rl-feedback-design.md`.
+- 2026-07-21: **Training-health telemetry (old defect 6) is gone** — the browser reads the real
+  per-iteration loss the core records, both fabrication sites are deleted (`wasm-worker.ts`'s
+  1-element array AND `wasm-iml.ts`'s sync-train twin, which the audit missed), and the display
+  sits behind the existing `expanded` drawer depth. The firmware buffer stays, per the L25 call.
+
+- 2026-07-21: **Training-health telemetry (old defect 6) is real.** `nisps_ml_loss_history` now
+  crosses all five WASM registration layers, so the browser reads the SAME per-iteration curve the
+  firmware MLP records; `wasm-worker.ts`'s 1-element `new Float32Array([loss])` fake is gone from
+  both the sync and the async train paths; and the curve + the already-plumbed `get_layer_stats`
+  render in `manifold/src/console/TrainingHealth.tsx` at the Learning drawer's `expanded` depth.
+  The firmware buffer stays, per the operator call — it is the record the hardware editor
+  (defect 3) will read. One more fabrication went with it: `ConsoleCtx.loss`, a synthetic
+  `prev * 0.82` series no drawer read. With no history the panel says "no training run yet"
+  rather than drawing a plausible curve.
 
 - 2026-07-21: **Arduino-CLI build machinery (old defect 3) is gone.** Phase 4 replaced it with a
   PlatformIO project: one `[env:]` per variant is now the only variant registry, the `.ino`-mutating

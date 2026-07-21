@@ -141,6 +141,43 @@ test.describe('ML engine — debug probe contract', () => {
     expect(loss2).toBeLessThanOrEqual(loss1 + 1e-6);
   });
 
+  test('getLossHistory returns the REAL per-iteration curve after a sync train', async ({ page }) => {
+    // Empty until something has actually trained — never a placeholder.
+    expect(await page.evaluate(() => window.__nisps!.getLossHistory().length)).toBe(0);
+
+    const hist = await page.evaluate(
+      ([low, high]) => {
+        window.__nisps!.addExample(low.input, low.output);
+        window.__nisps!.addExample(high.input, high.output);
+        window.__nisps!.train();
+        return Array.from(window.__nisps!.getLossHistory());
+      },
+      [EXAMPLE_LOW, EXAMPLE_HIGH],
+    );
+    // The pre-§6.5e worker fabricated a 1-element "history" from the final loss.
+    expect(hist.length).toBeGreaterThan(1);
+    for (const v of hist) {
+      expect(Number.isFinite(v)).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(0);
+    }
+    expect(hist[hist.length - 1]!).toBeLessThan(hist[0]!);
+  });
+
+  test('async training publishes the worker net\'s real loss curve too', async ({ page }) => {
+    const hist = await page.evaluate(
+      async ([low, high]) => {
+        window.__nisps!.addExample(low.input, low.output);
+        window.__nisps!.addExample(high.input, high.output);
+        await window.__nisps!.trainAsync();
+        return Array.from(window.__nisps!.getLossHistory());
+      },
+      [EXAMPLE_LOW, EXAMPLE_HIGH],
+    );
+    expect(hist.length).toBeGreaterThan(1);
+    for (const v of hist) expect(Number.isFinite(v)).toBe(true);
+    expect(hist[hist.length - 1]!).toBeLessThan(hist[0]!);
+  });
+
   test('async training resolves to a finite non-negative loss', async ({ page }) => {
     await page.evaluate(
       ([low, high]) => {

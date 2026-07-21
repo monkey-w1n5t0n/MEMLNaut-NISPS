@@ -38,11 +38,22 @@
   ],
   "voice_spaces": [
     "WannabeNeve66",
-    "SSL 4K G-ist",
-    "SSL 9K-inda",
-    "MaleVox",
-    "FemaleVox",
-    "Neve 80"
+    { "name": "SSL 4K G-ist", "curve_overrides": {
+      "comp_ratio": "square"
+    } },
+    { "name": "SSL 9K-inda", "curve_overrides": {
+      "comp_ratio": "square"
+    } },
+    { "name": "MaleVox", "curve_overrides": {
+      "comp_release": "linear"
+    } },
+    { "name": "FemaleVox", "curve_overrides": {
+      "comp_release": "linear"
+    } },
+    { "name": "Neve 80", "curve_overrides": {
+      "peak0_freq": "linear", "peak1_freq": "linear", "in_lpf_cutoff": "linear", "in_hpf_cutoff": "linear",
+      "comp_release": "linear", "lowshelf_freq": "linear", "highshelf_freq": "linear"
+    } }
   ],
   "ui": {
     "primary_input": "joystick",

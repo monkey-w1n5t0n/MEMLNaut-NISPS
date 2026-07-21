@@ -112,6 +112,7 @@ export const SoundAnalysisMidiSchema: ModeSchema = {
     },
   ],
   voice_spaces: [],
+  curve_overrides: [],
   ui: {
     primary_input: 'audio_in',
     show_voice_space_selector: false,

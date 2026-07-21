@@ -39,6 +39,57 @@ import { ensureDir, readJSON, toPascalCase, cppStringLit, tsStringLit } from "./
 
 type Curve = "linear" | "exp" | "log" | "square" | "sqrt" | "sigmoid" | "cubic";
 
+/**
+ * A voice space is either a bare name (it applies every param's default
+ * `curve`) or a name plus the slots where it DEVIATES from those defaults.
+ *
+ * The curve is a property of (param x voice space), not of the mode: the same
+ * NN slot is squared by one voice space and passed through linearly by
+ * another. The mode-wide `params[].curve` remains the default; this is the
+ * delta. Application stays where it has always been — inside the engine —
+ * so declaring it here changes no emitted numeric value.
+ */
+type VoiceSpaceDecl = string | { name: string; curve_overrides: Record<string, Curve>; _note?: string };
+
+/** Flat (voice space, param) -> curve deviation, as emitted to both languages. */
+interface CurveOverrideRow {
+  voiceSpace: number;
+  param: number;
+  curve: Curve;
+}
+
+function voiceSpaceName(v: VoiceSpaceDecl): string {
+  return typeof v === "string" ? v : v.name;
+}
+
+/**
+ * Resolve a mode's declared deltas into the flat table both targets emit,
+ * sorted by (voice space, param) so output is order-independent.
+ * Throws on an override that names an unknown param or restates the default.
+ */
+function curveOverrideRows(schema: ModeSchema, source: string): CurveOverrideRow[] {
+  const paramIndex = new Map(schema.params.map((p, i) => [p.name, i] as const));
+  const rows: CurveOverrideRow[] = [];
+  schema.voice_spaces.forEach((vs, vi) => {
+    if (typeof vs === "string") return;
+    for (const [name, curve] of Object.entries(vs.curve_overrides)) {
+      const pi = paramIndex.get(name);
+      if (pi === undefined) {
+        throw new Error(`${source}: voice space ${vs.name} overrides unknown param ${JSON.stringify(name)}`);
+      }
+      if (schema.params[pi]!.curve === curve) {
+        throw new Error(
+          `${source}: voice space ${vs.name} restates param ${name}'s default curve ` +
+            `(${curve}) — declare only deviations`
+        );
+      }
+      rows.push({ voiceSpace: vi, param: pi, curve });
+    }
+  });
+  rows.sort((a, b) => a.voiceSpace - b.voiceSpace || a.param - b.param);
+  return rows;
+}
+
 interface ModeSchema {
   $schema?: string;
   _note?: string;
@@ -61,7 +112,7 @@ interface ModeSchema {
     group: string;
     _note?: string;
   }>;
-  voice_spaces: string[];
+  voice_spaces: VoiceSpaceDecl[];
   ui: {
     primary_input: "xy_pad" | "joystick" | "sliders" | "audio_in" | "midi_in" | "none";
     show_voice_space_selector: boolean;
@@ -193,6 +244,17 @@ function emitSchemaTypesHpp(): string {
     "    std::string_view group;",
     "};",
     "",
+    "// One (voice space, param) slot where the engine applies a curve OTHER",
+    "// than that param's default. The curve is a property of the pair, not of",
+    "// the mode — apply_ssl4k() squares slot 11 where apply_neve66() does not.",
+    "// DESCRIPTIVE: the engine's voice space is still the only place a curve",
+    "// is applied, and it is applied exactly once.",
+    "struct CurveOverride {",
+    "    std::size_t voice_space;",
+    "    std::size_t param;",
+    "    Curve       curve;",
+    "};",
+    "",
     "struct MLConfig {",
     "    std::size_t input_size;",
     "    std::size_t output_size;",
@@ -233,8 +295,20 @@ function emitSchemaTypesHpp(): string {
     "    float                                                default_spread;",
     "    std::span<const ::nisps::modes::generated::Param>    params;",
     "    std::span<const std::string_view>                    voice_spaces;",
+    "    std::span<const ::nisps::modes::generated::CurveOverride> curve_overrides;",
     "    ::nisps::modes::generated::UIConfig                  ui;",
     "};",
+    "",
+    "// The curve voice space `vs` applies to output slot `param`: the param's",
+    "// default unless this mode declares a deviation for that voice space.",
+    "// Linear scan — the table has tens of rows and this is not a hot path.",
+    "constexpr ::nisps::Curve effective_curve(const ParamSchema& s, std::size_t vs,",
+    "                                         std::size_t param) noexcept {",
+    "    for (const auto& o : s.curve_overrides) {",
+    "        if (o.voice_space == vs && o.param == param) return o.curve;",
+    "    }",
+    "    return s.params[param].curve;",
+    "}",
     "",
     "}  // namespace nisps",
     "",
@@ -275,6 +349,20 @@ function emitSharedTsTypes(): string {
     "  readonly group: string;",
     "}",
     "",
+    "/**",
+    " * One (voice space, param) slot where the engine applies a curve OTHER than",
+    " * that param's default. The curve is a property of the pair, not of the mode",
+    " * — apply_ssl4k() squares slot 11 where apply_neve66() does not. DESCRIPTIVE:",
+    " * the engine's voice space is still the only place a curve is applied, and it",
+    " * is applied exactly once. Indices match `ModeSchema.voice_spaces` /",
+    " * `ModeSchema.params`.",
+    " */",
+    "export interface CurveOverride {",
+    "  readonly voice_space: number;",
+    "  readonly param: number;",
+    "  readonly curve: Curve;",
+    "}",
+    "",
     "export interface MLConfig {",
     "  readonly input_channels: readonly string[];",
     "  readonly input_size: number;",
@@ -295,7 +383,23 @@ function emitSharedTsTypes(): string {
     "  readonly ml: MLConfig;",
     "  readonly params: readonly Param[];",
     "  readonly voice_spaces: readonly string[];",
+    "  readonly curve_overrides: readonly CurveOverride[];",
     "  readonly ui: UIConfig;",
+    "}",
+    "",
+    "/**",
+    " * The curve voice space `voiceSpace` applies to output slot `param`: the",
+    " * param's default unless this mode declares a deviation for that voice space.",
+    " */",
+    "export function effectiveCurve(",
+    "  schema: ModeSchema,",
+    "  voiceSpace: number,",
+    "  param: number,",
+    "): Curve {",
+    "  for (const o of schema.curve_overrides) {",
+    "    if (o.voice_space === voiceSpace && o.param === param) return o.curve;",
+    "  }",
+    "  return schema.params[param]!.curve;",
     "}",
     "",
   ].join("\n");
@@ -368,12 +472,31 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
   if (schema.voice_spaces.length > 0) {
     lines.push(`inline constexpr std::array<std::string_view, ${constName}VoiceSpaceCount> ${constName}VoiceSpaces = {{`);
     for (const v of schema.voice_spaces) {
-      lines.push(`    ${cppStringLit(v)},`);
+      lines.push(`    ${cppStringLit(voiceSpaceName(v))},`);
     }
     lines.push("}};");
   } else {
     // empty arrays of size 0 are technically allowed in C++; but std::array<T,0> is fine
     lines.push(`inline constexpr std::array<std::string_view, 0> ${constName}VoiceSpaces = {};`);
+  }
+  lines.push("");
+
+  // Per-voice-space curve deviations (see CurveOverride in schema_types.hpp).
+  // Only the deltas from `params[].curve`; resolve with nisps::effective_curve.
+  const overrides = curveOverrideRows(schema, sourceFile);
+  if (overrides.length > 0) {
+    lines.push(
+      `inline constexpr std::array<CurveOverride, ${overrides.length}u> ${constName}CurveOverrides = {{`
+    );
+    for (const o of overrides) {
+      lines.push(
+        `    CurveOverride{${o.voiceSpace}u, ${o.param}u, ${cppCurveEnum(o.curve)}},` +
+          `  // ${voiceSpaceName(schema.voice_spaces[o.voiceSpace]!)}.${schema.params[o.param]!.name}`
+      );
+    }
+    lines.push("}};");
+  } else {
+    lines.push(`inline constexpr std::array<CurveOverride, 0> ${constName}CurveOverrides = {};`);
   }
   lines.push("");
 
@@ -417,6 +540,7 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
   lines.push(`    ${constName}MLConfig.default_spread,`);
   lines.push(`    std::span<const Param>(${constName}Params),`);
   lines.push(`    std::span<const std::string_view>(${constName}VoiceSpaces),`);
+  lines.push(`    std::span<const CurveOverride>(${constName}CurveOverrides),`);
   lines.push(`    ${constName}UI,`);
   lines.push("};");
   lines.push("");
@@ -485,7 +609,22 @@ function emitModeTs(schema: ModeSchema, sourceFile: string): string {
   } else {
     lines.push("  voice_spaces: [");
     for (const v of schema.voice_spaces) {
-      lines.push(`    ${tsStringLit(v)},`);
+      lines.push(`    ${tsStringLit(voiceSpaceName(v))},`);
+    }
+    lines.push("  ],");
+  }
+  // Per-voice-space curve deviations; resolve with effectiveCurve() from
+  // ./types. Only the deltas from params[].curve are listed.
+  const overrides = curveOverrideRows(schema, sourceFile);
+  if (overrides.length === 0) {
+    lines.push("  curve_overrides: [],");
+  } else {
+    lines.push("  curve_overrides: [");
+    for (const o of overrides) {
+      lines.push(
+        `    { voice_space: ${o.voiceSpace}, param: ${o.param}, curve: ${tsStringLit(o.curve)} },` +
+          `  // ${voiceSpaceName(schema.voice_spaces[o.voiceSpace]!)}.${schema.params[o.param]!.name}`
+      );
     }
     lines.push("  ],");
   }
@@ -708,6 +847,24 @@ function main(): number {
       const bad = dims.find(d => d <= 0 || d > 4096);
       if (bad !== undefined) {
         console.error(`error: ${f}: ml dimension ${bad} outside (0, 4096]`);
+        errorCount++;
+        continue;
+      }
+    }
+    // Per-voice-space curve deviations must name real params and must be real
+    // deviations. Resolved here so a bad table fails BEFORE anything is written.
+    try {
+      curveOverrideRows(schema, f);
+    } catch (e) {
+      console.error(`error: ${(e as Error).message}`);
+      errorCount++;
+      continue;
+    }
+    {
+      const names = schema.voice_spaces.map(voiceSpaceName);
+      const dup = names.find((n, i) => names.indexOf(n) !== i);
+      if (dup !== undefined) {
+        console.error(`error: ${f}: duplicate voice space name ${JSON.stringify(dup)}`);
         errorCount++;
         continue;
       }

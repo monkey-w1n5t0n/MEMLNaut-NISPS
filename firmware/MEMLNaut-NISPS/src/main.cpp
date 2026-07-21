@@ -14,12 +14,13 @@
 //      env (`-DMEMLNAUT_MODE_TYPE=...`, or `-DNISPS_SELFTEST=1` for the
 //      guided hardware self-test — see platformio.ini, one [env] per variant).
 //   2. setup() / loop() on core 0:
-//        - boot board
+//        - boot board (sample rate from the mode's driver config, then clock)
 //        - bind peripherals → mode.set_input
 //        - bind MIDI in → mode.note_on/update_bpm/...
 //        - run mode.tick_control() at ML cadence (5ms)
 //   3. setup1() / loop1() on core 1:
 //        - register the audio bridge so AudioDriver streams into mode.process
+//        - bring the codec up on the mode's driver config (mic vs line, gains)
 //        - pump engine events / drain MIDI out at sub-ms cadence
 
 // ---- Hardware ----
@@ -104,6 +105,11 @@ static uint32_t get_rosc_entropy_seed(int bits) {
 // =====================================================================
 
 void setup() {
+    // The active mode's engine picks the sample rate (0 ⇒ don't care ⇒ 48 kHz).
+    // This has to happen before the system clock is derived from it below, and
+    // therefore before core 1 clears the g_serial_ready handshake and reads
+    // AudioDriver::GetSampleRate() in setup1().
+    nisps_firmware::apply_mode_sample_rate(g_mode);
     set_sys_clock_khz(AudioDriver::GetSysClockSpeed(), true);
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS
                           | BUSCTRL_BUS_PRIORITY_DMA_R_BITS
@@ -190,7 +196,9 @@ void setup1() {
     g_mode.setup(static_cast<float>(AudioDriver::GetSampleRate()));
 
     nisps_firmware::register_audio_engine(g_mode, &audio_block_callback);
-    AudioDriver::Setup();
+    // Codec setup follows the ACTIVE mode: mic vs line input, input gain step,
+    // mic pre-amp gain, analog output volume (glue/audio_driver.hpp).
+    nisps_firmware::setup_audio_driver(g_mode);
 
     WRITE_VOLATILE(g_core1_ready, true);
     while (!READ_VOLATILE(g_core0_ready)) { MEMORY_BARRIER(); delay(1); }

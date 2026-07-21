@@ -39,7 +39,7 @@ All verifier-checked deletions; protected exceptions noted. Rough net effect: th
 
 - **Repo root / hygiene**: retired-playground dist + root Playwright rig + root `package.json`/lockfile/`node_modules` (S23, S29, L55); `NISPS_CORE_EXTRACTION_PLAN.md` + `NISPS_CORE_TASKS.md` (L48/L36); `data/` (L36); committed `.claude/worktrees/` fragment (L32); prune stale `worktree-*` branches.
 - **nisps core/ml**: `fixed_buffer.hpp` + its test (L27); `dislike_multiplier_` (L26); `copy_weights_to(span)` to drop `flat_` from FixedStorage and the per-gesture double copy (L28); perf-macro regime — delete the 3/5 dead SRAM macros, fix the one misshapen `NISPS_AUDIO_FUNC` use in `midi_io.hpp` (S21, L13, closes old ALIGNMENT #4). The 16 KB loss-history buffer (L25) waits on the telemetry decision (§7.3).
-- **engines/modes**: `voice_space.hpp` (L3); no-op VoiceSpace boilerplate on the five engines without real voice spaces (L9); `SawOsc`/`SquareOsc` — **keep `SineOsc`**, the selftest uses it (L4); `input_dirty_` (L5); VerbFX dead fields/setters (L6); MEMLCelium inert feedback path after checking the upstream app for a missing write (L7). `DriverConfig` (S4) waits on §7.2.
+- **engines/modes**: `voice_space.hpp` (L3); no-op VoiceSpace boilerplate on the five engines without real voice spaces (L9); `SawOsc`/`SquareOsc` — **keep `SineOsc`**, the selftest uses it (L4); `input_dirty_` (L5); VerbFX dead fields/setters (L6); MEMLCelium inert feedback path after checking the upstream app for a missing write (L7). `DriverConfig` (S4) is **wired, not deleted** — §7.2 resolved 2026-07-21; see below.
 - **wasm bridge**: dead C-API entries through the full 5-layer chain — **keep** `EXPORTED_RUNTIME` `cwrap`/heaps (parity + wasm-load tests build their API via `Module.cwrap`) (S33); `publishWeights_` 200 Hz weight-copy channel (S34); worklet loader dead scaffolding + throwing import stubs (L54).
 - **manifold UI**: dead focus/altitude system — SplitStage, ReadoutStrip, InputMini, AltitudeNav, CompactAxis, keep MiniMeters and **don't touch `engine.feedback.setFocus`** (S15); decorative controls — A/B, fake seed/gradient, snapshots, master volume, bpm, training-param sliders per verifier notes (S16, absorbs L1's delete-half); `BackendAdvanced.tsx` duplicate editor table (S18); ConsoleCtx prune to consumed fields (S19); 5 dead primitives (L22); dual backend catalogues (L23); inert soloMode selector + FeedbackController vestiges (L20, L21).
 - **backends**: dead protocol legs — sendState/sendWeights, legacy array format, unreceivable `/nisps/state`, unused module-output listeners (L16); delete `bridge.mjs`, keep `bridge.ts` + compiled binaries as distribution (S11).
@@ -128,14 +128,66 @@ so `build_unflags` is required — appending our own flags is not enough.
 - **5b Browser mode coverage honesty (A2).** Add an audio-topology notion (generator / audio-in-fx / event-only / analysis) so Manifold stops cataloguing 4 modes that structurally cannot run; wire mic input for the audio-in class (absorbs old ALIGNMENT #1); event-only modes need transport/MIDI-out UI, or explicit "hardware-only" labelling.
 - **5c Curated/advanced split (A3, A7).** Product model first (§7.6): what is a "curated preset" — schema + backend preset + input map + trained net? Then: instrument picker rendered from the already-plumbed `ctx.modes`/`setModeId` (engine reshape-on-switch already works); per-drawer depth levels as the disclosure mechanism rather than one global boolean; `backends/presets.ts` + schemas seed the data model (add the missing `cv` backend to presets — small bug from A3's verification).
 - **5d Hardware editor (A4, S14).** The repo already contains the right discipline: `useq-celium`'s C-header wire-protocol truth + TS mirror + parity test. Apply it to a MEMLNaut USB-serial protocol; give firmware an actual command surface + on-device persistence; settings/training payloads derive from schema codegen, not hand-defined tables. `InputChain`/`OutputChain` firmware wiring (L29) lands here or gets its comment softened now.
-- **5e Training-health telemetry (critic gap 5; §7.3) — DECIDED, unblocked.** It *is* a feature, but browser-only and behind a feature flag. L1's fabricated gradient UI was deleted in Phase 1. **L25 resolved: keep the firmware loss-history buffer** (operator) — it is the on-device record 5d's hardware editor will read, and the RAM is demonstrably there. Remaining: add a `loss_history` C-API entry across the 5-layer registration chain, replace `wasm-worker.ts:310`'s 1-element fake with it, and surface it plus the already-plumbed `get_layer_stats` behind the advanced-mode flag. No judgement calls left in this item.
-- **5f Performance measurement (critic gap 4).** A host-side blocks-per-second benchmark for `engine_process_block` (native + WASM), and `build-firmware.sh` emitting a per-variant flash/RAM size report — makes the headline constraint enforceable instead of vibes.
+- **5e Training-health telemetry (critic gap 5; §7.3) — BURNED DOWN 2026-07-21.** `int
+  nisps_ml_loss_history(ml, out, max)` landed across all five layers (KEEPALIVE →
+  `build-wasm.sh` exports → `NispsModule` decl → `WasmIML.lossHistory()` → `EngineApi
+  .lossHistory()`); it returns the TOTAL entry count and fills `min(count, max)`, so a
+  `max=0` probe sizes the JS buffer from C++ truth instead of mirroring the history cap.
+  The worker's `new Float32Array([loss])` is replaced by a readback off the worker's OWN
+  mirror handle, so async fits publish a real curve too. Display: `manifold/src/console/
+  TrainingHealth.tsx` at the Learning drawer's `expanded` depth — the flag mechanism is the
+  existing `DrawerDepth`, not a new one. The firmware buffer stays untouched (operator, L25).
+  **Two deviations.** (1) `ConsoleCtx.loss` was deleted as well: it was a synthetic series
+  (`evalLoss()` when finite, else `prev * 0.82`, else literal `0.5`) that no drawer read —
+  the §6.5e bar ("nothing may still fabricate a number") reaches it even though the audit
+  filed it as merely-unfinished plumbing under S19. (2) `<GradientFlow>` from dock-spec §1.3
+  is NOT built and should not be: the core records no per-layer gradient magnitudes, so it
+  could only be fabricated. Evidence beyond the standard gates, which do not cover this
+  path: `manifold/tests/loss-history.test.ts` (C-ABI contract driven straight at the
+  committed WASM under `bun test`) and two new `probe-api` cases + `tests/e2e/
+  training-health.spec.ts` (browser, both train paths, panel content).
+- **5f Performance measurement (critic gap 4) — BURNED DOWN 2026-07-21.** The size half landed
+  with Phase 4 (firmware CI reports per-variant flash/RAM). The time half is
+  `tests/cpp/engine_bench.cpp` + `scripts/bench-engines.sh`: per-engine ns/sample, blocks/s and
+  realtime factor for the `process()` hot path, on native and WASM.
+  **Four decisions worth recording.** (1) *One source, compiled twice.* The bench is compiled
+  natively by CMake (`nisps_engine_bench`) and by emcc for WASM, from the same file — so the two
+  targets are comparable, `nisps/wasm/bindings.cpp` gains no export, and the 5-layer WASM export
+  chain is not walked at all. Nothing under `nisps/` changed except `CMakeLists.txt`: the hot path
+  is not perturbed by measuring it. (2) *Reporting, not asserting.* No threshold anywhere. On
+  shared CI hardware a wall-clock threshold is either slack enough to be meaningless or tight
+  enough to flake — the same call the firmware size job made. A regression gets noticed three
+  ways: `--compare <report.json>` prints per-engine Δ% (noise floor ~±3% at default settings,
+  measured; the failure mode this exists to catch is 2-3x); CI prints the table per commit on
+  both targets; and `run-all-tests.sh` stage 6 runs a ~0.15 s native smoke so the bench cannot rot
+  the way the SelfTest variant did. (3) *Engines are driven.* Sequencers run with transport on and
+  their event queues drained per block (an undrained 64-slot queue makes `push` take a cheaper
+  path than production); paf_synth gets a `note_on` every 0.25 s (its envelope gates it to silence
+  otherwise, and silence in the delay line decays to denormals); the fx/analysis engines are fed a
+  noise+sine bed. Params are pseudo-random in [0.05, 0.95], not the parity harness's all-0.5 —
+  that vector is a degenerate corner and at 128 frames never reaches a sequencer tick. (4) *Each
+  row carries its own working-state evidence* (output RMS / event count / analysis feature sum,
+  chosen by engine kind, since breakor/elysiamorf/analysis emit silence by design), so a number
+  produced by an idle engine is visible in the table instead of merely plausible.
+  **Not done, and now the live half of ALIGNMENT defect 5:** these are HOST numbers. The
+  constraint is the RP2350 at 150 MHz, and no on-device timing exists.
 
 ## §7 Operator decisions needed
 
 1. **S20 legacy feedback modes** (RandomiseOutputs/RandomiseMlp/Diffuse/on_drag): deletion reverses the explicit "keep for A/B comparison" in `docs/adr/rl-feedback-design.md` — delete (and amend the ADR) or keep?
-2. **S4 DriverConfig**: wire the firmware audio driver to read it at mode start (makes mic/line settings real) or delete the contract from the concept + all 8 engines. No dead middle.
-3. **Telemetry** (§6.5e): feature or delete.
+2. **S4 DriverConfig** — **DECIDED + LANDED 2026-07-21.** Operator: "wire it up; firmware reads active mode's
+   config at mode start; mic/line becomes real." Done: `Mode::driver_config()` (now part of the `nisps::Mode`
+   concept) defaults to `engine().driver_config()` in `ModeBase`, overridable per mode via an optional
+   `on_driver_config()` CRTP hook — SoundAnalysisMIDIMode is the one user, because its audio *engine* is a silent
+   NoOp while its `AnalysisEngine` is what owns the microphone. `src/main.cpp` publishes the mode's sample rate
+   before the system clock is derived from it, and `setup1()` calls `AudioDriver::Setup(...)` with the mode's
+   config instead of the parameterless overload. `DriverConfig`'s member defaults were changed to memllib's
+   historical hardcoded values (line_level 3, output_volume 0.8) so a mode that declares nothing is a genuine
+   no-op. Codec clamping + sample-rate resolution live in the Arduino-free `glue/codec_config.hpp` and are
+   host-tested in `tests/cpp/test_mode_driver_config.cpp`.
+3. **Telemetry** (§6.5e) — **DECIDED + LANDED 2026-07-21.** Operator: feature, browser-only,
+   behind the advanced-surface flag; fakes deleted; firmware loss-history buffer kept (L25).
+   Built as described in §6.5e above.
 4. **Deploy gating** (§1.5): gate the webhook on CI, or accept ungated deploys knowingly.
 5. **memllib ownership** (§5): fork-pin vs vendored subset vs upstreaming to MusicallyEmbodiedML.
 6. **Curated-preset product model** (§6.5c): what a preset bundles; where curation lives.

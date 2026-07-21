@@ -426,6 +426,7 @@ export const ElysiamorfSchema: ModeSchema = {
     },
   ],
   voice_spaces: [],
+  curve_overrides: [],
   ui: {
     primary_input: 'xy_pad',
     show_voice_space_selector: false,

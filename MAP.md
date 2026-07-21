@@ -10,7 +10,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `nisps/pipeline/` — the control-rate input/output processing chains (P4): `input_chain.hpp` (`InputChain` — invert→deadzone→circular clamp→momentum-modulated zoom→centred power→EMA→momentum; caller-supplied dt, internal clock, fixed velocity ring, serialisable state) and `output_chain.hpp` (`OutputChain<NMax>` — curve→EMA→slew→freeze(+mask), capacity-templated). Behaviour contract = the retired manifold TS pipelines, pinned by `manifold/tests/fixtures/` and parity stage 7.
 - `nisps/dsp/` — `biquad.hpp`, `delay.hpp`, `reverb.hpp`, `filter.hpp`, `env.hpp`, `osc.hpp`, `pitch_shift.hpp`, `dc_blocker.hpp`, plus the sequencer primitives shared by the sequencer engines: `ratio_seq.hpp` and `seq_clock.hpp` (bar phasor + MIDI clock + bpm). Lean primitives extracted from maximilian; daisysp PitchShifter replaced with custom granular impl.
 - `nisps/engines/` — eight audio engines, each satisfying `AudioEngine`: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `breakor.hpp` (sequencer, NoOp audio), `elysiamorf.hpp` (sequencer, NoOp audio), `analysis.hpp` (input-side spectral features). Plus `base.hpp` (`NoOpEngine`, engine_id "thru").
-- `nisps/modes/` — platform-agnostic modes binding `{ML config, engine, voice space lambdas, abstract I/O channels}`. Files: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `slp_workshop.hpp` (`SLPWorkshopMode` — the Synth Library Portland workshop build; reuses the MEMLCelium engine + MLP shape, foregrounds the Jolt + OU explore gestures), `breakor.hpp`, `elysiamorf.hpp`, `sound_analysis_midi.hpp`, `external_synth_midi.hpp` (`ExternalSynthMIDIMode<const MidiDevice&, NOut>` — joystick→MLP→MIDI CC for an external synth; compile-time device from `nisps/midi`; `consteval pick_cc_slots` curates which params fill the NOut slots; NoOpEngine, `kRouteOutputsToEngine=false`). `base.hpp` provides a CRTP scaffold eliminating the duplication that previously plagued firmware modes. `generated/` contains codegen output (do not edit by hand): per-mode `k<Mode>Schema` ParamSchema instances, the `<Mode>MLP` type aliases built from the schema's own dims, and `schema_types.hpp` which now owns the `ParamSchema` struct itself. Mode headers no longer hand-write either their schema aggregate or their net shape.
+- `nisps/modes/` — platform-agnostic modes binding `{ML config, engine, voice space lambdas, abstract I/O channels}`. Files: `paf_synth.hpp`, `channel_strip.hpp`, `xiasri.hpp`, `verb_fx.hpp`, `memlcelium.hpp`, `slp_workshop.hpp` (`SLPWorkshopMode` — the Synth Library Portland workshop build; reuses the MEMLCelium engine + MLP shape, foregrounds the Jolt + OU explore gestures), `breakor.hpp`, `elysiamorf.hpp`, `sound_analysis_midi.hpp`, `external_synth_midi.hpp` (`ExternalSynthMIDIMode<const MidiDevice&, NOut>` — joystick→MLP→MIDI CC for an external synth; compile-time device from `nisps/midi`; `consteval pick_cc_slots` curates which params fill the NOut slots; NoOpEngine, `kRouteOutputsToEngine=false`). `base.hpp` provides a CRTP scaffold eliminating the duplication that previously plagued firmware modes; it also owns `driver_config()` — the audio-driver setup (mic vs line, gain staging, sample rate) the platform glue reads at mode start. Defaults to `engine().driver_config()`; a mode overrides it with an optional `on_driver_config()` hook only when its engine is not what consumes the audio input (`sound_analysis_midi`, whose analyser rather than its NoOp engine owns the mic). `generated/` contains codegen output (do not edit by hand): per-mode `k<Mode>Schema` ParamSchema instances, the `<Mode>MLP` type aliases built from the schema's own dims, and `schema_types.hpp` which now owns the `ParamSchema` struct itself. Mode headers no longer hand-write either their schema aggregate or their net shape.
 - `nisps/wasm/bindings.cpp` — flat C API exported to WASM (Emscripten target only).
 - `nisps/midi/generated/midi_devices.hpp` — codegen output: no-heap `constexpr` external-MIDI-synth templates (`nisps::midi::generated`; `MidiParam`/`MidiDevice` + `kMidiDevices` registry). Source = `schemas/midi_devices/`; do not edit by hand.
 - `nisps/CMakeLists.txt` + `nisps/build/` — host-target builds + ctest.
@@ -19,7 +19,8 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. One C++20 cod
 - `firmware/MEMLNaut-NISPS/platformio.ini` — **the variant registry**: one `[env:<alias>]` per firmware variant (16 of them), each passing `-DMEMLNAUT_MODE_TYPE=<alias>`; `selftest` passes `-DNISPS_SELFTEST=1` instead. There is no second list to keep in sync. Shared `[env]` base pins the platform wrapper + arduino-pico framework, sets `-std=gnu++20 -O3` (via `build_unflags`, because the framework appends its own `-std=gnu++17 -Os` AFTER project flags), reaches `nisps/` with `-I${PROJECT_DIR}/../..`, and carries the TFT_eSPI panel config as `-D` flags. Build: `pio run -e <alias>`, or `scripts/build-firmware.sh [--all]`.
 - `firmware/MEMLNaut-NISPS/src/main.cpp` — entry point (was `MEMLNaut-NISPS.ino`). Forks on `NISPS_SELFTEST`: normal modes run the engine/ML path; the `SelfTest` variant delegates all four entry points to `glue/selftest.hpp`.
 - `firmware/MEMLNaut-NISPS/glue/` — hardware bindings:
-  - `audio_driver.hpp` — bridges memllib `AudioDriver` callback → `Mode::process(stereosample_t)`.
+  - `audio_driver.hpp` — bridges memllib `AudioDriver` callback → `Mode::process(stereosample_t)`, and brings the codec up on the **active mode's** `driver_config()` (`setup_audio_driver`) plus publishes its preferred sample rate before the system clock is derived from it (`apply_mode_sample_rate`). Mic vs line input is therefore a mode-level declaration, not a firmware constant.
+  - `codec_config.hpp` — pure, Arduino-free clamping of a `nisps::DriverConfig` to SGTL5000-representable values + sample-rate resolution (unsupported/"don't care" → 48 kHz, because `AudioDriver::GetSysClockSpeed()` `panic()`s otherwise). Host-tested by `tests/cpp/test_mode_driver_config.cpp`.
   - `peripherals.hpp` — joystick / pots / buttons → `Mode::set_input` and ML primitives. Wires the shared `FeedbackController` ExploreAndPlace lifecycle (MomA1 = enter/exit explore, MomA2 = freeze/place, TogB2 = commit; MomB1/MomB2 = reroll/nudge while exploring **or** grab/drop *reposition* while idle) plus the adaptive-learning gestures: **TogB1** = Jolt (held weight morph), **RVX1** = exploration amount (OU output walk). Reposition relocates an existing positive example's output to a new input position (`feedback.hpp` `begin_reposition`/`commit_reposition`) — no scratchpad, no weight restore.
   - `midi_io.hpp` — MIDI in → mode `note_on`/`update_bpm`/`set_playing`; drains `ControlEvent` ring → MIDI UART.
   - `mode_select.hpp` — type aliases mapping firmware mode identifiers to `nisps::modes::*Mode` C++ types, selected by the `-D` from platformio.ini. Includes the six `MEMLNautModeExtSynth*` external-synth variants (one per device template in `nisps/midi`, e.g. `MEMLNautModeExtSynthSub37`). The `NISPS_ST_*`/`NISPS_ST_CAT` token-paste table and the `SelfTestRig` tag type are GONE — selftest is now just an env with its own `-D`.
@@ -47,7 +48,10 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
 - `manifold/src/console/` — the convertible Console: `ConsoleApp`, `CompositeStage` (single-divider convertible
   with snap/magnetism/minimap-demotion), `OutputStage`/`SandwichStage`/`ParticleStage`/`Manifold` (canvas,
   rect↔circular + feedback markers), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
-  (Learning/Inputs/Outputs/Settings/Help), `VerdictCluster` (mode-aware), `OutputEditor`/`CurvePad`, `icons.tsx`
+  (Learning/Inputs/Outputs/Settings/Help), `TrainingHealth` (real per-iteration loss curve from
+  `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at
+  the Learning drawer's `expanded` depth — that IS the advanced-surface flag), `VerdictCluster`
+  (mode-aware), `OutputEditor`/`CurvePad`, `icons.tsx`
   (monochrome currentColor SVG), `model.ts` (`MF_MODES` catalogue — schema-backed modes DERIVED from
   `manifold/src/modes/generated/`; carries per-mode `ml` net shape + `engineId`), `output-mode.ts`.
 - `manifold/src/modes/generated/` — codegen output (`*_schema.ts`, do NOT hand-edit): `ModeSchema`
@@ -86,10 +90,14 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   timer-driver over the shared C++ core via the `nisps_ml_jolt_*`/`nisps_ml_ou_*` bindings (the interim
   TS math and `jolt.ts`/`ou-explore.ts` were deleted when P3 landed).
 - `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/` — `smoke`,
-  `probe-api` (15-test engine-contract port), `spine` (spine invariant + probe-survives-mode-switch).
-  E2E on the VPS runs via non-snap node (see BUILD-PLAN). `manifold/tests/fixtures/` — golden parity
+  `probe-api` (engine-contract port), `spine` (spine invariant + probe-survives-mode-switch),
+  `geo-dislike`, `reshape`, `schema-modes`, `training-health` (the loss/layer-stats panel + its
+  expanded-depth gating). E2E on the VPS runs via non-snap node (see BUILD-PLAN).
+  `manifold/tests/fixtures/` — golden parity
   fixtures (gesture trace, curves, input/output pipelines) captured 2026-07-13 pre-P4, guarded by
-  `tests/pipeline-golden.test.ts` (in `bun run test`). `manifold/osc-bridge/` — Deno WS↔UDP-OSC bridge.
+  `tests/pipeline-golden.test.ts` (in `bun run test`). `tests/loss-history.test.ts` drives the
+  `nisps_ml_loss_history` C ABI straight at the committed WASM — the training path parity-check
+  never touches. `manifold/osc-bridge/` — Deno WS↔UDP-OSC bridge.
 
 ### `vcv/` — VCV Rack 2 plugin (MEMLNaut module, WIP)
 Native C++ Rack module: ML CV-mapper with RL feedback + a browser bridge. **8 inputs × 16 outputs + per-output
@@ -102,25 +110,29 @@ includes; no `nisps-core`.
 
 ### `schemas/` — JSON parameter contracts (firmware/browser source of truth)
 - `schemas/schema.json` — Draft 2020-12 meta-schema validating mode files.
-- `schemas/modes/<mode>.json` (×9) — each mode's params, ranges, defaults, curves, voice spaces, ML config. (`slp_workshop.json` reuses `engine_id: memlcelium`.)
-- `schemas/modes/params_notes.md` — provenance notes and judgement calls per mode.
+- `schemas/modes/<mode>.json` (×9) — each mode's params, ranges, defaults, curves, voice spaces, ML config. (`slp_workshop.json` reuses `engine_id: memlcelium`.) `params[].curve` is the mode-wide DEFAULT response curve; a `voice_spaces` entry may be an object `{name, curve_overrides}` declaring only the slots where THAT voice space deviates (index i == `VoiceSpace` ordinal i). Descriptive throughout: the curve is applied exactly once, inside the engine's voice space.
+- `schemas/modes/params_notes.md` — provenance notes and judgement calls per mode, plus the exact `square`/`sqrt`/`linear` predicate the drift check enforces.
 - `schemas/midi_device.schema.json` — Draft 2020-12 meta-schema for external-MIDI-synth templates.
 - `schemas/midi_devices/<device>.json` (×6) — CC-controllable external synths (Moog Sub 37 / Sub Phatty, Creamware Pro-12 ASB, Elektron Analog Keys, ASM Hydrasynth, Roland JD-800). Each param: `{id, cc, label, min, max, default, group}`. Canonical source for both firmware + browser device pickers. Verified-CC provenance + sources live in `schemas/midi_devices/sources/synth-midi-cc.json` (a `sources/` subdir, because the generator ajv-validates every `*.json` directly under `midi_devices/` as a device template).
 
 ### `codegen/` — schema → C++/TS code
 - `codegen/generate.ts` — Bun script: validates schemas via ajv (incl. the P5 firmware-fit check: exactly 3 hidden layers, dims ≤4096), emits per-mode C++ `nisps/modes/generated/<mode>_schema.hpp` (`constexpr`, `nisps::modes::generated`) AND TS `manifold/src/modes/generated/<mode>_schema.ts` (+ `types.ts`, `index.ts`). Idempotent; golden-tested in `run-all-tests.sh` stage 5. The TS output is the SOURCE OF TRUTH consumed by `MF_MODES` (`manifold/src/console/model.ts`).
 - `codegen/generate-midi-devices.ts` — separate Bun script (isolated from the mode golden test): validates `schemas/midi_devices/` via ajv, emits `nisps/midi/generated/midi_devices.hpp` (no-heap `constexpr`) and `manifold/src/midi-devices/generated/{types,devices,index}.ts`. Idempotent.
+- `codegen/curve-audit.ts` — reads `nisps/engines/*.hpp` and derives, per voice space, which response curve the engine applies to each NN-output slot. Handles the four idioms a regex misses (`const float v = p[n]; v*v`, memlcelium's implicit-counter `sq()` lambda, loop-generated indices, `smooth_params_[n]`) and RAISES on anything it cannot reduce rather than defaulting to `linear`.
+- `codegen/tests/curve_drift_test.ts` — the gate: schema-declared curves (JSON **and** generated TS) must equal what `curve-audit.ts` extracts, and schema `voice_spaces` order must equal the engine's `kVoiceSpaceNames`. Source-level by necessity — the curve is not recoverable from engine output. Run by `run-all-tests.sh` stage 5, CI, and `bun run test` in `codegen/`.
 - `codegen/lib.ts` — helpers shared by both generators. `codegen/tests/golden/` — golden snapshot for paf_synth (C++ + TS).
 
 ### `tests/cpp/` — host C++ tests
 - Per-component tests: `test_dsp_*.cpp`, `test_engine_*.cpp`, `test_mlp_*.cpp`, `test_mode_*.cpp`, `test_ring_buffer.cpp`, `test_rng.cpp`, `test_math.cpp`. Helpers in `test_helpers.hpp`.
 - Verification: `ml_golden_vectors.cpp`, `engine_impulse.cpp` (+ `engine_impulse_baseline.bin`), `parity_check.cpp` + `parity_wasm.mjs` + `parity_diff.mjs` — native-vs-WASM bit-equivalence within 1e-5.
+- Measurement (asserts nothing): `engine_bench.cpp` + `bench_report.mjs` — per-engine throughput (ns/sample, blocks/s, realtime factor) for the `process()` hot path. ONE source compiled twice (CMake `nisps_engine_bench` natively, emcc for WASM) so the two targets are comparable without adding a single export to `nisps/wasm/bindings.cpp`. Engines are driven into a working state (transport running + event drain for the sequencers, periodic `note_on` for paf_synth, a noise+sine input bed for the fx/analysis engines) and every row prints its own working-state evidence, so a number produced by an idle engine is visible rather than plausible. Driven by `scripts/bench-engines.sh`.
 
 ### `scripts/` — build + verify entry points
 - `build-firmware.sh`, `flash-firmware.sh`, `build-and-flash-firmware.sh`, `firmware-common.sh` — Arduino-CLI wrapper for RP2350 target with C++20 flag.
 - `build-wasm.sh` — Emscripten compile producing `manifold/public/nisps.{wasm,js}`.
 - `build-cpp-tests.sh` — CMake configure + build + ctest (Ninja).
 - `parity-check.sh` — runs native + WASM and diffs binary outputs.
+- `bench-engines.sh` — engine throughput on native + WASM; `--compare <report.json>` prints per-engine Δ%. **Reports, never asserts** (a wall-clock threshold on shared hardware is meaningless or flaky — same call as the firmware size job). Reports land in `nisps/build/bench/`.
 - `lint-cpp.sh` — `.f` literal warn + heap/`Arduino.h` violation fail.
 - `run-all-tests.sh` — master verification script.
 
@@ -145,7 +157,8 @@ includes; no `nisps-core`.
 - **WASM rebuild**: `bash scripts/build-wasm.sh` (needs `emcc`).
 - **Host C++ tests**: `bash scripts/build-cpp-tests.sh`.
 - **Parity check**: `bash scripts/parity-check.sh`.
-- **All tests**: `bash scripts/run-all-tests.sh`.
+- **Engine benchmark**: `bash scripts/bench-engines.sh` (add `--compare nisps/build/bench/latest.json` to diff against the previous run).
+- **All tests**: `bash scripts/run-all-tests.sh` (stage 6 is a bench smoke report; it does not gate).
 - **Playwright**: `cd manifold && node node_modules/.bin/playwright test` (non-snap node runner on the VPS — BUILD-PLAN gotcha; `bunx playwright test` works elsewhere).
 - **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/` + `nisps/ml/generated/` C++ and `manifold/src/modes/generated/` TS).
 
@@ -165,7 +178,8 @@ includes; no `nisps-core`.
 - `firmware/MEMLNaut-NISPS/glue/mode_select.hpp` `#undef`s Arduino macros (`sq`, `min`, `max`, `abs`, `round`) before pulling nisps headers — engines use those identifiers as method names.
 - `nisps_firmware::g_active_mode_bridge` is `extern` in `glue/audio_driver.hpp` and defined in `src/main.cpp`; combining `inline` with `__not_in_flash` produces a comdat conflict at link time.
 - `pio run`'s own "Flash: NN%" console line double-counts `.data` on this board (PlatformIO's generic size checker counts every PROGBITS+ALLOC section). Compare `arm-none-eabi-size -A` — flash = `.text+.rodata` — before believing a size regression.
-- `nisps_modes_tests` builds against generated schemas under `nisps/modes/generated/`; if you add a new mode, regenerate via `bun run codegen/generate.ts` before building.
+- `nisps_modes_tests` builds against generated schemas under `nisps/modes/generated/`; if you add a new mode, regenerate via `bun run codegen/generate.ts` before building. It also compiles one firmware header (`glue/codec_config.hpp`), so the repo root is on its include path.
+- `nisps::DriverConfig`'s member defaults are load-bearing: they reproduce memllib's historical hardcoded codec setup, so a mode that declares nothing gets exactly the pre-wiring behaviour. Changing them changes the codec setup of every mode that expresses no opinion (pinned by `tests/cpp/test_mode_driver_config.cpp`).
 
 ## Smells / strategic concerns
 

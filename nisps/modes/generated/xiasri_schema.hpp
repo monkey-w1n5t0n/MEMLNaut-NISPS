@@ -254,6 +254,8 @@ inline constexpr std::array<std::string_view, kXiasriVoiceSpaceCount> kXiasriVoi
     "Direct",
 }};
 
+inline constexpr std::array<CurveOverride, 0> kXiasriCurveOverrides = {};
+
 inline constexpr UIConfig kXiasriUI = {
     PrimaryInput::Joystick,
     false,
@@ -272,6 +274,7 @@ inline constexpr ::nisps::ParamSchema kXiasriSchema = {
     kXiasriMLConfig.default_spread,
     std::span<const Param>(kXiasriParams),
     std::span<const std::string_view>(kXiasriVoiceSpaces),
+    std::span<const CurveOverride>(kXiasriCurveOverrides),
     kXiasriUI,
 };
 

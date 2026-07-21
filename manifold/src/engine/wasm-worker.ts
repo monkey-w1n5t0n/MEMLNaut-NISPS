@@ -189,6 +189,8 @@ if (isWorker) {
   let labelsLen = 0;
   let sampleWeightsPtr = 0;
   let sampleWeightsLen = 0;
+  let lossHistPtr = 0;
+  let lossHistLen = 0;
 
   async function loadModule(seed: number): Promise<void> {
     // nisps.js is non-ES-module Emscripten glue; fetch + indirect-eval to
@@ -280,6 +282,26 @@ if (isWorker) {
     }
   }
 
+  /**
+   * The REAL per-iteration loss curve of the run that just finished, copied out
+   * of the core's own history buffer. Two calls: the first queries the entry
+   * count (out=0), the second copies — so the heap buffer is sized from C++
+   * truth rather than a TS mirror of the history cap. Empty when nothing was
+   * recorded (e.g. an empty dataset).
+   */
+  function readLossHistory(): Float32Array {
+    if (!mod) return new Float32Array(0);
+    const count = mod._nisps_ml_loss_history(mlHandle, 0, 0);
+    if (count <= 0) return new Float32Array(0);
+    if (count > lossHistLen) {
+      if (lossHistPtr) mod._free(lossHistPtr);
+      lossHistPtr = mod._malloc(count * 4);
+      lossHistLen = count;
+    }
+    mod._nisps_ml_loss_history(mlHandle, lossHistPtr, count);
+    return new Float32Array(new Float32Array(mod.HEAPF32.buffer, lossHistPtr, count));
+  }
+
   function trainOnce(req: Extract<WorkerRequest, { kind: 'train' }>): WorkerResponse {
     if (!mod) {
       return { kind: 'error', requestId: req.requestId, message: 'worker not initialised' };
@@ -307,7 +329,7 @@ if (isWorker) {
       const view = new Float32Array(mod.HEAPF32.buffer, weightsPtr, weightCount);
       const outWeights = new Float32Array(view); // copy
 
-      const lossHistory = new Float32Array([loss]);
+      const lossHistory = readLossHistory();
 
       return {
         kind: 'result',
@@ -335,6 +357,7 @@ if (isWorker) {
     if (featuresPtr) { mod._free(featuresPtr); featuresPtr = 0; }
     if (labelsPtr) { mod._free(labelsPtr); labelsPtr = 0; }
     if (sampleWeightsPtr) { mod._free(sampleWeightsPtr); sampleWeightsPtr = 0; }
+    if (lossHistPtr) { mod._free(lossHistPtr); lossHistPtr = 0; lossHistLen = 0; }
     mod = null;
   }
 

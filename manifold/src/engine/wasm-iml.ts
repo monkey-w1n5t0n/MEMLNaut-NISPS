@@ -161,6 +161,12 @@ export class WasmIML {
   private pinMaskBuf!: HeapU8;
   private feedbackBuf!: HeapBuffer; // kDefaultOutputs scratch for feedback static/down
   private describePtr = 0;
+  // Loss-history readback scratch: grown on demand to the count the core
+  // reports, so nothing here mirrors the C++ history cap. Raw ptr rather than a
+  // HeapBuffer because the view has to be rebuilt per read anyway (the length
+  // varies with each training run).
+  private lossHistPtr_ = 0;
+  private lossHistCap_ = 0;
 
   // Pipeline (one-core-engine P4): the input/output processing chains live
   // C++-side per handle. These wrappers own the handle + bridge buffers.
@@ -311,6 +317,11 @@ export class WasmIML {
     if (this.pipeMaskBuf) this.pipeMaskBuf.free();
     if (this.curveBuf) this.curveBuf.free();
     if (this.describePtr) this.module._free(this.describePtr);
+    if (this.lossHistPtr_) {
+      this.module._free(this.lossHistPtr_);
+      this.lossHistPtr_ = 0;
+      this.lossHistCap_ = 0;
+    }
     this.sink.setState({ ready: false });
   }
 
@@ -668,9 +679,7 @@ export class WasmIML {
     }
 
     this.lastLoss_ = loss;
-    // The C++ MLP stores per-iter history but it isn't exposed via the WASM
-    // bindings yet, so this is a single-element array.
-    this.sink.setState({ lastLoss: loss, lossHistory: [loss] });
+    this.sink.setState({ lastLoss: loss, lossHistory: this.lossHistory() });
     this.sink.emit('ml.trained', { loss });
     this.scheduleSave_();
     return loss;
@@ -1018,6 +1027,34 @@ export class WasmIML {
   getLayerStatsFlat(): Float32Array {
     this.module._nisps_ml_get_layer_stats(this.mlHandle, this.statsBuf.ptr);
     return new Float32Array(this.statsBuf.view);
+  }
+
+  /**
+   * The REAL per-iteration loss curve of the LAST synchronous `train()` on this
+   * handle, straight out of `nisps::ml::MLPCore::loss_history`. Empty when the
+   * handle has not trained (or trained on an empty dataset).
+   *
+   * `trainAsync()` runs on the worker's own MLP handle, so ITS curve comes back
+   * over the worker protocol instead — this handle's history is untouched by it.
+   *
+   * Two C calls: count first (out=0), then copy. The count query is what sizes
+   * the heap buffer, so no TS constant mirrors the C++ history cap.
+   */
+  lossHistory(): number[] {
+    const count = this.module._nisps_ml_loss_history(this.mlHandle, 0, 0);
+    if (count <= 0) return [];
+    if (count > this.lossHistCap_) {
+      if (this.lossHistPtr_) this.module._free(this.lossHistPtr_);
+      this.lossHistPtr_ = this.module._malloc(count * 4);
+      if (!this.lossHistPtr_) {
+        this.lossHistCap_ = 0;
+        return [];
+      }
+      this.lossHistCap_ = count;
+    }
+    this.module._nisps_ml_loss_history(this.mlHandle, this.lossHistPtr_, count);
+    // View built per call: ALLOW_MEMORY_GROWTH can detach a cached one.
+    return Array.from(new Float32Array(this.module.HEAPF32.buffer, this.lossHistPtr_, count));
   }
 
   // -------------------------------------------------------------------

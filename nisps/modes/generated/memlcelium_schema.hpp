@@ -542,6 +542,8 @@ inline constexpr std::array<std::string_view, kMemlceliumVoiceSpaceCount> kMemlc
     "Direct",
 }};
 
+inline constexpr std::array<CurveOverride, 0> kMemlceliumCurveOverrides = {};
+
 inline constexpr UIConfig kMemlceliumUI = {
     PrimaryInput::XYPad,
     false,
@@ -560,6 +562,7 @@ inline constexpr ::nisps::ParamSchema kMemlceliumSchema = {
     kMemlceliumMLConfig.default_spread,
     std::span<const Param>(kMemlceliumParams),
     std::span<const std::string_view>(kMemlceliumVoiceSpaces),
+    std::span<const CurveOverride>(kMemlceliumCurveOverrides),
     kMemlceliumUI,
 };
 

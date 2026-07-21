@@ -359,6 +359,20 @@ export class EngineApi {
     return this.iml.getLayerStatsFlat();
   }
 
+  /**
+   * Per-iteration loss of the most recent training run — the real curve the
+   * core recorded (`nisps::ml::MLPCore::loss_history`, read out through
+   * `nisps_ml_loss_history`), not a synthesised one.
+   *
+   * Deliberately sourced from spine state rather than the MLP handle: an async
+   * train runs on the WORKER's mirror net, so the main handle's own history is
+   * empty for those runs. Both paths publish here, so this is the one honest
+   * answer to "how did the last fit go?".
+   */
+  lossHistory(): ReadonlyArray<number> {
+    return this.spine.getState().lossHistory;
+  }
+
   // ---- Reactive contract --------------------------------------------
 
   /** Subscribe to state changes (useSyncExternalStore). Returns an unsubscribe. */

@@ -523,6 +523,29 @@ float nisps_ml_eval_loss(void* ml) {
     return h->mlp.eval_loss();
 }
 
+// Per-iteration training loss recorded by the LAST nisps_ml_train() call on
+// this handle (nisps::ml::MLPCore::loss_history — the same buffer the firmware
+// MLP fills). Returns the TOTAL number of recorded entries and writes
+// min(count, max) of them into `out`. Pass out=null / max<=0 to query the
+// count without copying, which is how JS sizes its heap buffer instead of
+// mirroring the C++ history cap.
+//
+// The history is reset at the START of every train() call, so it always
+// describes exactly one training run. train_targets() (the geometric-dislike
+// single-step path) does NOT record — a dislike leaves the previous run's
+// curve intact rather than replacing it with a 1-point curve.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_loss_history(void* ml, float* out, int max) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    const auto hist = h->mlp.loss_history();
+    const int count = static_cast<int>(hist.size());
+    if (!out || max <= 0) return count;
+    const int n = max < count ? max : count;
+    for (int i = 0; i < n; ++i) out[i] = hist[static_cast<std::size_t>(i)];
+    return count;
+}
+
 // ---------------------------------------------------------------------------
 // ML weights
 // ---------------------------------------------------------------------------

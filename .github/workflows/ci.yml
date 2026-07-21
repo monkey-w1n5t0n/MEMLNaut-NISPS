@@ -4,7 +4,8 @@ name: CI
 #
 # Three parallel jobs:
 #   * cpp-tests      — builds nisps host C++ tests, builds nisps.wasm, runs
-#                      the parity check, runs the lint script.
+#                      the parity check, runs the lint script, and reports
+#                      per-engine throughput on both host targets.
 #   * manifold-tests — typechecks the React manifold app, runs bun unit
 #                      tests, builds the production bundle, runs Playwright
 #                      e2e tests.
@@ -86,6 +87,19 @@ jobs:
       - name: Lint
         run: bash scripts/lint-cpp.sh
 
+      # Throughput is reported, not asserted — the same call the firmware
+      # flash/RAM step makes below, for a stronger reason: a wall-clock
+      # threshold on a shared runner is either slack enough to be meaningless
+      # or tight enough to fail on someone else's noisy neighbour. What this
+      # buys is (a) a per-commit ns/sample + realtime-factor record in the log,
+      # where a 2-3x regression — the failure mode ALIGNMENT defect 5 names —
+      # is unmissable even at runner noise levels, (b) proof the bench still
+      # builds and runs on BOTH targets, and (c) the wasm/native ratio.
+      # Runner noise makes small moves unreadable; for a real comparison run
+      # scripts/bench-engines.sh --compare locally.
+      - name: Engine throughput report (native + WASM, not asserted)
+        run: bash scripts/bench-engines.sh --target-ms 60
+
       - name: Upload parity blobs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -119,6 +133,9 @@ jobs:
           bun run generate.ts
           bun run generate-midi-devices.ts
           bun run tests/golden_test.ts
+          # The schemas' per-voice-space `curve` declarations are DESCRIPTIVE
+          # of nisps/engines/*.hpp. Prove they still describe it.
+          bun run tests/curve_drift_test.ts
           cd ..
           GEN_DIRS="nisps/modes/generated nisps/midi/generated nisps/ml/generated \
                     manifold/src/modes/generated manifold/src/midi-devices/generated"
@@ -186,14 +203,17 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
-      # Three representative envs rather than all sixteen: they differ only in
-      # which mode type is instantiated, so a compile break is almost always
-      # common to all. slpworkshop is the shipped default, pafsynth is the
-      # heaviest RAM user, and selftest takes the separate NISPS_SELFTEST fork
-      # through main.cpp — the one that broke unnoticed before.
+      # Four representative envs rather than all sixteen: they differ mostly in
+      # which mode type is instantiated, so a compile break is usually common to
+      # all. slpworkshop is the shipped default, pafsynth is the heaviest RAM
+      # user, selftest takes the separate NISPS_SELFTEST fork through main.cpp
+      # (the one that broke unnoticed before), and soundanalysismidi is the ONLY
+      # microphone variant — the sole mode whose DriverConfig differs from its
+      # engine's, via an on_driver_config() override. Drop it and the mic path
+      # stops being compiled by anything.
       - name: Build representative firmware variants
         working-directory: firmware/MEMLNaut-NISPS
-        run: pio run -e slpworkshop -e pafsynth -e selftest
+        run: pio run -e slpworkshop -e pafsynth -e selftest -e soundanalysismidi
 
       # Sizes are reported, not asserted. A threshold would either be slack
       # enough to be meaningless or tight enough to fail on unrelated work;
@@ -205,7 +225,7 @@ jobs:
         working-directory: firmware/MEMLNaut-NISPS
         run: |
           SIZE=$(find ~/.platformio/packages -name 'arm-none-eabi-size' | head -1)
-          for e in slpworkshop pafsynth selftest; do
+          for e in slpworkshop pafsynth selftest soundanalysismidi; do
             "$SIZE" -A ".pio/build/$e/firmware.elf" | awk -v e="$e" '
               /^\.text/{t=$2} /^\.rodata/{r=$2} /^\.data/{d=$2}
               /^\.bss/{b=$2} /^\.ram_vector_table/{v=$2}

@@ -65,6 +65,15 @@ class SoundAnalysisMIDIMode : public ModeBase<
         analysis_.setup(sample_rate);
     }
 
+    // The audio ENGINE here is a silent NoOp; the analyser is what actually
+    // consumes the incoming audio, so IT decides how the codec input is set
+    // up (mic-level input + pre-amp gain). Overrides ModeBase's default of
+    // `engine().driver_config()` — which would have asked for line input and
+    // silently defeated this mode's whole purpose.
+    DriverConfig on_driver_config() const noexcept {
+        return analysis_.driver_config();
+    }
+
     // Audio path tap — modes call this from the audio thread (or the
     // platform glue does after process()) to feed the analyser. Distinct
     // from the audio engine's process() which is the silent passthrough.

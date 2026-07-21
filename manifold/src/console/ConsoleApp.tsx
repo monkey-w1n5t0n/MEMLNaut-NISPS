@@ -104,7 +104,6 @@ export function ConsoleApp() {
   const [noiseCap, setNoiseCap] = useState(0.12);
   const [examples, setExamples] = useState(0);
   const [addingExample, setAddingExample] = useState(false);
-  const [loss, setLoss] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [spread, setSpread] = useState(false);
   const [active, setActive] = useState<DrawerKey | null>(null);
@@ -262,7 +261,6 @@ export function ConsoleApp() {
     setParams(mode.params.map((p) => ({ ...p })));
     setPos([0.5, 0.5]);
     setExamples(0);
-    setLoss([]);
     setFollow(false);
     setPins([]);
     setMarkers([]);
@@ -453,10 +451,6 @@ export function ConsoleApp() {
     forwardVcvFeedback('up');
     syncController();
     setNoiseCap((n) => Math.max(0.02, n * 0.7));
-    const l = engine?.evalLoss();
-    setLoss((prev) =>
-      [...prev, Number.isFinite(l) ? (l as number) : prev.length ? prev[prev.length - 1] : 0.5].slice(-120),
-    );
     setBusy(false);
   };
 
@@ -571,11 +565,8 @@ export function ConsoleApp() {
   };
   const train = () => {
     setBusy(true);
-    const l = engine?.train();
+    engine?.train();
     engine?.process();
-    setLoss((p) =>
-      [...p, Number.isFinite(l) ? (l as number) : p.length ? p[p.length - 1] * 0.82 : 0.5].slice(-120),
-    );
     setBusy(false);
   };
   const addExample = () => {
@@ -746,7 +737,6 @@ export function ConsoleApp() {
     setModeId,
     mode,
     datasetCount: examples,
-    loss,
     busy,
     addingExample,
     onAddExample: addExample,
@@ -757,7 +747,6 @@ export function ConsoleApp() {
       // trail is ephemeral and self-decays, so it needs no explicit reset.
       engine?.clearExamples();
       setExamples(0);
-      setLoss([]);
       setMarkers([]);
       setPins([]);
     },

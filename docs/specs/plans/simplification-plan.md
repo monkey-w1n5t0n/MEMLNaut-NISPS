@@ -70,6 +70,26 @@ explicitly, so new unit tests were silently not run — now a glob.
 
 ## §4 Phase 3 — Single-source-of-truth consolidation (~2–3 days)
 
+**BURNED DOWN 2026-07-21**, except **S26**, which is now an operator decision backed by a
+per-field inventory (see below). Every generated numeric value is byte-identical to what was
+committed — the diff on the generated dirs is purely additive, which is what a relocation of truth
+should look like. Three audit claims were wrong and are corrected in the commits: L8's "breakor and
+elysiamorf duplicate ratio_seq" (elysiamorf has no ratio_seq at all; the real duplicate pair is
+breakor + memlcelium), ST13's proposed destination would have broken codegen (the generator
+ajv-validates every `*.json` directly under `schemas/midi_devices/`, so the provenance file went to
+a `sources/` subdir), and ST4's remaining-copy count.
+
+**S26 — decision now cheap.** `ml.default_spread` is already wired on both targets (the audit's
+"zero consumers" claim was a quarter wrong). `ml.default_learning_rate` and
+`ml.default_max_iterations` are unread on both targets, but every schema carries exactly 1.0/1000,
+which are precisely the values hardcoded in `mlp.hpp` and `wasm-iml.ts` — so **wiring them is
+numerically a no-op today** and simply makes the schema the source of truth it claims to be.
+`ml.input_channels` is read by nobody at runtime but is validated at codegen time and carries real
+information for `sound_analysis_midi`. Per-param `curve` is a **trap**: `params_notes.md` says it is
+DESCRIPTIVE — it documents that engine voice spaces already square the value internally — so
+"wiring" it would double-apply squaring on 35 params.
+
+
 - **S1** Mode identity: codegen emits an `ALL_MODE_SCHEMAS` registry; `SCHEMA_MODES` becomes a mode_id→display-overlay map (labels/glyphs stay legitimately hand-curated); **L37** delete the hand-`switch`ed `modeEngineId` (route on schema `engine_id`, single named exception for sound_analysis_midi).
 - **S5** codegen emits per-mode `kXSchema` ParamSchema constants (deletes 9 hand-written 12-field blocks); **S6/S25** MLP template args come from generated constexpr dims (or `static_assert` parity), killing the hand-typed-dims dual truth; **L11** ext-synth ML config folds into the same pipeline.
 - **S26** Schema surface honesty: per-field wire-or-delete pass (default_learning_rate/max_iterations both-platforms-or-neither; input_channels; per-param curves) per the verifier's corrected list.

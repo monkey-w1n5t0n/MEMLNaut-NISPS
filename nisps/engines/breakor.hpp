@@ -1,8 +1,9 @@
 // nisps/engines/breakor.hpp — 8-track ratio-sequencer.
 //
-// `process()` returns silence; the engine's job is to emit MIDI/I2C events on
-// each tick. Wraps a NoOpEngine for the audio path. Stream 4/6 will hook
-// `pop_events()` into the firmware's MIDI/I2C output.
+// `process()` returns silence directly; the engine's job is to emit
+// NoteOn/NoteOff/Clock events on each tick via `pop_events()`. BreakOrMode
+// (mode layer) drains these into its ControlEvent ring for platform glue
+// (firmware MIDI/I2C, browser WebMIDI) to forward.
 //
 // Param layout: 8 tracks × 7 ratio-seq params each = 56 params.
 //   per track: [ratio0, ratio1, ratio2, phasorMul, phaseOff, ampRatio0, ampRatio1]
@@ -33,12 +34,6 @@ class BreakOrEngine {
 
     static constexpr std::size_t param_count() noexcept { return kNParams; }
     static constexpr std::string_view engine_id() noexcept { return "breakor"; }
-
-    enum class VoiceSpace : std::size_t { None = 0, Count = 0 };
-    static constexpr std::size_t kVoiceSpaceCount = 0u;
-    static constexpr std::array<std::string_view, 0u> kVoiceSpaceNames = {};
-    void set_voice_space(VoiceSpace) noexcept {}
-    VoiceSpace voice_space() const noexcept { return VoiceSpace::None; }
 
     enum class EventKind : std::uint8_t { NoteOn, NoteOff, Clock };
     struct Event {

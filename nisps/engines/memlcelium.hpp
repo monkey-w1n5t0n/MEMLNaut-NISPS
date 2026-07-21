@@ -12,9 +12,10 @@
 // Voice 1 (3 PAF operators): base freq, detune1/2, 3× cf, 3× bw, 3× shift,
 //   amp ADSR, pitch envelope, pitch emphasis. (~20 params)
 //
-// The sequencer fires note events that trigger V0/V1 envelopes. The actual
-// internal "RatioSeq" tick uses the sequencer-side params; we expose
-// `pop_events()` for stream 4/6 to consume MIDI/I2C if desired.
+// The sequencer fires note events internally to trigger V0/V1 envelopes.
+// `pop_events()` exposes that same NoteOn/NoteOff/Clock stream (as BreakOr
+// and Elysiamorf do), but no mode currently drains it — MEMLCeliumMode is a
+// pure synth with no MIDI/I2C output wired for this engine.
 
 #pragma once
 
@@ -40,12 +41,6 @@ class MEMLCeliumEngine {
 
     static constexpr std::size_t param_count() noexcept { return kNParams; }
     static constexpr std::string_view engine_id() noexcept { return "memlcelium"; }
-
-    enum class VoiceSpace : std::size_t { Direct = 0, Count = 1 };
-    static constexpr std::size_t kVoiceSpaceCount = 1u;
-    static constexpr std::array<std::string_view, kVoiceSpaceCount> kVoiceSpaceNames = {"Direct"};
-    void set_voice_space(VoiceSpace) noexcept {}
-    VoiceSpace voice_space() const noexcept { return VoiceSpace::Direct; }
 
     void setup(float sample_rate) noexcept {
         sample_rate_ = sample_rate;

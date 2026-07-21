@@ -157,11 +157,9 @@ class VerbFXEngine {
     }
 
     void set_enable_filterbank(bool v)    noexcept { enable_filterbank_ = v; }
-    void set_enable_reverb(bool v)        noexcept { enable_reverb_ = v; }
     void set_enable_short_delay(bool v)   noexcept { enable_short_delay_ = v; }
     void set_enable_medium_delay(bool v)  noexcept { enable_medium_delay_ = v; }
     void set_enable_long_delay(bool v)    noexcept { enable_long_delay_ = v; }
-    void set_enable_delay_to_reverb(bool v) noexcept { enable_delay_to_reverb_ = v; }
     void set_wet_dry_override(float v)    noexcept { wet_dry_ = v; }
 
    private:
@@ -239,7 +237,6 @@ class VerbFXEngine {
         filterbank_res_linear(p, 19.f);
         common_delays_linear(p);
         verb_vs_delay_     = p[43];
-        delay_to_verb_     = p[44] * 0.99f;
         delay_morph_       = p[45];
         delay_blend_       = p[46];
     }
@@ -259,7 +256,7 @@ class VerbFXEngine {
         ddelay_feedback1_ = p[40] * 0.99f;
         ddelay_time2_     = 10.f + p[41] * 501.f;
         ddelay_feedback2_ = p[42] * 0.99f;
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_   = p[46];
     }
 
@@ -282,7 +279,7 @@ class VerbFXEngine {
         ddelay_feedback1_ = p[40] * p[40] * 0.98f;
         ddelay_time2_     = 10.f + p[41] * 501.f;
         ddelay_feedback2_ = p[42] * p[42] * 0.98f;
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_   = p[46];
     }
 
@@ -302,7 +299,6 @@ class VerbFXEngine {
         ddelay_time2_     = 10.f + std::sqrt(p[41]) * 501.f;
         ddelay_feedback2_ = std::sqrt(p[42]) * 0.98f;
         verb_vs_delay_ = p[43] * p[43];
-        delay_to_verb_ = std::sqrt(p[44]) * 0.99f;
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -322,7 +318,6 @@ class VerbFXEngine {
         ddelay_time2_     = 10.f + p[41] * 501.f;
         ddelay_feedback2_ = std::sqrt(p[42]) * 0.95f;
         verb_vs_delay_ = p[43] * p[43];
-        delay_to_verb_ = std::sqrt(p[44]) * 0.99f;
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -345,7 +340,7 @@ class VerbFXEngine {
         ddelay_feedback1_ = p[40] * p[40] * 0.98f;
         ddelay_time2_     = 10.f + p[41] * p[41] * 501.f;
         ddelay_feedback2_ = p[42] * p[42] * 0.98f;
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -364,7 +359,7 @@ class VerbFXEngine {
                                         : (1.f + v * v * 19.f);
         }
         common_delays_linear(p);
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -392,7 +387,7 @@ class VerbFXEngine {
         ddelay_feedback1_ = std::sqrt(p[40]) * 0.98f;
         ddelay_time2_     = 10.f + p[41] * 501.f;
         ddelay_feedback2_ = std::sqrt(p[42]) * 0.98f;
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -416,7 +411,7 @@ class VerbFXEngine {
                                   : (1.f + v * v * 19.f);
         }
         common_delays_linear(p);
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -437,7 +432,7 @@ class VerbFXEngine {
                                   : (1.f + std::sqrt(v) * 25.f);
         }
         common_delays_linear(p);
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -453,7 +448,7 @@ class VerbFXEngine {
         for (std::size_t i = 0u; i < 8u; ++i) fb_freqs_[i] = harm_bases[i] + p[21 + i] * 40.f;
         filterbank_res_sqrt(p, 19.f);
         common_delays_linear(p);
-        verb_vs_delay_ = p[43]; delay_to_verb_ = p[44] * 0.99f;
+        verb_vs_delay_ = p[43];
         delay_morph_   = p[45]; delay_blend_ = p[46];
     }
 
@@ -492,17 +487,15 @@ class VerbFXEngine {
     float ddelay_time_      = 0.f, ddelay_feedback_  = 0.f;
     float ddelay_time1_     = 0.f, ddelay_feedback1_ = 0.f;
     float ddelay_time2_     = 0.f, ddelay_feedback2_ = 0.f;
-    float verb_vs_delay_    = 0.f, delay_to_verb_    = 0.f;
+    float verb_vs_delay_    = 0.f;
     float delay_morph_      = 0.5f, delay_blend_     = 0.f;
     float filter_bank_delay_xfade_ = 0.f;
     float wet_dry_          = 0.5f;
 
     bool enable_filterbank_      = true;
-    bool enable_reverb_          = true;
     bool enable_short_delay_     = true;
     bool enable_medium_delay_    = true;
     bool enable_long_delay_      = true;
-    bool enable_delay_to_reverb_ = true;
 
     VoiceSpace voice_space_ = VoiceSpace::Default;
 };

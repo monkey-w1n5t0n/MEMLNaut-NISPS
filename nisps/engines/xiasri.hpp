@@ -1,8 +1,9 @@
 // nisps/engines/xiasri.hpp — Reverb + delays + pitch-shift FX engine.
 //
-// Mirrors firmware XIASRIAudioApp. Direct (no voice space) NN→param mapping —
-// the firmware ignored its voice-space slot and read smoothParams[] inline.
-// We expose a single "Direct" voice space for schema parity.
+// Mirrors firmware XIASRIAudioApp. Direct NN→param mapping — the firmware
+// ignored its voice-space slot and read smoothParams[] inline, so this
+// engine has no VoiceSpace machinery at all: the 24 NN outputs feed the
+// smoother directly.
 //
 // Pipeline (per sample):
 //   pitch_shift → DC-blocker → 6-allpass + 2-comb reverb tail → 4 parallel
@@ -35,13 +36,6 @@ class XIASRIEngine {
     static constexpr std::size_t kNParams = 24u;
     static constexpr std::size_t param_count() noexcept { return kNParams; }
     static constexpr std::string_view engine_id() noexcept { return "xiasri"; }
-
-    enum class VoiceSpace : std::size_t { Direct = 0, Count = 1 };
-    static constexpr std::size_t kVoiceSpaceCount = 1u;
-    static constexpr std::array<std::string_view, kVoiceSpaceCount> kVoiceSpaceNames = {"Direct"};
-
-    void set_voice_space(VoiceSpace) noexcept {}  // no-op for parity
-    VoiceSpace voice_space() const noexcept { return VoiceSpace::Direct; }
 
     void setup(float sample_rate) noexcept {
         sample_rate_ = sample_rate;

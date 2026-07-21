@@ -2,12 +2,14 @@
 // implementations.
 //
 // Includes:
-//   - NoOpEngine: silent passthrough. Two uses:
-//     (1) the standalone "thru" engine for the SoundAnalysisMIDI mode (audio
-//         is analysed but not synthesised), exposed via engine_id()=="thru";
-//     (2) composed inside sequencer-only engines (BreakOr, Elysiamorf) whose
-//         MIDI/I2C event emission lives outside the audio path. Internal
-//         composition uses the type directly, not the engine_id lookup.
+//   - NoOpEngine: silent passthrough (engine_id() == "thru"), used directly
+//     as the mode-level EngineT wherever a mode produces no audio itself —
+//     SoundAnalysisMIDIMode (audio is analysed via a separately-composed
+//     AnalysisEngine member, not synthesised) and ExternalSynthMIDIMode
+//     (joystick -> MLP -> MIDI CC only, no audio path). BreakOrEngine and
+//     ElysiamorfEngine are sequencer-only engines that also return silence
+//     from process(), but each implements that directly — neither composes
+//     NoOpEngine.
 //   - Helper macros / static_asserts to verify each concrete engine satisfies
 //     `nisps::AudioEngine` at compile time.
 

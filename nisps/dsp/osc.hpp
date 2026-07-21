@@ -1,7 +1,7 @@
 // nisps/dsp/osc.hpp — oscillators.
 //
-// SineOsc, SawOsc, SquareOsc — basic waveforms.  Cheap, naive sine via
-//   sinf(phase * TWO_PI). For high-fidelity needs, replace with a wavetable.
+// SineOsc — naive sine via sinf(phase * TWO_PI), used by the firmware
+//   selftest's audio sweep. For high-fidelity needs, replace with a wavetable.
 //
 // PAFOperator — Phase-Aligned Formant operator. Direct port of `maxiPAFOperator`
 //   in memllib. Maintains a static gauss/cauchy table populated on first
@@ -41,41 +41,6 @@ class SineOsc {
     }
 
     void reset(float phase = 0.f) noexcept { phase_ = phase; }
-
-   private:
-    float inv_sr_ = 1.f / 48000.f;
-    float phase_  = 0.f;
-};
-
-class SawOsc {
-   public:
-    SawOsc() noexcept = default;
-    void setup(float sample_rate) noexcept { inv_sr_ = 1.f / sample_rate; }
-
-    // Naive saw — aliases above ~Nyquist/2; fine for sub-bass / LFO use.
-    NISPS_HOT NISPS_FORCE_INLINE float saw(float frequency) noexcept {
-        const float y = (phase_ * 2.f) - 1.f;
-        phase_ += inv_sr_ * frequency;
-        if (phase_ >= 1.f) phase_ -= 1.f;
-        return y;
-    }
-
-   private:
-    float inv_sr_ = 1.f / 48000.f;
-    float phase_  = 0.f;
-};
-
-class SquareOsc {
-   public:
-    SquareOsc() noexcept = default;
-    void setup(float sample_rate) noexcept { inv_sr_ = 1.f / sample_rate; }
-
-    NISPS_HOT NISPS_FORCE_INLINE float square(float frequency) noexcept {
-        const float y = phase_ < 0.5f ? -1.f : 1.f;
-        phase_ += inv_sr_ * frequency;
-        if (phase_ >= 1.f) phase_ -= 1.f;
-        return y;
-    }
 
    private:
     float inv_sr_ = 1.f / 48000.f;

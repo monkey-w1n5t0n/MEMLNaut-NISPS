@@ -34,12 +34,6 @@ class ElysiamorfEngine {
     static constexpr std::size_t param_count() noexcept { return kNParams; }
     static constexpr std::string_view engine_id() noexcept { return "elysiamorf"; }
 
-    enum class VoiceSpace : std::size_t { None = 0, Count = 0 };
-    static constexpr std::size_t kVoiceSpaceCount = 0u;
-    static constexpr std::array<std::string_view, 0u> kVoiceSpaceNames = {};
-    void set_voice_space(VoiceSpace) noexcept {}
-    VoiceSpace voice_space() const noexcept { return VoiceSpace::None; }
-
     enum class EventKind : std::uint8_t { CC, Clock };
     struct Event {
         EventKind     kind;

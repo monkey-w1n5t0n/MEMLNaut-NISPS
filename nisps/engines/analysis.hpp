@@ -94,12 +94,6 @@ class AnalysisEngine {
     static constexpr std::size_t param_count() noexcept { return 0u; }
     static constexpr std::string_view engine_id() noexcept { return "analysis"; }
 
-    enum class VoiceSpace : std::size_t { None = 0 };
-    static constexpr std::size_t kVoiceSpaceCount = 0u;
-    static constexpr std::array<std::string_view, 0u> kVoiceSpaceNames = {};
-    void set_voice_space(VoiceSpace) noexcept {}
-    VoiceSpace voice_space() const noexcept { return VoiceSpace::None; }
-
     struct Features {
         float pitch         = 0.f;
         float aperiodicity  = 0.f;

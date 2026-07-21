@@ -162,7 +162,6 @@ class ModeBase {
         if (value < 0.f) value = 0.f;
         else if (value > 1.f) value = 1.f;
         input_channels_[idx] = value;
-        input_dirty_ = true;
     }
 
     // ---- Input neutralization (single/double controller toggle) ----
@@ -175,7 +174,6 @@ class ModeBase {
     NISPS_FORCE_INLINE void set_input_pinned(std::size_t idx, bool pinned) noexcept {
         if (idx >= NInputs) return;
         input_pinned_[idx] = pinned;
-        input_dirty_ = true;
     }
     NISPS_FORCE_INLINE bool is_input_pinned(std::size_t idx) const noexcept {
         return idx < NInputs && input_pinned_[idx];
@@ -184,7 +182,6 @@ class ModeBase {
         if (v < 0.f) v = 0.f;
         else if (v > 1.f) v = 1.f;
         pin_value_ = v;
-        input_dirty_ = true;
     }
     float pin_value() const noexcept { return pin_value_; }
 
@@ -226,7 +223,6 @@ class ModeBase {
                 engine_.set_params(ml_.outputs());
             }
         }
-        input_dirty_ = false;
         if constexpr (requires(Derived& d) { d.on_post_inference(); }) {
             static_cast<Derived&>(*this).on_post_inference();
         }
@@ -325,7 +321,6 @@ class ModeBase {
     std::array<float, NInputs>                       input_channels_{};
     std::array<bool, NInputs>                        input_pinned_{};   // false => live
     float                                            pin_value_ = 0.5f; // neutral
-    bool                                             input_dirty_ = false;
     std::size_t                                      voice_space_idx_ = 0u;
     RingBuffer<ControlEvent, kModeEventBufferSize>   events_{};
     // Adaptive-learning state (Jolt + OU). Declared AFTER events_ so the

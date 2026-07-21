@@ -11,32 +11,36 @@
 // script `scripts/parity-check.sh` then runs both and float32-diffs the
 // outputs with a 1e-5 tolerance.
 //
-// What we cover
-// -------------
-//   1. ML: seed=42, draw_weights(0.5), set_input(0.25, 0.75), process.
-//      → 126 outputs + 12 weights sampled at known offsets.
-//   2. ML training: 3 examples added, train(0.3, 50, 0), capture loss + outputs.
-//   3. PAFSynth engine: seed-equivalent setup (params=0.5), 128-sample run on
-//      silence, capture L+R averages.
-//   4. ChannelStrip engine: identical methodology.
+// What we cover — seven stages (this file is the AUTHORITATIVE stage list)
+// ------------------------------------------------------------------------
+// The `---- Stage N ----` sections in main() below are the source of truth
+// for the payload layout; parity_wasm.mjs replays the identical sequence via
+// the C ABI, and parity_diff.mjs names the leading payload sections in its
+// error context. Summary:
+//   1. ML inference: seed=42 (widened as in bindings.cpp), draw_weights(0.5),
+//      process at (0.25, 0.75) → 126 outputs + 12 probed weights (kProbeIdx).
+//   2. ML training: 3 examples, train(0.3, 50, 0) → 126 outputs + final loss.
+//   3. PAFSynth engine: params=0.5, 128-sample run on silence → L+R means.
+//   4. ChannelStrip engine: same methodology on a 0.25 step input.
+//   5. FeedbackController ("Down Action"): RandomiseOutputs static-output
+//      draws, RandomiseMlp snapshot/restore, and the ExploreAndPlace
+//      lifecycle (explore→reroll→nudge→undo→place→commit).
+//   6. Geometric dislike (Avoid mode): scripted likes + dislikes drive the
+//      push-away training path → counts, outputs, probed weights.
+//   7. Pipelines + curves (one-core-engine P4): InputChain (2 configs),
+//      OutputChain (2 configs, freeze mask), and the curve catalog, all on
+//      deterministic rational traces.
 //
 // We use the EXACT SAME compile-time MLP architecture as the WASM build:
 //   MLP<32, 10, 14, 18, 126>   (32-input max for mix-and-match; see bindings.cpp)
 //
-// Output blob format
-// ------------------
+// Output blob format (v5 — see kVersion below; bump BOTH drivers together)
+// ------------------------------------------------------------------------
 //   uint32 magic = 'NPRT' = 0x5450524E
-//   uint32 version = 1
+//   uint32 version = 5
 //   uint32 n_floats
-//   float32[n_floats] payload
-//
-// Stable order of payload (concatenated):
-//   * 126 floats: outputs after stage 1 (post-process at (0.25, 0.75))
-//   * 12  floats: weights sampled at fixed indices (see kProbeIdx below)
-//   * 126 floats: outputs after stage 2 (post-train, re-process)
-//   * 1   float : final training loss
-//   * 2   floats: PAFSynth L mean, R mean (over 128 samples)
-//   * 2   floats: ChannelStrip L mean, R mean
+//   float32[n_floats] payload — the per-stage pushes in main(), concatenated
+//   in order.
 //
 // Why not bit-perfect
 // -------------------

@@ -64,12 +64,13 @@ echo "[parity-check] running WASM..."
 node "$TESTS_DIR/parity_wasm.mjs" "$WASM_OUT"
 
 echo "[parity-check] diffing (tolerance=$TOL)..."
-node "$TESTS_DIR/parity_diff.mjs" "$NATIVE_OUT" "$WASM_OUT" "$TOL"
-status=$?
-
-if [[ $status -eq 0 ]]; then
+# The node invocation must live in the `if` condition: under `set -e` a bare
+# failing command would kill the script before any FAIL line could print.
+if node "$TESTS_DIR/parity_diff.mjs" "$NATIVE_OUT" "$WASM_OUT" "$TOL"; then
     echo "[parity-check] PASS"
 else
+    status=$?
     echo "[parity-check] FAIL (exit=$status)" >&2
+    exit "$status"
 fi
-exit $status
+exit 0

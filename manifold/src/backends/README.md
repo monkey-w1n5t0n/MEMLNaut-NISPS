@@ -12,11 +12,14 @@ See `docs/specs/backends-spec.md` for the authoritative design.
 | File | Role |
 |---|---|
 | `backend.ts` | The `OutputBackend` interface + `BackendContext` / `OutputMapping` / `BackendStatus`. |
+| `base-backend.ts` | `BaseBackend` — shared status/throttle/`lastSent` plumbing for the real transports (mirrors `inputs/base-source.ts`). |
 | `mapping.ts` | Universal per-output baseline mapping (`applyCurve`, `mapOutput`) — shared by all backends, input-clamped. |
 | `manager.ts` | `BackendManager` — single spine consumer; switches/teardowns backends; **gates synth audio**. |
 | `midi-backend.ts` | `WebMidiBackend` — real Web MIDI CC out (per-output CC#/channel/range/name, throttled + dead-zone). |
 | `osc-client.ts` | `NispsOscClient` — WS transport to the Deno OSC bridge (JSON protocol, auto-reconnect). |
 | `osc-backend.ts` | `OscBridgeBackend` — OSC out over WS; per-output address path + physical range. |
+| `cv-backend.ts` | `UseqCvBackend` — CV/gate out over USB Web Serial to a uSEQ module (`useq-protocol.ts` frames, channel-level dead-zone). |
+| `useq-protocol.ts` | Frame encode/decode + RX parser for the uSEQ serial protocol (see `docs/specs/useq-cv-protocol.md`). |
 | `vcv-backend.ts` | `VcvBackend` — drives + **trains** the VCV Rack NISPS module over the OSC↔WS bridge (streams `/nisps/input`, forwards the verdict loop to `/nisps/feedback`, receives `/nisps/output` / `/nisps/input` as module-alive proof). |
 | `passthrough-backend.ts` | No-op sink for synth (plays in-engine) / particles (rAF consumer) / editor. |
 | `presets.ts` | Named per-backend output-config presets (localStorage, per-backend namespace). |

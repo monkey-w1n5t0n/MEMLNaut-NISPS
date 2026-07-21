@@ -10,10 +10,12 @@
  * a parallel `midiSpecs` array set through {@link setMidiConfig}. The port is
  * picked in the Outputs panel and applied via {@link selectOutput}.
  *
- * No per-frame allocation: the 3-byte message array is reused; `lastSent`
- * tracks per-CC values for the dead-zone.
+ * No per-frame allocation: the 3-byte message array is reused; the inherited
+ * `lastSent` buffer tracks per-CC values for the dead-zone (7-bit integers —
+ * exact in float32). Status/throttle/lastSent plumbing lives in BaseBackend.
  */
-import type { BackendContext, BackendStatus, OutputBackend } from './backend';
+import type { BackendContext } from './backend';
+import { BaseBackend } from './base-backend';
 import { isSilent, mapOutput } from './mapping';
 import type { MidiCcSpec } from '../dock/output-state';
 
@@ -27,7 +29,7 @@ export interface MidiBackendConfig {
   ccCount: number;
 }
 
-export class WebMidiBackend implements OutputBackend {
+export class WebMidiBackend extends BaseBackend {
   readonly id = 'midi' as const;
 
   private access: MIDIAccess | null = null;
@@ -35,16 +37,14 @@ export class WebMidiBackend implements OutputBackend {
   private outputId: string | null = null;
   private ccCount = 0;
 
-  private ctx: BackendContext | null = null;
   /** Per-output MIDI specs, index-aligned with ctx.mappings. */
   private specs: MidiCcSpec[] = [];
 
-  private lastSent = new Int16Array(0); // per-output last value, -1 = unsent
   private msg: number[] = [0, 0, 0]; // reused 3-byte buffer
-  private lastSendMs = 0;
 
-  private statusState: BackendStatus = { state: 'idle', message: 'MIDI idle' };
-  private statusListeners = new Set<(s: BackendStatus) => void>();
+  constructor() {
+    super({ state: 'idle', message: 'MIDI idle' });
+  }
 
   isAvailable(): boolean {
     return typeof navigator !== 'undefined' && typeof navigator.requestMIDIAccess === 'function';
@@ -52,7 +52,7 @@ export class WebMidiBackend implements OutputBackend {
 
   async start(ctx: BackendContext): Promise<void> {
     this.ctx = ctx;
-    this.lastSent = new Int16Array(ctx.outputCount).fill(-1);
+    this.resetLastSent(ctx.outputCount);
     if (!this.isAvailable()) {
       this.setStatus({ state: 'unavailable', message: 'Web MIDI not supported in this browser' });
       return;
@@ -69,13 +69,6 @@ export class WebMidiBackend implements OutputBackend {
       }
     } catch (err) {
       this.setStatus({ state: 'error', message: `MIDI access denied: ${(err as Error).message}` });
-    }
-  }
-
-  setContext(ctx: BackendContext): void {
-    this.ctx = ctx;
-    if (this.lastSent.length !== ctx.outputCount) {
-      this.lastSent = new Int16Array(ctx.outputCount).fill(-1);
     }
   }
 
@@ -124,9 +117,7 @@ export class WebMidiBackend implements OutputBackend {
     const ctx = this.ctx;
     if (!out || !ctx) return;
 
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - this.lastSendMs < SEND_INTERVAL_MS) return;
-    this.lastSendMs = now;
+    if (this.throttled(SEND_INTERVAL_MS)) return;
 
     const n = Math.min(this.ccCount, routed.length, ctx.mappings.length, this.specs.length);
     for (let i = 0; i < n; i++) {
@@ -158,19 +149,5 @@ export class WebMidiBackend implements OutputBackend {
     this.access = null;
     this.output = null;
     this.setStatus({ state: 'idle', message: 'MIDI idle' });
-  }
-
-  status(): BackendStatus {
-    return this.statusState;
-  }
-
-  onStatusChange(cb: (s: BackendStatus) => void): () => void {
-    this.statusListeners.add(cb);
-    return () => this.statusListeners.delete(cb);
-  }
-
-  private setStatus(s: BackendStatus): void {
-    this.statusState = s;
-    for (const cb of this.statusListeners) cb(s);
   }
 }

@@ -30,7 +30,8 @@
  * British spelling in product copy; the synth is the "Built-in Synth", never
  * "C15".
  */
-import type { BackendContext, BackendStatus, OutputBackend } from './backend';
+import type { BackendContext } from './backend';
+import { BaseBackend } from './base-backend';
 import { isSilent, mapOutput } from './mapping';
 import { NispsOscClient } from './osc-client';
 import type { VcvSpec } from '../dock/output-state';
@@ -56,11 +57,10 @@ export interface VcvBackendConfig {
   sendRaw: boolean;
 }
 
-export class VcvBackend implements OutputBackend {
+export class VcvBackend extends BaseBackend {
   readonly id = 'vcv' as const;
 
   private client = new NispsOscClient();
-  private ctx: BackendContext | null = null;
   private specs: VcvSpec[] = [];
   private sendRaw = false;
 
@@ -68,23 +68,24 @@ export class VcvBackend implements OutputBackend {
    *  net's full input arity, not fixed at 2; simplification audit S10). */
   private inputVec: number[] = [0.5, 0.5];
 
-  private lastSent: Float32Array = new Float32Array(0); // last normalised output
   private batch: Array<[string, number]> = []; // reused outer; entries reused
-  private lastSendMs = 0;
   /** Dead-zone sentinel per input axis, sized to `inputVec` (out-of-range -1
    *  forces the first send). Tracks the FULL vector, not just the first two
    *  axes, so a change in axis 2+ (gamepad/MIDI beyond the XY pair) still
-   *  triggers a resend instead of being silently swallowed. */
+   *  triggers a resend instead of being silently swallowed. Separate from the
+   *  inherited per-OUTPUT `lastSent` buffer. */
   private lastInputSent: number[] = [];
 
   private gotModuleReply = false;
 
-  private statusState: BackendStatus = { state: 'idle', message: 'VCV idle' };
-  private statusListeners = new Set<(s: BackendStatus) => void>();
   private offConn: (() => void) | null = null;
   private offInfo: (() => void) | null = null;
   private offOutputs: (() => void) | null = null;
   private offInputs: (() => void) | null = null;
+
+  constructor() {
+    super({ state: 'idle', message: 'VCV idle' });
+  }
 
   isAvailable(): boolean {
     return typeof WebSocket !== 'undefined';
@@ -92,7 +93,7 @@ export class VcvBackend implements OutputBackend {
 
   async start(ctx: BackendContext): Promise<void> {
     this.ctx = ctx;
-    this.lastSent = new Float32Array(ctx.outputCount).fill(-1);
+    this.resetLastSent(ctx.outputCount);
     if (!this.isAvailable()) {
       this.setStatus({ state: 'unavailable', message: 'WebSocket not available' });
       return;
@@ -123,13 +124,6 @@ export class VcvBackend implements OutputBackend {
     this.client.connect({ reconnect: true }).catch(() => {
       this.setStatus({ state: 'error', message: `VCV bridge not running — start it (${this.client.url})` });
     });
-  }
-
-  setContext(ctx: BackendContext): void {
-    this.ctx = ctx;
-    if (this.lastSent.length !== ctx.outputCount) {
-      this.lastSent = new Float32Array(ctx.outputCount).fill(-1);
-    }
   }
 
   /** Update per-output VCV specs (polarity) + bridge URL/raw toggle. */
@@ -173,9 +167,7 @@ export class VcvBackend implements OutputBackend {
     const ctx = this.ctx;
     if (!ctx || !this.client.connected) return;
 
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - this.lastSendMs < SEND_INTERVAL_MS) return;
-    this.lastSendMs = now;
+    if (this.throttled(SEND_INTERVAL_MS)) return;
 
     // 1) Stream the current input vector so the browser drives the module.
     //    Dead-zone over the FULL vector — any axis moving (not just the first
@@ -239,20 +231,6 @@ export class VcvBackend implements OutputBackend {
     this.client.disconnect();
     this.gotModuleReply = false;
     this.setStatus({ state: 'idle', message: 'VCV idle' });
-  }
-
-  status(): BackendStatus {
-    return this.statusState;
-  }
-
-  onStatusChange(cb: (s: BackendStatus) => void): () => void {
-    this.statusListeners.add(cb);
-    return () => this.statusListeners.delete(cb);
-  }
-
-  private setStatus(s: BackendStatus): void {
-    this.statusState = s;
-    for (const cb of this.statusListeners) cb(s);
   }
 }
 

@@ -12,7 +12,8 @@
  * surface "bridge not running" until the WS connects. Throttled to ~50ms with a
  * per-output dead-zone (matching the deployed osc-output.js).
  */
-import type { BackendContext, BackendStatus, OutputBackend } from './backend';
+import type { BackendContext } from './backend';
+import { BaseBackend } from './base-backend';
 import { isSilent, mapOutput } from './mapping';
 import { NispsOscClient } from './osc-client';
 import type { OscSpec } from '../dock/output-state';
@@ -27,22 +28,21 @@ export interface OscBackendConfig {
   sendRaw: boolean;
 }
 
-export class OscBridgeBackend implements OutputBackend {
+export class OscBridgeBackend extends BaseBackend {
   readonly id = 'osc' as const;
 
   private client = new NispsOscClient();
-  private ctx: BackendContext | null = null;
   private specs: OscSpec[] = [];
   private sendRaw = false;
 
-  private lastSent: Float32Array = new Float32Array(0); // last normalised value
   private batch: Array<[string, number]> = []; // reused outer; entries reused
-  private lastSendMs = 0;
 
-  private statusState: BackendStatus = { state: 'idle', message: 'OSC idle' };
-  private statusListeners = new Set<(s: BackendStatus) => void>();
   private offConn: (() => void) | null = null;
   private offInfo: (() => void) | null = null;
+
+  constructor() {
+    super({ state: 'idle', message: 'OSC idle' });
+  }
 
   isAvailable(): boolean {
     return typeof WebSocket !== 'undefined';
@@ -50,7 +50,7 @@ export class OscBridgeBackend implements OutputBackend {
 
   async start(ctx: BackendContext): Promise<void> {
     this.ctx = ctx;
-    this.lastSent = new Float32Array(ctx.outputCount).fill(-1);
+    this.resetLastSent(ctx.outputCount);
     if (!this.isAvailable()) {
       this.setStatus({ state: 'unavailable', message: 'WebSocket not available' });
       return;
@@ -70,13 +70,6 @@ export class OscBridgeBackend implements OutputBackend {
     this.client.connect({ reconnect: true }).catch(() => {
       this.setStatus({ state: 'error', message: `OSC bridge not running — start it (${this.client.url})` });
     });
-  }
-
-  setContext(ctx: BackendContext): void {
-    this.ctx = ctx;
-    if (this.lastSent.length !== ctx.outputCount) {
-      this.lastSent = new Float32Array(ctx.outputCount).fill(-1);
-    }
   }
 
   /** Update per-output OSC specs + bridge URL/raw toggle. */
@@ -99,9 +92,7 @@ export class OscBridgeBackend implements OutputBackend {
     const ctx = this.ctx;
     if (!ctx || !this.client.connected) return;
 
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - this.lastSendMs < SEND_INTERVAL_MS) return;
-    this.lastSendMs = now;
+    if (this.throttled(SEND_INTERVAL_MS)) return;
 
     const n = Math.min(routed.length, ctx.mappings.length, this.specs.length);
     this.batch.length = 0;
@@ -129,19 +120,5 @@ export class OscBridgeBackend implements OutputBackend {
     this.offInfo = null;
     this.client.disconnect();
     this.setStatus({ state: 'idle', message: 'OSC idle' });
-  }
-
-  status(): BackendStatus {
-    return this.statusState;
-  }
-
-  onStatusChange(cb: (s: BackendStatus) => void): () => void {
-    this.statusListeners.add(cb);
-    return () => this.statusListeners.delete(cb);
-  }
-
-  private setStatus(s: BackendStatus): void {
-    this.statusState = s;
-    for (const cb of this.statusListeners) cb(s);
   }
 }

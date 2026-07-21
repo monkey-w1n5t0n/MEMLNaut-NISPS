@@ -17,7 +17,8 @@
  * store (output-state.ts CvSpec) and arrives via {@link setCvConfig}, parallel
  * to ctx.mappings — exactly like the MIDI backend.
  */
-import type { BackendContext, BackendStatus, OutputBackend } from './backend';
+import type { BackendContext } from './backend';
+import { BaseBackend } from './base-backend';
 import { isSilent, mapOutput } from './mapping';
 import type { CvChannelId, CvSpec } from '../dock/output-state';
 import {
@@ -44,10 +45,9 @@ function resolveTarget(id: CvChannelId): Target {
   return { kind: 'gate', idx: parseInt(id.slice(4), 10) - 1 };
 }
 
-export class UseqCvBackend implements OutputBackend {
+export class UseqCvBackend extends BaseBackend {
   readonly id = 'cvgate' as const;
 
-  private ctx: BackendContext | null = null;
   /** Per-output CV specs, index-aligned with ctx.mappings. */
   private specs: CvSpec[] = [];
   /** Pre-resolved channel targets, index-aligned with specs. */
@@ -63,15 +63,18 @@ export class UseqCvBackend implements OutputBackend {
 
   private cvVals = new Uint16Array(NUM_CV); // last computed 12-bit CV per channel
   private gateBits = 0;
+  /** Channel-level dead-zone state (12-bit CV + gate bits) — this backend's
+   *  dead-zone is per-FRAME over the 14 uSEQ channels, so the inherited
+   *  per-output `lastSent` buffer goes unused here. */
   private lastCv = new Int32Array(NUM_CV).fill(-1);
   private lastGateBits = -1;
-  private lastSendMs = 0;
   private writing = false; // in-flight write guard (avoid serial backpressure)
 
   private pendingIdentify: (() => void) | null = null;
 
-  private statusState: BackendStatus = { state: 'idle', message: 'CV idle' };
-  private statusListeners = new Set<(s: BackendStatus) => void>();
+  constructor() {
+    super({ state: 'idle', message: 'CV idle' });
+  }
 
   isAvailable(): boolean {
     return typeof navigator !== 'undefined' && 'serial' in navigator;
@@ -98,10 +101,6 @@ export class UseqCvBackend implements OutputBackend {
       /* ignore — fall through to the idle "connect" prompt */
     }
     this.setStatus({ state: 'ready', message: 'uSEQ ready — click Connect device' });
-  }
-
-  setContext(ctx: BackendContext): void {
-    this.ctx = ctx;
   }
 
   /** Update the per-output CV specs (channel + gate threshold). */
@@ -198,9 +197,7 @@ export class UseqCvBackend implements OutputBackend {
     const w = this.writer;
     if (!ctx || !w) return;
 
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - this.lastSendMs < SEND_INTERVAL_MS) return;
-    this.lastSendMs = now;
+    if (this.throttled(SEND_INTERVAL_MS)) return;
     if (this.writing) return; // previous frame still draining — drop this one
 
     // Rebuild the 14-channel snapshot from the routed outputs.
@@ -278,19 +275,5 @@ export class UseqCvBackend implements OutputBackend {
   async teardown(): Promise<void> {
     await this.closePort();
     this.setStatus({ state: 'idle', message: 'CV idle' });
-  }
-
-  status(): BackendStatus {
-    return this.statusState;
-  }
-
-  onStatusChange(cb: (s: BackendStatus) => void): () => void {
-    this.statusListeners.add(cb);
-    return () => this.statusListeners.delete(cb);
-  }
-
-  private setStatus(s: BackendStatus): void {
-    this.statusState = s;
-    for (const cb of this.statusListeners) cb(s);
   }
 }

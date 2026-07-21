@@ -39,6 +39,8 @@ Build: `cmake -S nisps -B nisps/build -G Ninja && cmake --build nisps/build && c
 
 Tests: 4 executables (`nisps_core_tests`, `nisps_dsp_engine_tests`, `nisps_modes_tests`, `nisps_golden_tests`). Run all: `bash scripts/build-cpp-tests.sh`. Parity vs WASM: `bash scripts/parity-check.sh` (asserts native and WASM produce identical outputs within 1e-5).
 
+Throughput: `bash scripts/bench-engines.sh` (per-engine ns/sample, blocks/s, realtime factor on native + WASM; `--compare <report.json>` for deltas). It **reports and never asserts** — no threshold, no failure mode. Read it before and after any change to `nisps/dsp/` or `nisps/engines/`; nothing else in the repo will tell you an engine got slower.
+
 ### Performance contract (RP2350)
 
 These rules apply to **all** code under `nisps/`. They are inert in WASM but kept globally for consistency.
@@ -117,10 +119,10 @@ The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_m
 
 ### Known limitations
 
-- Loss history not yet plumbed through C API; only the final loss of a training run reaches TS.
 - Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired in manifold.
 - C15 has no home on main (see `ALIGNMENT.md` defect 1, browser mode coverage).
 - (P3, 2026-07-14) The browser Jolt/OU gestures and the geometric dislike run the C++ core through WASM: `nisps_ml_jolt_*`, `nisps_ml_explore_*`, `nisps_ml_feedback_dislike_geometric` — no TS gesture math remains.
+- (§6.5e, 2026-07-21) The per-iteration loss curve IS plumbed: `nisps_ml_loss_history(ml, out, max)` returns the total entry count and fills `min(count, max)`, so `max=0` is a count probe. Both train paths publish it to the spine; `EngineApi.lossHistory()` reads it and `console/TrainingHealth.tsx` displays it at `expanded` drawer depth. `MLPCore::train()` resets the history per run; `train_targets()` (geometric dislike) does not record.
 
 ## URL parameters (manifold)
 
@@ -163,6 +165,9 @@ bash scripts/build-wasm.sh
 
 # Cross-platform parity
 bash scripts/parity-check.sh
+
+# Engine throughput (reports; never fails)
+bash scripts/bench-engines.sh
 
 # Lint
 bash scripts/lint-cpp.sh

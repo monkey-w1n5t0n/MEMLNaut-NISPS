@@ -29,6 +29,15 @@ string "C15" MUST NEVER appear in the UI.*
 >   solo/arm + min/max/curve).
 > - The feedback surface shipped richer than §1 (Explore-and-Place with reroll/nudge/place, plus
 >   geometric dislike) — see `docs/adr/rl-feedback-design.md` and `nisps/ml/feedback.hpp`.
+> - **§1.3's diagnostics suite shipped PARTLY, 2026-07-21** (simplification-plan §6.5e). The
+>   `nisps_ml_loss_history` C API the section waited on now exists, and
+>   `manifold/src/console/TrainingHealth.tsx` renders the real per-iteration loss curve plus the
+>   per-layer weight-health table (`nisps_ml_get_layer_stats`) at `expanded` depth — the advanced
+>   surface, since only two depths shipped. `<GradientFlow>` is NOT built and is not planned as
+>   drawn: the core records no per-layer gradient magnitudes, and the fabricated version of it was
+>   deleted in the Phase-1 sweep. `<WeightHealth>` as an edge-glow is likewise unbuilt; the same
+>   numbers are in the table. §1.3's six live sliders were deleted as decorative (S16) — `noise
+>   cap` and the Xavier switch are the survivors, because they drive real engine setters.
 
 ---
 

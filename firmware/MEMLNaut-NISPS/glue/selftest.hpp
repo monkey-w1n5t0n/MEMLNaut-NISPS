@@ -646,8 +646,11 @@ inline void setup() {
     });
 
     g_view = std::make_shared<SelfTestView>("Self Test");
+    // AddView appends to the carousel and DisplayDriver::Setup() leaves
+    // currentViewIndex_ at 0, so this — the selftest's only view — is already
+    // the one on screen. (There is no NavigateToView in DisplayDriver; a call
+    // to one used to sit here and had broken this variant's build.)
     M->disp->AddView(g_view);
-    M->disp->NavigateToView(g_view);
     M->setLoopCallback([] { tickStateMachine(); });
 
     WRITE_VOLATILE(g_iface_ready, true);

@@ -269,18 +269,9 @@ private:
     void recvLoop() {
         uint8_t buf[65536];
         while (!shouldStop_.load()) {
-            sockaddr_in from{};
-            socklen_t fromLen = sizeof(from);
             ssize_t n = recvfrom(recvSock_, reinterpret_cast<char*>(buf), sizeof(buf), 0,
-                                 reinterpret_cast<sockaddr*>(&from), &fromLen);
+                                 nullptr, nullptr);
             if (n <= 0) continue; // timeout or error
-
-            // Remember sender for replies
-            {
-                std::lock_guard<std::mutex> lock(sendMutex_);
-                lastSender_ = from;
-                hasLastSender_ = true;
-            }
 
             parseMessage(buf, static_cast<size_t>(n));
         }
@@ -338,19 +329,14 @@ private:
         target.sin_family = AF_INET;
 
         if (sendTargetDirty_ || !hasExplicitTarget_) {
-            // Use explicit target if set, otherwise reply to last sender
             if (!sendHost_.empty()) {
                 inet_pton(AF_INET, sendHost_.c_str(), &target.sin_addr);
                 target.sin_port = htons(static_cast<uint16_t>(sendPort_));
                 hasExplicitTarget_ = true;
                 sendTargetDirty_ = false;
                 sendAddr_ = target;
-            } else if (hasLastSender_) {
-                target = lastSender_;
-                target.sin_port = htons(static_cast<uint16_t>(sendPort_));
-                sendAddr_ = target;
             } else {
-                return; // nobody to send to
+                return; // no target configured
             }
         }
 
@@ -380,8 +366,6 @@ private:
     int sendPort_ = 9001;
     bool sendTargetDirty_ = false;
     bool hasExplicitTarget_ = false;
-    bool hasLastSender_ = false;
-    sockaddr_in lastSender_{};
     sockaddr_in sendAddr_{};
 
 #ifdef _WIN32

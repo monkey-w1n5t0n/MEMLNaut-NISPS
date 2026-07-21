@@ -3,15 +3,13 @@
 > **Distribution & cross-platform builds:** for packaging `.vcvplugin` files,
 > the cross-platform CI matrix, and publishing to `/next/vcv`, see
 > [DISTRIBUTION.md](DISTRIBUTION.md). The official `make dist` target (from the
-> SDK's `plugin.mk`) produces `dist/<slug>-<version>-<platform>.vcvplugin`; the
-> legacy `Makefile.dist` (zip-based, hard-coded 0.1.0) is superseded by it.
+> SDK's `plugin.mk`) produces `dist/<slug>-<version>-<platform>.vcvplugin`.
 
 ## Prerequisites
 
 - **VCV Rack 2 SDK** — download from https://vcvrack.com/manual/PluginDevelopmentTutorial or build from source
 - **C++20 compiler** — GCC 10+, Clang 11+, or MSVC 19.29+ (required by nisps-core for `std::span` and concepts)
 - **GNU Make**
-- **zip** (for distribution packaging only)
 
 ## Build Steps
 
@@ -44,16 +42,13 @@ After installing, restart VCV Rack (or use the module browser refresh if availab
 ## Distribution Packaging
 
 ```bash
-# Build and package in one step
-make -f Makefile.dist dist
+# Build and package a .vcvplugin (SDK plugin.mk target)
+make dist
 
-# Or package an already-built plugin
-make -f Makefile.dist package-only
-
-# Output: dist/MEMLNaut-0.1.0-Linux-x86_64.zip (platform name varies)
+# Output: dist/MEMLNaut-<version>-<platform>.vcvplugin
 ```
 
-The zip contains a `MEMLNaut/` directory with `plugin.so` (or `.dylib`/`.dll`), `plugin.json`, and `res/`. Users extract this into their VCV Rack plugins directory.
+See [DISTRIBUTION.md](DISTRIBUTION.md) for the full packaging, CI matrix, and publishing workflow.
 
 ## Cross-Compilation
 

@@ -1,8 +1,9 @@
 /**
  * Manifold — app root. The convertible Console (ConsoleApp) wired to the real
- * engine, mounted under EngineProvider. Defaults to the hero `focus="composite"`
- * (the convertible centerpiece). The `?debug=1` probe is installed once the
- * engine is live.
+ * engine, mounted under EngineProvider. ConsoleApp renders its single
+ * "composite" stage unconditionally (the dead focus/altitude system was
+ * deleted 2026-07 — simplification audit S15). The `?debug=1` probe is
+ * installed once the engine is live.
  */
 
 import { useEffect } from 'react';
@@ -75,7 +76,7 @@ export function App() {
   return (
     <EngineProvider options={engineOptions()} fallback={<Loading />}>
       <ProbeInstaller />
-      <ConsoleApp focus="composite" />
+      <ConsoleApp />
     </EngineProvider>
   );
 }

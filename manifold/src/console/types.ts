@@ -2,7 +2,6 @@
  * Console — shared prop/context types used across the stage + dock components.
  */
 import type { MFMode, MFParam } from './model';
-import type { BackendId } from '../dock/output-state';
 import type { FeedbackMode } from '../engine/types';
 import type { BackendStatus } from '../backends/backend';
 import type { UseInputLayer } from '../inputs';
@@ -35,36 +34,33 @@ export interface FeedbackMarker {
   polarity: 'positive' | 'negative';
 }
 
-export interface Snapshot {
-  id: number;
-  tag: string;
-  noise: number;
-  seed: number;
-}
-
 export type DrawerKey = 'learn' | 'inputs' | 'route' | 'settings' | 'help';
 export type DrawerDepth = 'condensed' | 'expanded';
-export type Focus = 'in' | 'split' | 'out' | 'composite';
 
-export interface Axes {
-  boldness: number;
-  memory: number;
-  precision: number;
-}
-
-/** The flat context the Dock + drawers read. */
+/**
+ * The flat context the Dock + drawers read. Pruned 2026-07 (simplification
+ * audit S19) to the fields Dock/Drawers/OutputsBackendConfig actually consume.
+ * Deleted outright: the Axes type + axes/setAxis state, the
+ * preset/setPreset/offsetActive chain (permanently 'Sculpt'/false), the
+ * markers/outputBackend/setOutputBackend/cycleStatus fields (each had a zero-
+ * consumer duplicate elsewhere — see ConsoleApp.tsx), and everything S16/S18/
+ * L1/L20 removed (decorative sliders, snapshots, health/gradient visuals,
+ * BackendAdvanced's catalogue).
+ *
+ * `modes` / `setModeId` are KEPT despite having no renderer today — this is
+ * the exact plumbing the Phase-5 instrument-mode picker is built on (A7/A3),
+ * not dead code. `busy` / `addingExample` / `onAddExample` / `onTrain` / `loss`
+ * are ALSO kept even though no drawer reads them either: unlike the fields
+ * above they drive real engine calls (engine.addExample / engine.train /
+ * engine.evalLoss), so — pending confirmation either way — they read as
+ * unfinished plumbing rather than confirmed-dead decoration; deleting them
+ * was out of this pass's authorized scope.
+ */
 export interface ConsoleCtx {
   modes: MFMode[];
   modeId: string;
   setModeId: (id: string) => void;
   mode: MFMode;
-
-  axes: Axes;
-  setAxis: (k: keyof Axes, v: number) => void;
-
-  preset: string;
-  setPreset: (p: string) => void;
-  offsetActive: boolean;
 
   datasetCount: number;
   loss: number[];
@@ -74,15 +70,9 @@ export interface ConsoleCtx {
   onTrain: () => void;
   onClear: () => void;
 
-  snapshots: Snapshot[];
-  onJump: (id: number) => void;
-
   params: MFParam[];
-  cycleStatus: (i: number) => void;
   /** Patch one output row in the shared store (drives stage + dock in sync). */
   setParam: (i: number, patch: Partial<MFParam>) => void;
-  outputBackend: BackendId;
-  setOutputBackend: (v: BackendId) => void;
 
   // ---- Output backend transport (backends-spec §1–§5) ----
   /** Live status of the active output backend (MIDI/OSC connect state, etc.). */
@@ -117,23 +107,12 @@ export interface ConsoleCtx {
   outputMode: OutputMode;
   setOutputMode: (m: OutputMode) => void;
 
-  // ---- Feedback markers on the 2D map (both polarities) ----
-  /** Markers plotted at the input location where each feedback was given. */
-  markers: FeedbackMarker[];
-
   // ---- Modular input layer (workstream F; inputs-spec) ----
   /** The composed input layer: source enable/config/status + channel layout. */
   inputs: UseInputLayer;
 
-  health: number;
-  gradient: number[];
-  gradientStatus: string[];
-  weightsRevision: number;
-
   spread: boolean;
   setSpread: (v: boolean) => void;
-  tame: number;
-  setTame: (v: number) => void;
   noiseCap: number;
   setNoiseCap: (v: number) => void;
 
@@ -151,14 +130,6 @@ export interface ConsoleCtx {
   /** Clear all arm flags ("Arm all"). */
   clearArmed: () => void;
 
-  // ---- Live training params (dock-spec §1.3) ----
-  learningRate: number;
-  setLearningRate: (v: number) => void;
-  decay: number;
-  setDecay: (v: number) => void;
-  spreadLevel: number;
-  setSpreadLevel: (v: number) => void;
-
   // ---- Exploration gestures (one-core-engine §P1; interim TS shells) ----
   /** True while the Jolt press-and-hold weight-morph is engaged. */
   joltActive: boolean;
@@ -173,10 +144,6 @@ export interface ConsoleCtx {
   // ---- Synth engine (dock-spec §5) ----
   audioStarted: boolean;
   onToggleAudio: () => void;
-  volume: number;
-  setVolume: (v: number) => void;
-  bpm: number;
-  setBpm: (v: number) => void;
 
   // ---- Explore-and-place scratchpad session (workstream B; rl-feedback §2.2) ----
   /** True while awaiting a manifold location pick after pressing "place". */

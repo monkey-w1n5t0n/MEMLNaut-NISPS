@@ -14,46 +14,46 @@
  *    FeedbackMode::ExploreAndPlace (set on mount; the controller forwards the
  *    Idle→Exploring→Placing lifecycle to engine.feedback.* — nisps/ml/feedback.hpp,
  *    per docs/adr/rl-feedback-design.md).
- *  - AltitudeNav switches `focus` via React state (in|split|out|composite), not
- *    by navigating to separate HTML files.
  *  - `c15` is labelled "Powerful Synth Engine" (in model.ts) — "C15" never shows.
  *
- * UI-only state (params status/min/max/curve, snapshots, A/B seed, axes,
- * noiseCap, health/rev visuals) is preserved as faithful local React state.
+ * The dead focus/altitude system (AltitudeNav; SplitStage/ReadoutStrip/InputMini
+ * stages; the `in`/`split`/`out` branches) was deleted 2026-07 (simplification
+ * audit S15) — `setFocus` was never called anywhere, so `composite` was the
+ * only reachable stage. The decorative A/B toggle, fake seed, snapshot stack,
+ * fabricated health/gradient visuals, and the never-touched master
+ * volume/bpm/learning-rate/decay/spread-level sliders were deleted alongside it
+ * (S16/L1) — each was write-only, read by nothing but its own control.
+ *
+ * UI-only state (params status/min/max/curve, noiseCap) is preserved as
+ * faithful local React state.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useEngine, useEngineVersion, ExplorationController } from '../engine';
-import { MF_MODES, modeEngineId, seededGradient, shapeValues } from './model';
+import { MF_MODES, modeEngineId, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
 import { ParticleStage } from './ParticleStage';
 import { SandwichStage } from './SandwichStage';
-import { SplitStage } from './SplitStage';
 import { OutputStage } from './OutputStage';
-import { InputMini } from './InputMini';
 import { Manifold } from './Manifold';
-import { ReadoutStrip } from './ReadoutStrip';
 import { VerdictCluster } from './VerdictCluster';
 import { Dock } from './Dock';
 import { ReshapeModal } from './ReshapeModal';
 import type {
-  Axes,
   ConsoleCtx,
   DrawerDepth,
   DrawerKey,
   FeedbackMarker,
   FeedbackModeUI,
-  Focus,
   OutputMode,
   Pin,
-  Snapshot,
   SoloMode,
 } from './types';
 import type { BackendId } from '../dock/output-state';
 import { buildArmMask } from '../dock/output-state';
 import { FeedbackController, type ProtoFeedbackMode } from '../feedback';
-import { DEFAULT_OUTPUT_MODE, OUTPUT_MODES, outputModeDescriptor } from './output-mode';
+import { DEFAULT_OUTPUT_MODE, outputModeDescriptor } from './output-mode';
 import { useSettings, resolveInputMap } from '../settings/settings-store';
 import { useBackendManager } from '../backends';
 import { useInputLayer } from '../inputs';
@@ -77,8 +77,6 @@ declare global {
   }
 }
 
-let SNAP_ID = 0;
-
 /** Small pill-button style for the exploring-scratchpad banner controls. */
 function pillBtn(color: string): CSSProperties {
   return {
@@ -93,39 +91,22 @@ function pillBtn(color: string): CSSProperties {
   };
 }
 
-export interface ConsoleAppProps {
-  focus?: Focus;
-}
-
-export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProps) {
+export function ConsoleApp() {
   const engine = useEngine();
   const version = useEngineVersion(engine);
   const { settings } = useSettings();
 
-  const [focus, setFocus] = useState<Focus>(initialFocus);
   const [modeId, setModeId] = useState('paf_synth');
   const mode = MF_MODES.find((m) => m.id === modeId) ?? MF_MODES[0];
   const [params, setParams] = useState<MFParam[]>(() => mode.params.map((p) => ({ ...p })));
   const [pos, setPos] = useState<[number, number]>([0.5, 0.5]);
 
-  // A/B seed-snapshot model (kept as visual parity; A holds a remembered weight
-  // snapshot conceptually — here we mirror the JSX's seed-based preview marker).
-  const [seed, setSeed] = useState(0.4);
-  const [axes, setAxes] = useState<Axes>({ boldness: 0.55, memory: 0.4, precision: 0.5 });
-  const [preset, setPreset] = useState('Sculpt');
   const [noiseCap, setNoiseCap] = useState(0.12);
   const [examples, setExamples] = useState(0);
   const [addingExample, setAddingExample] = useState(false);
   const [loss, setLoss] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [ab, setAB] = useState<'A' | 'B'>('B');
-  const [, setHoldingA] = useState(false);
-  const aRef = useRef<{ seed: number } | null>(null);
   const [spread, setSpread] = useState(false);
-  const [tame, setTame] = useState(0.85);
-  const [health, setHealth] = useState(0.8);
-  const [rev, setRev] = useState(1);
   const [active, setActive] = useState<DrawerKey | null>(null);
   const [depth, setDepth] = useState<DrawerDepth>('condensed');
   // Sandwich (parameter-landscape) centre-stage toggle — dock-bottom layers icon.
@@ -146,9 +127,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [picking, setPicking] = useState(false);
   const [anchorCount, setAnchorCount] = useState(0);
   const [undoDepth, setUndoDepth] = useState(0);
-  const [learningRate, setLearningRate] = useState(0.00001);
-  const [decay, setDecay] = useState(0.97);
-  const [spreadLevel, setSpreadLevel] = useState(0.6);
   // Exploration gestures (Jolt held weight-morph + OU explore-intensity). The
   // maths lives in the ExplorationController (engine/exploration.ts); these are
   // the React-visible reflections the Learning drawer renders.
@@ -170,8 +148,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const [vcvSendRaw, setVcvSendRaw] = useState(false);
   // Feedback markers plotted on the 2D map (both polarities; session-scoped).
   const [markers, setMarkers] = useState<FeedbackMarker[]>([]);
-  const [volume, setVolume] = useState(0.8);
-  const [bpm, setBpm] = useState(120);
   const [audioStarted, setAudioStarted] = useState(false);
   const [follow, setFollow] = useState(false);
   const [split, setSplit] = useState(() => {
@@ -181,7 +157,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   useEffect(() => {
     localStorage.setItem('mf-composite-split', String(split));
   }, [split]);
-  const [stripPinned, setStripPinned] = useState(true);
   const [firstSession, setFirstSession] = useState(true);
   const [pins, setPins] = useState<Pin[]>([]);
 
@@ -192,7 +167,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   const controllerRef = useRef<FeedbackController | null>(null);
   if (engine && !controllerRef.current) {
     controllerRef.current = new FeedbackController(engine, {
-      seed: 0xfeedbacc,
       spread: 0.6,
     });
   }
@@ -289,8 +263,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setPos([0.5, 0.5]);
     setExamples(0);
     setLoss([]);
-    setSnapshots([]);
-    setSeed(0.4);
     setFollow(false);
     setPins([]);
     setMarkers([]);
@@ -392,10 +364,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     if (!c || !c.isPicking()) return;
     c.placeCommit(x, y);
     setPos([x, y]);
-    pushSnap('anchor');
     pushMarker([x, y], 'positive');
     syncController();
-    setRev((r) => r + 1);
   };
 
   // Output backend transport (backends-spec). The manager consumes the engine
@@ -441,11 +411,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     [params, version, engine],
   );
 
-  const gradient = useMemo(() => seededGradient(rev), [rev]);
-
-  const pushSnap = (tag: string) =>
-    setSnapshots((s) => [...s, { id: ++SNAP_ID, tag, noise: noiseCap, seed }].slice(-50));
-
   /** Plot a feedback marker at the input location it was given (session-scoped). */
   const pushMarker = (at: [number, number], polarity: 'positive' | 'negative') =>
     setMarkers((m) => [...m, { x: at[0], y: at[1], polarity }].slice(-200));
@@ -473,17 +438,14 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     if (feedbackMode === 'explore-and-place') {
       if (c?.getState().exploring) {
         // Place the current candidate → next manifold tap chooses the location.
-        pushSnap('place');
         c.place();
       } else {
         // Not exploring: a plain positive reinforcement of the current mapping.
-        pushSnap('commit +');
         c?.like(pos, engine?.getOutputs() ?? new Float32Array(0));
         pushMarker(pos, 'positive');
       }
     } else {
       // Geometric dislike: thumbs-up = like + train.
-      pushSnap('like +');
       c?.like(pos, engine?.getOutputs() ?? new Float32Array(0));
       pushMarker(pos, 'positive');
     }
@@ -491,8 +453,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     forwardVcvFeedback('up');
     syncController();
     setNoiseCap((n) => Math.max(0.02, n * 0.7));
-    setHealth((h) => Math.min(1, h + 0.08));
-    setRev((r) => r + 1);
     const l = engine?.evalLoss();
     setLoss((prev) =>
       [...prev, Number.isFinite(l) ? (l as number) : prev.length ? prev[prev.length - 1] : 0.5].slice(-120),
@@ -508,10 +468,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       // Enter the scratchpad (or, if already exploring, cancel back to the real
       // net). NEVER a dislike — Mode 2 is positive-only.
       if (c?.getState().exploring) {
-        pushSnap('cancel explore');
         c.cancel();
       } else {
-        pushSnap('explore');
         c?.enterExplore();
         // VCV bridged mode: entering explore re-rolls the module's net too.
         forwardVcvFeedback('rand');
@@ -520,31 +478,21 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       // Geometric dislike: push the current mapping away from this sound. Pass the
       // HEARD (post-pipeline, routed) vector — NOT the raw MLP output — so the
       // core has a non-zero MSE derivative (see engine.feedback.dislikeGeometric).
-      pushSnap('dislike −');
-      const action = c?.dislike(
-        pos,
-        engine?.routedOutput() ?? new Float32Array(0),
-        noiseCap,
-        spread ? 1 : 0.6,
-      );
+      const action = c?.dislike(engine?.routedOutput() ?? new Float32Array(0));
       // GeometricColdStart (15): no positives yet → show the one-time prompt.
       if (action === 15) setColdStart(true);
       pushMarker(pos, 'negative');
       // VCV bridged mode: thumbs-down = negative verdict.
       forwardVcvFeedback('down');
-      setSeed((s) => s + (Math.random() - 0.5) * (noiseCap * 4 + 0.3));
       setNoiseCap((n) => Math.min(0.5, n + 0.06));
-      setHealth((h) => Math.max(0.1, h - 0.06));
     }
     syncController();
-    setRev((r) => r + 1);
   };
 
   /** Long-press perturb / explicit re-roll. */
   const reroll = () => {
     const c = controllerRef.current;
     setFirstSession(false);
-    pushSnap('re-roll');
     if (feedbackMode === 'explore-and-place' && c?.getState().exploring) {
       // Re-roll the scratchpad net (undoable) without leaving the session.
       c.reroll();
@@ -555,10 +503,7 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     // VCV bridged mode: re-roll the module's net too.
     forwardVcvFeedback('rand');
     syncController();
-    setSeed(Math.random() * 6);
     setNoiseCap(0.4);
-    setHealth(0.5);
-    setRev((r) => r + 1);
   };
 
   /**
@@ -575,51 +520,40 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       engine?.process();
     }
     syncController();
-    setRev((r) => r + 1);
   };
 
   /**
-   * Undo. While exploring (Mode 2) this pops the scratchpad undo ring (reroll /
-   * nudge). Otherwise it falls back to the UI snapshot stack (visual A/B seed).
+   * Undo. Only meaningful while exploring (Mode 2) — pops the scratchpad undo
+   * ring (reroll / nudge), which is real, engine-backed undo. Geometric dislike
+   * (Mode 1) and the non-exploring case have no real undo in the core, so the
+   * button is simply inactive there (the prior "undo" outside a scratchpad
+   * session only reverted a decorative UI snapshot stack — deleted 2026-07,
+   * simplification audit S16).
    */
   const undo = () => {
     const c = controllerRef.current;
     if (feedbackMode === 'explore-and-place' && c?.getState().exploring) {
       c.undo();
       syncController();
-      setRev((r) => r + 1);
-      return;
     }
-    setSnapshots((s) => {
-      if (!s.length) return s;
-      const last = s[s.length - 1];
-      setSeed(last.seed);
-      setNoiseCap(last.noise);
-      setRev((r) => r + 1);
-      return s.slice(0, -1);
-    });
   };
 
   // ---- Explore-and-place scratchpad ops surfaced to the dock + cluster ----
   const onExplore = () => {
     controllerRef.current?.enterExplore();
     syncController();
-    setRev((r) => r + 1);
   };
   const onScratchReroll = () => {
     controllerRef.current?.reroll();
     syncController();
-    setRev((r) => r + 1);
   };
   const onScratchNudge = () => {
     controllerRef.current?.nudge();
     syncController();
-    setRev((r) => r + 1);
   };
   const onScratchUndo = () => {
     controllerRef.current?.undo();
     syncController();
-    setRev((r) => r + 1);
   };
   const onPlace = () => {
     controllerRef.current?.place();
@@ -629,13 +563,11 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     setBusy(true);
     controllerRef.current?.finalise();
     syncController();
-    setRev((r) => r + 1);
     setBusy(false);
   };
   const onCancelExplore = () => {
     controllerRef.current?.cancel();
     syncController();
-    setRev((r) => r + 1);
   };
   const train = () => {
     setBusy(true);
@@ -655,30 +587,11 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     // Snapshot the current input → current (shaped) output as a training example.
     engine?.addExample([pos[0], pos[1]], Array.from(values));
     setExamples((e) => e + 1);
-    pushSnap('example');
     train();
   };
 
   const setParam = (i: number, patch: Partial<MFParam>) =>
     setParams((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-  const cycleStatus = (i: number) =>
-    setParams((ps) =>
-      ps.map((p, j) =>
-        j === i
-          ? { ...p, status: ({ off: 'fixed', fixed: 'live', live: 'off' } as const)[p.status] }
-          : p,
-      ),
-    );
-
-  const toggleAB = () => {
-    if (ab === 'B') {
-      aRef.current = { seed };
-      setAB('A');
-    } else {
-      if (aRef.current) setSeed(aRef.current.seed);
-      setAB('B');
-    }
-  };
 
   // keyboard accelerators
   useEffect(() => {
@@ -702,13 +615,13 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
         setActive((a) => (a === map[e.key] ? null : map[e.key]));
         setDepth('condensed');
       } else if (e.key === '\\') setDepth((d) => (d === 'expanded' ? 'condensed' : 'expanded'));
-      else if (focus === 'composite' && e.key === '[') {
+      else if (e.key === '[') {
         e.preventDefault();
         setSplit((s) => Math.max(0, s - 0.04));
-      } else if (focus === 'composite' && e.key === ']') {
+      } else if (e.key === ']') {
         e.preventDefault();
         setSplit((s) => Math.min(1, s + 0.04));
-      } else if (focus === 'composite' && (e.key === '=' || e.key === '0')) {
+      } else if (e.key === '=' || e.key === '0') {
         e.preventDefault();
         setSplit(0.5);
       } else if (e.key === ' ' || e.key === 'ArrowUp') {
@@ -791,11 +704,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     modeId,
     setModeId,
     mode,
-    axes,
-    setAxis: (k, v) => setAxes((s) => ({ ...s, [k]: v })),
-    preset,
-    setPreset,
-    offsetActive: preset !== 'Sculpt',
     datasetCount: examples,
     loss,
     busy,
@@ -812,25 +720,8 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
       setMarkers([]);
       setPins([]);
     },
-    snapshots,
-    onJump: (id) => {
-      const s = snapshots.find((x) => x.id === id);
-      if (s) {
-        setSeed(s.seed);
-        setNoiseCap(s.noise);
-        setRev((r) => r + 1);
-      }
-    },
     params,
-    cycleStatus,
     setParam,
-    outputBackend,
-    setOutputBackend: (b) => {
-      // Map a backend id back onto the active Mode (the Mode is the source of
-      // truth; the Outputs drawer drives it via setOutputMode).
-      const m = OUTPUT_MODES.find((om) => om.backend === b);
-      if (m) setOutputMode(m.id);
-    },
     outputMode,
     setOutputMode,
     // ---- output backend transport ----
@@ -853,16 +744,9 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     cvIdentify,
     cvDisconnect,
     setParams: (next: MFParam[]) => setParams(next),
-    markers,
     inputs,
-    health,
-    gradient: gradient.norms,
-    gradientStatus: gradient.status,
-    weightsRevision: rev,
     spread,
     setSpread,
-    tame,
-    setTame,
     noiseCap,
     setNoiseCap,
     // learning-behaviour
@@ -874,12 +758,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     learningPaused,
     armedCount: params.filter((p) => p.armed).length,
     clearArmed: () => setParams((ps) => ps.map((p) => (p.armed ? { ...p, armed: false } : p))),
-    learningRate,
-    setLearningRate,
-    decay,
-    setDecay,
-    spreadLevel,
-    setSpreadLevel,
     // exploration gestures (Jolt + OU explore)
     joltActive,
     onJoltPress,
@@ -889,10 +767,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     // synth
     audioStarted,
     onToggleAudio,
-    volume,
-    setVolume,
-    bpm,
-    setBpm,
     // explore-and-place scratchpad session (workstream B)
     picking,
     anchorCount,
@@ -909,8 +783,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
   // Resolve the effective input-map shape from Settings + the mode's declared input.
   const inputMapVariant = resolveInputMap(settings.inputMap, mode.input);
 
-  const healthColor =
-    health > 0.66 ? 'rgba(107,194,107,' : health > 0.33 ? 'rgba(245,196,94,' : 'rgba(255,68,102,';
   const addPin = (p: [number, number]) =>
     setPins((ps) => [...ps, { x: p[0], y: p[1], color: 'rgba(255,106,0,0.16)' }]);
 
@@ -926,41 +798,9 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
     >
       <style>{`@keyframes mfDrawerIn{from{transform:translateX(16px)}to{transform:translateX(0)}}`}</style>
 
-      {/* ambient health glow at the screen edge */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          pointerEvents: 'none',
-          zIndex: 25,
-          boxShadow: `inset 0 0 120px ${healthColor}${0.05 + (1 - health) * 0.12})`,
-          transition: 'box-shadow var(--dur-slow) var(--ease-console)',
-        }}
-      />
-
       {/* stage = manifold area (left of dock) */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 48, bottom: 0 }}>
-        {focus === 'in' && (stripPinned || mode.cls !== 'Synth') && (
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30 }}>
-            <ReadoutStrip
-              params={params}
-              values={values}
-              onChange={setParam}
-              pinned={stripPinned}
-              onTogglePin={() => setStripPinned((p) => !p)}
-            />
-          </div>
-        )}
-
-        <div
-          style={{
-            position: 'absolute',
-            top: focus === 'in' && stripPinned ? 76 : 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-          }}
-        >
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
           {sandwich ? (
             // Sandwich centre-stage: shrunken input (left) · landscape stack
             // (centre, fills) · compact outputs (right). Replaces the Mode stage.
@@ -1011,7 +851,7 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             </div>
           ) : outputMode === 'particles' ? (
             <ParticleStage pos={pos} onMove={onMove} />
-          ) : focus === 'composite' ? (
+          ) : (
             <CompositeStage
               split={split}
               onSplit={setSplit}
@@ -1027,46 +867,6 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
               params={params}
               values={values}
               onChange={setParam}
-            />
-          ) : focus === 'split' ? (
-            <SplitStage
-              pos={pos}
-              onMove={onMove}
-              noiseCap={noiseCap}
-              pins={pins}
-              markers={markers}
-              variant={inputMapVariant}
-              follow={follow}
-              onLongPress={addPin}
-              params={params}
-              values={values}
-              onChange={setParam}
-            />
-          ) : focus === 'out' ? (
-            <>
-              <OutputStage params={params} values={values} onChange={setParam} />
-              <InputMini
-                mode={mode}
-                pos={pos}
-                onMove={onMove}
-                noiseCap={noiseCap}
-                corner="bottom-left"
-                variant={inputMapVariant}
-              />
-            </>
-          ) : (
-            <Manifold
-              pos={pos}
-              onMove={onMove}
-              noiseCap={noiseCap}
-              pins={pins}
-              markers={markers}
-              variant={inputMapVariant}
-              frozen={false}
-              follow={follow}
-              onLongPress={addPin}
-              picking={picking}
-              onPickLocation={onPickLocation}
             />
           )}
 
@@ -1092,10 +892,7 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             onReroll={reroll}
             onNudge={nudgeNet}
             onRandomise={reroll}
-            canUndo={feedbackMode === 'explore-and-place' && exploring ? undoDepth > 0 : snapshots.length > 0}
-            ab={ab}
-            onToggleAB={toggleAB}
-            onHoldA={setHoldingA}
+            canUndo={feedbackMode === 'explore-and-place' && exploring && undoDepth > 0}
             firstSession={firstSession}
             feedbackMode={feedbackMode}
             exploring={exploring}
@@ -1205,11 +1002,10 @@ export function ConsoleApp({ focus: initialFocus = 'composite' }: ConsoleAppProp
             </div>
           )}
 
-          {/* Global PICK-LOCATION capture overlay: works in any focus (composite/
-              split stages don't expose picking). The directly-rendered Manifold
-              (focus==='in') also handles picks + draws the reticle; this overlay
-              guarantees the place→pick loop is reachable everywhere. */}
-          {picking && focus !== 'in' && (
+          {/* Global PICK-LOCATION capture overlay: the CompositeStage/ParticleStage
+              don't expose picking directly, so this transparent overlay captures
+              the pointer-down and routes it to onPickLocation everywhere. */}
+          {picking && (
             <div
               onPointerDown={(e) => {
                 const r = e.currentTarget.getBoundingClientRect();

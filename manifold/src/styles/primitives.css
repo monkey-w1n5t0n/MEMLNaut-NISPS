@@ -70,37 +70,3 @@
 .mf-slider-input:focus::-webkit-slider-thumb {
   box-shadow: 0 0 0 3px var(--glow-focus);
 }
-
-/* ---- ControlAxis (.mf-axis-input) ---- */
-.mf-axis-input::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--bg-3);
-}
-.mf-axis-input::-moz-range-track {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--bg-3);
-}
-.mf-axis-input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--mf-axis-accent, var(--accent));
-  margin-top: -6px;
-  box-shadow: 0 0 10px var(--mf-axis-accent, var(--accent));
-  cursor: pointer;
-}
-.mf-axis-input::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--mf-axis-accent, var(--accent));
-  border: none;
-  box-shadow: 0 0 10px var(--mf-axis-accent, var(--accent));
-}
-.mf-axis-input:focus {
-  outline: none;
-}

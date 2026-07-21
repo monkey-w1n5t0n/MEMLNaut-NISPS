@@ -12,8 +12,10 @@
  *   - Synth/Particle/Editor → handled by ModeConfig in Drawers (no extra config here).
  *
  * Everything is editable inline; writes go through the shared MFParam store
- * (ctx.setParam) — never a second data path. The full-depth modal reuses the
- * same sections via BackendAdvanced.
+ * (ctx.setParam) — never a second data path. This is the ONLY per-backend
+ * config editor (BackendAdvanced.tsx, a full-depth duplicate that rendered
+ * alongside this one in the same expanded drawer, was deleted 2026-07 —
+ * simplification audit S18).
  */
 import { useEffect, useState } from 'react';
 import type { ConsoleCtx } from '../console/types';

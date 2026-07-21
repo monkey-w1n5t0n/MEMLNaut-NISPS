@@ -25,9 +25,7 @@ import { Badge, Button, PillToggle, Slider, Switch } from '../primitives';
 import type { ConsoleCtx, DrawerDepth, DrawerKey, FeedbackModeUI, SoloMode } from './types';
 import type { InputMode } from '../inputs';
 import { OutputControlRow } from '../dock/OutputControlRow';
-import { BackendAdvanced } from '../dock/BackendAdvanced';
 import { OutputsBackendConfig, BackendStatusChip } from '../dock/OutputsBackendConfig';
-import { BACKENDS } from '../dock/output-state';
 import { shapeValues } from './model';
 import { outputModeDescriptor } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
@@ -139,6 +137,13 @@ const FEEDBACK_DESC: Record<FeedbackModeUI, string> = {
   'explore-and-place':
     'Down re-rolls the whole net into a scratchpad you audition; + places a liked sound (Mode 2).',
 };
+/**
+ * Solo behaviour. `mask-gradients` is the only variant the core actually
+ * implements — `soloMode` has no other observable effect today (the other two
+ * options need the C API's `train_masked` step). Rendered as a fixed,
+ * non-selectable label rather than a picker that offers dead choices
+ * (simplification audit L20).
+ */
 const SOLO_OPTS: { value: SoloMode; label: string }[] = [
   { value: 'mask-gradients', label: 'Mask gradients' },
   { value: 'zero-loss', label: 'Zero loss' },
@@ -234,25 +239,14 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
             </span>
           </div>
           <SectionLabel>Solo behaviour</SectionLabel>
-          <Segmented value={ctx.soloMode} onChange={ctx.setSoloMode} options={SOLO_OPTS} />
+          <Chip tone="var(--accent)">{SOLO_OPTS.find((o) => o.value === ctx.soloMode)?.label}</Chip>
           <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
             {SOLO_DESC[ctx.soloMode]} Solo only freezes the rest as far as a shared network allows.
+            The other two behaviours need real core support (`train_masked`) and aren't selectable yet.
           </p>
 
           <SectionLabel>Live training params</SectionLabel>
           <Slider label="noise cap" value={ctx.noiseCap} min={0} max={0.5} step={0.01} onChange={ctx.setNoiseCap} />
-          <Slider label="spread" value={ctx.spreadLevel} min={0} max={1} step={0.01} onChange={ctx.setSpreadLevel} />
-          <Slider label="tame · output limiter" value={ctx.tame} min={0} max={1} step={0.01} onChange={ctx.setTame} />
-          <Slider
-            label="learning rate"
-            value={ctx.learningRate}
-            min={0.000001}
-            max={0.01}
-            step={0.000001}
-            onChange={ctx.setLearningRate}
-            format={(v) => v.toExponential(1)}
-          />
-          <Slider label="decay" value={ctx.decay} min={0.8} max={1} step={0.001} onChange={ctx.setDecay} />
         </>
       )}
 
@@ -569,17 +563,14 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
             </Button>
             <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>audio starts on the play gesture</span>
           </div>
-          <Slider label="master volume" value={ctx.volume} min={0} max={1} step={0.01} onChange={ctx.setVolume} />
           {depth === 'expanded' && (
-            <>
-              <SectionLabel>Tempo</SectionLabel>
-              <Slider label="bpm" value={ctx.bpm} min={40} max={220} step={1} onChange={ctx.setBpm} />
-              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-                The active engine follows the selected mode ({ctx.mode.label}).
-                {/* TODO(dock-spec §5): arpeggiator + tiered synth presets + the
-                    18-section group-override matrix are workstream E. */}
-              </p>
-            </>
+            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+              The active engine follows the selected mode ({ctx.mode.label}).
+              {/* TODO(dock-spec §5): arpeggiator + tiered synth presets + the
+                  18-section group-override matrix are workstream E. Master
+                  volume + bpm sliders were deleted (simplification audit
+                  S16) — they drove no engine parameter. */}
+            </p>
           )}
         </>
       );
@@ -624,7 +615,6 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
   }, {});
   const mutedN = ctx.params.filter((p) => p.muted).length;
   const modeDesc = outputModeDescriptor(ctx.outputMode);
-  const backend = BACKENDS.find((b) => b.id === modeDesc.backend) ?? BACKENDS[0];
   // The particle Mode names its outputs; otherwise use the param names.
   const nameFor = (idx: number, fallback: string) =>
     ctx.outputMode === 'particles' ? VISUAL_NAMES[idx] ?? fallback : fallback;
@@ -670,12 +660,6 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       </div>
       {!expanded && ctx.params.length > 6 && (
         <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>+{ctx.params.length - 6} more — expand to edit</span>
-      )}
-      {expanded && (
-        <>
-          <SectionLabel>Advanced · {modeDesc.label}</SectionLabel>
-          <BackendAdvanced backend={modeDesc.backend} params={ctx.params} setParam={ctx.setParam} />
-        </>
       )}
     </>
   );

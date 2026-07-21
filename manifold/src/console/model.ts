@@ -69,7 +69,7 @@ export const DEFAULT_MODE_ML: ModeML = {
 
 /**
  * Per-output control row — the unified store used by both the stage
- * (OutputStage / ReadoutStrip) and the Outputs/Routing dock. `status` is the
+ * (OutputStage) and the Outputs/Routing dock. `status` is the
  * model-control tri-state; `muted` and `armed` are ORTHOGONAL modifiers
  * (dock-spec §3.2 — the deliberate split of the deployed conflated
  * frozen↔muted field). Backend-specific specs are populated by the active
@@ -300,22 +300,6 @@ export function shapeValues(params: MFParam[], engineOut: Float32Array | null): 
     const v = p.min + applyCurve(raw, p.curve) * (p.max - p.min);
     return Math.max(0, Math.min(1, v));
   });
-}
-
-/** Deterministic per-revision gradient-flow stub (visual only; ported as-is). */
-export function seededGradient(rev: number): {
-  norms: number[];
-  status: string[];
-} {
-  const n = 4;
-  const norms: number[] = [];
-  const status: string[] = [];
-  for (let i = 0; i < n; i++) {
-    const r = Math.abs((Math.sin((rev + 1) * (i + 1) * 12.9898) * 43758.5453) % 1);
-    norms.push(0.2 + r * 0.8);
-    status.push(r > 0.85 ? 'exploding' : r < 0.18 ? 'vanishing' : r < 0.3 ? 'converged' : 'healthy');
-  }
-  return { norms, status };
 }
 
 /** Map a mode id → the audio-engine backend id. Mode ids align with engine ids

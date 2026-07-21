@@ -15,7 +15,7 @@
  *   process()                    — re-run last input after a weight change
  *   addExample([x,y], outVec)    — append a training example
  *   train()                      — SGD over the dataset
- *   feedback.{setFocus,thumbsUp,dislikeGeometric,storePositive,…}
+ *   feedback.{setFocus,thumbsUp,dislikeGeometric,…}
  *                                — the SHARED C++ core's RL primitives
  *
  * As of one-core-engine P3 the geometric push-away (Mode 1) is a C++ core
@@ -55,9 +55,6 @@ export interface Anchor {
 
 /** The minimal engine surface the controller needs (decoupled from EngineApi). */
 export interface ControllerEngine {
-  getWeights(): Float32Array;
-  setWeights(w: Float32Array): void;
-  randomise(spread?: number): void;
   setInput(x: number, y: number): void;
   getOutputs(): Float32Array;
   process(): void;
@@ -70,8 +67,6 @@ export interface ControllerEngine {
     // `heardVec` is the post-pipeline (HEARD) output; returns the FeedbackAction
     // int (14=GeometricPush, 15=GeometricColdStart).
     dislikeGeometric(heardVec?: Float32Array, lr?: number): number;
-    /** Feed a positive into the k-NN centroid (null → live MLP output). */
-    storePositive(vec?: Float32Array): void;
     positiveCount(): number;
     negativeCount(): number;
     // ExploreAndPlace lifecycle — the SHARED C++ core (mode 'explore_and_place').
@@ -87,8 +82,6 @@ export interface ControllerEngine {
     like(): void;
     commitPlace(): void;
     cancelPlace(): void;
-    placing(): boolean;
-    exploreState(): number; // 0=Idle 1=Exploring 2=Placing
     undoDepth(): number;
     placedOutput(): Float32Array | null;
   };
@@ -115,24 +108,16 @@ export interface FeedbackControllerState {
 }
 
 export interface FeedbackControllerOptions {
-  /** Seed for the deterministic nudge RNG (NOT Math.random — task constraint). */
-  seed?: number;
   /** Master spread for randomise / nudge (mirrors the engine spread knob). */
   spread?: number;
   /** Nudge perturbation standard deviation (small bounded weight jitter). */
   nudgeStddev?: number;
-  /**
-   * Undo-stack depth. WASM D=4, firmware D=2 per rl-feedback-design §2.2; the
-   * prototype defaults to the WASM depth.
-   */
-  undoDepth?: number;
 }
 
 export class FeedbackController {
   private engine: ControllerEngine;
   private spread: number;
   private nudgeStddev: number;
-  private maxUndo: number;
 
   private mode: ProtoFeedbackMode = 'explore-and-place';
   private soloMode: ProtoSoloMode = 'mask-gradients';
@@ -162,7 +147,6 @@ export class FeedbackController {
     this.engine = engine;
     this.spread = opts.spread ?? 0.6;
     this.nudgeStddev = opts.nudgeStddev ?? 0.05;
-    this.maxUndo = Math.max(1, opts.undoDepth ?? 4);
   }
 
   // ===================================================================
@@ -367,23 +351,12 @@ export class FeedbackController {
    *   5. cold-start fallback (negative-LR) when there are no positives yet.
    * Soloed/active dims come from the core's focus mask (set via setArmMask).
    *
-   * @param input   the control input the disliked sound was heard at (unused by
-   *                the core — it reads the MLP's live input — kept for the marker /
-   *                call-site symmetry with like()).
    * @param output  the HEARD (post-pipeline) output vector a_neg. MUST be the
    *                heard vector, not the raw MLP output, or the cold-start MSE
    *                derivative is zero (see engine.feedback.dislikeGeometric).
-   * @param _speed  legacy move_weights speed — ignored (geometric path).
-   * @param _spread legacy move_weights spread — ignored (geometric path).
    * @returns the FeedbackAction int (14=GeometricPush, 15=GeometricColdStart).
    */
-  dislike(
-    input: readonly [number, number],
-    output: Float32Array,
-    _speed: number,
-    _spread: number,
-  ): number {
-    void input;
+  dislike(output: Float32Array): number {
     const action = this.engine.feedback.dislikeGeometric(output);
     this.engine.process();
     return action;

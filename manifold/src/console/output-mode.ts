@@ -18,13 +18,6 @@
  */
 import type { OutputMode } from './types';
 import type { BackendId } from '../dock/output-state';
-import type {
-  ParticleIcon,
-  MidiIcon,
-  OscIcon,
-  SynthIcon,
-  EditorIcon,
-} from './icons';
 
 export interface OutputModeDescriptor {
   id: OutputMode;
@@ -87,11 +80,3 @@ export const DEFAULT_OUTPUT_MODE: OutputMode = OUTPUT_MODES[0].id;
 export function outputModeDescriptor(id: OutputMode): OutputModeDescriptor {
   return OUTPUT_MODES.find((m) => m.id === id) ?? OUTPUT_MODES[0];
 }
-
-/** The monochrome icon component for a Mode (resolved by the dock). */
-export type ModeIconComponent =
-  | typeof ParticleIcon
-  | typeof MidiIcon
-  | typeof OscIcon
-  | typeof SynthIcon
-  | typeof EditorIcon;

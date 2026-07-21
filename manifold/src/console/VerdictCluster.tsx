@@ -1,6 +1,6 @@
 /**
  * VerdictCluster — floating bottom-centre control, the app's main verdict.
- * ▽ perturb (thumbs-down) · ↺ undo · △ commit (thumbs-up), + A/B toggle.
+ * ▽ perturb (thumbs-down) · ↺ undo · △ commit (thumbs-up).
  * Long-press perturb = full re-roll. Ported from `VerdictCluster.jsx`.
  *
  * The cluster reflects the ACTIVE feedback mode (workstream B; rl-feedback §0):
@@ -50,9 +50,6 @@ export interface VerdictClusterProps {
   /** Full re-roll of the current net (right half of the pill). */
   onRandomise: () => void;
   canUndo: boolean;
-  ab: 'A' | 'B';
-  onToggleAB: () => void;
-  onHoldA: (holding: boolean) => void;
   firstSession: boolean;
   /** Active feedback mode — drives the cluster's labels/tones (rl-feedback §0). */
   feedbackMode: FeedbackModeUI;
@@ -70,9 +67,6 @@ export function VerdictCluster({
   onNudge,
   onRandomise,
   canUndo,
-  ab,
-  onToggleAB,
-  onHoldA,
   firstSession,
   feedbackMode,
   exploring,

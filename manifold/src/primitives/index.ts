@@ -3,9 +3,13 @@
  * on the Manifold design tokens. Ported from the window-global JSX reference
  * implementations in docs/redesign/manifold-export/components/.
  *
- * Side-effect import: pulls in the `.mf-slider-input` / `.mf-axis-input`
- * range-input styling that Slider and ControlAxis depend on. Importing this
- * barrel anywhere in the app is enough to register those rules.
+ * Side-effect import: pulls in the `.mf-slider-input` range-input styling that
+ * Slider depends on. Importing this barrel anywhere in the app is enough to
+ * register those rules.
+ *
+ * Panel / StatusLine / ControlAxis / CurvePlot / Sparkline were deleted
+ * 2026-07 (simplification audit L22) — zero consumers repo-wide. Sparkline/
+ * CurvePlot may return with the deferred training-health diagnostics suite.
  */
 import '../styles/primitives.css';
 
@@ -18,34 +22,14 @@ export type { SliderProps } from './Slider';
 export { PillToggle } from './PillToggle';
 export type { PillToggleProps, PillOption } from './PillToggle';
 
-export { Panel } from './Panel';
-export type { PanelProps } from './Panel';
-
 export { Badge } from './Badge';
 export type { BadgeProps, BadgeTone } from './Badge';
 
 export { Switch } from './Switch';
 export type { SwitchProps } from './Switch';
 
-export { StatusLine } from './StatusLine';
-export type {
-  StatusLineProps,
-  StatusItem,
-  StatusItemObject,
-  StatusTone,
-} from './StatusLine';
-
 export { XYPad } from './XYPad';
 export type { XYPadProps } from './XYPad';
 
 export { VirtualJoystick } from './VirtualJoystick';
 export type { VirtualJoystickProps } from './VirtualJoystick';
-
-export { ControlAxis } from './ControlAxis';
-export type { ControlAxisProps } from './ControlAxis';
-
-export { CurvePlot } from './CurvePlot';
-export type { CurvePlotProps, CurveName } from './CurvePlot';
-
-export { Sparkline } from './Sparkline';
-export type { SparklineProps } from './Sparkline';

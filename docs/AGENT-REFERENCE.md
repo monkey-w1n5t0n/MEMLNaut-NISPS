@@ -46,7 +46,7 @@ These rules apply to **all** code under `nisps/`. They are inert in WASM but kep
 - **No heap.** No `new`, `malloc`, `std::vector` in hot paths. Use `nisps::FixedBuffer<T, N>` or `std::array<T, N>`.
 - **Constants discipline.** Float literals >255 used in hot paths must be `static const float val = X.f;` not inline.
 - **`.f` suffix on all float literals.** No double promotion in audio/inference paths.
-- **Memory section attributes.** Apply `NISPS_AUDIO_MEM` / `NISPS_AUDIO_FUNC` / `NISPS_APP_SRAM` / `NISPS_HOT` / `NISPS_FORCE_INLINE` (from `nisps/core/perf.hpp`).
+- **Hot-path attributes.** Apply `NISPS_HOT` / `NISPS_FORCE_INLINE` (from `nisps/core/perf.hpp`). The SRAM-section macros were deleted in the 2026-07 sweep — they had no real use sites.
 - **No virtual dispatch in audio path.** `AudioEngine` and `Mode` are C++20 concepts, not interfaces.
 - **Deterministic RNG.** All RNG state is per-instance; constructors take a seed; cross-platform parity tests rely on this.
 
@@ -62,10 +62,9 @@ firmware/MEMLNaut-NISPS/
 │   ├── peripherals.hpp    # joystick / pots / buttons → Mode::set_input + ML primitives
 │   ├── midi_io.hpp        # MIDI in → mode handlers; drain ControlEvent ring → MIDI UART
 │   ├── mode_select.hpp    # type aliases firmware mode name → nisps::modes::*Mode
-│   ├── input_router.hpp   # wire_inputs() entry point
 │   ├── output_router.hpp  # drain_outputs() entry point
 │   └── settings_view.hpp  # wire_settings(): TFT/rotary menu (Joystick Dual/Single for 4-in modes)
-└── src/{memllib,daisysp,nisps}    # symlinks (Arduino-CLI sketch tree convention)
+└── src/{memllib,nisps}           # symlinks (Arduino-CLI sketch tree convention)
 ```
 
 Build: `scripts/build-firmware.sh [VARIANT]`. Verified compiling for PAFSynth, ChannelStrip, BreakOr on `rp2040:rp2040:solderparty_rp2350_stamp_xl:opt=Optimize3` with `-std=gnu++20`. Flash: `scripts/flash-firmware.sh`. One-shot: `scripts/build-and-flash-firmware.sh`.
@@ -150,7 +149,7 @@ The MLP uses ReLU hidden layers with a sigmoid output. With uniform [-1,1] weigh
 ## Build system summary
 
 ```bash
-# Initialize submodules (required for memllib + daisysp)
+# Initialize submodules (required for memllib)
 git submodule update --init --recursive
 
 # Codegen (run after editing any schemas/modes/*.json)

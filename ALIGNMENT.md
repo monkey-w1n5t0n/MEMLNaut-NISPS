@@ -46,11 +46,11 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 ### 5. Dead mass and registry sprawl across every layer (2026-07-21)
 
-**What.** The audit's aggregate: ~40% of `feedback.hpp` is legacy modes nothing reaches; a dead four-way focus/altitude UI system; ~25 unconsumed ConsoleCtx fields; a dozen dead WASM API entries threaded through a 5-file registration chain; daisysp compiled into every firmware build with zero consumers; retired-playground artifacts and dead planning relics tracked at root; mode identity spread across ~6 hand-maintained registries with demonstrated drift; assorted stale specs presenting a deleted world as present tense.
+**What.** *Phase 1 landed 2026-07-21 and removed the bulk of this:* the dead focus/altitude UI system, the decorative control stratum, 12 dead WASM API entries across the 5-file registration chain, the vendored daisysp tree, retired-playground artifacts and root planning relics, 5 unused primitives, the duplicate backend editor and catalogue, `voice_space.hpp`, `fixed_buffer.hpp`, the dead perf-macro regime, and the OSC bridge twin. What remains is the *registry* half: mode identity spread across ~6 hand-maintained registries with demonstrated drift, MLP dims typed twice, per-mode schema blocks hand-written in C++, and assorted stale specs presenting a deleted world as present tense.
 
-**Why it blocks the mission.** Every dead path is agent-confusing surface area and drift risk; the registries are dual-truth bugs waiting to fire (one already did: the selftest table).
+**Why it blocks the mission.** The registries are dual-truth bugs waiting to fire (one already did: the selftest table). Stale specs are agent-confusing surface area.
 
-**Rough cost.** Plan phases 1–3 (~a week total, mostly mechanical deletions with green gates). Behaviour bugs found en route (dataset-cap divergence 100 vs 128 + OOB read, VCV 2-D input truncation, VCV audio-thread race + JSON) are plan §3.
+**Rough cost.** Plan phase 3 (~2–3 days, codegen takes ownership) plus the docs disposition pass (§8). Behaviour bugs found en route (dataset-cap divergence 100 vs 128 + OOB read, VCV 2-D input truncation, VCV audio-thread race + JSON) are plan §3.
 
 ### 6. No performance measurement despite a performance-defined mission (2026-07-21)
 

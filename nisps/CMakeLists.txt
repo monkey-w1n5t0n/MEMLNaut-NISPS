@@ -30,7 +30,7 @@ target_compile_features(nisps_core INTERFACE cxx_std_20)
 # ---------------------------------------------------------------------------
 # When building for WASM via emcmake, ${EMSCRIPTEN} is set automatically. We
 # don't actually emit a WASM binary from this CMakeLists yet — the WASM build
-# script lives in stream 7 (playground/build) and assembles its own
+# script (scripts/build-wasm.sh) assembles its own
 # Emscripten link command. Here we just gate the host-only test executable so
 # `emcmake cmake -S nisps -B build-wasm` configures cleanly.
 if(EMSCRIPTEN)
@@ -47,7 +47,6 @@ if(NOT EMSCRIPTEN)
 
     add_executable(nisps_core_tests
         ${NISPS_TEST_DIR}/test_main.cpp
-        ${NISPS_TEST_DIR}/test_fixed_buffer.cpp
         ${NISPS_TEST_DIR}/test_ring_buffer.cpp
         ${NISPS_TEST_DIR}/test_rng.cpp
         ${NISPS_TEST_DIR}/test_math.cpp

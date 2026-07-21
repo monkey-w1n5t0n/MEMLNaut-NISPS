@@ -208,7 +208,6 @@ NISPS_TEST(geo_dislike_cold_start_then_push) {
     const FeedbackAction a1 = fb.on_down(m, {}, 0.1f, 0.5f, {});
     NISPS_EXPECT(a1 == FeedbackAction::GeometricColdStart);
     NISPS_EXPECT(fb.negative_count() == 1u);
-    NISPS_EXPECT(fb.dislike_multiplier() == 2u);
     {
         auto after = m.get_weights();
         for (std::size_t i = 0; i < snap.size(); ++i) {

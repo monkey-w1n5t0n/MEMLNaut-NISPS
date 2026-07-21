@@ -12,8 +12,6 @@
 // The two `stereosample_t` types — the pre-existing firmware POD and the new
 // nisps namespaced one — have identical memory layout (two floats L,R) so the
 // bridge does an explicit field-wise copy. No reinterpret_cast.
-//
-// All hot code lives in flash-resident SRAM via NISPS_AUDIO_FUNC.
 
 #pragma once
 

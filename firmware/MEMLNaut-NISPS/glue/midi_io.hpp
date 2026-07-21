@@ -26,8 +26,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-
-#include "../src/nisps/core/perf.hpp"
 #include "../src/nisps/modes/base.hpp"
 #include "../src/memllib/interface/MIDIInOut.hpp"
 
@@ -69,7 +67,7 @@ inline void bind_midi_input(std::shared_ptr<MIDIInOut> midi, Mode& mode) {
 // Drain the mode's ControlEvent ring and dispatch each event to MIDI out.
 // Called at ~1 kHz from loop1(). Non-blocking; no allocations.
 template <typename Mode>
-NISPS_AUDIO_FUNC(inline void drain_mode_events(std::shared_ptr<MIDIInOut> midi, Mode& mode)) {
+inline void drain_mode_events(std::shared_ptr<MIDIInOut> midi, Mode& mode) {
     if (!midi) return;
     std::array<::nisps::ControlEvent, 32u> buf{};
     const std::size_t n = mode.pop_control_events(std::span<::nisps::ControlEvent>(buf));

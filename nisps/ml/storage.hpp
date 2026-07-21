@@ -5,8 +5,8 @@
 // buffer. Two models exist:
 //
 //   * `FixedStorage<NIn, NH1, NH2, NH3, NOut, NMaxExamples, NMaxIterTrain>`
-//     (this file) — all buffers are template-sized `std::array`, zero heap,
-//     `NISPS_AUDIO_MEM`-able. This is the firmware model; the classic
+//     (this file) — all buffers are template-sized `std::array`, zero heap.
+//     This is the firmware model; the classic
 //     `MLP<...>` template is an alias over it and its compile-time constants
 //     (`kInput`, `kHidden1..3`, `kOutput`, `weight_count()`) are preserved.
 //
@@ -23,7 +23,7 @@
 //            sized fan_in(L)], eval_act_l<L>()           [const-eval scratch,
 //            sized fan_out(L), mutable]
 //   global:  input_buf(), output_buf(), ds_features(), ds_labels(),
-//            flat_buf(), loss_hist_buf()
+//            flat_buf(), loss_hist_buf(), copy_weights_to(dst)
 //
 // For `FixedStorage` every dim accessor is constexpr-foldable, so the
 // algorithms compile to the same fully-unrolled/constant-bound code the old
@@ -155,6 +155,25 @@ class FixedStorage {
     NISPS_FORCE_INLINE std::span<float>       flat_buf()         noexcept { return flat_; }
     NISPS_FORCE_INLINE std::span<float>       loss_hist_buf()    noexcept { return lh_; }
     NISPS_FORCE_INLINE std::span<const float> loss_hist_buf() const noexcept { return lh_; }
+
+    // Copies the live weights+biases directly into `dst` in the same flat
+    // layout as MLPCore::get_weights() (weights layer-major, then biases
+    // layer-major) — but writes straight from the layer buffers, with no
+    // intermediate flat_/flat_buf() hop. `dst` must be at least
+    // weight_count() long. Lets a caller that only needs a transient copy
+    // (feedback.hpp's snapshot/undo/nudge ops) take a single copy instead of
+    // double-copying through get_weights()'s scratch buffer.
+    void copy_weights_to(std::span<float> dst) const noexcept {
+        std::size_t k = 0u;
+        for (float v : weights_l<0u>()) dst[k++] = v;
+        for (float v : weights_l<1u>()) dst[k++] = v;
+        for (float v : weights_l<2u>()) dst[k++] = v;
+        for (float v : weights_l<3u>()) dst[k++] = v;
+        for (float v : biases_l<0u>())  dst[k++] = v;
+        for (float v : biases_l<1u>())  dst[k++] = v;
+        for (float v : biases_l<2u>())  dst[k++] = v;
+        for (float v : biases_l<3u>())  dst[k++] = v;
+    }
 
    private:
     std::array<float, NIn * NHidden1>      w0_{};

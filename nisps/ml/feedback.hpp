@@ -4,22 +4,40 @@
 // branch feat/feedback-explore-modes) into the shared nisps/ core so the SAME
 // logic compiles to both WASM (browser) and RP2350 firmware.
 //
-// Three selectable behaviours for the "down" (thumbs-down) gesture:
-//   * Avoid            — delegate to MLP::move_weights (Gaussian perturb). This
-//                        is the new core's "avoid"; the old firmware's k-NN
-//                        geometric centroid push depended on a firmware-only
-//                        ReplayMemory and is intentionally NOT ported (see
-//                        ALIGNMENT.md). The controller owns no Avoid state.
-//   * RandomiseOutputs — bypass the MLP and hold a static random output vector;
-//                        each subsequent down re-rolls it (focus-aware). Up
-//                        commits the held output as a +1 example at the current
-//                        input, then resumes.
-//   * RandomiseMlp     — snapshot the live weights and randomise the net
-//                        (draw_weights) so the user auditions a random mapping
-//                        by moving the joystick. Down again cancels (restore).
-//                        Up/drag commits the auditioned output as a +1 example
-//                        then restores the original net (the kept example then
-//                        trains the original net toward the audition).
+// Four FeedbackMode behaviours for the "down" (thumbs-down) gesture:
+//   * ExploreAndPlace  — the DEFAULT product mode (docs/adr/rl-feedback-design.md).
+//                        Idle→Exploring→Placing→Idle scratchpad lifecycle: down
+//                        snapshots the real net aside and auditions a random
+//                        scratchpad; up freezes the heard output and lets the
+//                        user place it at a new input before committing (+1
+//                        example, real net restored, trained toward the
+//                        placement). See ExploreState below for the full
+//                        granular API (firmware maps buttons directly to it).
+//   * Avoid            — "down" trains AWAY from the heard action, via one of
+//                        two AvoidStyle sub-modes:
+//                          - Geometric (DEFAULT) — the ported firmware k-NN
+//                            centroid push-away, backed by the controller's
+//                            own ReplayMemory (see dislike_geometric() below).
+//                            Cold-starts with a negative-LR fallback until the
+//                            first positive is stored. The old "geometric push
+//                            not ported" note is stale — it IS ported.
+//                          - Diffuse — the pre-P3 undirected MLP::move_weights
+//                            perturb. Deliberately-retained research reserve,
+//                            not the product default (see its definition below
+//                            and docs/adr/rl-feedback-design.md).
+//   * RandomiseOutputs — deliberately-retained research reserve (see its
+//                        definition below): bypasses the MLP and holds a
+//                        static random output vector; each subsequent down
+//                        re-rolls it (focus-aware). Up commits the held output
+//                        as a +1 example at the current input, then resumes.
+//   * RandomiseMlp     — deliberately-retained research reserve (see its
+//                        definition below): snapshots the live weights and
+//                        randomises the net (draw_weights) so the user
+//                        auditions a random mapping by moving the joystick.
+//                        Down again cancels (restore). Up/drag commits the
+//                        auditioned output as a +1 example then restores the
+//                        original net (the kept example then trains the
+//                        original net toward the audition).
 //
 // STORAGE POLICY (one-core-engine-refactor P2): like MLPCore, the controller
 // algorithms are written once in `FeedbackControllerCore<FbStorage>` against a
@@ -58,15 +76,25 @@ namespace nisps::ml {
 
 enum class FeedbackMode : std::uint8_t {
     Avoid            = 0,  // down → geometric push-away (or legacy Diffuse — see AvoidStyle).
+    // NOTE (2026-07, S20): RandomiseOutputs and RandomiseMlp have no current
+    // product caller — firmware/browser both default to ExploreAndPlace.
+    // They are DELIBERATELY RETAINED as research reserve: building blocks for
+    // experimenting with how different instruments feel under different
+    // down-gesture behaviours, not dead code awaiting deletion. Do not re-flag.
     RandomiseOutputs = 1,  // down → bypass MLP, hold static random vector; re-roll each down.
     RandomiseMlp     = 2,  // down → snapshot + draw_weights live net; down-again cancels.
     ExploreAndPlace  = 3,  // Idle→Exploring→Placing→Idle scratchpad lifecycle (default product mode).
 };
 
 // How the Avoid mode realises a dislike (rl-feedback-design §2.1). Geometric
-// is the ported firmware behaviour (replay-backed k-NN centroid push-away);
-// Diffuse is the pre-P3 undirected move_weights, kept reachable as a legacy
-// sub-mode for A/B comparison.
+// (DEFAULT) is the ported firmware behaviour (replay-backed k-NN centroid
+// push-away).
+//
+// NOTE (2026-07, S20): Diffuse (the pre-P3 undirected move_weights) has no
+// current product caller. It is DELIBERATELY RETAINED as research reserve —
+// a building block for experimenting with how different instruments feel
+// under different down-gesture behaviours, not dead code awaiting deletion.
+// Do not re-flag.
 enum class AvoidStyle : std::uint8_t {
     Geometric = 0,
     Diffuse   = 1,
@@ -327,6 +355,12 @@ class FeedbackControllerCore : public FbStorage {
     // Drag-store (joystick freeze→reposition→release). In RandomiseMlp this is
     // the "reposition-commit": the caller has already stored the +1 at the new
     // input; we just restore the original net and end exploration.
+    //
+    // NOTE (2026-07, S20): the RandomiseMlp branch below has no current
+    // product caller (ExploreAndPlace's own reposition path is
+    // begin_reposition/commit_reposition, not on_drag). DELIBERATELY RETAINED
+    // as research reserve alongside RandomiseMlp itself — not dead code
+    // awaiting deletion. Do not re-flag.
     template <typename M>
     FeedbackAction on_drag(M& mlp) noexcept {
         if (explore_active_ && mode_ == FeedbackMode::RandomiseMlp) {
@@ -367,7 +401,6 @@ class FeedbackControllerCore : public FbStorage {
     std::size_t replay_size() const noexcept { return replay_count_; }
     std::size_t positive_count() noexcept { return replay_().positive_count(); }
     std::size_t negative_count() noexcept { return replay_().negative_count(); }
-    std::size_t dislike_multiplier() const noexcept { return dislike_multiplier_; }
 
     // Store a positive (like) into the replay so the k-NN centroid sees it.
     // `current_out` may be empty ⇒ the MLP's live output vector is used. The
@@ -382,14 +415,12 @@ class FeedbackControllerCore : public FbStorage {
 
     // Thumbs-down at the MLP's CURRENT input with heard action `current_out`
     // (empty ⇒ the MLP's live outputs). Runs the full upstream sequence:
-    //   1. deepen-or-store the negative (dedup radius 0.05); double the
-    //      dislike multiplier (max 16).
+    //   1. deepen-or-store the negative (dedup radius 0.05).
     //   2. cold start (no positives): train AWAY from the heard action at
     //      lr * 0.1 * avgRewardNeg (negative LR — upstream fallback).
     //   3. else: k-NN(4) positive centroid → push-away target → train toward
     //      it at lr * negLRRatio, gated by the focus/solo mask.
-    //   4. proportional decay + eviction of expired negatives; halve the
-    //      multiplier per expiry.
+    //   4. proportional decay + eviction of expired negatives.
     template <typename M>
     FeedbackAction dislike_geometric(M& mlp, std::span<const float> current_out,
                                      float lr) noexcept {
@@ -403,8 +434,6 @@ class FeedbackControllerCore : public FbStorage {
 
         // 1. store/deepen the negative (InterfaceRL.cpp:42-66).
         replay.deepen_or_store_negative(x_neg, a_neg);
-        dislike_multiplier_ *= 2u;
-        if (dislike_multiplier_ > 16u) dislike_multiplier_ = 16u;
 
         const std::size_t pos_total = replay.positive_count();
         const std::size_t neg_total = replay.negative_count();
@@ -433,13 +462,8 @@ class FeedbackControllerCore : public FbStorage {
             action = FeedbackAction::GeometricPush;
         }
 
-        // 4. decay + evict; halve the multiplier per expiry, reset when no
-        // negatives remain (InterfaceRL.cpp:752-760).
-        const std::size_t expired = replay.decay_negatives();
-        for (std::size_t i = 0; i < expired; ++i) {
-            dislike_multiplier_ = (dislike_multiplier_ > 1u) ? dislike_multiplier_ / 2u : 1u;
-        }
-        if (expired > 0u && replay.negative_count() == 0u) dislike_multiplier_ = 1u;
+        // 4. decay + evict expired negatives (InterfaceRL.cpp:752-760).
+        replay.decay_negatives();
 
         return action;
     }
@@ -495,9 +519,9 @@ class FeedbackControllerCore : public FbStorage {
         push_undo(mlp);
         auto scratch = this->scratch_buf();
         const std::size_t n_weights = this->n_weights();
-        auto w = mlp.get_weights();
+        mlp.copy_weights_to(scratch);  // single copy — see take_snapshot.
         for (std::size_t i = 0; i < n_weights; ++i) {
-            scratch[i] = w[i] + rng_.next_float_gaussian(amount);
+            scratch[i] += rng_.next_float_gaussian(amount);
         }
         mlp.set_weights(std::span<const float>(scratch.data(), n_weights));
     }
@@ -648,10 +672,10 @@ class FeedbackControllerCore : public FbStorage {
 
     template <typename M>
     void take_snapshot(M& mlp) noexcept {
-        auto snap = this->snapshot();
-        auto w = mlp.get_weights();  // flat snapshot (size == n_weights)
-        const std::size_t n = this->n_weights();
-        for (std::size_t i = 0; i < n; ++i) snap[i] = w[i];
+        // copy_weights_to writes the live flat weights+biases straight into
+        // the snapshot slot — a single copy (no intermediate hop through
+        // get_weights()'s flat_ scratch buffer; see storage.hpp L28).
+        mlp.copy_weights_to(this->snapshot());
     }
 
     template <typename M>
@@ -720,9 +744,7 @@ class FeedbackControllerCore : public FbStorage {
     template <typename M>
     void push_undo(M& mlp) noexcept {
         auto slot = this->undo_slot(undo_head_);
-        auto w = mlp.get_weights();
-        const std::size_t n = this->n_weights();
-        for (std::size_t i = 0; i < n; ++i) slot[i] = w[i];
+        mlp.copy_weights_to(slot);  // single copy — see take_snapshot.
         const std::size_t cap = this->undo_cap();
         undo_head_ = (undo_head_ + 1u) % cap;
         if (undo_count_ < cap) ++undo_count_;
@@ -764,7 +786,6 @@ class FeedbackControllerCore : public FbStorage {
 
     // ---- Geometric dislike state ---------------------------------------------
     std::size_t  replay_count_       = 0u;
-    std::size_t  dislike_multiplier_ = 1u;
     float        geo_lr_             = 0.001f;  // upstream InterfaceRL.hpp:312
 
     // ---- ExploreAndPlace state ----------------------------------------------

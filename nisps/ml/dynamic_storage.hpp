@@ -163,6 +163,21 @@ class DynamicStorage {
     std::span<float>       loss_hist_buf()    noexcept { return {arena_ + off_lh_, max_iter_}; }
     std::span<const float> loss_hist_buf() const noexcept { return {arena_ + off_lh_, max_iter_}; }
 
+    // Copies the live weights+biases directly into `dst` in the same flat
+    // layout as MLPCore::get_weights() (weights layer-major, then biases
+    // layer-major) — see FixedStorage::copy_weights_to for the rationale.
+    void copy_weights_to(std::span<float> dst) const noexcept {
+        std::size_t k = 0u;
+        for (float v : weights_l<0u>()) dst[k++] = v;
+        for (float v : weights_l<1u>()) dst[k++] = v;
+        for (float v : weights_l<2u>()) dst[k++] = v;
+        for (float v : weights_l<3u>()) dst[k++] = v;
+        for (float v : biases_l<0u>())  dst[k++] = v;
+        for (float v : biases_l<1u>())  dst[k++] = v;
+        for (float v : biases_l<2u>())  dst[k++] = v;
+        for (float v : biases_l<3u>())  dst[k++] = v;
+    }
+
    private:
     void move_from_(DynamicStorage& o) noexcept {
         for (std::size_t i = 0; i < 5u; ++i) dims_[i] = o.dims_[i];

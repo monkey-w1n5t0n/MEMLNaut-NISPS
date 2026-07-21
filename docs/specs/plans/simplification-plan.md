@@ -48,6 +48,19 @@ All verifier-checked deletions; protected exceptions noted. Rough net effect: th
 
 ## §3 Phase 2 — Behaviour bugs (~2 days)
 
+**BURNED DOWN 2026-07-21.** All nine landed with regression tests where testable. Two deviations
+from the text below, both deliberate: **L35** was resolved by DELETING the OSC full-state bridge
+rather than moving its JSON to the worker — reading the current transport showed both directions
+have zero consumers (manifold's osc-client.ts never sends `/nisps/state`|`/nisps/weights` and
+bridge.ts drops them), so relocating heap-heavy work to serve nobody was the wrong shape;
+`dataToJson`/`dataFromJson` are untouched and still serve Rack patch save/load off the audio
+thread. **S35** required extending `nisps_ml_describe` from a 6-int to a 7-int wire format, which
+forced matching buffer-size fixes in two call sites outside the finding's scope
+(`wasm-worker.ts`, `parity_wasm.mjs`) that would otherwise have overflowed the WASM heap by 4
+bytes on every call. Also fixed en route: `manifold/package.json`'s test script listed test files
+explicitly, so new unit tests were silently not run — now a glob.
+
+
 - **S35** Dual example store: name `kDefaultMaxExamples = 128` once in nisps, expose via `nisps_ml_describe`, align the TS mirror (currently 100) — fixes `train()`/`trainAsync()` diverging past 100 examples and the latent OOB sample-weight read.
 - **S10** VCV bridged mode truncates inputs to 2-D: `EngineApi.inputVector()` returns the spine's full N-dim raw vector; VcvBackend tracks/dead-zones the full length.
 - **L34/L35** VCV plugin RT-safety: worker deep-copies example vectors into staging before flagging; move full-state JSON off Rack's audio thread onto the existing worker (reuse the staged-weights pattern).

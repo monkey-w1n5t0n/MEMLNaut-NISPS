@@ -50,7 +50,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Why it blocks the mission.** The registries are dual-truth bugs waiting to fire (one already did: the selftest table). Stale specs are agent-confusing surface area.
 
-**Rough cost.** Plan phase 3 (~2–3 days, codegen takes ownership) plus the docs disposition pass (§8). Behaviour bugs found en route (dataset-cap divergence 100 vs 128 + OOB read, VCV 2-D input truncation, VCV audio-thread race + JSON) are plan §3.
+**Rough cost.** Plan phase 3 (~2–3 days, codegen takes ownership) plus the docs disposition pass (§8). The behaviour bugs found en route (dataset-cap divergence, VCV 2-D input truncation, VCV audio-thread race and JSON) were fixed in phase 2 on 2026-07-21.
 
 ### 6. No performance measurement despite a performance-defined mission (2026-07-21)
 

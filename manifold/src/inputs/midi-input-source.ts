@@ -216,6 +216,14 @@ export class WebMidiInputSource extends BaseSource {
    * Route an incoming CC: update a matching binding's value, or — if batch
    * learn is armed — capture it as a NEW axis (deduped). Learn stays armed so
    * the user can sweep their whole control surface in one pass.
+   *
+   * `notifyBindings()` fires ONLY when the binding LIST changes (a new axis
+   * captured here, or `clearBinding`/`clearAllBindings`) — NOT on every value
+   * update, which used to push a React state update + a fresh array snapshot
+   * per incoming CC message (simplification audit L18). `sample()` already
+   * pulls live values every input-layer tick; a consumer that wants a live
+   * per-binding readout (e.g. a meter) should read `getBindings()` on demand
+   * (poll/rAF) rather than rely on a notify-per-value-change contract.
    */
   private handleCc(number: number, channel: number, value: number): void {
     const existing = this.bindings.find(
@@ -223,7 +231,6 @@ export class WebMidiInputSource extends BaseSource {
     );
     if (existing) {
       existing.value = value;
-      this.notifyBindings();
       return;
     }
     if (this.learnArmed) {
@@ -232,14 +239,17 @@ export class WebMidiInputSource extends BaseSource {
     }
   }
 
-  /** Update a learned note axis's gate value (note bindings are not auto-learned). */
+  /**
+   * Update a learned note axis's gate value (note bindings are not
+   * auto-learned, so this never changes the binding LIST — see the
+   * notify-on-list-change contract on {@link handleCc}).
+   */
   private updateNote(number: number, channel: number, value: number): void {
     const existing = this.bindings.find(
       (b) => b.kind === 'note' && b.number === number && b.channel === channel,
     );
     if (existing) {
       existing.value = value;
-      this.notifyBindings();
     }
   }
 

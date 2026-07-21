@@ -31,11 +31,13 @@ export interface ManagerEngine {
   routedOutput(): Float32Array | null;
   audio: { setMuted(muted: boolean): void };
   /**
-   * Current control input vector (2-D for the fixed 2→N MLP). Optional — when
-   * present the VCV backend streams it to the module so the browser drives the
-   * module's inputs in bridged mode.
+   * Current FULL-width control input vector (one entry per active input axis
+   * — NOT fixed at 2-D). Optional — when present the VCV backend streams it
+   * to the module so the browser drives the module's inputs in bridged mode.
+   * May be a live reused buffer (ArrayLike) — the manager copies it straight
+   * through to `VcvBackend.setInputVector`, which itself copies.
    */
-  inputVector?(): ReadonlyArray<number>;
+  inputVector?(): ArrayLike<number>;
 }
 
 export class BackendManager {
@@ -46,6 +48,11 @@ export class BackendManager {
   private ctx: BackendContext | null = null;
   private unsub: (() => void) | null = null;
   private switching = false;
+  /** Latest id requested while a switch was already in flight (simplification
+   *  audit L19) — re-run once the in-flight switch settles, so a rapid double
+   *  click no longer silently drops the second request. Cleared before the
+   *  re-run so it can only ever chain one hop at a time (no unbounded loop). */
+  private pendingId: BackendId | null = null;
 
   private statusListeners = new Set<(id: BackendId, s: BackendStatus) => void>();
   private offBackendStatus: (() => void) | null = null;
@@ -126,19 +133,24 @@ export class BackendManager {
   /**
    * Switch the active backend. Tears down the old, starts the new, and applies
    * the synth audio gate. Idempotent for the same id.
+   *
+   * If a switch is already in flight, the request is NOT dropped: it is
+   * remembered as `pendingId` (the latest caller wins) and re-run once the
+   * in-flight switch's `finally` settles — see below.
    */
   async setActive(id: BackendId): Promise<void> {
-    if (this.activeId === id || this.switching) return;
+    if (this.activeId === id) return;
+    if (this.switching) {
+      this.pendingId = id;
+      return;
+    }
     this.switching = true;
     try {
       // Gate audio: only the synth mode drives sound.
       this.engine.audio.setMuted(id !== 'synth');
 
       const next = this.backends.get(id);
-      if (!next) {
-        this.switching = false;
-        return;
-      }
+      if (!next) return;
       if (this.active) {
         this.offBackendStatus?.();
         this.offBackendStatus = null;
@@ -154,6 +166,16 @@ export class BackendManager {
       this.emitStatus(id, next.status());
     } finally {
       this.switching = false;
+      // A newer request arrived mid-switch — chase it. Clearing `pendingId`
+      // BEFORE the recursive call (rather than in it) bounds this to one hop
+      // per settled switch: the only way to chain further is another NEW
+      // request arriving during that hop, which is the intended behaviour,
+      // not an infinite loop.
+      const pending = this.pendingId;
+      this.pendingId = null;
+      if (pending !== null && pending !== this.activeId) {
+        void this.setActive(pending);
+      }
     }
   }
 

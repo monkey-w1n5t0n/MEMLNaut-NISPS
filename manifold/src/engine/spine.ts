@@ -88,8 +88,14 @@ export class Spine implements EngineSink {
   // Last raw input, so `EngineApi.process()` can re-tick after a weight change.
   lastRawX = 0.5;
   lastRawY = 0.5;
-  // Full last raw input vector (N-D) for re-ticking without losing extra axes.
-  private lastRawInputs: Float32Array = new Float32Array(2);
+  /**
+   * Full last raw input vector (N-D), so `process()`/`reprocess()` can re-tick
+   * without losing extra axes. Public + reused (live buffer — copy, don't
+   * retain): this is what `EngineApi.inputVector()` hands to the VCV backend
+   * so bridged mode drives the module's FULL input arity instead of the
+   * fixed 2-D pair `lastRawX`/`lastRawY` cover (simplification audit S10).
+   */
+  lastRawInputs: Float32Array = new Float32Array(2);
   private mlBuf: F32 = new Float32Array(126);
   private routedBuf: F32 | null = null;
 

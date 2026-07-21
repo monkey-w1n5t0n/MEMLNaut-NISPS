@@ -9,7 +9,9 @@
  * manifold/osc-bridge, default ws://localhost:8765, default module UDP 7001):
  *
  *   browser → module
- *     /nisps/input    <f…f>     the current 2-D input vector (drives the module)
+ *     /nisps/input    <f…f>     the current input vector, full net input
+ *                               arity (drives the module — NOT truncated to
+ *                               2-D; simplification audit S10)
  *     /nisps/output   <f…f>     per-output values (CV) — sent as params batch so
  *                               the bridge maps each to /nisps/<name>; the module
  *                               also derives its own outputs, but the browser
@@ -62,13 +64,18 @@ export class VcvBackend implements OutputBackend {
   private specs: VcvSpec[] = [];
   private sendRaw = false;
 
-  /** Latest input vector the browser is driving the module with (2-D). */
+  /** Latest input vector the browser is driving the module with (N-D — the
+   *  net's full input arity, not fixed at 2; simplification audit S10). */
   private inputVec: number[] = [0.5, 0.5];
 
   private lastSent: Float32Array = new Float32Array(0); // last normalised output
   private batch: Array<[string, number]> = []; // reused outer; entries reused
   private lastSendMs = 0;
-  private lastInputSent: [number, number] = [-1, -1];
+  /** Dead-zone sentinel per input axis, sized to `inputVec` (out-of-range -1
+   *  forces the first send). Tracks the FULL vector, not just the first two
+   *  axes, so a change in axis 2+ (gamepad/MIDI beyond the XY pair) still
+   *  triggers a resend instead of being silently swallowed. */
+  private lastInputSent: number[] = [];
 
   private gotModuleReply = false;
 
@@ -146,7 +153,7 @@ export class VcvBackend implements OutputBackend {
    * Set the input vector the browser drives the module with (bridged mode). The
    * next `send()` streams it to /nisps/input. Copied — caller may mutate.
    */
-  setInputVector(vec: ReadonlyArray<number>): void {
+  setInputVector(vec: ArrayLike<number>): void {
     if (this.inputVec.length !== vec.length) this.inputVec = new Array(vec.length);
     for (let i = 0; i < vec.length; i++) this.inputVec[i] = vec[i];
   }
@@ -171,11 +178,20 @@ export class VcvBackend implements OutputBackend {
     this.lastSendMs = now;
 
     // 1) Stream the current input vector so the browser drives the module.
-    const ix = this.inputVec[0] ?? 0.5;
-    const iy = this.inputVec[1] ?? 0.5;
-    if (Math.abs(ix - this.lastInputSent[0]) >= DEAD_ZONE || Math.abs(iy - this.lastInputSent[1]) >= DEAD_ZONE) {
-      this.lastInputSent[0] = ix;
-      this.lastInputSent[1] = iy;
+    //    Dead-zone over the FULL vector — any axis moving (not just the first
+    //    two) triggers a resend (simplification audit S10).
+    if (this.lastInputSent.length !== this.inputVec.length) {
+      this.lastInputSent = new Array(this.inputVec.length).fill(-1);
+    }
+    let inputChanged = false;
+    for (let i = 0; i < this.inputVec.length; i++) {
+      if (Math.abs(this.inputVec[i] - this.lastInputSent[i]) >= DEAD_ZONE) {
+        inputChanged = true;
+        break;
+      }
+    }
+    if (inputChanged) {
+      for (let i = 0; i < this.inputVec.length; i++) this.lastInputSent[i] = this.inputVec[i];
       // → bridge `input` verb → ONE multi-float message to /nisps/input.
       this.client.sendInput(this.inputVec);
     }

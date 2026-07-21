@@ -593,6 +593,40 @@ export function ConsoleApp() {
   const setParam = (i: number, patch: Partial<MFParam>) =>
     setParams((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
 
+  // Ref-mirror of everything the two global-listener effects below close over
+  // that is NOT already React-stable (verdict/navigation handlers are plain
+  // consts re-created every render; `pos`/`inputs.inputMode` are per-render
+  // values). Assigned directly in the render body — same technique as
+  // `onMoveRef` in Manifold.tsx — so both effects can install their
+  // subscriptions ONCE ([] deps) instead of tearing down + re-subscribing on
+  // EVERY render (previously: no dep array at all, so both effects re-ran on
+  // every render — including every pointer frame `onReducedInput`/`setPos`
+  // drive; simplification audit L24). `setActive`/`setDepth`/`setSplit`/
+  // `setPos` are `useState` setters, which React guarantees are stable, so
+  // they're read directly and don't need mirroring here.
+  const liveRef = useRef({
+    perturb,
+    commit,
+    undo,
+    reroll,
+    onScratchNudge,
+    onPlace,
+    onPickLocation,
+    pos,
+    inputMode: inputs.inputMode,
+  });
+  liveRef.current = {
+    perturb,
+    commit,
+    undo,
+    reroll,
+    onScratchNudge,
+    onPlace,
+    onPickLocation,
+    pos,
+    inputMode: inputs.inputMode,
+  };
+
   // keyboard accelerators
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -607,10 +641,10 @@ export function ConsoleApp() {
       };
       if (e.key === '1') {
         e.preventDefault();
-        perturb();
+        liveRef.current.perturb();
       } else if (e.key === '2') {
         e.preventDefault();
-        commit();
+        liveRef.current.commit();
       } else if (map[e.key]) {
         setActive((a) => (a === map[e.key] ? null : map[e.key]));
         setDepth('condensed');
@@ -626,15 +660,15 @@ export function ConsoleApp() {
         setSplit(0.5);
       } else if (e.key === ' ' || e.key === 'ArrowUp') {
         e.preventDefault();
-        commit();
+        liveRef.current.commit();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        perturb();
-      } else if (e.key.toLowerCase() === 'z') undo();
+        liveRef.current.perturb();
+      } else if (e.key.toLowerCase() === 'z') liveRef.current.undo();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, []);
 
   // ---- Game-controller verdict bindings (inputs-spec) ---------------------
   // The gamepad's sticks already feed the input layer (→ engine); its BUTTONS
@@ -644,50 +678,57 @@ export function ConsoleApp() {
   //   (hold A, move the stick to a spot on the manifold, release to drop it).
   // MIDI note actions are surfaced too but left unbound (MIDI mode learns CCs
   // as INPUT axes; verdicts there stay on the on-screen / keyboard controls).
-  // The effect has no dep array (matching the keydown handler above) so each
-  // binding closes over the latest verdict functions + live `pos`.
+  // Deps are the two subscribe methods, not `inputs` itself: `inputs` is a
+  // fresh object literal every render (useInputLayer doesn't memoize its
+  // return value), so depending on the whole object would reintroduce the
+  // exact per-render resubscribe churn this fix removes. `onAction`/
+  // `onReducedInput` ARE stable (useCallback over a ref-held layer created
+  // once), so this genuinely installs once; everything that DOES vary
+  // per-render is read fresh through `liveRef` above.
   useEffect(() => {
     const unBtn = inputs.onAction((a) => {
       if (a.source !== 'gamepad') return;
       const phase = a.phase ?? 'press';
+      const live = liveRef.current;
       if (phase === 'press') {
         switch (a.id) {
           case 'button:4': // LB → thumbs-down
-            perturb();
+            live.perturb();
             break;
           case 'button:5': // RB → thumbs-up
-            commit();
+            live.commit();
             break;
           case 'button:2': // X → randomise / re-roll
-            reroll();
+            live.reroll();
             break;
           case 'button:3': // Y → nudge (scratchpad)
-            onScratchNudge();
+            live.onScratchNudge();
             break;
           case 'button:1': // B → undo
-            undo();
+            live.undo();
             break;
           case 'button:0': // A (down) → begin repositioning an example
-            onPlace();
+            live.onPlace();
             break;
         }
       } else if (phase === 'release' && a.id === 'button:0') {
         // A (up) → drop the example at the current (stick-driven) location.
-        onPickLocation(pos[0], pos[1]);
+        live.onPickLocation(live.pos[0], live.pos[1]);
       }
     });
     // Mirror the composed gamepad/MIDI position onto the on-screen manifold so
     // markers + readouts track the controller (the XY pad pushes its own pos).
     // The callback fires every rAF frame — only re-render when it actually moves.
     const unPos = inputs.onReducedInput((x, y) => {
-      if (inputs.inputMode === 'internal') return;
+      if (liveRef.current.inputMode === 'internal') return;
       setPos((prev) => (Math.abs(prev[0] - x) < 1e-3 && Math.abs(prev[1] - y) < 1e-3 ? prev : [x, y]));
     });
     return () => {
       unBtn();
       unPos();
     };
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputs.onAction, inputs.onReducedInput]);
 
   const onToggleAudio = () => {
     if (!engine) return;

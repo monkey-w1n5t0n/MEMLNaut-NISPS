@@ -241,11 +241,14 @@ export class EngineApi {
   }
 
   /**
-   * Current control input vector (2-D for the fixed 2→N MLP). Used by the VCV
-   * backend (via BackendManager) to drive the module's inputs over the bridge.
+   * Current FULL-width control input vector (one entry per active input axis,
+   * up to the net's input arity — NOT fixed at 2). Live reused buffer — copy,
+   * don't retain. Used by the VCV backend (via BackendManager) to drive the
+   * module's inputs over the bridge without truncating gamepad/MIDI axes
+   * beyond the first two (simplification audit S10).
    */
-  inputVector(): ReadonlyArray<number> {
-    return [this.spine.lastRawX, this.spine.lastRawY];
+  inputVector(): ArrayLike<number> {
+    return this.spine.lastRawInputs;
   }
 
   /**

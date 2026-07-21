@@ -46,39 +46,67 @@ Firmware's direct include surface is just six entry points — `audio/AudioDrive
 of memllib minus `examples/`.** There is no small subset to lift. `synth/` alone is 1.3 MB (mostly
 `maximilian.cpp`) and all three of its TUs link.
 
-## The consequence that was not visible when §7.5 was decided
+## The fork divergence — and the correction to this document's first version
 
 `src/memllib` is not a third-party dependency. It is **the lab's shared library**
-(`MusicallyEmbodiedML/memllib`), and our fork is:
+(`MusicallyEmbodiedML/memllib`), and our fork was 3 commits ahead / 31 behind.
 
-- **3 commits ahead** — `bf9691c` (swap memlp includes for nisps/core, inline RL utilities),
-  `32cc831` (newlib RNG fix), `b37fc53` (seed-helper rename). These are the NISPS-specific changes.
-- **31 commits behind** — including `770a990 new staticmlp`, `9fcd459 jolts`, `d0d8a72 noise`,
-  `616b8e7 cc select`, `a8bf255 verb`, `671abbe screen ordering`, `e291192 l r input swap`.
-  Diffed against the five subdirs we link: **30 files changed, +2034 / −153**.
+**The first version of this document (commit `7a30da9`) drew the wrong conclusion from that, and
+recommended a rebase-then-vendor on the strength of it. Two facts checked afterwards overturn it:**
 
-Vendoring freezes that gap permanently and converts "we are behind the lab" into "we have our own
-divergent copy". That may be exactly what is wanted — self-containment is a real goal, and the lab's
-`main` is not obviously a branch we track — but it is a fork of a colleague-shared library, not a
-snapshot of a vendor drop, and the 31 commits contain work (`staticmlp`, `jolts`) that sounds
-directly relevant to this project.
+1. **All three of our commits touch only `examples/`** — `bf9691c` (swap memlp includes for
+   nisps/core, inline RL utilities), `32cc831` (newlib RNG fix), `b37fc53` (seed-helper rename).
+   `examples/` is **not in the sketch symlink forest** (`firmware/MEMLNaut-NISPS/src/` symlinks
+   exactly `audio hardware interface synth utils PicoDefs.hpp`), so it is never compiled. Those
+   commits existed to let the RL code build against `nisps/core` **while it was being ported**, and
+   that port is finished: `nisps/ml/{jolt,ou_noise,feedback,geo_push}.hpp` cite the upstream sources
+   directly. So there is nothing of ours to carry forward, and **no rebase to perform** — vendoring
+   the five linked subdirs drops `examples/` and our three commits with it.
+2. **Two of the "31 commits of work we are missing" were already absorbed.** `nisps/ml/jolt.hpp:3`
+   cites `9fcd459 "jolts"` and `nisps/ml/ou_noise.hpp:3` cites `d0d8a72 "noise"` as their sources.
+   The alarm in the first version — "the 31 commits contain work that sounds directly relevant" —
+   was therefore overstated for exactly the two commits it named.
 
-## Options, with what each costs
+So the real question was never "rebase or not" but **"which snapshot do we vendor: the pinned
+`188496d` we build today, or current upstream?"**
 
-1. **Vendor as decided.** Copy the five subdirs into the repo, drop the submodule and the symlink
-   forest, delete `examples/`. Repo grows ~1.8 MB. Self-contained, no submodule init, PlatformIO
-   gets a plain `lib/` — this materially simplifies the §5 migration. Cost: the 31 upstream commits
-   become a manual merge, forever.
-2. **Vendor, but first rebase our 3 commits onto upstream `main`.** Same end state, except the
-   snapshot is current rather than 31 commits stale. Costs one merge now (the three commits are
-   small and mechanical), and it is the only moment when that merge is cheap.
-3. **Fork-pin (status quo + Phase 0's fix).** Already works: the pin is reachable, CI is green,
-   fresh clones build. Not self-contained, and keeps the submodule friction PlatformIO would rather
-   not have.
+## The staleness was already costing us
 
-**Recommendation: option 2.** The operator's goal (self-contained) is satisfied identically by 1 and
-2, but 2 does not silently discard `staticmlp`/`jolts`/`verb`. Doing the rebase after vendoring
-means doing it against a copy that no longer has upstream history — i.e. never.
+Upstream `main` **has `DisplayDriver::NavigateToView`** (`display/DisplayDriver.hpp:54`); the pinned
+commit does not. The SelfTest firmware variant called it and had been failing to compile — fixed in
+`b953681` by routing around the missing method. That variant was not written against broken code; it
+was written against a **newer memllib than the pin**. The gap is not theoretical.
 
-This decision gates the PlatformIO migration (plan §5), which otherwise has to keep the submodule
-and its symlink workaround.
+Upstream also carries `e291192 "l r input swap"`, a **hardware bug fix**: the physical L/R input
+sockets are wired to the opposite codec ADC channels, so `AudioDriver.cpp` now swaps them at the
+lowest level. Every mode on the pinned commit sees its stereo input backwards.
+
+## Verified: current upstream builds, and costs almost nothing
+
+Submodule moved to `e291192` (upstream `main`), all three variants built with `arduino-cli`:
+
+| variant | flash | Δ vs pin | RAM | Δ |
+|---|---|---|---|---|
+| SLPWorkshop | 145348 | +320 | 87388 | +4 |
+| PAFSynth | 145300 | +312 | 107060 | +4 |
+| SelfTest | 141840 | +320 | 12028 | +4 |
+
+Exactly **one** compile error had to be fixed: `MEMLNaut-NISPS.ino:169` used `kSampleRate` in a
+`constexpr`, and upstream `1997699 "mode sample rate"` made it a runtime `extern size_t` so a mode
+can choose its own rate. `constexpr` → `const`; it is a once-per-second diagnostic print.
+
+The +316-byte uniform delta is the AudioDriver/DisplayDriver changes. The bulky new upstream code
+(`GrainDelayI16`, `ReverbI16`, `ModFXI16`, `CCSelectView`, `NameInputView`, `RLView`, `VUMeterView`,
+`PSRAMManager`) is header-only and unreferenced, so the linker drops all of it.
+
+## Where this leaves the vendoring
+
+Vendor **from current upstream**, not from the old pin. Take the five linked subdirs +
+`PicoDefs.hpp`; drop `examples/` (~1.8 MB → the vendored surface). Record the exact upstream commit
+so a future re-sync is a documented diff rather than an archaeology exercise.
+
+The submodule now points at **upstream** rather than the fork: with the pin moved to an upstream
+commit, the fork has nothing the firmware compiles. The fork's `feat/nisps-core-swap` branch remains
+pushed, so nothing is destroyed.
+
+This unblocks the PlatformIO migration (plan §5).

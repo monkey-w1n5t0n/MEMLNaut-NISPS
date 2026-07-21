@@ -166,7 +166,10 @@ void loop() {
             blip_counter = 0;
             Serial.println(".");
             digitalWrite(33, HIGH);
-            constexpr float audioHeadroomMul = 1.0f / (1000000.f * 48.0f / kSampleRate);
+            // `const`, not `constexpr`: memllib made kSampleRate a runtime
+            // `extern size_t` so a mode can pick its own rate. This is a
+            // once-per-second diagnostic print, so the divide is free.
+            const float audioHeadroomMul = 1.0f / (1000000.f * 48.0f / kSampleRate);
             Serial.printf("ml: %d, aud: %d, q: %f\n",
                           PERF_GET_MEAN(MLSTATS),
                           AUDIOLOOP_MEAN,

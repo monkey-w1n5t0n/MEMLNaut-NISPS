@@ -84,9 +84,17 @@ Schemas declare per-mode dims and since P5.3 both targets honour them. Is the mi
 
 Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user data exists.
 
-### Q4: Who owns memllib? (2026-07-21)
+### Q4: Who owns memllib? — DECIDED, half-executed (2026-07-21)
 
-Fork-pin (PIO `lib_deps` on `monkey-w1n5t0n/memllib`), vendor the actually-used subset, or upstream the nisps-swap to MusicallyEmbodiedML? Requires the load-bearing-surface inventory (plan §5). Phase 0 pushes the branch either way.
+Operator decision: **vendor**, self-contained in this repo. The inventory
+(`docs/specs/recon/memllib-usage-inventory.md`) settled the shape: there is no small load-bearing
+subset — it is all of memllib bar `examples/` (~1.8 MB, 24/24 compiled TUs link). The fork is
+dissolved: its three commits touch only `examples/`, which the firmware never compiles and whose
+content already lives in `nisps/ml/{jolt,ou_noise,feedback,geo_push}.hpp`, so the submodule now
+points at upstream and is pinned to current `main` (verified: all three variants build, +316 bytes
+flash, and it brings the `l r input swap` hardware fix plus the `NavigateToView` the SelfTest
+variant was already written against). **Remaining: the vendoring copy itself**, which lands with the
+PlatformIO cut (plan §5). Delete this entry when it does.
 
 ### Q5: Legacy feedback modes — delete or keep for A/B? (2026-07-21)
 

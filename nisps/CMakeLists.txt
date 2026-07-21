@@ -89,6 +89,7 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_dsp_delay.cpp
         ${NISPS_TEST_DIR}/test_dsp_reverb.cpp
         ${NISPS_TEST_DIR}/test_dsp_pitch_shift.cpp
+        ${NISPS_TEST_DIR}/test_dsp_seq_shared.cpp
         ${NISPS_TEST_DIR}/test_engine_no_op.cpp
         ${NISPS_TEST_DIR}/test_engine_paf_synth.cpp
         ${NISPS_TEST_DIR}/test_engine_channel_strip.cpp

@@ -30,6 +30,7 @@
 #include "../core/types.hpp"
 #include "../dsp/env.hpp"
 #include "../dsp/osc.hpp"
+#include "../dsp/ratio_seq.hpp"
 
 namespace nisps {
 
@@ -251,29 +252,12 @@ class MEMLCeliumEngine {
         bool  last_trig     = false;
     };
 
-    template <std::size_t N>
-    static bool ratio_seq(float phasor, float ratio_sum,
-                          const std::array<float, N>& ratios,
-                          float pulse_width) noexcept {
-        float offset_phase = phasor;
-        if (offset_phase >= 1.f) offset_phase -= 1.f;
-        const float phase_adj = ratio_sum * offset_phase;
-        float accum = 0.f, last = 0.f;
-        for (std::size_t i = 0u; i < N; ++i) {
-            accum += ratios[i];
-            if (phase_adj <= accum) {
-                const float beat_phase = (phase_adj - last) / (accum - last);
-                return beat_phase <= pulse_width;
-            }
-            last = accum;
-        }
-        return false;
-    }
+    // ratio_seq lives once in dsp/ratio_seq.hpp (shared with BreakOrEngine).
     static bool ratio_seq_3(float p, float s, const std::array<float, 3>& r, float pw) noexcept {
-        return ratio_seq<3>(p, s, r, pw);
+        return ::nisps::ratio_seq<3>(p, s, r, pw);
     }
     static bool ratio_seq_2(float p, float s, const std::array<float, 2>& r, float pw) noexcept {
-        return ratio_seq<2>(p, s, r, pw);
+        return ::nisps::ratio_seq<2>(p, s, r, pw);
     }
 
     float sample_rate_ = 48000.f;

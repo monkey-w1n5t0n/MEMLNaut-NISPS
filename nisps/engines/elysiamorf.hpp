@@ -18,9 +18,11 @@
 #include <string_view>
 
 #include "../core/concepts.hpp"
+#include "../core/event_queue.hpp"
 #include "../core/perf.hpp"
 #include "../core/types.hpp"
 #include "../dsp/osc.hpp"
+#include "../dsp/seq_clock.hpp"
 
 namespace nisps {
 
@@ -44,9 +46,7 @@ class ElysiamorfEngine {
 
     void setup(float sample_rate) noexcept {
         sample_rate_ = sample_rate;
-        bar_phasor_                = 0.f;
-        midi_clock_phasor_         = 0.f;
-        sequencing_sample_counter_ = 0u;
+        clock_.reset();
         update_bpm(90.f);
         for (auto& t : tracks_) {
             t.carrier_freq = 1.f;
@@ -75,18 +75,15 @@ class ElysiamorfEngine {
     NISPS_HOT NISPS_FORCE_INLINE stereosample_t process(stereosample_t /*x*/) noexcept {
         if (!playing_) return {0.f, 0.f};
 
-        midi_clock_phasor_ += midi_clock_phasor_inc_;
-        if (midi_clock_phasor_ >= 1.f) {
-            midi_clock_phasor_ -= 1.f;
+        if (clock_.tick_midi_clock()) {
             push_event({EventKind::Clock, 0u, 0u, 0u});
         }
 
-        if (sequencing_sample_counter_ == 0u) {
-            bar_phasor_ += bar_phasor_inc_;
-            if (bar_phasor_ >= 1.f) bar_phasor_ -= 1.f;
+        if (clock_.tick_bar()) {
+            const float bar_phasor = clock_.bar_phasor();
             for (std::size_t i = 0u; i < kNSequences; ++i) {
                 auto& t = tracks_[i];
-                float seq_phasor = bar_phasor_ * t.phasor_mul;
+                float seq_phasor = bar_phasor * t.phasor_mul;
                 seq_phasor = std::fmod(seq_phasor + t.phase_off, 1.f);
                 const float mod_out = t.modulator.process(seq_phasor, 0.f, t.mod_freq, 0.f, 0.f);
                 const float fm = t.carrier.process(seq_phasor, mod_out, t.carrier_freq, t.mod_index, 0.f);
@@ -97,39 +94,23 @@ class ElysiamorfEngine {
                 push_event({EventKind::CC, kCCNumbers[i], static_cast<std::uint8_t>(scaled), 0u});
             }
         }
-        ++sequencing_sample_counter_;
-        if (sequencing_sample_counter_ >= kSequencingSampleDiv) sequencing_sample_counter_ = 0u;
         return {0.f, 0.f};
     }
 
     DriverConfig driver_config() const noexcept { return {}; }
 
     std::size_t pop_events(std::span<Event> out) noexcept {
-        std::size_t n = 0u;
-        while (n < out.size() && event_count_ > 0u) {
-            out[n++] = events_[event_read_];
-            event_read_ = (event_read_ + 1u) % kEventBufferSize;
-            --event_count_;
-        }
-        return n;
+        return events_.pop(out);
     }
 
     void update_bpm(float bpm) noexcept {
-        bpm_ = bpm;
-        const float beat_seconds = 60.f / bpm;
-        const float bar_seconds  = beat_seconds * 4.f;
-        const float bar_samples  = bar_seconds * (sample_rate_ / static_cast<float>(kSequencingSampleDiv));
-        bar_phasor_inc_ = 1.f / bar_samples;
-        const float clock_seconds = beat_seconds / 24.f;
-        midi_clock_phasor_inc_ = 1.f / (clock_seconds * sample_rate_);
+        clock_.update_bpm(bpm, sample_rate_);
     }
 
     void set_playing(bool playing) noexcept {
         playing_ = playing;
         if (!playing) {
-            bar_phasor_                = 0.f;
-            midi_clock_phasor_         = 0.f;
-            sequencing_sample_counter_ = 0u;
+            clock_.reset();
         }
     }
 
@@ -148,27 +129,15 @@ class ElysiamorfEngine {
     };
 
     NISPS_FORCE_INLINE void push_event(const Event& e) noexcept {
-        if (event_count_ >= kEventBufferSize) return;
-        events_[event_write_] = e;
-        event_write_ = (event_write_ + 1u) % kEventBufferSize;
-        ++event_count_;
+        events_.push(e);
     }
 
     float sample_rate_ = 48000.f;
-    float bpm_         = 90.f;
     bool  playing_     = true;
 
     std::array<Track, kNSequences> tracks_{};
-    float       bar_phasor_     = 0.f;
-    float       bar_phasor_inc_ = 0.f;
-    float       midi_clock_phasor_     = 0.f;
-    float       midi_clock_phasor_inc_ = 0.f;
-    std::size_t sequencing_sample_counter_ = 0u;
-
-    std::array<Event, kEventBufferSize> events_{};
-    std::size_t event_read_  = 0u;
-    std::size_t event_write_ = 0u;
-    std::size_t event_count_ = 0u;
+    SeqClock clock_{kSequencingSampleDiv};
+    EventQueue<Event, kEventBufferSize> events_;
 };
 
 static_assert(AudioEngine<ElysiamorfEngine>, "ElysiamorfEngine must satisfy AudioEngine");

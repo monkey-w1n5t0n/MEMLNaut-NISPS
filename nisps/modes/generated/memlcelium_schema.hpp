@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_MEMLCELIUM_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -547,6 +548,23 @@ inline constexpr UIConfig kMemlceliumUI = {
     PrimaryInput::XYPad,
     false,
     true,
+};
+
+using MemlceliumMLP = ::nisps::ml::MLP<kMemlceliumMLConfig.input_size, kMemlceliumHiddenLayers[0], kMemlceliumHiddenLayers[1], kMemlceliumHiddenLayers[2], kMemlceliumMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kMemlceliumSchema = {
+    kMemlceliumModeId,
+    kMemlceliumEngineId,
+    std::span<const std::string_view>(kMemlceliumInputChannels),
+    kMemlceliumMLConfig.input_size,
+    std::span<const std::size_t>(kMemlceliumHiddenLayers),
+    kMemlceliumMLConfig.output_size,
+    kMemlceliumMLConfig.default_spread,
+    kMemlceliumMLConfig.default_learning_rate,
+    kMemlceliumMLConfig.default_max_iterations,
+    std::span<const Param>(kMemlceliumParams),
+    std::span<const std::string_view>(kMemlceliumVoiceSpaces),
+    kMemlceliumUI,
 };
 
 }  // namespace nisps::modes::generated

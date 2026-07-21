@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_VERB_FX_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -477,6 +478,23 @@ inline constexpr UIConfig kVerbFxUI = {
     PrimaryInput::Joystick,
     true,
     false,
+};
+
+using VerbFxMLP = ::nisps::ml::MLP<kVerbFxMLConfig.input_size, kVerbFxHiddenLayers[0], kVerbFxHiddenLayers[1], kVerbFxHiddenLayers[2], kVerbFxMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kVerbFxSchema = {
+    kVerbFxModeId,
+    kVerbFxEngineId,
+    std::span<const std::string_view>(kVerbFxInputChannels),
+    kVerbFxMLConfig.input_size,
+    std::span<const std::size_t>(kVerbFxHiddenLayers),
+    kVerbFxMLConfig.output_size,
+    kVerbFxMLConfig.default_spread,
+    kVerbFxMLConfig.default_learning_rate,
+    kVerbFxMLConfig.default_max_iterations,
+    std::span<const Param>(kVerbFxParams),
+    std::span<const std::string_view>(kVerbFxVoiceSpaces),
+    kVerbFxUI,
 };
 
 }  // namespace nisps::modes::generated

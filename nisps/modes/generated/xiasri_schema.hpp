@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_XIASRI_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -259,6 +260,23 @@ inline constexpr UIConfig kXiasriUI = {
     PrimaryInput::Joystick,
     false,
     false,
+};
+
+using XiasriMLP = ::nisps::ml::MLP<kXiasriMLConfig.input_size, kXiasriHiddenLayers[0], kXiasriHiddenLayers[1], kXiasriHiddenLayers[2], kXiasriMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kXiasriSchema = {
+    kXiasriModeId,
+    kXiasriEngineId,
+    std::span<const std::string_view>(kXiasriInputChannels),
+    kXiasriMLConfig.input_size,
+    std::span<const std::size_t>(kXiasriHiddenLayers),
+    kXiasriMLConfig.output_size,
+    kXiasriMLConfig.default_spread,
+    kXiasriMLConfig.default_learning_rate,
+    kXiasriMLConfig.default_max_iterations,
+    std::span<const Param>(kXiasriParams),
+    std::span<const std::string_view>(kXiasriVoiceSpaces),
+    kXiasriUI,
 };
 
 }  // namespace nisps::modes::generated

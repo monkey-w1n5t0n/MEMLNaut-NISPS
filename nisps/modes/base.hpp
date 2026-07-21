@@ -1,22 +1,18 @@
 // nisps/modes/base.hpp — Common scaffolding for every concrete mode.
 //
-// Two responsibilities:
-//   1. Define `nisps::ParamSchema` (the aggregate type that the `Mode`
-//      concept's `param_schema()` returns a const-reference to). The codegen
-//      output in `nisps/modes/generated/` lives in a different namespace and
-//      provides typed constants per mode; we wrap those in a uniform view-
-//      style `ParamSchema` here so the concept is satisfied without touching
-//      generated code.
-//
-//   2. Provide `ModeBase<Derived, EngineT, MLPType, NInputs>` — a CRTP base
-//      that absorbs the per-mode boilerplate (input forwarding, ML inference
-//      driving engine params, voice space selection, control event ring
-//      buffer). Concrete modes derive from this and only specialise:
-//       - the schema reference (static),
-//       - the "extra" pre-mapping done before set_params (e.g. analysis
-//         features stitched into ML inputs in SoundAnalysisMIDI),
-//       - any engine-specific control glue (note_on/note_off, sequencer
-//         play/stop, BPM updates).
+// Provides `ModeBase<Derived, EngineT, MLPType, NInputs>` — a CRTP base
+// that absorbs the per-mode boilerplate (input forwarding, ML inference
+// driving engine params, voice space selection, control event ring
+// buffer). Concrete modes derive from this and only specialise:
+//   - the schema reference (static; `nisps::ParamSchema` — the aggregate
+//     type the `Mode` concept's `param_schema()` returns a const-reference
+//     to — is now DEFINED in the codegen output, `generated/schema_types.hpp`,
+//     included below; codegen also emits one `inline constexpr ParamSchema
+//     k<Mode>Schema` per mode, so `param_schema()` is a one-line return),
+//   - the "extra" pre-mapping done before set_params (e.g. analysis
+//     features stitched into ML inputs in SoundAnalysisMIDI),
+//   - any engine-specific control glue (note_on/note_off, sequencer
+//     play/stop, BPM updates).
 //
 // Modes are platform-agnostic. Hardware/browser glue maps abstract input
 // channels (float [0, 1]) into `set_input(idx, value)` and drains
@@ -43,25 +39,11 @@
 
 namespace nisps {
 
-// ---------------------------------------------------------------------------
-// ParamSchema — view-style aggregate matching the concept's forward decl.
-// All members are spans/views into compile-time generated arrays; the
-// schema itself can be `inline constexpr` per mode.
-// ---------------------------------------------------------------------------
-struct ParamSchema {
-    std::string_view                                              mode_id;
-    std::string_view                                              engine_id;
-    std::span<const std::string_view>                             input_channels;
-    std::size_t                                                   input_size;
-    std::span<const std::size_t>                                  hidden_layers;
-    std::size_t                                                   output_size;
-    float                                                         default_spread;
-    float                                                         default_learning_rate;
-    std::size_t                                                   default_max_iterations;
-    std::span<const ::nisps::modes::generated::Param>             params;
-    std::span<const std::string_view>                             voice_spaces;
-    ::nisps::modes::generated::UIConfig                           ui;
-};
+// `nisps::ParamSchema` is defined in generated/schema_types.hpp (included
+// above) — codegen owns it (S5, one-core simplification 2026-07) since its
+// shape must match the `nisps::Mode` concept's forward declaration
+// (nisps/core/concepts.hpp) exactly, and every mode's actual schema VALUE is
+// itself codegen output (`generated::k<Mode>Schema`).
 
 // ---------------------------------------------------------------------------
 // Abstract control event — emitted by modes for the platform glue to drain.

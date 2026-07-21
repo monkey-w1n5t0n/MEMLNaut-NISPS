@@ -28,7 +28,6 @@
 #include "../core/perf.hpp"
 #include "../core/types.hpp"
 #include "../engines/memlcelium.hpp"
-#include "../ml/mlp.hpp"
 #include "base.hpp"
 #include "generated/slp_workshop_schema.hpp"
 
@@ -37,17 +36,19 @@ namespace nisps::modes {
 class SLPWorkshopMode : public ModeBase<
         SLPWorkshopMode,
         MEMLCeliumEngine,
-        ml::MLP<4u, 10u, 14u, 18u, 56u>,
+        generated::SlpWorkshopMLP,
         4u> {
    public:
     using Base = ModeBase<SLPWorkshopMode, MEMLCeliumEngine,
-                          ml::MLP<4u, 10u, 14u, 18u, 56u>, 4u>;
+                          generated::SlpWorkshopMLP, 4u>;
     using Base::Base;
 
     static constexpr std::string_view mode_id() noexcept {
         return generated::kSlpWorkshopModeId;
     }
-    static constexpr const ParamSchema& param_schema() noexcept { return kSchema; }
+    static constexpr const ParamSchema& param_schema() noexcept {
+        return generated::kSlpWorkshopSchema;
+    }
 
     NISPS_FORCE_INLINE void set_playing(bool playing) noexcept {
         engine_.set_playing(playing);
@@ -55,22 +56,6 @@ class SLPWorkshopMode : public ModeBase<
     NISPS_FORCE_INLINE void update_bpm(float bpm) noexcept {
         engine_.update_bpm(bpm);
     }
-
-   private:
-    static inline constexpr ParamSchema kSchema = ParamSchema{
-        generated::kSlpWorkshopModeId,
-        generated::kSlpWorkshopEngineId,
-        std::span<const std::string_view>(generated::kSlpWorkshopInputChannels),
-        generated::kSlpWorkshopMLConfig.input_size,
-        std::span<const std::size_t>(generated::kSlpWorkshopHiddenLayers),
-        generated::kSlpWorkshopMLConfig.output_size,
-        generated::kSlpWorkshopMLConfig.default_spread,
-        generated::kSlpWorkshopMLConfig.default_learning_rate,
-        generated::kSlpWorkshopMLConfig.default_max_iterations,
-        std::span<const generated::Param>(generated::kSlpWorkshopParams),
-        std::span<const std::string_view>(generated::kSlpWorkshopVoiceSpaces),
-        generated::kSlpWorkshopUI,
-    };
 };
 
 static_assert(Mode<SLPWorkshopMode>, "SLPWorkshopMode must satisfy nisps::Mode");

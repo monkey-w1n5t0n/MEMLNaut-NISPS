@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_BREAKOR_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -545,6 +546,23 @@ inline constexpr UIConfig kBreakorUI = {
     PrimaryInput::XYPad,
     false,
     false,
+};
+
+using BreakorMLP = ::nisps::ml::MLP<kBreakorMLConfig.input_size, kBreakorHiddenLayers[0], kBreakorHiddenLayers[1], kBreakorHiddenLayers[2], kBreakorMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kBreakorSchema = {
+    kBreakorModeId,
+    kBreakorEngineId,
+    std::span<const std::string_view>(kBreakorInputChannels),
+    kBreakorMLConfig.input_size,
+    std::span<const std::size_t>(kBreakorHiddenLayers),
+    kBreakorMLConfig.output_size,
+    kBreakorMLConfig.default_spread,
+    kBreakorMLConfig.default_learning_rate,
+    kBreakorMLConfig.default_max_iterations,
+    std::span<const Param>(kBreakorParams),
+    std::span<const std::string_view>(kBreakorVoiceSpaces),
+    kBreakorUI,
 };
 
 }  // namespace nisps::modes::generated

@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_CHANNEL_STRIP_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -264,6 +265,23 @@ inline constexpr UIConfig kChannelStripUI = {
     PrimaryInput::Joystick,
     true,
     false,
+};
+
+using ChannelStripMLP = ::nisps::ml::MLP<kChannelStripMLConfig.input_size, kChannelStripHiddenLayers[0], kChannelStripHiddenLayers[1], kChannelStripHiddenLayers[2], kChannelStripMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kChannelStripSchema = {
+    kChannelStripModeId,
+    kChannelStripEngineId,
+    std::span<const std::string_view>(kChannelStripInputChannels),
+    kChannelStripMLConfig.input_size,
+    std::span<const std::size_t>(kChannelStripHiddenLayers),
+    kChannelStripMLConfig.output_size,
+    kChannelStripMLConfig.default_spread,
+    kChannelStripMLConfig.default_learning_rate,
+    kChannelStripMLConfig.default_max_iterations,
+    std::span<const Param>(kChannelStripParams),
+    std::span<const std::string_view>(kChannelStripVoiceSpaces),
+    kChannelStripUI,
 };
 
 }  // namespace nisps::modes::generated

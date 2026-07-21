@@ -14,14 +14,26 @@
  * (The TS target moved playground → manifold at P5 of
  * docs/specs/plans/one-core-engine-refactor.md.)
  *
+ * Per-mode C++ headers also emit (simplification 2026-07, S1/S5/S6/S25):
+ *   - `k<Mode>Schema`  — the `nisps::ParamSchema` aggregate; each mode's
+ *     `param_schema()` becomes a one-line `return generated::k<Mode>Schema;`
+ *     instead of hand-assembling the same 12-field struct.
+ *   - `<Mode>MLP`      — the mode's `nisps::ml::MLP<...>` net-shape alias,
+ *     built from the constants above instead of a second hand-typed copy of
+ *     the dims in nisps/modes/*.hpp.
+ * The TS `index.ts` also emits `ALL_MODE_SCHEMAS` (every mode schema, in
+ * generation order) so manifold's mode catalogue no longer hand-imports each
+ * schema by name — see manifold/src/console/model.ts's `SCHEMA_MODES` overlay.
+ *
  * Idempotent: regenerating the same schemas yields byte-identical output.
  * Exits non-zero on validation failure.
  */
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, resolve, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020, { type AnySchemaObject } from "ajv/dist/2020.js";
+import { ensureDir, readJSON, toPascalCase, cppStringLit, tsStringLit } from "./lib.ts";
 
 // ----- Types ----------------------------------------------------------------
 
@@ -70,48 +82,14 @@ const CPP_OUT_DIR = join(REPO_ROOT, "nisps", "modes", "generated");
 const TS_OUT_DIR = join(REPO_ROOT, "manifold", "src", "modes", "generated");
 
 // ----- Helpers --------------------------------------------------------------
-
-function ensureDir(d: string): void {
-  if (!existsSync(d)) {
-    mkdirSync(d, { recursive: true });
-  }
-}
-
-function readJSON<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
-/**
- * Convert snake_case to PascalCase.
- * "paf_synth" -> "PafSynth", "memlcelium" -> "Memlcelium"
- */
-function toPascalCase(snake: string): string {
-  return snake
-    .split("_")
-    .map(s => s.length === 0 ? s : s[0].toUpperCase() + s.slice(1))
-    .join("");
-}
+// ensureDir/readJSON/toPascalCase/cppStringLit/tsStringLit now live in
+// ./lib.ts (ST12, shared with generate-midi-devices.ts).
 
 /**
  * Convert mode_id to UPPER_SNAKE for #define guards.
  */
 function toUpperSnake(snake: string): string {
   return snake.toUpperCase();
-}
-
-/**
- * Escape a string literal for embedding into a C++ string.
- * We expect ASCII identifiers + label text only; quote and backslash are escaped.
- */
-function cppStringLit(s: string): string {
-  return '"' + s.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
-}
-
-/**
- * Escape a string for a TS single-line single-quoted literal.
- */
-function tsStringLit(s: string): string {
-  return "'" + s.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
 }
 
 /**
@@ -161,11 +139,18 @@ function emitSchemaTypesHpp(): string {
     "//",
     "// `Curve` is the authoritative enum from nisps/core/math.hpp; we re-export it",
     "// into this namespace so generated headers can refer to plain `Curve::linear`.",
+    "//",
+    "// `ParamSchema` lives in the top-level `nisps` namespace, not",
+    "// `nisps::modes::generated`: nisps/core/concepts.hpp forward-declares",
+    "// `nisps::ParamSchema` and requires `T::param_schema()` to return",
+    "// `const nisps::ParamSchema&`, so the definition has to match that",
+    "// forward declaration exactly (S5, one-core simplification 2026-07).",
     "#ifndef NISPS_GENERATED_SCHEMA_TYPES_HPP",
     "#define NISPS_GENERATED_SCHEMA_TYPES_HPP",
     "",
     "#include <array>",
     "#include <cstddef>",
+    "#include <span>",
     "#include <string_view>",
     "",
     "#include \"../../core/math.hpp\"",
@@ -208,6 +193,30 @@ function emitSchemaTypesHpp(): string {
     "};",
     "",
     "}  // namespace nisps::modes::generated",
+    "",
+    "namespace nisps {",
+    "",
+    "// View-style aggregate satisfying the `nisps::Mode` concept's",
+    "// `param_schema()` requirement. All members are spans/views into",
+    "// compile-time generated arrays; codegen emits one",
+    "// `inline constexpr ParamSchema k<Mode>Schema` per mode (see the",
+    "// per-mode <mode_id>_schema.hpp in this directory).",
+    "struct ParamSchema {",
+    "    std::string_view                                    mode_id;",
+    "    std::string_view                                    engine_id;",
+    "    std::span<const std::string_view>                   input_channels;",
+    "    std::size_t                                         input_size;",
+    "    std::span<const std::size_t>                        hidden_layers;",
+    "    std::size_t                                         output_size;",
+    "    float                                                default_spread;",
+    "    float                                                default_learning_rate;",
+    "    std::size_t                                          default_max_iterations;",
+    "    std::span<const ::nisps::modes::generated::Param>    params;",
+    "    std::span<const std::string_view>                    voice_spaces;",
+    "    ::nisps::modes::generated::UIConfig                  ui;",
+    "};",
+    "",
+    "}  // namespace nisps",
     "",
     "#endif  // NISPS_GENERATED_SCHEMA_TYPES_HPP",
     "",
@@ -286,6 +295,7 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
   lines.push(`#define ${guard}`);
   lines.push("");
   lines.push("#include \"schema_types.hpp\"");
+  lines.push("#include \"../../ml/mlp.hpp\"");
   lines.push("");
   lines.push("namespace nisps::modes::generated {");
   lines.push("");
@@ -365,6 +375,35 @@ function emitModeHpp(schema: ModeSchema, sourceFile: string): string {
   lines.push(`    ${primary},`);
   lines.push(`    ${schema.ui.show_voice_space_selector ? "true" : "false"},`);
   lines.push(`    ${schema.ui.show_synth_visualizer ? "true" : "false"},`);
+  lines.push("};");
+  lines.push("");
+
+  // Net-shape alias (S6/S25): the mode's MLP<> template args, built from the
+  // constants above rather than hand-typed a second time in nisps/modes/*.hpp.
+  const modeMlpName = `${toPascalCase(schema.mode_id)}MLP`;
+  lines.push(
+    `using ${modeMlpName} = ::nisps::ml::MLP<` +
+      `${constName}MLConfig.input_size, ` +
+      `${constName}HiddenLayers[0], ${constName}HiddenLayers[1], ${constName}HiddenLayers[2], ` +
+      `${constName}MLConfig.output_size>;`
+  );
+  lines.push("");
+
+  // ParamSchema aggregate (S5): the one-line `param_schema()` body every mode
+  // used to hand-assemble as a private `kSchema` positional-init block.
+  lines.push(`inline constexpr ::nisps::ParamSchema ${constName}Schema = {`);
+  lines.push(`    ${constName}ModeId,`);
+  lines.push(`    ${constName}EngineId,`);
+  lines.push(`    std::span<const std::string_view>(${constName}InputChannels),`);
+  lines.push(`    ${constName}MLConfig.input_size,`);
+  lines.push(`    std::span<const std::size_t>(${constName}HiddenLayers),`);
+  lines.push(`    ${constName}MLConfig.output_size,`);
+  lines.push(`    ${constName}MLConfig.default_spread,`);
+  lines.push(`    ${constName}MLConfig.default_learning_rate,`);
+  lines.push(`    ${constName}MLConfig.default_max_iterations,`);
+  lines.push(`    std::span<const Param>(${constName}Params),`);
+  lines.push(`    std::span<const std::string_view>(${constName}VoiceSpaces),`);
+  lines.push(`    ${constName}UI,`);
   lines.push("};");
   lines.push("");
 
@@ -454,10 +493,28 @@ function emitTsIndex(modeIds: string[]): string {
   lines.push("// AUTOGENERATED — do not edit. Run `bun run codegen/generate.ts` to regenerate.");
   lines.push("// Re-exports every generated mode schema.");
   lines.push("");
+  lines.push("import type { ModeSchema } from './types';");
+  for (const id of modeIds) {
+    lines.push(`import { ${toPascalCase(id)}Schema } from './${id}_schema';`);
+  }
+  lines.push("");
   lines.push("export * from './types';");
   for (const id of modeIds) {
     lines.push(`export * from './${id}_schema';`);
   }
+  lines.push("");
+  // Mechanically-derived mode-identity registry (S1): every generated mode
+  // schema, in generation (mode_id-sorted) order. NOT display order — that
+  // ordering is hand-curated overlay truth (manifold/src/console/model.ts's
+  // `SCHEMA_MODES`).
+  lines.push(
+    "/** Every generated mode schema, mode_id-sorted. Mechanically-derived mode-identity truth. */"
+  );
+  lines.push("export const ALL_MODE_SCHEMAS: readonly ModeSchema[] = [");
+  for (const id of modeIds) {
+    lines.push(`  ${toPascalCase(id)}Schema,`);
+  }
+  lines.push("];");
   lines.push("");
   return lines.join("\n");
 }

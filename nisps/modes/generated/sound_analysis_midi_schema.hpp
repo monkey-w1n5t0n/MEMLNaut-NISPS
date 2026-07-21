@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_SOUND_ANALYSIS_MIDI_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -119,6 +120,23 @@ inline constexpr UIConfig kSoundAnalysisMidiUI = {
     PrimaryInput::AudioIn,
     false,
     false,
+};
+
+using SoundAnalysisMidiMLP = ::nisps::ml::MLP<kSoundAnalysisMidiMLConfig.input_size, kSoundAnalysisMidiHiddenLayers[0], kSoundAnalysisMidiHiddenLayers[1], kSoundAnalysisMidiHiddenLayers[2], kSoundAnalysisMidiMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kSoundAnalysisMidiSchema = {
+    kSoundAnalysisMidiModeId,
+    kSoundAnalysisMidiEngineId,
+    std::span<const std::string_view>(kSoundAnalysisMidiInputChannels),
+    kSoundAnalysisMidiMLConfig.input_size,
+    std::span<const std::size_t>(kSoundAnalysisMidiHiddenLayers),
+    kSoundAnalysisMidiMLConfig.output_size,
+    kSoundAnalysisMidiMLConfig.default_spread,
+    kSoundAnalysisMidiMLConfig.default_learning_rate,
+    kSoundAnalysisMidiMLConfig.default_max_iterations,
+    std::span<const Param>(kSoundAnalysisMidiParams),
+    std::span<const std::string_view>(kSoundAnalysisMidiVoiceSpaces),
+    kSoundAnalysisMidiUI,
 };
 
 }  // namespace nisps::modes::generated

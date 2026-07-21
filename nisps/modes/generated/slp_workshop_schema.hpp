@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_SLP_WORKSHOP_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -547,6 +548,23 @@ inline constexpr UIConfig kSlpWorkshopUI = {
     PrimaryInput::XYPad,
     false,
     true,
+};
+
+using SlpWorkshopMLP = ::nisps::ml::MLP<kSlpWorkshopMLConfig.input_size, kSlpWorkshopHiddenLayers[0], kSlpWorkshopHiddenLayers[1], kSlpWorkshopHiddenLayers[2], kSlpWorkshopMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kSlpWorkshopSchema = {
+    kSlpWorkshopModeId,
+    kSlpWorkshopEngineId,
+    std::span<const std::string_view>(kSlpWorkshopInputChannels),
+    kSlpWorkshopMLConfig.input_size,
+    std::span<const std::size_t>(kSlpWorkshopHiddenLayers),
+    kSlpWorkshopMLConfig.output_size,
+    kSlpWorkshopMLConfig.default_spread,
+    kSlpWorkshopMLConfig.default_learning_rate,
+    kSlpWorkshopMLConfig.default_max_iterations,
+    std::span<const Param>(kSlpWorkshopParams),
+    std::span<const std::string_view>(kSlpWorkshopVoiceSpaces),
+    kSlpWorkshopUI,
 };
 
 }  // namespace nisps::modes::generated

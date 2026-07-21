@@ -17,7 +17,6 @@
 #include "../core/perf.hpp"
 #include "../core/types.hpp"
 #include "../engines/breakor.hpp"
-#include "../ml/mlp.hpp"
 #include "base.hpp"
 #include "generated/breakor_schema.hpp"
 
@@ -26,17 +25,19 @@ namespace nisps::modes {
 class BreakOrMode : public ModeBase<
         BreakOrMode,
         BreakOrEngine,
-        ml::MLP<4u, 10u, 14u, 18u, 56u>,
+        generated::BreakorMLP,
         4u> {
    public:
     using Base = ModeBase<BreakOrMode, BreakOrEngine,
-                          ml::MLP<4u, 10u, 14u, 18u, 56u>, 4u>;
+                          generated::BreakorMLP, 4u>;
     using Base::Base;
 
     static constexpr std::string_view mode_id() noexcept {
         return generated::kBreakorModeId;
     }
-    static constexpr const ParamSchema& param_schema() noexcept { return kSchema; }
+    static constexpr const ParamSchema& param_schema() noexcept {
+        return generated::kBreakorSchema;
+    }
 
     NISPS_FORCE_INLINE void set_playing(bool playing) noexcept {
         engine_.set_playing(playing);
@@ -71,22 +72,6 @@ class BreakOrMode : public ModeBase<
             (void)push_control_event(ce);
         }
     }
-
-   private:
-    static inline constexpr ParamSchema kSchema = ParamSchema{
-        generated::kBreakorModeId,
-        generated::kBreakorEngineId,
-        std::span<const std::string_view>(generated::kBreakorInputChannels),
-        generated::kBreakorMLConfig.input_size,
-        std::span<const std::size_t>(generated::kBreakorHiddenLayers),
-        generated::kBreakorMLConfig.output_size,
-        generated::kBreakorMLConfig.default_spread,
-        generated::kBreakorMLConfig.default_learning_rate,
-        generated::kBreakorMLConfig.default_max_iterations,
-        std::span<const generated::Param>(generated::kBreakorParams),
-        std::span<const std::string_view>(generated::kBreakorVoiceSpaces),
-        generated::kBreakorUI,
-    };
 };
 
 static_assert(Mode<BreakOrMode>, "BreakOrMode must satisfy nisps::Mode");

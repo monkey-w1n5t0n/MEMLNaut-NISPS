@@ -18,6 +18,22 @@
 //
 // `kRouteOutputsToEngine = false` (specialised below) so ModeBase skips routing
 // ML outputs into engine params, exactly like SoundAnalysisMIDIMode.
+//
+// NOT folded into the schemas/modes/*.json codegen pipeline (L11, one-core
+// simplification 2026-07): that pipeline emits ONE static schema per JSON
+// file, but this "mode" is a C++ template family over an externally supplied
+// `Device` (one of the nisps/midi/generated device templates) and an output
+// count `NOut` — there is no single (device, NOut) pair to author a JSON
+// schema for, and its per-output "params" aren't independently named at all;
+// they're whichever NOut slots `pick_cc_slots` selects from `Device.params`,
+// which is ITSELF already schema-generated (codegen/generate-midi-devices.ts,
+// schemas/midi_devices/). Folding would mean inventing a new
+// device-templated schema kind for a single, already-degenerate consumer —
+// not a behaviour-preserving consolidation. Instead: the net-shape + ML
+// defaults this mode needs (identical to every other 4-joystick-input mode —
+// see e.g. schemas/modes/memlcelium.json) are named ONCE below
+// (`ext_synth_defaults`), so the `MLP<>` shape and the `ParamSchema` instance
+// both read from the same place instead of re-typing the same literals.
 
 #pragma once
 
@@ -36,6 +52,34 @@
 #include "base.hpp"
 
 namespace nisps::modes {
+
+// Shared net-shape + ML defaults for every ExternalSynthMIDIMode
+// instantiation (see the file-header comment for why these are hand-named
+// rather than codegen'd): 4 joystick inputs -> [10,14,18] hidden -> NOut
+// (device-CC-count-driven) outputs, matching every other 4-joystick-input
+// mode's schema defaults (default_spread 0.6, default_learning_rate 1.0,
+// default_max_iterations 1000).
+namespace ext_synth_defaults {
+inline constexpr std::size_t kInputSize = 4u;
+inline constexpr std::array<std::string_view, 4> kInputChannels{
+    std::string_view{"joy_x"}, std::string_view{"joy_y"},
+    std::string_view{"joy_z"}, std::string_view{"joy_w"}};
+inline constexpr std::array<std::size_t, 3> kHiddenLayers{10u, 14u, 18u};
+inline constexpr float       kDefaultSpread        = 0.6f;
+inline constexpr float       kDefaultLearningRate  = 1.0f;
+inline constexpr std::size_t kDefaultMaxIterations = 1000u;
+}  // namespace ext_synth_defaults
+
+// The net-shape alias every instantiation uses (mirrors S6/S25's per-mode
+// `<Mode>MLP` codegen alias, generalised to a template parameter since NOut
+// varies per device/output-count combination).
+template <std::size_t NOut>
+using ExtSynthMIDIMLP = ::nisps::ml::MLP<
+    ext_synth_defaults::kInputSize,
+    ext_synth_defaults::kHiddenLayers[0],
+    ext_synth_defaults::kHiddenLayers[1],
+    ext_synth_defaults::kHiddenLayers[2],
+    NOut>;
 
 template <const ::nisps::midi::generated::MidiDevice& Device, std::size_t NOut>
 class ExternalSynthMIDIMode;
@@ -74,14 +118,14 @@ template <const ::nisps::midi::generated::MidiDevice& Device, std::size_t NOut =
 class ExternalSynthMIDIMode : public ModeBase<
         ExternalSynthMIDIMode<Device, NOut>,
         NoOpEngine,
-        ml::MLP<4u, 10u, 14u, 18u, NOut>,
+        ExtSynthMIDIMLP<NOut>,
         4u> {
     static_assert(Device.params.size() >= NOut,
                   "device template has fewer params than the mode's output count");
 
    public:
     using Base = ModeBase<ExternalSynthMIDIMode<Device, NOut>, NoOpEngine,
-                          ml::MLP<4u, 10u, 14u, 18u, NOut>, 4u>;
+                          ExtSynthMIDIMLP<NOut>, 4u>;
     using Base::Base;
 
     static constexpr std::string_view mode_id() noexcept { return Device.device_id; }
@@ -129,10 +173,6 @@ class ExternalSynthMIDIMode : public ModeBase<
         return a;
     }();
 
-    static constexpr std::array<std::string_view, 4> kInputs{
-        std::string_view{"joy_x"}, std::string_view{"joy_y"},
-        std::string_view{"joy_z"}, std::string_view{"joy_w"}};
-    static constexpr std::array<std::size_t, 3> kHidden{10u, 14u, 18u};
     static constexpr std::array<generated::Param, 0> kNoParams{};
     static constexpr std::array<std::string_view, 0> kNoVoiceSpaces{};
     static constexpr generated::UIConfig kUI{generated::PrimaryInput::Joystick, false, false};
@@ -140,13 +180,13 @@ class ExternalSynthMIDIMode : public ModeBase<
     static inline constexpr ParamSchema kSchema = ParamSchema{
         Device.device_id,
         std::string_view{"thru"},
-        std::span<const std::string_view>(kInputs),
-        4u,
-        std::span<const std::size_t>(kHidden),
+        std::span<const std::string_view>(ext_synth_defaults::kInputChannels),
+        ext_synth_defaults::kInputSize,
+        std::span<const std::size_t>(ext_synth_defaults::kHiddenLayers),
         NOut,
-        0.6f,
-        1.0f,
-        1000u,
+        ext_synth_defaults::kDefaultSpread,
+        ext_synth_defaults::kDefaultLearningRate,
+        ext_synth_defaults::kDefaultMaxIterations,
         std::span<const generated::Param>(kNoParams),
         std::span<const std::string_view>(kNoVoiceSpaces),
         kUI,

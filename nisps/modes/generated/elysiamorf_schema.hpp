@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_ELYSIAMORF_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -401,6 +402,23 @@ inline constexpr UIConfig kElysiamorfUI = {
     PrimaryInput::XYPad,
     false,
     false,
+};
+
+using ElysiamorfMLP = ::nisps::ml::MLP<kElysiamorfMLConfig.input_size, kElysiamorfHiddenLayers[0], kElysiamorfHiddenLayers[1], kElysiamorfHiddenLayers[2], kElysiamorfMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kElysiamorfSchema = {
+    kElysiamorfModeId,
+    kElysiamorfEngineId,
+    std::span<const std::string_view>(kElysiamorfInputChannels),
+    kElysiamorfMLConfig.input_size,
+    std::span<const std::size_t>(kElysiamorfHiddenLayers),
+    kElysiamorfMLConfig.output_size,
+    kElysiamorfMLConfig.default_spread,
+    kElysiamorfMLConfig.default_learning_rate,
+    kElysiamorfMLConfig.default_max_iterations,
+    std::span<const Param>(kElysiamorfParams),
+    std::span<const std::string_view>(kElysiamorfVoiceSpaces),
+    kElysiamorfUI,
 };
 
 }  // namespace nisps::modes::generated

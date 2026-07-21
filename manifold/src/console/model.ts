@@ -2,14 +2,18 @@
  * Console — shared instrument model: the modes catalogue + per-param shaping
  * helpers.
  *
- * SOURCE OF TRUTH (one-core-engine P5.2): the schema-backed modes are DERIVED
- * from the codegen-produced schemas in `src/modes/generated/` — real param
- * names, groups, count, and each mode's `ml` config + `engine_id` come from
- * schema truth, never hand-written. A thin manifold-side OVERLAY supplies only
- * the display concerns a schema has no opinion on: label, glyph, ModeClass,
- * input kind, and ordering. Two manifold-only modes with no schema
- * (`visualizer`, `c15` placeholder) stay hand-written and use the default net
- * shape.
+ * SOURCE OF TRUTH (one-core-engine P5.2, mode-identity consolidation S1 —
+ * simplification 2026-07): the schema-backed modes are DERIVED from
+ * `ALL_MODE_SCHEMAS`, codegen's mechanically-generated registry of every
+ * schema in `src/modes/generated/` — real param names, groups, count, each
+ * mode's `ml` config + `engine_id`, AND the set of mode ids itself all come
+ * from schema truth, never hand-imported one-by-one. A thin manifold-side
+ * OVERLAY (`SCHEMA_MODE_OVERLAYS`, keyed by mode_id) supplies only the display
+ * concerns a schema has no opinion on: label, glyph, ModeClass, input kind,
+ * and catalogue ORDER (insertion order of the object's keys) — those are
+ * legitimately hand-curated display truth, not mechanically derivable, and
+ * survive here. Two manifold-only modes with no schema (`visualizer`, `c15`
+ * placeholder) stay hand-written and use the default net shape.
  *
  * KEY CHANGE vs the JSX reference: the pseudo-inference `MF_infer` (sin/cos
  * placeholder) and the `useInstrument` hook are GONE. The `values` every
@@ -23,28 +27,48 @@
  */
 
 import type { ModeSchema } from '../modes/generated/types';
-import {
-  BreakorSchema,
-  ChannelStripSchema,
-  ElysiamorfSchema,
-  MemlceliumSchema,
-  PafSynthSchema,
-  SlpWorkshopSchema,
-  SoundAnalysisMidiSchema,
-  VerbFxSchema,
-  XiasriSchema,
-} from '../modes/generated';
+import { ALL_MODE_SCHEMAS } from '../modes/generated';
+import { applyCurve } from '../backends/mapping';
 
 export type ParamStatus = 'off' | 'fixed' | 'live';
 /**
  * Param GROUP. Historically a small hand-picked union; now the group is the raw
  * schema string (`'operators'`, `'envelope'`, `'kick'`, …) so the type is just
- * `string`. Unknown groups fall back to the accent colour in the GROUP_COLOR
- * maps that key off this field.
+ * `string`. Unknown groups fall back to the accent colour in {@link GROUP_COLOR}.
  */
 export type ParamGroup = string;
 export type ModeClass = 'Synth' | 'Sequencer' | 'Controller' | 'Visual';
 export type ModeInput = 'xy' | 'joystick' | 'audio_in';
+
+/**
+ * Group → CSS custom-property name, for colouring per-output UI (bars, dots,
+ * meters). ST4 (simplification 2026-07): this was four byte-identical copies
+ * (console/shared-ui.tsx, console/OutputStage.tsx, console/CompositeStage.tsx,
+ * dock/OutputControlRow.tsx) — one canonical map now lives here.
+ *
+ * The keys are JSX-era placeholder group names, NOT the real schema group
+ * strings (`schemas/modes/*.json` uses `verb`, `sequencer`, `kick`, `snare`,
+ * `filterbank`, `operators`, … — only `pitch` overlaps). For every
+ * schema-backed mode this means almost every param falls through to the
+ * `--accent` default; the map only does real work for the two hand-written
+ * manifold-only modes (`visualizer`, `c15`), whose {@link MANIFOLD_ONLY_MODES}
+ * groups (`mod`/`amp`/`fx`) were chosen to match it. A hash-to-palette
+ * function over arbitrary group strings would fix this for schema-driven
+ * groups too, but `console/OutputStage.tsx` — the hero output view, and the
+ * highest-traffic consumer of group colour — is outside this pass's file
+ * ownership; changing the strategy here alone would make the demoted/dock
+ * views (this map's consumers) disagree with the hero view instead of
+ * agreeing, which is the opposite of ST4's goal. Left as a plain map;
+ * revisit keys/strategy together with OutputStage.tsx in one change.
+ */
+export const GROUP_COLOR: Readonly<Record<string, string>> = {
+  formant: '--accent',
+  pitch: '--accent-2',
+  amp: '--good',
+  filter: '--warn',
+  fx: '--info',
+  mod: '--accent-3',
+};
 
 /**
  * A mode's net shape — the engine dims the runtime-shaped WASM MLP is reshaped
@@ -123,9 +147,11 @@ export interface MFMode {
    */
   ml: ModeML;
   /**
-   * The schema's `engine_id` (audio-engine metadata). NOTE: audio backend
-   * SELECTION still routes through {@link modeEngineId}, which is unchanged —
-   * this field is the schema-truth annotation, not the routing decision.
+   * The schema's `engine_id` (audio-engine metadata). {@link modeEngineId}
+   * routes the actual backend SELECTION off this field for every mode except
+   * `sound_analysis_midi` (see that function's doc comment for why it needs
+   * an exception) — this field stays the schema-truth annotation;
+   * `modeEngineId` is the routing decision.
    */
   engineId: string;
   placeholder?: boolean;
@@ -191,34 +217,31 @@ interface ModeOverlay {
 }
 
 /**
- * ORDERED list of schema-backed modes: `{ schema, overlay }`. Order here is the
- * catalogue order. `xiasri` + `slp_workshop` are new browser-viable entries
- * (they have schemas but weren't in the hand-written catalogue). The overlay is
- * hand-picked display; the params/ml/engine_id come from the schema.
+ * Mode-identity display OVERLAY, keyed by mode_id (S1 — simplification
+ * 2026-07): labels, glyphs, `ModeClass`, input kind, and CATALOGUE ORDER
+ * (this object's key insertion order) are hand-curated display truth with no
+ * schema opinion, so they stay hand-written here. Everything else a mode
+ * needs (which mode ids exist, their params/ml/engine_id) is mechanically
+ * derived from `ALL_MODE_SCHEMAS` (codegen output) below — `xiasri` +
+ * `slp_workshop` are browser-viable entries that have schemas but weren't in
+ * the pre-P5 hand-written catalogue.
  */
-const SCHEMA_MODES: ReadonlyArray<{ schema: ModeSchema; overlay: ModeOverlay }> = [
-  { schema: PafSynthSchema, overlay: { label: 'PAF Synth', glyph: '∿', cls: 'Synth', input: 'xy' } },
-  {
-    schema: ChannelStripSchema,
-    overlay: { label: 'Channel Strip', glyph: '▤', cls: 'Synth', input: 'joystick' },
+const SCHEMA_MODE_OVERLAYS: Readonly<Record<string, ModeOverlay>> = {
+  paf_synth: { label: 'PAF Synth', glyph: '∿', cls: 'Synth', input: 'xy' },
+  channel_strip: { label: 'Channel Strip', glyph: '▤', cls: 'Synth', input: 'joystick' },
+  verb_fx: { label: 'Verb FX', glyph: '◞', cls: 'Synth', input: 'joystick' },
+  elysiamorf: { label: 'Elysiamorf', glyph: '❋', cls: 'Synth', input: 'xy' },
+  memlcelium: { label: 'MEML Celium', glyph: '☷', cls: 'Sequencer', input: 'xy' },
+  breakor: { label: 'Breakor', glyph: '⊟', cls: 'Sequencer', input: 'joystick' },
+  xiasri: { label: 'Xiasri', glyph: '✴', cls: 'Synth', input: 'joystick' },
+  slp_workshop: { label: 'SLP Workshop', glyph: '☷', cls: 'Sequencer', input: 'xy' },
+  sound_analysis_midi: {
+    label: 'Sound Analysis → MIDI',
+    glyph: '⇉',
+    cls: 'Controller',
+    input: 'audio_in',
   },
-  { schema: VerbFxSchema, overlay: { label: 'Verb FX', glyph: '◞', cls: 'Synth', input: 'joystick' } },
-  { schema: ElysiamorfSchema, overlay: { label: 'Elysiamorf', glyph: '❋', cls: 'Synth', input: 'xy' } },
-  {
-    schema: MemlceliumSchema,
-    overlay: { label: 'MEML Celium', glyph: '☷', cls: 'Sequencer', input: 'xy' },
-  },
-  { schema: BreakorSchema, overlay: { label: 'Breakor', glyph: '⊟', cls: 'Sequencer', input: 'joystick' } },
-  { schema: XiasriSchema, overlay: { label: 'Xiasri', glyph: '✴', cls: 'Synth', input: 'joystick' } },
-  {
-    schema: SlpWorkshopSchema,
-    overlay: { label: 'SLP Workshop', glyph: '☷', cls: 'Sequencer', input: 'xy' },
-  },
-  {
-    schema: SoundAnalysisMidiSchema,
-    overlay: { label: 'Sound Analysis → MIDI', glyph: '⇉', cls: 'Controller', input: 'audio_in' },
-  },
-];
+};
 
 function modeFromSchema(schema: ModeSchema, overlay: ModeOverlay): MFMode {
   return {
@@ -233,6 +256,27 @@ function modeFromSchema(schema: ModeSchema, overlay: ModeOverlay): MFMode {
     engineId: schema.engine_id,
   };
 }
+
+/**
+ * Schema-backed modes, in {@link SCHEMA_MODE_OVERLAYS}'s curated catalogue
+ * order. A mode_id with no matching generated schema is dropped (loudly, via
+ * console.error) rather than crashing the console — this should only be
+ * reachable mid-edit, between adding/removing a schema and updating the
+ * overlay map.
+ */
+const SCHEMA_MODES: MFMode[] = Object.entries(SCHEMA_MODE_OVERLAYS).flatMap(
+  ([modeId, overlay]) => {
+    const schema = ALL_MODE_SCHEMAS.find((s) => s.mode_id === modeId);
+    if (!schema) {
+      console.error(
+        `model.ts: SCHEMA_MODE_OVERLAYS has an entry for mode_id '${modeId}' but no ` +
+          'matching generated schema exists (check codegen output) — dropped from MF_MODES.',
+      );
+      return [];
+    }
+    return [modeFromSchema(schema, overlay)];
+  },
+);
 
 /**
  * Manifold-only modes with NO schema — hand-written params on the DEFAULT net
@@ -269,16 +313,41 @@ const MANIFOLD_ONLY_MODES: MFMode[] = [
   },
 ];
 
-export const MF_MODES: MFMode[] = [
-  ...SCHEMA_MODES.map(({ schema, overlay }) => modeFromSchema(schema, overlay)),
-  ...MANIFOLD_ONLY_MODES,
-];
+export const MF_MODES: MFMode[] = [...SCHEMA_MODES, ...MANIFOLD_ONLY_MODES];
 
-/** Mirrors the engine's `applyCurve` (≈0.43 ≈ linear). */
-export function applyCurve(v: number, c: number): number {
-  const e = 0.25 + c * 1.75;
-  return Math.pow(Math.max(0, Math.min(1, v)), e);
-}
+/**
+ * L38 (simplification 2026-07): this used to be a SECOND, divergent
+ * `applyCurve` (`e = 0.25 + c * 1.75`, linear at c≈0.43) alongside
+ * `backends/mapping.ts`'s spec-anchored version (0.5 = exact linear
+ * midpoint, backends-spec §3). Deleted in favour of the mapping.ts survivor,
+ * imported above and re-exported below so `console/index.ts`'s existing
+ * `export { applyCurve } from './model'` keeps working.
+ *
+ * Behaviour change: {@link shapeValues} (below) and Drawers.tsx's bar
+ * snapshot are the only consumers of this UI-display curve — they shape the
+ * on-screen output value/bar for every mode, at every param's `curve`
+ * setting (default 0.5). Actual backend signals (MIDI/OSC/VCV/CV, via
+ * `backends/*.ts`'s `mapOutput`) already used mapping.ts's formula
+ * exclusively, so this change makes the on-screen numbers agree with what is
+ * actually sent to a sink, rather than diverging from it as before. At the
+ * default curve (0.5) the exponent moves from 1.125 to an exact 1.0
+ * (linear); away from 0.5 the whole response-curve shape changes (mapping.ts
+ * is symmetric in log-exponent space, 0.25 at c=0, 4.0 at c=1; the deleted
+ * version ranged 0.25→2.0 linearly) — every displayed output value moves
+ * visibly, for every mode, at every curve setting except the shared endpoint
+ * c=0 (both give exponent 0.25). No schema, engine, or backend-emitted value
+ * changes.
+ *
+ * NOTE for a follow-up: `console/CurvePad.tsx` (out of this pass's file
+ * ownership) has its own THIRD inlined copy of the deleted formula
+ * (`e = 0.25 + curve * 1.75`) to draw its response-curve preview canvas and
+ * the numeric readout beside it. That preview matched this file's curve
+ * before today; now it matches neither this file's (now mapping.ts's) curve
+ * nor the value the backends actually emit. Repoint it at the same
+ * `applyCurve` import so the knob preview, the on-screen bars, and the
+ * emitted signal all agree.
+ */
+export { applyCurve };
 
 /**
  * Map the engine's raw output vector onto a mode's params, applying each
@@ -302,24 +371,25 @@ export function shapeValues(params: MFParam[], engineOut: Float32Array | null): 
   });
 }
 
-/** Map a mode id → the audio-engine backend id. Mode ids align with engine ids
- *  except `slp_workshop` (runs the memlcelium engine), the analysis controller,
- *  and the relabelled `c15`. */
+/**
+ * Map a mode id → the audio-engine backend id. Routes on `MFMode.engineId`
+ * (schema truth — `slp_workshop`'s schema already declares `engine_id:
+ * 'memlcelium'`, so it needs no special case here; unknown ids, including the
+ * two manifold-only modes, fall back to `'thru'` via their own `engineId`)
+ * (L37 — simplification 2026-07, deleted the hand-`switch`ed duplicate of
+ * schema `engine_id` that silently dropped any new mode never added to it).
+ *
+ * ONE named exception: `sound_analysis_midi`. Its schema declares `engine_id:
+ * 'thru'` because `SoundAnalysisMIDIMode`'s own `ModeBase` audio-engine slot
+ * really is `NoOpEngine` (nisps/modes/sound_analysis_midi.hpp) — audio passes
+ * through silently. But the mode also runs a SEPARATE real engine, the
+ * spectral-feature tap `AnalysisEngine` (engine_id "analysis",
+ * nisps/engines/analysis.hpp:95) — the browser must instantiate THAT as its
+ * audio backend for feature extraction to run at all. `schema.engine_id`
+ * ('thru') and the backend to actually select ('analysis') are genuinely
+ * different facts for this one mode; every other mode has them equal.
+ */
 export function modeEngineId(modeId: string): string {
-  switch (modeId) {
-    case 'paf_synth':
-    case 'channel_strip':
-    case 'verb_fx':
-    case 'elysiamorf':
-    case 'memlcelium':
-    case 'breakor':
-    case 'xiasri':
-      return modeId;
-    case 'slp_workshop':
-      return 'memlcelium';
-    case 'sound_analysis_midi':
-      return 'analysis';
-    default:
-      return 'thru';
-  }
+  if (modeId === 'sound_analysis_midi') return 'analysis';
+  return MF_MODES.find((m) => m.id === modeId)?.engineId ?? 'thru';
 }

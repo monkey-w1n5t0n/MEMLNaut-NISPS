@@ -3,6 +3,7 @@
 #define NISPS_GENERATED_PAF_SYNTH_SCHEMA_HPP
 
 #include "schema_types.hpp"
+#include "../../ml/mlp.hpp"
 
 namespace nisps::modes::generated {
 
@@ -346,6 +347,23 @@ inline constexpr UIConfig kPafSynthUI = {
     PrimaryInput::XYPad,
     true,
     true,
+};
+
+using PafSynthMLP = ::nisps::ml::MLP<kPafSynthMLConfig.input_size, kPafSynthHiddenLayers[0], kPafSynthHiddenLayers[1], kPafSynthHiddenLayers[2], kPafSynthMLConfig.output_size>;
+
+inline constexpr ::nisps::ParamSchema kPafSynthSchema = {
+    kPafSynthModeId,
+    kPafSynthEngineId,
+    std::span<const std::string_view>(kPafSynthInputChannels),
+    kPafSynthMLConfig.input_size,
+    std::span<const std::size_t>(kPafSynthHiddenLayers),
+    kPafSynthMLConfig.output_size,
+    kPafSynthMLConfig.default_spread,
+    kPafSynthMLConfig.default_learning_rate,
+    kPafSynthMLConfig.default_max_iterations,
+    std::span<const Param>(kPafSynthParams),
+    std::span<const std::string_view>(kPafSynthVoiceSpaces),
+    kPafSynthUI,
 };
 
 }  // namespace nisps::modes::generated

@@ -3,11 +3,18 @@
 //
 // `Curve` is the authoritative enum from nisps/core/math.hpp; we re-export it
 // into this namespace so generated headers can refer to plain `Curve::linear`.
+//
+// `ParamSchema` lives in the top-level `nisps` namespace, not
+// `nisps::modes::generated`: nisps/core/concepts.hpp forward-declares
+// `nisps::ParamSchema` and requires `T::param_schema()` to return
+// `const nisps::ParamSchema&`, so the definition has to match that
+// forward declaration exactly (S5, one-core simplification 2026-07).
 #ifndef NISPS_GENERATED_SCHEMA_TYPES_HPP
 #define NISPS_GENERATED_SCHEMA_TYPES_HPP
 
 #include <array>
 #include <cstddef>
+#include <span>
 #include <string_view>
 
 #include "../../core/math.hpp"
@@ -50,5 +57,29 @@ struct UIConfig {
 };
 
 }  // namespace nisps::modes::generated
+
+namespace nisps {
+
+// View-style aggregate satisfying the `nisps::Mode` concept's
+// `param_schema()` requirement. All members are spans/views into
+// compile-time generated arrays; codegen emits one
+// `inline constexpr ParamSchema k<Mode>Schema` per mode (see the
+// per-mode <mode_id>_schema.hpp in this directory).
+struct ParamSchema {
+    std::string_view                                    mode_id;
+    std::string_view                                    engine_id;
+    std::span<const std::string_view>                   input_channels;
+    std::size_t                                         input_size;
+    std::span<const std::size_t>                        hidden_layers;
+    std::size_t                                         output_size;
+    float                                                default_spread;
+    float                                                default_learning_rate;
+    std::size_t                                          default_max_iterations;
+    std::span<const ::nisps::modes::generated::Param>    params;
+    std::span<const std::string_view>                    voice_spaces;
+    ::nisps::modes::generated::UIConfig                  ui;
+};
+
+}  // namespace nisps
 
 #endif  // NISPS_GENERATED_SCHEMA_TYPES_HPP

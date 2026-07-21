@@ -27,7 +27,6 @@
 #include "../core/types.hpp"
 #include "../engines/analysis.hpp"
 #include "../engines/base.hpp"  // NoOpEngine
-#include "../ml/mlp.hpp"
 #include "base.hpp"
 #include "generated/sound_analysis_midi_schema.hpp"
 
@@ -48,17 +47,19 @@ namespace nisps::modes {
 class SoundAnalysisMIDIMode : public ModeBase<
         SoundAnalysisMIDIMode,
         NoOpEngine,
-        ml::MLP<10u, 10u, 10u, 14u, 8u>,
+        generated::SoundAnalysisMidiMLP,
         10u> {
    public:
     using Base = ModeBase<SoundAnalysisMIDIMode, NoOpEngine,
-                          ml::MLP<10u, 10u, 10u, 14u, 8u>, 10u>;
+                          generated::SoundAnalysisMidiMLP, 10u>;
     using Base::Base;
 
     static constexpr std::string_view mode_id() noexcept {
         return generated::kSoundAnalysisMidiModeId;
     }
-    static constexpr const ParamSchema& param_schema() noexcept { return kSchema; }
+    static constexpr const ParamSchema& param_schema() noexcept {
+        return generated::kSoundAnalysisMidiSchema;
+    }
 
     void on_setup(float sample_rate) noexcept {
         analysis_.setup(sample_rate);
@@ -107,21 +108,6 @@ class SoundAnalysisMIDIMode : public ModeBase<
     static constexpr std::size_t kCCCount = 8u;
 
     AnalysisEngine analysis_{};
-
-    static inline constexpr ParamSchema kSchema = ParamSchema{
-        generated::kSoundAnalysisMidiModeId,
-        generated::kSoundAnalysisMidiEngineId,
-        std::span<const std::string_view>(generated::kSoundAnalysisMidiInputChannels),
-        generated::kSoundAnalysisMidiMLConfig.input_size,
-        std::span<const std::size_t>(generated::kSoundAnalysisMidiHiddenLayers),
-        generated::kSoundAnalysisMidiMLConfig.output_size,
-        generated::kSoundAnalysisMidiMLConfig.default_spread,
-        generated::kSoundAnalysisMidiMLConfig.default_learning_rate,
-        generated::kSoundAnalysisMidiMLConfig.default_max_iterations,
-        std::span<const generated::Param>(generated::kSoundAnalysisMidiParams),
-        std::span<const std::string_view>(generated::kSoundAnalysisMidiVoiceSpaces),
-        generated::kSoundAnalysisMidiUI,
-    };
 };
 
 static_assert(Mode<SoundAnalysisMIDIMode>,

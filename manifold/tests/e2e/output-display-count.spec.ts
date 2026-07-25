@@ -45,6 +45,19 @@ test('output cards add/delete in both drawer depths and capacity mode avoids rec
   await expect(page.getByTestId('output-stage')).toHaveAttribute('data-output-count', String(fullCount));
 });
 
+test('deleting a named particle card removes that identity instead of shifting its name', async ({ page }) => {
+  await loadProbe(page);
+
+  await page.getByTitle('Outputs').click();
+  await expect(page.getByRole('button', { name: 'Delete Scale output' })).toBeVisible();
+  await page.getByRole('button', { name: 'Delete Scale output' }).click();
+
+  await expect(page.getByText('32 outputs', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete Scale output' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete Speed output' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete Hue output' })).toBeVisible();
+});
+
 test('exact I/O persists and adapts examples across a deleted output identity', async ({ page }) => {
   await loadProbe(page);
 

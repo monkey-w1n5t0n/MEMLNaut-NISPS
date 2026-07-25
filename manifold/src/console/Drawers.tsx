@@ -26,7 +26,7 @@ import type { ConsoleCtx, DrawerDepth, DrawerKey, FeedbackModeUI, SoloMode } fro
 import type { InputMode } from '../inputs';
 import { OutputControlRow } from '../dock/OutputControlRow';
 import { OutputsBackendConfig, BackendStatusChip } from '../dock/OutputsBackendConfig';
-import { shapeValues } from './model';
+import { shapeValues, type MFParam } from './model';
 import { outputModeDescriptor } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
 import type { UnfocusedIconColour, InputMapMode } from '../settings/settings-store';
@@ -734,9 +734,16 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
   }, {});
   const mutedN = activeParams.filter((p) => p.muted).length;
   const modeDesc = outputModeDescriptor(ctx.outputMode);
-  // The particle Mode names its outputs; otherwise use the param names.
-  const nameFor = (idx: number, fallback: string) =>
-    ctx.outputMode === 'particles' ? VISUAL_NAMES[idx] ?? fallback : fallback;
+  // Particle labels belong to semantic cards, not their current array slots.
+  // A deletion compacts the active prefix, so deriving the label from `idx`
+  // would make the deleted name reappear on its successor.
+  const particleNamesById = new Map(
+    ctx.mode.params.map((param, index) => [param.id, VISUAL_NAMES[index] ?? param.name]),
+  );
+  const nameFor = (param: MFParam) =>
+    ctx.outputMode === 'particles'
+      ? particleNamesById.get(param.id) ?? param.name
+      : param.name;
 
   const expanded = depth === 'expanded';
   const rows = expanded ? activeParams : activeParams.slice(0, 6);
@@ -771,7 +778,7 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       >
         {rows.map((p) => {
           const i = ctx.params.indexOf(p);
-          const labelled = { ...p, name: nameFor(i, p.name) };
+          const labelled = { ...p, name: nameFor(p) };
           return (
             <OutputControlRow
               key={p.id}

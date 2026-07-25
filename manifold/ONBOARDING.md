@@ -125,7 +125,9 @@ for the narrow pane.
   boundary for the stage, backend context, and routing rows. MIDI starts with eight cards; every
   backend can add a card or delete any individual card in condensed and expanded Outputs drawers.
   The `N outputs` chip always reports that same set. `MFParam.id` is semantic identity; array position
-  is not. Settings decides whether edits retain spare network capacity or keep exact arity.
+  is not; backend-specific display names (including Particle System names) resolve from that identity,
+  so deleting a middle card cannot transfer its name or settings to the next card. Settings decides
+  whether edits retain spare network capacity or keep exact arity.
 - `src/console/output-mode.ts`, `types.ts`, `model.ts` are the shared vocabulary — read these first
   when touching anything cross-cutting:
   - `types.ts`: `Focus`, `OutputMode`, `DrawerKey`, `DrawerDepth`, `FeedbackModeUI`, `SoloMode`,

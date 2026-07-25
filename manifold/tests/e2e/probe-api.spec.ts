@@ -22,7 +22,11 @@ import { PafSynthSchema } from '../../src/modes/generated';
 
 // The boot mode is paf_synth; all dims derive from its schema `ml` config.
 const N_OUTPUTS = PafSynthSchema.ml.output_size; // 33
-const WEIGHT_COUNT = weightCountFromMl(PafSynthSchema.ml); // 4→[10,10,14]→33 = 809
+const BOOT_INPUT_SIZE = 2; // Normal Manifold modes use the 2-input working shape.
+const WEIGHT_COUNT = weightCountFromMl({
+  ...PafSynthSchema.ml,
+  input_size: BOOT_INPUT_SIZE,
+}); // 2→[10,10,14]→33 = 789
 // 4 layers (3 hidden + output) * 4 stats per layer.
 const LAYER_STATS = 16;
 

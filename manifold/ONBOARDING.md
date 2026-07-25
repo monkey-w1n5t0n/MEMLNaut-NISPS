@@ -183,7 +183,9 @@ sweep (L22, zero consumers) — don't cite them.
 ### Other shared UI files
 - `shared-ui.tsx` — `MiniMeters` (read-only output bars). `AltitudeNav`/`CompactAxis` were deleted with the focus system.
 - `icons.tsx` — monochrome inline-SVG icons (mode icons + drawer icons + `GLYPH_FALLBACK` for when monochrome is off).
-- `VerdictCluster.tsx` — floating bottom-centre feedback UI (perturb ▽ / undo ↺ / commit △ + A/B); labels adapt to feedback mode.
+- `VerdictCluster.tsx` — floating bottom-centre feedback UI (perturb ▽ / undo ↺ / commit △ + A/B);
+  labels and press timing adapt to feedback mode. Push away fires once on pointer-down and
+  never turns a hold into randomisation; the 600 ms long-press re-roll remains Explore-only.
 - `CurvePad.tsx` — square canvas curve editor (vertical drag reshapes [0,1]; ~0.43 ≈ linear). Used in OutputEditor + OutputControlRow.
 - `OutputEditor.tsx` — inline range/curve popup for a single output (hover/click on a bar), using
   `DualRange.tsx` for the shared dual-thumb min/max control.

@@ -89,6 +89,23 @@ test.describe('geometric dislike (Mode 1) — core-backed', () => {
     expect(result).toEqual({ first: 1, live: 1, second: 1, expired: 0 });
   });
 
+  test('Push away starts once on pointer-down and holding never rerolls', async ({ page }) => {
+    const button = page.getByTitle(/Dislike — push the sound away/);
+    const box = await button.boundingBox();
+    if (!box) throw new Error('negative-feedback button has no bounds');
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    expect(await page.evaluate(() => window.__nisps!.feedbackCounts().negative)).toBe(1);
+
+    await page.waitForTimeout(700);
+    expect(await page.evaluate(() => window.__nisps!.feedbackCounts().negative)).toBe(1);
+
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__nisps!.feedbackCounts().negative)).toBe(1);
+    await expect(button).not.toHaveAttribute('title', /hold|re-roll/);
+  });
+
   test('expanded Learning panel starts calibrated and can restore upstream defaults', async ({ page }) => {
     await page.getByTitle('Learning', { exact: true }).click();
     await page.getByTitle('Expand', { exact: true }).click();

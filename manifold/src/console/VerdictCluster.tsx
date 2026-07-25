@@ -1,7 +1,8 @@
 /**
  * VerdictCluster — floating bottom-centre control, the app's main verdict.
  * ▽ perturb (thumbs-down) · ↺ undo · △ commit (thumbs-up).
- * Long-press perturb = full re-roll. Ported from `VerdictCluster.jsx`.
+ * Explore mode retains the ported long-press re-roll gesture. Push away fires
+ * once on pointer-down and never reinterprets a hold as randomisation.
  *
  * The cluster reflects the ACTIVE feedback mode (workstream B; rl-feedback §0):
  *
@@ -12,8 +13,9 @@
  *     thumbs-DOWN = dislike (push away);
  *     thumbs-UP   = like + train.
  *
- * Wiring (in ConsoleApp): onCommit / onPerturb dispatch on the mode; onReroll =
- * re-roll the scratchpad (Mode 2) or the real net.
+ * Wiring (in ConsoleApp): onCommit / onPerturb dispatch on the mode; onReroll
+ * is the Explore-mode long-press path; onRandomise is the explicit secondary
+ * control.
  */
 import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
@@ -78,7 +80,7 @@ export function VerdictCluster({
     ? exploring
       ? 'Cancel explore — restore the real net'
       : 'Explore — re-roll into a scratchpad (hold to re-roll again)'
-    : 'Dislike — push the sound away (hold to re-roll)';
+    : 'Dislike — push the sound away';
   const upTitle = explore
     ? exploring
       ? picking
@@ -90,15 +92,28 @@ export function VerdictCluster({
   const lp = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firedReroll = useRef(false);
 
+  const cancelLongPress = () => {
+    if (lp.current) {
+      clearTimeout(lp.current);
+      lp.current = null;
+    }
+  };
   const perturbDown = () => {
+    cancelLongPress();
+    if (!explore) {
+      onPerturb();
+      return;
+    }
     firedReroll.current = false;
     lp.current = setTimeout(() => {
+      lp.current = null;
       firedReroll.current = true;
       onReroll();
     }, 600);
   };
   const perturbUp = () => {
-    if (lp.current) clearTimeout(lp.current);
+    if (!explore) return;
+    cancelLongPress();
     if (!firedReroll.current) onPerturb();
   };
 
@@ -170,9 +185,8 @@ export function VerdictCluster({
           title={downTitle}
           onPointerDown={perturbDown}
           onPointerUp={perturbUp}
-          onPointerLeave={() => {
-            if (lp.current) clearTimeout(lp.current);
-          }}
+          onPointerLeave={cancelLongPress}
+          onPointerCancel={cancelLongPress}
           style={big({
             background: explore && exploring ? 'rgba(255,106,0,0.22)' : 'rgba(255,106,0,0.16)',
             color: 'var(--accent)',

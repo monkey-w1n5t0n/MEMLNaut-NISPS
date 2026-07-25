@@ -7,110 +7,17 @@
  * Writes eagerly through `onChange` into the single shared MFParam store
  * (ConsoleApp owns it) — never a second data path (dock-spec §3.2, §8).
  */
-import { useRef } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties } from 'react';
 import { GROUP_COLOR } from '../console/model';
 import type { MFParam, ParamStatus } from '../console/model';
 import { CurvePad } from '../console/CurvePad';
+import { DualRange } from '../console/DualRange';
 
 const STATE_META: { v: ParamStatus; label: string; color: string }[] = [
   { v: 'off', label: 'off', color: 'var(--fg-dim)' },
   { v: 'fixed', label: 'fixed', color: 'var(--accent-2)' },
   { v: 'live', label: 'live', color: 'var(--accent)' },
 ];
-
-/** A compact dual-thumb min/max range (min blue, max orange — dock-spec §3.1). */
-function DualRange({
-  min,
-  max,
-  onMin,
-  onMax,
-}: {
-  min: number;
-  max: number;
-  onMin: (v: number) => void;
-  onMax: (v: number) => void;
-}) {
-  const track = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ which: 'min' | 'max' | null }>({ which: null });
-  const valAt = (clientX: number) => {
-    const el = track.current;
-    if (!el) return 0;
-    const r = el.getBoundingClientRect();
-    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-  };
-  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    const v = valAt(e.clientX);
-    drag.current.which = Math.abs(v - min) <= Math.abs(v - max) ? 'min' : 'max';
-    apply(v);
-  };
-  const apply = (v: number) => {
-    if (drag.current.which === 'min') onMin(Math.min(v, max));
-    else if (drag.current.which === 'max') onMax(Math.max(v, min));
-  };
-  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current.which) apply(valAt(e.clientX));
-  };
-  const up = () => {
-    drag.current.which = null;
-  };
-  return (
-    <div
-      ref={track}
-      onPointerDown={down}
-      onPointerMove={move}
-      onPointerUp={up}
-      onPointerCancel={up}
-      title={`range ${min.toFixed(2)}–${max.toFixed(2)}`}
-      style={{
-        position: 'relative',
-        height: 16,
-        flex: 1,
-        minWidth: 60,
-        background: 'var(--bg-1)',
-        border: '1px solid var(--line)',
-        borderRadius: 'var(--r-pill)',
-        cursor: 'ew-resize',
-        touchAction: 'none',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: `${min * 100}%`,
-          right: `${(1 - max) * 100}%`,
-          background: 'linear-gradient(90deg, #4488ff, var(--accent))',
-          opacity: 0.4,
-          borderRadius: 'var(--r-pill)',
-        }}
-      />
-      <Thumb pct={min} color="#4488ff" />
-      <Thumb pct={max} color="var(--accent)" />
-    </div>
-  );
-}
-
-function Thumb({ pct, color }: { pct: number; color: string }) {
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: '50%',
-        left: `${pct * 100}%`,
-        width: 10,
-        height: 10,
-        marginLeft: -5,
-        marginTop: -5,
-        borderRadius: '50%',
-        background: color,
-        boxShadow: `0 0 6px ${color}`,
-      }}
-    />
-  );
-}
 
 function GlyphToggle({
   on,

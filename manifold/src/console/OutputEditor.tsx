@@ -5,6 +5,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { CurvePad } from './CurvePad';
+import { DualRange } from './DualRange';
 import type { MFParam, ParamStatus } from './model';
 
 const OE_STATUS: { v: ParamStatus; label: string; color: string }[] = [
@@ -160,8 +161,29 @@ export function OutputEditor({ param, onChange, onHold, onLeave, place }: Output
         })}
       </div>
 
-      <MiniSlider label="min" value={param.min} onChange={(v) => onChange({ min: v })} />
-      <MiniSlider label="max" value={param.max} onChange={(v) => onChange({ max: v })} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span
+            style={{
+              fontSize: 10,
+              color: 'var(--fg-mute)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+            }}
+          >
+            range
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--fg-dim)', fontVariantNumeric: 'tabular-nums' }}>
+            {param.min.toFixed(2)}–{param.max.toFixed(2)}
+          </span>
+        </div>
+        <DualRange
+          min={param.min}
+          max={param.max}
+          onMin={(v) => onChange({ min: v })}
+          onMax={(v) => onChange({ max: v })}
+        />
+      </div>
       <MiniSlider
         label={isLive ? 'value · live' : 'value · static'}
         value={param.val}

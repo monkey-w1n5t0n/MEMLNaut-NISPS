@@ -51,7 +51,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   (Learning/Inputs/Outputs/Settings/Help), `TrainingHealth` (real per-iteration loss curve from
   `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at
   the Learning drawer's `expanded` depth — that IS the advanced-surface flag), `VerdictCluster`
-  (mode-aware), `OutputEditor`/`CurvePad`, `icons.tsx`
+  (mode-aware), `OutputEditor`/`DualRange`/`CurvePad`, `icons.tsx`
   (monochrome currentColor SVG), `model.ts` (`MF_MODES` catalogue — schema-backed modes DERIVED from
   `manifold/src/modes/generated/`; carries per-mode `ml` net shape + `engineId`), `output-mode.ts`.
 - `manifold/src/modes/generated/` — codegen output (`*_schema.ts`, do NOT hand-edit): `ModeSchema`

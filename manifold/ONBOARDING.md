@@ -175,7 +175,8 @@ sweep (L22, zero consumers) — don't cite them.
 - `icons.tsx` — monochrome inline-SVG icons (mode icons + drawer icons + `GLYPH_FALLBACK` for when monochrome is off).
 - `VerdictCluster.tsx` — floating bottom-centre feedback UI (perturb ▽ / undo ↺ / commit △ + A/B); labels adapt to feedback mode.
 - `CurvePad.tsx` — square canvas curve editor (vertical drag reshapes [0,1]; ~0.43 ≈ linear). Used in OutputEditor + OutputControlRow.
-- `OutputEditor.tsx` — inline min/max/curve popup for a single output (hover/click on a bar).
+- `OutputEditor.tsx` — inline range/curve popup for a single output (hover/click on a bar), using
+  `DualRange.tsx` for the shared dual-thumb min/max control.
 
 ### Styling — `src/styles/`
 CSS-variable design tokens, no CSS-in-JS. `tokens.css` `@import`s `tokens/{base,colors,fonts,

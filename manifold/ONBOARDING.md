@@ -109,7 +109,7 @@ Manifold ships a single "composite" altitude. Selection is now a plain three-way
 |---|---|---|---|
 | CompositeStage | `CompositeStage.tsx` | **default / hero** | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |
 | SandwichStage | `SandwichStage.tsx` | `sandwich===true` (wins over the others) | Three-pane layout: `Manifold` input surface left, 3D parameter-landscape centre (input → MLP heatmap grid → outputs, drag to orbit), compact `OutputStage` right. |
-| ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400-particle Canvas2D port) + macro-axis bar + corner joystick. |
+| ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400-particle Canvas2D port) + interactive output heatmap sliders with cursor tooltips + corner joystick. |
 
 `Manifold.tsx` and `OutputStage.tsx` are no longer top-level stages — they are panes composed by
 CompositeStage/SandwichStage. `Manifold.tsx` is the full-bleed 2D input surface (canvas trail + pins

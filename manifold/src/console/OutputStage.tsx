@@ -232,18 +232,6 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
                   opacity: dim ? 0.4 : 0.9,
                 }}
               />
-              {p.status === 'live' && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: 1,
-                    right: 1,
-                    bottom: `${p.val * 100}%`,
-                    height: 0,
-                    borderTop: '1px dashed rgba(255,255,255,0.35)',
-                  }}
-                />
-              )}
               {clampMarker?.id === p.id && (
                 <div
                   style={{

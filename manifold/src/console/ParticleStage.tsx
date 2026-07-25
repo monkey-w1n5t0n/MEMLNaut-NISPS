@@ -18,8 +18,10 @@
  * churn React state every frame.
  */
 import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useEngine } from '../engine';
 import { VirtualJoystick } from '../primitives/VirtualJoystick';
+import type { MFParam } from './model';
 import {
   FlowFieldVisualizer,
   N_VISUAL_OUTPUTS,
@@ -30,17 +32,96 @@ import {
 export interface ParticleStageProps {
   pos: [number, number];
   onMove: (x: number, y: number) => void;
+  params: MFParam[];
+  values: number[];
+  onChange: (i: number, patch: Partial<MFParam>) => void;
 }
 
-export function ParticleStage({ pos, onMove }: ParticleStageProps) {
+export function ParticleStage({ pos, onMove, params, values, onChange }: ParticleStageProps) {
   const engine = useEngine();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vizRef = useRef<FlowFieldVisualizer | null>(null);
   const barsRef = useRef<(HTMLDivElement | null)[]>([]);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const outputsRef = useRef<Float32Array | null>(null);
+  const valuesRef = useRef(values);
   const hoverRef = useRef<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 12, y: 28 });
+  const [clampMarker, setClampMarker] = useState<{ i: number; value: number } | null>(null);
+  const clampTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drag = useRef<{ i: number; moved: boolean; startX: number; el: HTMLDivElement | null }>({
+    i: -1,
+    moved: false,
+    startX: 0,
+    el: null,
+  });
+  valuesRef.current = values;
+
+  const updateHover = (i: number, e: ReactPointerEvent<HTMLDivElement>) => {
+    hoverRef.current = i;
+    setHover(i);
+    setTooltipPos({
+      x: Math.min(e.clientX + 12, Math.max(12, window.innerWidth - 190)),
+      y: Math.min(e.clientY + 12, Math.max(28, window.innerHeight - 32)),
+    });
+    const output = valuesRef.current[i] ?? outputsRef.current?.[i] ?? 0;
+    if (tooltipRef.current) tooltipRef.current.textContent = `${VISUAL_PARAM_NAMES[i]}: ${output.toFixed(3)}`;
+  };
+
+  const showClampMarker = (i: number, value: number) => {
+    if (clampTimer.current) clearTimeout(clampTimer.current);
+    setClampMarker({ i, value });
+    clampTimer.current = setTimeout(() => {
+      setClampMarker(null);
+      clampTimer.current = null;
+    }, 700);
+  };
+
+  const setSliderValue = (i: number, raw: number) => {
+    const param = params[i];
+    if (!param) return;
+    const min = Math.max(0, Math.min(1, Math.min(param.min, param.max)));
+    const max = Math.max(0, Math.min(1, Math.max(param.min, param.max)));
+    const value = Math.max(min, Math.min(max, raw));
+    if (value !== raw) showClampMarker(i, value);
+    else setClampMarker(null);
+
+    const span = max - min;
+    const fixedValue = span > 0 ? (value - min) / span : 0;
+    const temporary = param.manualOverride || param.status === 'live';
+    onChange(i, {
+      status: 'fixed',
+      val: fixedValue,
+      manualOverride: temporary ? true : undefined,
+    });
+  };
+
+  const valueFromEvent = (el: HTMLDivElement, clientX: number) => {
+    const r = el.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  };
+
+  const down = (e: ReactPointerEvent<HTMLDivElement>, i: number) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    updateHover(i, e);
+    drag.current = { i, moved: false, startX: e.clientX, el: e.currentTarget };
+  };
+
+  const move = (e: ReactPointerEvent<HTMLDivElement>, i: number) => {
+    updateHover(i, e);
+    const d = drag.current;
+    if (d.i !== i || !d.el) return;
+    if (Math.abs(e.clientX - d.startX) > 3) d.moved = true;
+    if (d.moved) setSliderValue(i, valueFromEvent(d.el, e.clientX));
+  };
+
+  const up = (e: ReactPointerEvent<HTMLDivElement>, i: number) => {
+    const d = drag.current;
+    if (d.i !== i) return;
+    if (!d.moved && d.el) setSliderValue(i, valueFromEvent(d.el, e.clientX));
+    drag.current = { i: -1, moved: false, startX: 0, el: null };
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,16 +134,17 @@ export function ParticleStage({ pos, onMove }: ParticleStageProps) {
       const outputs = engine?.getOutputs();
       if (outputs) {
         outputsRef.current = outputs;
-        viz.setParams(outputs);
+        const displayOutputs = valuesRef.current.length >= N_VISUAL_OUTPUTS ? valuesRef.current : outputs;
+        viz.setParams(displayOutputs);
         // Drive the heatmap bar widths imperatively (cheap; no React churn).
         for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
           const bar = barsRef.current[i];
-          if (bar) bar.style.width = `${Math.max(0, Math.min(1, outputs[i] ?? 0)) * 100}%`;
+          if (bar) bar.style.width = `${Math.max(0, Math.min(1, displayOutputs[i] ?? 0)) * 100}%`;
         }
         // Keep the tooltip value live while hovering a cell.
         const h = hoverRef.current;
         if (h != null && tooltipRef.current) {
-          tooltipRef.current.textContent = `${VISUAL_PARAM_NAMES[h]}: ${(outputs[h] ?? 0).toFixed(3)}`;
+          tooltipRef.current.textContent = `${VISUAL_PARAM_NAMES[h]}: ${(displayOutputs[h] ?? 0).toFixed(3)}`;
         }
       }
       viz.draw();
@@ -79,6 +161,12 @@ export function ParticleStage({ pos, onMove }: ParticleStageProps) {
       vizRef.current = null;
     };
   }, [engine]);
+
+  useEffect(() => {
+    return () => {
+      if (clampTimer.current) clearTimeout(clampTimer.current);
+    };
+  }, []);
 
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0d0d0d' }}>
@@ -122,11 +210,16 @@ export function ParticleStage({ pos, onMove }: ParticleStageProps) {
           {VISUAL_PARAM_NAMES.map((name, i) => (
             <div
               key={name}
-              title={name}
-              onPointerEnter={() => {
-                hoverRef.current = i;
-                setHover(i);
-              }}
+              role="slider"
+              aria-label={name}
+              aria-valuemin={0}
+              aria-valuemax={1}
+              aria-valuenow={values[i] ?? 0}
+              onPointerEnter={(e) => updateHover(i, e)}
+              onPointerDown={(e) => down(e, i)}
+              onPointerMove={(e) => move(e, i)}
+              onPointerUp={(e) => up(e, i)}
+              onPointerCancel={(e) => up(e, i)}
               style={{
                 position: 'relative',
                 flex: 1,
@@ -134,7 +227,8 @@ export function ParticleStage({ pos, onMove }: ParticleStageProps) {
                 height: 16,
                 background: 'rgba(255,255,255,0.04)',
                 overflow: 'hidden',
-                cursor: 'pointer',
+                cursor: 'ew-resize',
+                touchAction: 'none',
               }}
             >
               <div
@@ -150,6 +244,20 @@ export function ParticleStage({ pos, onMove }: ParticleStageProps) {
                   pointerEvents: 'none',
                 }}
               />
+              {clampMarker?.i === i && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: `${clampMarker.value * 100}%`,
+                    borderLeft: '1px dashed #ff4466',
+                    boxShadow: '0 0 5px rgba(255,68,102,0.8)',
+                    zIndex: 3,
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -159,9 +267,9 @@ export function ParticleStage({ pos, onMove }: ParticleStageProps) {
       <div
         ref={tooltipRef}
         style={{
-          position: 'absolute',
-          top: 28,
-          left: 8,
+          position: 'fixed',
+          left: tooltipPos.x,
+          top: tooltipPos.y,
           zIndex: 25,
           padding: '4px 10px',
           background: 'rgba(0,0,0,0.85)',

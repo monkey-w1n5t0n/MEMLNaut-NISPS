@@ -1074,7 +1074,13 @@ export function ConsoleApp() {
               </div>
             </div>
           ) : outputMode === 'particles' ? (
-            <ParticleStage pos={pos} onMove={onMove} />
+            <ParticleStage
+              pos={pos}
+              onMove={onMove}
+              params={displayedParams}
+              values={displayedValues}
+              onChange={setParam}
+            />
           ) : (
             <CompositeStage
               split={split}

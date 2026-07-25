@@ -47,7 +47,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
 - `manifold/src/primitives/` — the 7 design primitives as typed React (Badge, Button, PillToggle, Slider, Switch, VirtualJoystick, XYPad). Five unused ones were deleted in the 2026-07 sweep (L22).
 - `manifold/src/console/` — the convertible Console: `ConsoleApp`, `CompositeStage` (single-divider convertible
   with snap/magnetism/minimap-demotion), `OutputStage`/`SandwichStage`/`ParticleStage`/`Manifold` (canvas,
-  rect↔circular + feedback markers), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
+  rect↔circular + feedback markers; ParticleStage has interactive cursor-labelled heatmap sliders), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
   (Learning/Inputs/Outputs/Settings/Help; Learning includes the live model-architecture inspector and
   expanded Outputs owns the remaining scroll height), `TrainingHealth` (real per-iteration loss curve from
   `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at

@@ -737,13 +737,11 @@ export function ConsoleApp() {
     setOutputCounts((counts) => ({ ...counts, [outputMode]: activeCards.length }));
   };
 
-  const addOutput = () => {
+  const addOutput = (placement: 'prepend' | 'append' = 'append') => {
     const active = params.slice(0, displayOutputCount);
     const next = params[displayOutputCount] ?? createOutputParam(params.length);
-    const spares = params
-      .slice(displayOutputCount + (params[displayOutputCount] ? 1 : 0))
-      .filter((param) => param.id !== next.id);
-    applyOutputCards([...active, next], spares);
+    const spares = params.filter((param) => param.id !== next.id && !active.some((p) => p.id === param.id));
+    applyOutputCards(placement === 'prepend' ? [next, ...active] : [...active, next], spares);
   };
 
   const deleteOutput = (index: number) => {

@@ -76,7 +76,7 @@ export interface ConsoleCtx {
   params: MFParam[];
   /** Patch one output row in the shared store (drives stage + dock in sync). */
   setParam: (i: number, patch: Partial<MFParam>) => void;
-  addOutput: () => void;
+  addOutput: (placement?: 'prepend' | 'append') => void;
   deleteOutput: (i: number) => void;
   /** Active backend outputs currently presented by the stage + routing rows. */
   displayOutputCount: number;

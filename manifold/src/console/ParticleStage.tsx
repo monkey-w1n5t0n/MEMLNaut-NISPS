@@ -9,8 +9,9 @@
  *     value — the same `.heatmap-strip` the a-immersive app shows above the
  *     flow field (NOT the Boldness/Memory/Precision macro axes, which the
  *     deployed a-immersive never used);
- *   • a small circular pad in the bottom-left corner that drives the 2D input
- *     (engine.setInput) — the "joystick" of the immersive app.
+ *   • a large circular pad that drives the 2D input (engine.setInput) — the
+ *     "joystick" of the immersive app; its explicit edit handles reposition
+ *     and resize it without making normal input gestures destructive.
  *
  * The canvas animates on its own rAF clock so particles keep flowing between
  * inferences; only the *field* parameters change when the MLP outputs do. The
@@ -18,7 +19,7 @@
  * churn React state every frame.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useEngine } from '../engine';
 import { VirtualJoystick } from '../primitives/VirtualJoystick';
 import type { MFParam } from './model';
@@ -49,6 +50,22 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
   const [hover, setHover] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 12, y: 28 });
   const [clampMarker, setClampMarker] = useState<{ i: number; value: number } | null>(null);
+  const [followMouse, setFollowMouse] = useState(false);
+  const onMoveRef = useRef(onMove);
+  const [padSize, setPadSize] = useState(200);
+  const [padPosition, setPadPosition] = useState(() => ({
+    left: 24,
+    top: typeof window === 'undefined' ? 24 : Math.max(24, window.innerHeight - 224),
+  }));
+  const [padEdit, setPadEdit] = useState(false);
+  const padGesture = useRef<{
+    kind: 'move' | 'resize';
+    startX: number;
+    startY: number;
+    left: number;
+    top: number;
+    size: number;
+  } | null>(null);
   const clampTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drag = useRef<{ i: number; moved: boolean; startX: number; el: HTMLDivElement | null }>({
     i: -1,
@@ -57,6 +74,49 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
     el: null,
   });
   valuesRef.current = values;
+  onMoveRef.current = onMove;
+
+  const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
+  const beginPadGesture = (e: ReactPointerEvent<HTMLElement>, kind: 'move' | 'resize') => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    padGesture.current = {
+      kind,
+      startX: e.clientX,
+      startY: e.clientY,
+      left: padPosition.left,
+      top: padPosition.top,
+      size: padSize,
+    };
+  };
+
+  const movePadGesture = (e: ReactPointerEvent<HTMLElement>) => {
+    const gesture = padGesture.current;
+    if (!gesture) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (gesture.kind === 'move') {
+      setPadPosition({
+        left: clamp(gesture.left + e.clientX - gesture.startX, 8, Math.max(8, window.innerWidth - padSize - 56)),
+        top: clamp(gesture.top + e.clientY - gesture.startY, 8, Math.max(8, window.innerHeight - padSize - 8)),
+      });
+    } else {
+      const maxSize = Math.max(140, Math.min(window.innerWidth - gesture.left - 56, window.innerHeight - gesture.top - 8, 360));
+      setPadSize(clamp(gesture.size + e.clientX - gesture.startX, 140, maxSize));
+    }
+  };
+
+  const endPadGesture = (e: ReactPointerEvent<HTMLElement>) => {
+    e.stopPropagation();
+    padGesture.current = null;
+  };
+
+  const toggleFollowMouse = (e?: ReactMouseEvent<HTMLDivElement>) => {
+    e?.preventDefault();
+    setFollowMouse((active) => !active);
+  };
 
   const updateHover = (i: number, e: ReactPointerEvent<HTMLDivElement>) => {
     hoverRef.current = i;
@@ -168,8 +228,35 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
     };
   }, []);
 
+  useEffect(() => {
+    if (!followMouse) return;
+    const onWinMove = (e: PointerEvent) => {
+      const w = window.innerWidth || 1;
+      const h = window.innerHeight || 1;
+      onMoveRef.current(clamp(e.clientX / w, 0, 1), clamp(1 - e.clientY / h, 0, 1));
+    };
+    const onWinKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFollowMouse(false);
+    };
+    window.addEventListener('pointermove', onWinMove);
+    window.addEventListener('keydown', onWinKey);
+    return () => {
+      window.removeEventListener('pointermove', onWinMove);
+      window.removeEventListener('keydown', onWinKey);
+    };
+  }, [followMouse]);
+
   return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#0d0d0d' }}>
+    <div
+      onDoubleClick={toggleFollowMouse}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        overflow: 'hidden',
+        background: '#0d0d0d',
+        cursor: followMouse ? 'none' : 'default',
+      }}
+    >
       {/* Main view — the flow-field particle system */}
       <canvas
         ref={canvasRef}
@@ -227,7 +314,7 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
                 height: 16,
                 background: 'rgba(255,255,255,0.04)',
                 overflow: 'hidden',
-                cursor: 'ew-resize',
+                cursor: followMouse ? 'none' : 'ew-resize',
                 touchAction: 'none',
               }}
             >
@@ -285,9 +372,136 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
         }}
       />
 
-      {/* Bottom-left circular pad — drives the 2D input */}
-      <div style={{ position: 'absolute', left: 18, bottom: 18, zIndex: 20 }}>
-        <VirtualJoystick size={120} position={pos} onMove={onMove} ariaLabel="particle input pad" />
+      {followMouse && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 30,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 26,
+            padding: '4px 10px',
+            border: '1px solid var(--accent)',
+            borderRadius: 'var(--r-pill)',
+            background: 'rgba(0,0,0,0.78)',
+            color: 'var(--accent)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          FOLLOW MOUSE · ESC OR DOUBLE-CLICK TO EXIT
+        </div>
+      )}
+
+      {/* Adjustable circular pad — explicit edit handles keep repositioning/resizing deliberate. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: padPosition.left,
+          top: padPosition.top,
+          width: padSize,
+          height: padSize,
+          zIndex: 20,
+          pointerEvents: 'none',
+        }}
+      >
+        <VirtualJoystick
+          size={padSize}
+          position={pos}
+          onMove={onMove}
+          disabled={padEdit || followMouse}
+          ariaLabel="particle input pad"
+          style={{ pointerEvents: padEdit || followMouse ? 'none' : 'auto' }}
+        />
+        <button
+          type="button"
+          aria-label={padEdit ? 'Finish adjusting joystick' : 'Adjust joystick size and position'}
+          title={padEdit ? 'Finish adjusting joystick' : 'Adjust joystick size and position'}
+          onClick={(e) => {
+            e.stopPropagation();
+            setPadEdit((editing) => !editing);
+          }}
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            zIndex: 3,
+            width: 24,
+            height: 24,
+            border: '1px solid var(--line-strong)',
+            borderRadius: 'var(--r-1)',
+            background: 'rgba(0,0,0,0.72)',
+            color: 'var(--accent)',
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 14,
+            lineHeight: 1,
+          }}
+        >
+          {padEdit ? '✓' : '⋮'}
+        </button>
+        {padEdit && (
+          <>
+            <button
+              type="button"
+              aria-label="Move joystick"
+              title="Drag to move joystick"
+              onPointerDown={(e) => beginPadGesture(e, 'move')}
+              onPointerMove={movePadGesture}
+              onPointerUp={endPadGesture}
+              onPointerCancel={endPadGesture}
+              style={{
+                position: 'absolute',
+                top: 6,
+                left: 6,
+                zIndex: 3,
+                width: 24,
+                height: 24,
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--r-1)',
+                background: 'rgba(0,0,0,0.72)',
+                color: 'var(--accent)',
+                cursor: 'move',
+                pointerEvents: 'auto',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 13,
+                lineHeight: 1,
+              }}
+            >
+              ✥
+            </button>
+            <button
+              type="button"
+              aria-label="Resize joystick"
+              title="Drag to resize joystick"
+              onPointerDown={(e) => beginPadGesture(e, 'resize')}
+              onPointerMove={movePadGesture}
+              onPointerUp={endPadGesture}
+              onPointerCancel={endPadGesture}
+              style={{
+                position: 'absolute',
+                right: 4,
+                bottom: 4,
+                zIndex: 3,
+                width: 28,
+                height: 28,
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--r-1)',
+                background: 'rgba(0,0,0,0.72)',
+                color: 'var(--accent)',
+                cursor: 'nwse-resize',
+                pointerEvents: 'auto',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 13,
+                lineHeight: 1,
+              }}
+            >
+              ↘
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

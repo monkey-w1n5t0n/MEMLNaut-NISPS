@@ -47,7 +47,8 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
 - `manifold/src/primitives/` — the 7 design primitives as typed React (Badge, Button, PillToggle, Slider, Switch, VirtualJoystick, XYPad). Five unused ones were deleted in the 2026-07 sweep (L22).
 - `manifold/src/console/` — the convertible Console: `ConsoleApp`, `CompositeStage` (single-divider convertible
   with snap/magnetism/minimap-demotion), `OutputStage`/`SandwichStage`/`ParticleStage`/`Manifold` (canvas,
-  rect↔circular + feedback markers; ParticleStage has interactive cursor-labelled heatmap sliders), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
+  rect↔circular + feedback markers; ParticleStage has interactive cursor-labelled heatmap sliders, an adjustable
+  joystick, and double-click whole-screen follow-mouse input), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
   (Learning/Inputs/Outputs/Settings/Help; Learning includes the live model-architecture inspector and
   expanded Outputs owns the remaining scroll height), `TrainingHealth` (real per-iteration loss curve from
   `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at
@@ -60,7 +61,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   Switching mode reshapes the WASM net to the mode's `ml` dims (ConsoleApp P5.3; boot mode paf_synth →
   4→[10,10,14]→33).
 - `manifold/src/dock/` — `OutputControlRow` (editable names, corner delete, cycling off/fixed/live status, mute + solo/arm + min/max/curve, plus MIDI card fields), `output-state.ts`,
-  `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel — the sole per-backend editor; the centered add-card control lives below the rows).
+  `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel — the sole per-backend editor; centered prepend/append add-card controls live above and below the rows).
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
   (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `vcv-backend.ts` (VCV-over-WS), `cv-backend.ts`
   (`UseqCvBackend` — uSEQ CV/gate over USB Web Serial, backend id `cvgate`) + `useq-protocol.ts` (v2 wire

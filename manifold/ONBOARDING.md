@@ -109,7 +109,7 @@ Manifold ships a single "composite" altitude. Selection is now a plain three-way
 |---|---|---|---|
 | CompositeStage | `CompositeStage.tsx` | **default / hero** | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |
 | SandwichStage | `SandwichStage.tsx` | `sandwich===true` (wins over the others) | Three-pane layout: `Manifold` input surface left, 3D parameter-landscape centre (input → MLP heatmap grid → outputs, drag to orbit), compact `OutputStage` right. |
-| ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400-particle Canvas2D port) + interactive output heatmap sliders with cursor tooltips + corner joystick. |
+| ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400-particle Canvas2D port) + interactive output heatmap sliders with cursor tooltips + a larger, explicitly adjustable/repositionable joystick; double-click anywhere in the stage enters whole-screen follow-mouse mode. |
 
 `Manifold.tsx` and `OutputStage.tsx` are no longer top-level stages — they are panes composed by
 CompositeStage/SandwichStage. `Manifold.tsx` is the full-bleed 2D input surface (canvas trail + pins
@@ -157,8 +157,9 @@ for the narrow pane.
     surface there rather than inventing one. The panel renders "no training run yet" when the
     core has no history; it never synthesises a curve.
   - **inputs** — enable/configure input sources (XY pad / MIDI / gamepad).
-  - **route** (label "Outputs") — per-output control matrix + per-backend config; at expanded depth
-    the output rows fill the remaining drawer height and scroll independently.
+  - **route** (label "Outputs") — per-output control matrix + per-backend config; centered prepend/append `+`
+    controls are available in both condensed and expanded views, and at expanded depth the output rows fill the
+    remaining drawer height and scroll independently. The orange drawer tab uses `<` to expand and `>` to condense.
   - **settings** — icon style (monochrome/colour), input-map shape (xy/joystick/rect/circular), corner radius.
   - **help** — keymap pills + loop explanation.
 - `src/dock/` holds the output-routing internals used by the `route` drawer:
@@ -168,7 +169,8 @@ for the narrow pane.
   - `OutputControlRow.tsx` — one output card: editable name · M(mute) · S(solo/arm) · cycling
     off/fixed/live status · dual-range · live value; the curve pad is a right-hand column and MIDI mode
     adds CC#/channel fields. The delete `×` sits on the upper-right corner. **Writes eagerly to the shared
-    `MFParam` store via `onChange`.** The centered `+` control follows the last visible card.
+    `MFParam` store via `onChange`.** The Outputs drawer has centered `+` controls that prepend before the first
+    visible card or append after the last.
   - `OutputsBackendConfig.tsx` — preset bar (save/restore/rename/delete) + transport/device config (MIDI
     port/templates, OSC path/range, VCV polarity); MIDI per-output fields live on `OutputControlRow`.
 

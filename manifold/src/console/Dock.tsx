@@ -31,7 +31,6 @@ import {
   EditorIcon,
   SandwichIcon,
   CloseIcon,
-  ExpandIcon,
   GLYPH_FALLBACK,
 } from './icons';
 import type { IconProps } from './icons';
@@ -309,14 +308,14 @@ export function Dock({ ctx, active, setActive, depth, setDepth, sandwich, setSan
               top: '50%',
               transform: 'translateY(-50%)',
               width: 22,
-              height: 56,
+              height: 40,
               borderRadius: 'var(--r-2) 0 0 var(--r-2)',
               border: '1px solid var(--glass-line)',
               borderRight: 'none',
               background: 'var(--glass)',
               backdropFilter: 'blur(14px)',
               WebkitBackdropFilter: 'blur(14px)',
-              color: 'var(--fg-mute)',
+              color: 'var(--accent)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -324,7 +323,9 @@ export function Dock({ ctx, active, setActive, depth, setDepth, sandwich, setSan
               zIndex: 1,
             }}
           >
-            <ExpandIcon size={12} />
+            <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1, fontFamily: 'var(--font-mono)' }}>
+              {expanded ? '>' : '<'}
+            </span>
           </button>
           {/* Inner scroll wrapper — holds header + content, scrolls independently. */}
           <div

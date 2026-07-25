@@ -53,6 +53,8 @@ export class BackendManager {
    *  click no longer silently drops the second request. Cleared before the
    *  re-run so it can only ever chain one hop at a time (no unbounded loop). */
   private pendingId: BackendId | null = null;
+  /** Reused active-prefix buffer when model capacity exceeds active cards. */
+  private routedScratch = new Float32Array(0);
 
   private statusListeners = new Set<(id: BackendId, s: BackendStatus) => void>();
   private offBackendStatus: (() => void) | null = null;
@@ -77,7 +79,17 @@ export class BackendManager {
         this.active.setInputVector(this.engine.inputVector());
       }
       const routed = this.engine.routedOutput();
-      if (routed) this.active.send(routed);
+      if (!routed) return;
+      const activeCount = this.ctx?.outputCount ?? routed.length;
+      if (activeCount >= routed.length) {
+        this.active.send(routed);
+      } else {
+        if (this.routedScratch.length !== activeCount) {
+          this.routedScratch = new Float32Array(activeCount);
+        }
+        this.routedScratch.set(routed.subarray(0, activeCount));
+        this.active.send(this.routedScratch);
+      }
     });
   }
 
@@ -127,6 +139,9 @@ export class BackendManager {
   /** Provide / refresh the BackendContext (mappings + names) for the active set. */
   setContext(ctx: BackendContext): void {
     this.ctx = ctx;
+    if (this.routedScratch.length !== ctx.outputCount) {
+      this.routedScratch = new Float32Array(ctx.outputCount);
+    }
     this.active?.setContext?.(ctx);
   }
 

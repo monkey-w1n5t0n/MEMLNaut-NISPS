@@ -177,6 +177,16 @@ export class FeedbackController {
   }
 
   /**
+   * An I/O identity edit resets the core's index-aligned scratch/replay state.
+   * Mirror that reset locally without issuing another core transition.
+   */
+  resetAfterIoChange(): void {
+    this.exploringFlag = false;
+    this.pickingFlag = false;
+    this.anchors = [];
+  }
+
+  /**
    * Set the arm/solo mask. The dock builds this from the per-output `armed`
    * flags (dock/output-state.ts buildArmMask). We RESPECT it at the example
    * level in both modes (§3.4 honest-limit copy). We also forward it to the

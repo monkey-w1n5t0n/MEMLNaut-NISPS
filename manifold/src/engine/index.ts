@@ -25,6 +25,18 @@ export type { WasmIMLOptions } from './wasm-iml';
 
 export { EngineHost } from './engine-host';
 export { Dataset } from './dataset';
+export {
+  completeDimensionMap,
+  remapFlatWeights,
+  remapVector,
+  resizeTarget,
+} from './io-reshape';
+export type {
+  DimensionMap,
+  ExampleResizePolicy,
+  IoMigration,
+  NetworkResizePolicy,
+} from './io-reshape';
 
 export { noopSink } from './sink';
 export type { EngineSink, EngineStatePatch } from './sink';

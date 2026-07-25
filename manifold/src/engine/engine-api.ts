@@ -21,6 +21,7 @@ import type { InputConfig, OutputConfig } from './pipeline-types';
 import { Spine, type BackendSend } from './spine';
 import type { EngineId, FeedbackMode, LayerStats } from './types';
 import { WasmIML } from './wasm-iml';
+import type { IoMigration } from './io-reshape';
 
 export interface EngineFeedbackApi {
   /** Positive feedback (thumbs-up). Returns the FeedbackAction int. */
@@ -315,17 +316,17 @@ export class EngineApi {
   }
 
   /**
-   * Reshape the net to new dims (runtime-shaped MLP; one-core-engine P2). The
-   * new net is warm-started from the current net's overlapping weights; the
-   * dataset + feedback/exploration state RESET (front-end shows a confirm modal
-   * first). Returns true on success. On success the spine re-reads its arity and
-   * re-ticks the last input so outputs/audio reflect the new net.
+   * Reconfigure runtime I/O. Without a migration plan this is the legacy
+   * reconstruct-and-clear operation. With one, stable dimension maps preserve
+   * semantic weights and optionally adapt examples; same-shape permutations do
+   * not reconstruct the MLP. Feedback/exploration scratch state always resets.
    */
   reshape(
     dims: { inputSize?: number; outputSize?: number; hidden?: [number, number, number] },
     spread = this.spread_,
+    migration?: IoMigration,
   ): boolean {
-    const ok = this.iml.reshape(dims, spread);
+    const ok = this.iml.reshape(dims, spread, migration);
     if (ok) this.process();
     return ok;
   }

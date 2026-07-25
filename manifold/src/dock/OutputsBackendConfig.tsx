@@ -354,19 +354,9 @@ function MidiConfig({ ctx }: { ctx: ConsoleCtx }) {
             </option>
           ))}
         </select>
-        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
-          CCs
-          <input
-            type="number"
-            min={1}
-            max={ctx.params.length}
-            value={ctx.midiCcCount}
-            onChange={(e) =>
-              ctx.setMidiCcCount(Math.max(1, Math.min(ctx.params.length, num(e.target.value, ctx.midiCcCount))))
-            }
-            style={{ ...cellInput, width: 60 }}
-          />
-        </label>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
+          {ctx.midiCcCount} CC output{ctx.midiCcCount === 1 ? '' : 's'} · add/delete cards below
+        </span>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
 
@@ -478,7 +468,7 @@ function OscConfig({ ctx }: { ctx: ConsoleCtx }) {
             </tr>
           </thead>
           <tbody>
-            {ctx.params.map((p, i) => {
+            {ctx.params.slice(0, ctx.displayOutputCount).map((p, i) => {
               const o = p.osc ?? defaultOscSpec(p.name);
               return (
                 <tr key={i}>
@@ -558,7 +548,7 @@ function VcvConfig({ ctx }: { ctx: ConsoleCtx }) {
             </tr>
           </thead>
           <tbody>
-            {ctx.params.map((p, i) => {
+            {ctx.params.slice(0, ctx.displayOutputCount).map((p, i) => {
               const v = p.vcv ?? defaultVcvSpec();
               return (
                 <tr key={i}>
@@ -622,7 +612,7 @@ function CvConfig({ ctx }: { ctx: ConsoleCtx }) {
             </tr>
           </thead>
           <tbody>
-            {ctx.params.map((p, i) => {
+            {ctx.params.slice(0, ctx.displayOutputCount).map((p, i) => {
               const c = (p.cv as { channel: CvChannelId; gateThreshold: number } | undefined) ?? defaultCvSpec(i);
               const isGate = c.channel.startsWith('gate');
               return (

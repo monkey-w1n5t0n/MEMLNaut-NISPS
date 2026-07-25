@@ -17,6 +17,10 @@
  * read + mutate settings without a render tree.
  */
 import { useSyncExternalStore } from 'react';
+import type {
+  ExampleResizePolicy,
+  NetworkResizePolicy,
+} from '../engine/io-reshape';
 
 /** Resting (unfocused) icon colour choice. Focused is always --accent. */
 export type UnfocusedIconColour = 'off-white' | 'white' | 'orange';
@@ -43,6 +47,17 @@ export interface Settings {
    * Learning-drawer control. Off means full-range uniform randomisation.
    */
   xavierSpreadEnabled: boolean;
+  /**
+   * `capacity` keeps the current network while the edited card set fits;
+   * `exact` reconstructs whenever active I/O arity changes.
+   */
+  networkResizePolicy: NetworkResizePolicy;
+  /** What a required I/O migration does with existing training examples. */
+  exampleResizePolicy: ExampleResizePolicy;
+  /** Neutral feature value inserted into old examples for a new input. */
+  addedInputExampleValue: number;
+  /** Neutral label value inserted into old examples for a new output. */
+  addedOutputExampleValue: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -51,6 +66,10 @@ export const DEFAULT_SETTINGS: Settings = {
   inputMap: 'follow-mode',
   cornerRadius: 2,
   xavierSpreadEnabled: false,
+  networkResizePolicy: 'capacity',
+  exampleResizePolicy: 'adapt',
+  addedInputExampleValue: 0,
+  addedOutputExampleValue: 0.5,
 };
 
 const STORAGE_KEY = 'mf-settings';

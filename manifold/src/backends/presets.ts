@@ -14,6 +14,7 @@ import type { BackendId } from '../dock/output-state';
 
 /** The per-output config a preset captures (a slice of MFParam). */
 export interface OutputPresetRow {
+  id?: string;
   name: string;
   status: MFParam['status'];
   muted?: boolean;
@@ -71,6 +72,7 @@ export function listPresets(backend: BackendId): OutputPreset[] {
 /** Project the live params into preset rows. */
 export function rowsFromParams(params: MFParam[]): OutputPresetRow[] {
   return params.map((p) => ({
+    id: p.id,
     name: p.name,
     status: p.status,
     muted: p.muted,
@@ -140,7 +142,7 @@ export function renamePreset(backend: BackendId, from: string, to: string): bool
  */
 export function applyPreset(params: MFParam[], preset: OutputPreset): MFParam[] {
   return params.map((p, i) => {
-    const r = preset.rows[i];
+    const r = preset.rows.find((row) => row.id === p.id) ?? preset.rows[i];
     if (!r) return p;
     return {
       ...p,

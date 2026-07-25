@@ -121,10 +121,11 @@ for the narrow pane.
 
 - **Output modes** (the TOP dock selector, NOT the same axis as `focus`): `src/console/output-mode.ts`
   defines `OUTPUT_MODES` = **particles** (default) / midi / osc / cv / synth / editor, each mapping to a
-  `BackendId`. `DEFAULT_OUTPUT_MODE='particles'`. `outputDisplayCount()` is the shared presentation
-  boundary for the stage and routing rows: MIDI uses its configured CC count, while backends without
-  a separate count present the full mode parameter set. The condensed Outputs panel reports this as an
-  `N outputs` chip. This does not reshape the MLP or clear examples.
+  `BackendId`. `DEFAULT_OUTPUT_MODE='particles'`. `outputDisplayCount()` is the shared active-card
+  boundary for the stage, backend context, and routing rows. MIDI starts with eight cards; every
+  backend can add a card or delete any individual card in condensed and expanded Outputs drawers.
+  The `N outputs` chip always reports that same set. `MFParam.id` is semantic identity; array position
+  is not. Settings decides whether edits retain spare network capacity or keep exact arity.
 - `src/console/output-mode.ts`, `types.ts`, `model.ts` are the shared vocabulary — read these first
   when touching anything cross-cutting:
   - `types.ts`: `Focus`, `OutputMode`, `DrawerKey`, `DrawerDepth`, `FeedbackModeUI`, `SoloMode`,
@@ -236,25 +237,25 @@ a setting → `--r-*` tokens.
 - `input-layer.ts` — composition hub. One rAF loop polls sources, pulls all axes into a vector,
   forwards N→engine. **`MAX_AXES = 32`** (WASM net over-provisioned to 32 inputs). **Dedicated
   dimensions, NO mean-blending** — each active axis drives its own engine slot 1:1; unused slots
-  zero-padded (inert). Changing axis count requires a **net reset** (UI confirm modal).
+  zero-padded (inert). Changing the layout uses the same persisted identity-aware I/O policy as output
+  cards.
 - `base-source.ts` + sources: `xy-pad-source.ts` (push, 2 axes), `gamepad-source.ts` (single=2 /
   double=4 axes, deadzone 0.08), `midi-input-source.ts` (Web MIDI, batch CC-learn, multi-port).
 - `useInputLayer.ts` — React binding; manages exclusive input mode + gamepad stick mode + MIDI
   device/learn map; exposes `pushPad`, `sources`, `channelLayout`, etc.
-- **Reshape (P2.3, live):** the net is now **runtime-shaped**. It boots at the default
+- **I/O migration (P2.3, live):** the net is **runtime-shaped**. It boots at the default
   over-provisioned 32-input head (zero-padding preserved), and `EngineApi.reshape({ inputSize, … })`
-  → `WasmIML.reshape` swaps in a new net at the requested arity, **warm-started** from the overlapping
-  weights (`nisps_ml_reshape`; C-side dataset + feedback state RESET). When the active axis layout
-  CHANGES to a count ≠ the net's arity, `ConsoleApp` offers the swap behind `ReshapeModal.tsx`
-  (reset-on-reshape confirm; declining keeps the zero-padded head). Never offered on load. The
-  spine tolerates the arity change (buffers resize, version bumps); the training worker
+  → `WasmIML.reshape`. `engine/io-reshape.ts` owns the identity map: **Keep capacity** (default)
+  permutes weights/examples in place and reconstructs only when active I/O outgrows the net;
+  **Exact I/O** reconstructs whenever active arity changes. Existing examples either adapt by
+  deleting removed dimensions and inserting the saved neutral placeholders (input 0, output 0.5 by
+  default), or clear, according to the persistent Settings choice. Feedback replay/exploration state
+  resets because it has no stable-ID contract. The spine tolerates arity changes; the training worker
   (`wasm-worker.ts`) carries the current dims in its train message and re-creates its mirror net to
-  match. Debug: `window.__nisps.reshape(nIn)` / `.describe()`. See the `manifold-mixed-inputs` memory
-  for the locked design (adaptive slider viz when >2 dims is still pending).
+  match. The raw debug `window.__nisps.reshape(nIn)` remains a low-level reconstruct-and-clear call.
 - **Per-mode net dims (P5.3):** switching INSTRUMENT mode reshapes the net to that mode's schema
   `ml` config (`MFMode.ml` — input/hidden/output + legacy spread) via a `ConsoleApp` effect keyed on
-  `[engine, modeId]`. No confirm modal (switching instrument is deliberate); the axis-count
-  `ReshapeModal` above is for input-LAYOUT changes only. The effect depends on `engine`, so on boot
+  `[engine, modeId]`. No confirm modal (switching instrument is deliberate). The effect depends on `engine`, so on boot
   it fires once WASM is ready and lands the boot mode's dims (**paf_synth → 4→[10,10,14]→33**, weights
   809 — NOT the 32→126 default). The reshape-offer effect reads the engine's CURRENT `inputSize`
   live, so a mode switch that changes arity doesn't spuriously prompt (its baseline tracks axis
@@ -297,7 +298,8 @@ a setting → `--r-*` tokens.
 ### Misc
 - `src/serial/memlnaut-serial.ts` — **STUB** Web Serial scaffold for the MEMLNaut Editor mode (protocol TODO). `EditorPanel.tsx` is its UI.
 - `src/settings/settings-store.ts` — localStorage settings (`mf-settings`): icon style, input-map
-  shape, corner radius, and the opt-in legacy Xavier/spread feature flag.
+  shape, exact-vs-capacity network resizing, adapt-vs-clear examples + neutral new-dimension values,
+  corner radius, and the opt-in legacy Xavier/spread feature flag.
 - `src/midi-devices/` — codegen'd external-synth device templates.
 - `src/debug/probe.ts` — `window.__nisps` synchronous probe (engine/audio/bus). Some playground
   feature-store methods are present-but-inert (not ported yet) to keep the surface stable.

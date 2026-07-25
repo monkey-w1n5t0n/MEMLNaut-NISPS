@@ -76,6 +76,8 @@ export interface ConsoleCtx {
   params: MFParam[];
   /** Patch one output row in the shared store (drives stage + dock in sync). */
   setParam: (i: number, patch: Partial<MFParam>) => void;
+  addOutput: () => void;
+  deleteOutput: (i: number) => void;
   /** Active backend outputs currently presented by the stage + routing rows. */
   displayOutputCount: number;
 
@@ -85,7 +87,7 @@ export interface ConsoleCtx {
   /** Available Web MIDI output ports (for the MIDI config picker). */
   midiPorts: { id: string; name: string }[];
   refreshMidiPorts: () => void;
-  /** MIDI backend settings (selected port + number of CCs mapped). */
+  /** MIDI backend settings (selected port + active output-card count). */
   midiOutputId: string | null;
   setMidiOutputId: (id: string | null) => void;
   midiCcCount: number;

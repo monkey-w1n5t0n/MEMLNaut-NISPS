@@ -82,12 +82,9 @@ export function outputModeDescriptor(id: OutputMode): OutputModeDescriptor {
 }
 
 /**
- * Number of output controls the active backend presents.
- *
- * The model may expose more parameters than a backend currently maps (MIDI is
- * the live example: its CC count is adjustable). Keep that presentation
- * boundary separate from the model arity so changing a backend count does not
- * silently reshape the net and clear its examples.
+ * Number of active output cards the selected backend presents. Model capacity
+ * may be larger under the persisted keep-capacity policy; exact-I/O makes this
+ * count the model arity. The identity-aware engine action owns that distinction.
  */
 export function outputDisplayCount(
   id: OutputMode,

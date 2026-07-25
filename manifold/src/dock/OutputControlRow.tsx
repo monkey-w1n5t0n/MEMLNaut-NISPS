@@ -60,11 +60,19 @@ export interface OutputControlRowProps {
   /** Live (computed) value for the value bar. */
   value: number;
   onChange: (patch: Partial<MFParam>) => void;
+  /** Remove this semantic output from the active card set. */
+  onDelete?: () => void;
   /** Show the curve pad inline (expand depth); hidden in compact rows. */
   showCurve?: boolean;
 }
 
-export function OutputControlRow({ param, value, onChange, showCurve = false }: OutputControlRowProps) {
+export function OutputControlRow({
+  param,
+  value,
+  onChange,
+  onDelete,
+  showCurve = false,
+}: OutputControlRowProps) {
   const gc = `var(${GROUP_COLOR[param.group] || '--accent'})`;
   const muted = param.muted ?? false;
   const armed = param.armed ?? false;
@@ -99,6 +107,28 @@ export function OutputControlRow({ param, value, onChange, showCurve = false }: 
           {param.name}
         </span>
         <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>{param.group}</span>
+        {onDelete && (
+          <button
+            type="button"
+            aria-label={`Delete ${param.name} output`}
+            title={`Delete ${param.name} output`}
+            onClick={onDelete}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 'var(--r-1)',
+              border: '1px solid var(--line)',
+              background: 'transparent',
+              color: 'var(--danger)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 14,
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        )}
         <GlyphToggle
           on={muted}
           glyph="M"

@@ -33,7 +33,7 @@ export interface OutputMapping {
 /** What a backend needs to know about the active mode/output set. */
 export interface BackendContext {
   modeId: string;
-  /** Model output dims in use (≤ 126). */
+  /** Active output cards routed to this backend (may be < model capacity). */
   outputCount: number;
   /** Per-output baseline mapping, length === outputCount. */
   mappings: OutputMapping[];

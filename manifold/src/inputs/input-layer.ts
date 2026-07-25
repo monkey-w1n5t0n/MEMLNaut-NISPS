@@ -23,9 +23,10 @@
  * behaviour) — that diluted every source and biased the net toward idle
  * sources' resting values.
  *
- * Changing the ACTIVE axis count offers a reshape (ConsoleApp → ReshapeModal):
- * a new net at the new arity, warm-started from the overlapping weights, with
- * examples + feedback state reset. Declining keeps this over-provisioned head.
+ * Changing the ACTIVE layout runs through ConsoleApp's persistent I/O policy:
+ * keep-capacity remaps stable dimensions in place until capacity is exceeded;
+ * exact-I/O reconstructs to the active arity. Example adaptation/clearing is a
+ * separate persisted choice.
  */
 import type { InputAction, InputSource } from './types';
 

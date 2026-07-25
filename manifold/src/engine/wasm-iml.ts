@@ -38,6 +38,11 @@ import {
   type NispsModuleFactory,
 } from './types';
 import { createTrainer, type WasmTrainer } from './wasm-worker';
+import {
+  remapFlatWeights,
+  remapVector,
+  type IoMigration,
+} from './io-reshape';
 
 /** Default architecture matches `nisps/wasm/bindings.cpp` instantiation. */
 const DEFAULT_INPUT_SIZE = 2;
@@ -352,98 +357,145 @@ export class WasmIML {
   // -------------------------------------------------------------------
 
   /**
-   * Swap the net for one at new dims, warm-started from the overlapping weights
-   * of the current net (`nisps_ml_reshape`). Any omitted dim keeps its current
-   * value. Returns true on success (false = C-side rejected / no change).
-   *
-   * The C side RESETS its dataset/examples and feedback/exploration state on
-   * reshape, so this method also clears the TS `Dataset` mirror, reallocates
-   * every dim-dependent heap buffer, refreshes `weightCount`, and pushes the new
-   * shape + zeroed example/output state through the sink so React re-reads.
+   * Apply one identity-aware I/O edit. A changed shape reconstructs the C++ MLP;
+   * a same-shape permutation edits weights/examples in place.
    */
   reshape(
     dims: { inputSize?: number; outputSize?: number; hidden?: readonly [number, number, number] },
     spread = 0,
+    migration?: IoMigration,
   ): boolean {
+    const oldArch = this.arch_;
     const wantIn = dims.inputSize ?? this.arch_.inputSize;
     const wantOut = dims.outputSize ?? this.arch_.outputSize;
     const wantHidden = dims.hidden ?? this.arch_.hidden;
+    const shapeChanged =
+      wantIn !== oldArch.inputSize ||
+      wantOut !== oldArch.outputSize ||
+      wantHidden.some((n, i) => n !== oldArch.hidden[i]);
+    const oldWeights = migration ? this.getWeights() : null;
+    const examples =
+      migration?.examples === 'adapt'
+        ? Array.from({ length: this.dataset.size }, (_, i) => ({
+            features: new Float32Array(this.dataset.feature(i)),
+            labels: new Float32Array(this.dataset.label(i)),
+          }))
+        : [];
 
-    const hiddenPtr = this.module._malloc(wantHidden.length * 4);
-    new Int32Array(this.module.HEAP32.buffer, hiddenPtr, wantHidden.length).set(wantHidden);
-    const ok = this.module._nisps_ml_reshape(
-      this.mlHandle,
-      wantIn,
-      wantOut,
-      hiddenPtr,
-      wantHidden.length,
-      spread,
-    );
-    this.module._free(hiddenPtr);
-    if (ok !== 1) return false;
+    if (shapeChanged || !migration) {
+      const hiddenPtr = this.module._malloc(wantHidden.length * 4);
+      new Int32Array(this.module.HEAP32.buffer, hiddenPtr, wantHidden.length).set(wantHidden);
+      const ok = this.module._nisps_ml_reshape(
+        this.mlHandle,
+        wantIn,
+        wantOut,
+        hiddenPtr,
+        wantHidden.length,
+        spread,
+      );
+      this.module._free(hiddenPtr);
+      if (ok !== 1) return false;
 
-    // Re-describe the (new) instance and refresh the weight count.
-    this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
-    const d = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 7);
-    this.arch_ = {
-      inputSize: d[0],
-      hidden: [d[1], d[2], d[3]],
-      outputSize: d[4],
-      numLayers: d[5],
-      maxExamples: d[6],
-    };
-    this.weightCount_ = this.module._nisps_ml_weight_count(this.mlHandle);
-    // nisps_ml_reshape never varies max_examples (no such parameter exists on
-    // that C API) — it always reconstructs at kDefaultMaxExamples, same as
-    // create(). The Dataset mirror's cap is therefore still correct; only its
-    // contents are cleared below, matching the C++ side's dataset reset.
+      this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
+      const d = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 7);
+      this.arch_ = {
+        inputSize: d[0],
+        hidden: [d[1], d[2], d[3]],
+        outputSize: d[4],
+        numLayers: d[5],
+        maxExamples: d[6],
+      };
+      this.weightCount_ = this.module._nisps_ml_weight_count(this.mlHandle);
 
-    // Reallocate every dim-dependent heap buffer. Freeing first then reallocating
-    // means a later malloc may sbrk-grow the heap and detach earlier views, so we
-    // rebind() all of them afterwards.
-    this.featuresBuf.free();
-    this.labelsBuf.free();
-    this.weightsBuf.free();
-    this.statsBuf.free();
-    this.batchInBuf.free();
-    this.batchOutBuf.free();
-    this.pinMaskBuf.free();
-    this.feedbackBuf.free();
-    this.outProcBuf.free();
-    this.pipeMaskBuf.free();
-    this.featuresBuf = new HeapBuffer(this.module, this.arch_.inputSize);
-    this.labelsBuf = new HeapBuffer(this.module, this.arch_.outputSize);
-    this.weightsBuf = new HeapBuffer(this.module, this.weightCount_);
-    this.statsBuf = new HeapBuffer(this.module, this.arch_.numLayers * 4);
-    this.batchInBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.inputSize);
-    this.batchOutBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.outputSize);
-    this.pinMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
-    this.feedbackBuf = new HeapBuffer(this.module, this.arch_.outputSize);
-    this.outProcBuf = new HeapBuffer(this.module, this.arch_.outputSize);
-    this.pipeMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
-    this.featuresBuf.rebind();
-    this.labelsBuf.rebind();
-    this.weightsBuf.rebind();
-    this.statsBuf.rebind();
-    this.batchInBuf.rebind();
-    this.batchOutBuf.rebind();
-    this.pinMaskBuf.rebind();
-    this.feedbackBuf.rebind();
-    this.outProcBuf.rebind();
-    this.pipeMaskBuf.rebind();
-    // Fixed-size pipeline buffers were not reallocated but a grow above may have
-    // detached their views — rebind so later writes hit the live heap.
-    this.inCfgBuf.rebind();
-    this.inXYBuf.rebind();
-    this.curveBuf.rebind();
+      // A malloc may grow WASM memory, so all retained fixed-size views are
+      // rebound after reallocating the dimension-dependent buffers.
+      this.featuresBuf.free();
+      this.labelsBuf.free();
+      this.weightsBuf.free();
+      this.statsBuf.free();
+      this.batchInBuf.free();
+      this.batchOutBuf.free();
+      this.pinMaskBuf.free();
+      this.feedbackBuf.free();
+      this.outProcBuf.free();
+      this.pipeMaskBuf.free();
+      this.featuresBuf = new HeapBuffer(this.module, this.arch_.inputSize);
+      this.labelsBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+      this.weightsBuf = new HeapBuffer(this.module, this.weightCount_);
+      this.statsBuf = new HeapBuffer(this.module, this.arch_.numLayers * 4);
+      this.batchInBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.inputSize);
+      this.batchOutBuf = new HeapBuffer(this.module, WasmIML.MAX_BATCH * this.arch_.outputSize);
+      this.pinMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
+      this.feedbackBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+      this.outProcBuf = new HeapBuffer(this.module, this.arch_.outputSize);
+      this.pipeMaskBuf = new HeapU8(this.module, this.arch_.outputSize);
+      this.featuresBuf.rebind();
+      this.labelsBuf.rebind();
+      this.weightsBuf.rebind();
+      this.statsBuf.rebind();
+      this.batchInBuf.rebind();
+      this.batchOutBuf.rebind();
+      this.pinMaskBuf.rebind();
+      this.feedbackBuf.rebind();
+      this.outProcBuf.rebind();
+      this.pipeMaskBuf.rebind();
+      this.inCfgBuf.rebind();
+      this.inXYBuf.rebind();
+      this.curveBuf.rebind();
+    } else {
+      // Pure permutations do not recreate the network. Feedback replay,
+      // scratchpad, Jolt, and OU state are index-aligned, so reset only those.
+      this.module._nisps_ml_feedback_reset(this.mlHandle);
+      const hasNewDimension =
+        migration.inputMap?.some((oldIndex) => oldIndex === null) ||
+        migration.outputMap?.some((oldIndex) => oldIndex === null);
+      if (hasNewDimension) {
+        // Establish fresh deterministic values, then the remap below overlays
+        // every surviving coordinate. Only genuinely new columns/rows remain.
+        this.module._nisps_ml_draw_weights(this.mlHandle, spread);
+      }
+    }
 
-    // C-side dataset/examples reset on reshape → clear the TS mirror to match.
+    if (migration && oldWeights) {
+      this.setWeights(
+        remapFlatWeights(
+          oldWeights,
+          oldArch,
+          this.getWeights(),
+          this.arch_,
+          migration.inputMap,
+          migration.outputMap,
+        ),
+      );
+    }
+
+    // Rebuild both example mirrors from the same adapted vectors. The C++
+    // reshape already cleared its side; same-shape migration needs this call.
     this.dataset.clear();
+    this.module._nisps_ml_clear_examples(this.mlHandle);
+    if (migration?.examples === 'adapt') {
+      for (const example of examples) {
+        const features = remapVector(
+          example.features,
+          migration.inputMap,
+          this.arch_.inputSize,
+          migration.addedInputValue,
+        );
+        const labels = remapVector(
+          example.labels,
+          migration.outputMap,
+          this.arch_.outputSize,
+          migration.addedOutputValue,
+        );
+        this.dataset.add(Array.from(features), Array.from(labels));
+        this.copyExampleToWasm_(Array.from(features), Array.from(labels));
+      }
+    }
     this.lastLoss_ = null;
+    this.resetInput();
+    this.resetOutput();
 
-    // The lazy training worker's mirror net is now stale (wrong arity). Dropping
-    // it makes the next trainAsync re-create it; the train protocol also carries
-    // the current dims so a fresh worker matches (see wasm-worker.ts).
+    // The worker mirror is stale after any weight, example, or shape migration.
     if (this.trainer) {
       this.trainer.dispose();
       this.trainer = null;
@@ -452,7 +504,7 @@ export class WasmIML {
     this.sink.setState({
       inputSize: this.arch_.inputSize,
       outputSize: this.arch_.outputSize,
-      exampleCount: 0,
+      exampleCount: this.dataset.size,
       lastLoss: null,
       lossHistory: [],
     });
@@ -460,6 +512,8 @@ export class WasmIML {
     this.sink.emit('ml.reshaped', {
       inputSize: this.arch_.inputSize,
       outputSize: this.arch_.outputSize,
+      reconstructed: shapeChanged || !migration,
+      exampleCount: this.dataset.size,
     });
     this.scheduleSave_();
     return true;

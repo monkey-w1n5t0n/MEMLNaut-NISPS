@@ -30,6 +30,7 @@ import { shapeValues } from './model';
 import { outputModeDescriptor } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
 import type { UnfocusedIconColour, InputMapMode } from '../settings/settings-store';
+import type { ExampleResizePolicy, NetworkResizePolicy } from '../engine/io-reshape';
 import { EditorPanel } from '../serial/EditorPanel';
 import { TrainingHealth } from './TrainingHealth';
 import {
@@ -632,6 +633,9 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         <Chip>off {counts.off || 0}</Chip>
         <Chip tone="var(--danger)">muted {mutedN}</Chip>
         <BackendStatusChip ctx={ctx} />
+        <Button size="sm" variant="ghost" onClick={ctx.addOutput}>
+          + output
+        </Button>
       </div>
       {ModeConfig(ctx, depth)}
       {/* Specialised per-backend config + named-preset bar (MIDI/OSC); hidden when condensed. */}
@@ -651,10 +655,11 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
           const labelled = { ...p, name: nameFor(i, p.name) };
           return (
             <OutputControlRow
-              key={i}
+              key={p.id}
               param={labelled}
               value={values[i] ?? 0}
               onChange={(patch) => ctx.setParam(i, patch)}
+              onDelete={activeParams.length > 1 ? () => ctx.deleteOutput(i) : undefined}
               showCurve={expanded}
             />
           );
@@ -680,6 +685,14 @@ const INPUT_MAP_OPTS: { value: InputMapMode; label: string }[] = [
   { value: 'follow-mode', label: 'Follow mode' },
   { value: 'rectangular', label: 'Rectangular' },
   { value: 'circular', label: 'Circular' },
+];
+const NETWORK_RESIZE_OPTS: { value: NetworkResizePolicy; label: string }[] = [
+  { value: 'capacity', label: 'Keep capacity' },
+  { value: 'exact', label: 'Exact I/O' },
+];
+const EXAMPLE_RESIZE_OPTS: { value: ExampleResizePolicy; label: string }[] = [
+  { value: 'adapt', label: 'Adapt' },
+  { value: 'clear', label: 'Clear' },
 ];
 
 function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
@@ -726,6 +739,47 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
           The 2D input surface: a rectangular XY map or a circular joystick-style disc. "Follow mode"
           uses the active mode's declared input (joystick → circular, else rectangular).
         </p>
+      )}
+
+      <SectionLabel>I/O editing</SectionLabel>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>Network size</div>
+      <PillToggle
+        value={settings.networkResizePolicy}
+        onChange={(v) => set('networkResizePolicy', v as NetworkResizePolicy)}
+        options={NETWORK_RESIZE_OPTS}
+        ariaLabel="Network resize policy"
+      />
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>Existing examples</div>
+      <PillToggle
+        value={settings.exampleResizePolicy}
+        onChange={(v) => set('exampleResizePolicy', v as ExampleResizePolicy)}
+        options={EXAMPLE_RESIZE_OPTS}
+        ariaLabel="Example resize policy"
+      />
+      {depth === 'expanded' && (
+        <>
+          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+            Keep capacity edits mappings in place and reconstructs only when the active cards outgrow
+            the network. Exact I/O keeps network arity equal to the cards. Surviving dimensions retain
+            their identity and weights; exploration scratch state resets after an I/O edit.
+          </p>
+          <Slider
+            label="New input example value"
+            value={settings.addedInputExampleValue}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(v) => set('addedInputExampleValue', v)}
+          />
+          <Slider
+            label="New output example value"
+            value={settings.addedOutputExampleValue}
+            min={0}
+            max={1}
+            step={0.05}
+            onChange={(v) => set('addedOutputExampleValue', v)}
+          />
+        </>
       )}
 
       <SectionLabel>Chrome</SectionLabel>

@@ -58,7 +58,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   consts (mode_id, engine_id, ml dims, params, voice_spaces, ui) — the SOURCE OF TRUTH for `MF_MODES`.
   Switching mode reshapes the WASM net to the mode's `ml` dims (ConsoleApp P5.3; boot mode paf_synth →
   4→[10,10,14]→33).
-- `manifold/src/dock/` — `OutputControlRow` (off/fixed/live + mute + solo/arm + min/max/curve), `output-state.ts`,
+- `manifold/src/dock/` — `OutputControlRow` (add/delete card identity + off/fixed/live + mute + solo/arm + min/max/curve), `output-state.ts`,
   `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel — the sole per-backend editor).
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
   (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `vcv-backend.ts` (VCV-over-WS), `cv-backend.ts`
@@ -74,9 +74,10 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   `setInputs`, plus an `onReducedInput` callback the manifold tracks. The WASM net is over-provisioned to a
   32-input head (`MAX_AXES`, `nisps/wasm/bindings.cpp`); unused slots are zero-padded and a zero input is inert,
   so idle sources cannot perturb the net. Mean-blending was removed deliberately — it diluted every source and
-  biased the net toward idle sources' resting values. Changing the ACTIVE axis count offers a reshape
-  (`ConsoleApp` → `ReshapeModal`): new net at the new arity, warm-started from overlapping weights, examples and
-  feedback state reset; declining keeps the over-provisioned head. Sources: `xy-pad-source` (push-driven),
+  biased the net toward idle sources' resting values. Active-axis edits follow the persistent I/O policy:
+  keep-capacity permutes stable identities in place until more slots are required; exact-I/O reconstructs
+  to the active count. Surviving weights and (under adapt policy) examples are identity-remapped; feedback
+  scratch state resets. Sources: `xy-pad-source` (push-driven),
   `gamepad-source` (sticks→axes single/double; buttons emit press+release actions, bound in `ConsoleApp` to
   verdicts — LB/RB=down/up, X/Y/B=randomise/nudge/undo, A-hold=reposition), `midi-input-source` (device picker +
   BATCH "MIDI Learn": every CC swept while armed becomes an axis, shown as read-only meters). `useInputLayer.ts`
@@ -84,11 +85,13 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   `backends/base-backend.ts` is its output-side counterpart (status + throttle + lastSent) used by the midi/osc/vcv transports.
 - `manifold/src/feedback/` — `controller.ts` (Explore-and-place scratchpad + geometric-dislike + solo; a thin
   driver over the shared C++ core).
-- `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius, and the opt-in legacy Xavier/spread feature flag; Manifold randomisation is full-range uniform by default).
+- `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, I/O resize policy, corner radius, and the opt-in legacy Xavier/spread feature flag; Manifold randomisation is full-range uniform by default).
 - `manifold/src/serial/` — `memlnaut-serial.ts` Web Serial scaffold + `EditorPanel.tsx` (MEMLNaut Editor mode).
 - `manifold/src/engine/exploration.ts` — Jolt press + OU explore gestures (Learning drawer): a thin
   timer-driver over the shared C++ core via the `nisps_ml_jolt_*`/`nisps_ml_ou_*` bindings (the interim
   TS math and `jolt.ts`/`ou-explore.ts` were deleted when P3 landed).
+- `manifold/src/engine/io-reshape.ts` — the deep identity-migration module for I/O card edits:
+  exact-vs-capacity reconstruction decisions, flat weight remapping, and example vector adaptation.
 - `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/` — `smoke`,
   `probe-api` (engine-contract port), `spine` (spine invariant + probe-survives-mode-switch),
   `geo-dislike`, `reshape`, `schema-modes`, `training-health` (the loss/layer-stats panel + its

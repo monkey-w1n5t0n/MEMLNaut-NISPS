@@ -28,6 +28,7 @@ class FakeBackend implements OutputBackend {
   readonly id: BackendId;
   startCalls = 0;
   teardownCalls = 0;
+  sent: number[][] = [];
   private release: (() => void) | null = null;
   private hold: boolean;
 
@@ -59,7 +60,9 @@ class FakeBackend implements OutputBackend {
     this.teardownCalls++;
   }
 
-  send(): void {}
+  send(routed: Float32Array): void {
+    this.sent.push(Array.from(routed));
+  }
 
   status(): BackendStatus {
     return { state: 'ready', message: 'fake' };
@@ -119,6 +122,32 @@ test('rapid repeated switches to the SAME pending id only apply it once', async 
   // Only ONE extra switch should have actually run (no repeated re-queueing
   // beyond the single pending slot — the infinite-loop guard).
   expect(osc.startCalls).toBe(1);
+});
+
+test('capacity slots are not forwarded beyond the active output-card count', async () => {
+  let notify: (() => void) | null = null;
+  const engine: ManagerEngine = {
+    subscribe: (cb) => {
+      notify = cb;
+      return () => {};
+    },
+    routedOutput: () => new Float32Array([0.1, 0.2, 0.3, 0.4]),
+    audio: { setMuted: () => {} },
+  };
+  const midi = new FakeBackend('midi');
+  const manager = new BackendManager(engine, { midi });
+  manager.setContext({
+    modeId: 'test',
+    outputCount: 2,
+    mappings: [],
+    names: [],
+  });
+  await manager.setActive('midi');
+  notify!();
+
+  expect(midi.sent).toEqual([
+    Array.from(new Float32Array([0.1, 0.2])),
+  ]);
 });
 
 // NOTE: `manifold/package.json`'s `test` script is `bun test src

@@ -101,6 +101,10 @@ export const DEFAULT_MODE_ML: ModeML = {
  * are re-declared here loosely to avoid a console→dock import cycle.
  */
 export interface MFParam {
+  /** Stable semantic identity; array position is presentation, not identity. */
+  id: string;
+  /** Current MLP output coordinate, absent while the card is inactive/spare. */
+  engineIndex?: number;
   name: string;
   group: string;
   status: ParamStatus;
@@ -166,7 +170,17 @@ function mkParams(spec: Spec): MFParam[] {
   const out: MFParam[] = [];
   for (const [group, names] of spec) {
     names.forEach((name) =>
-      out.push({ name, group, status: 'live', val: 0.5, min: 0, max: 1, curve: 0.5 }),
+      out.push({
+        id: `${group}:${name}:${out.length}`,
+        engineIndex: out.length,
+        name,
+        group,
+        status: 'live',
+        val: 0.5,
+        min: 0,
+        max: 1,
+        curve: 0.5,
+      }),
     );
   }
   return out;
@@ -190,7 +204,9 @@ function mlFromSchema(schema: ModeSchema): ModeML {
  * are surfaced as ENGINE-unit metadata for display only.
  */
 function paramsFromSchema(schema: ModeSchema): MFParam[] {
-  return schema.params.map((p) => ({
+  return schema.params.map((p, i) => ({
+    id: `${schema.mode_id}:${p.name}`,
+    engineIndex: i,
     name: p.name,
     group: p.group,
     status: 'live' as ParamStatus,
@@ -369,10 +385,30 @@ export function shapeValues(params: MFParam[], engineOut: Float32Array | null): 
     if (p.status === 'fixed') {
       return p.min + Math.max(0, Math.min(1, p.val ?? 0.5)) * (p.max - p.min);
     }
-    const raw = engineOut && i < engineOut.length ? engineOut[i] : 0.5;
+    const engineIndex = p.engineIndex ?? i;
+    const raw = engineOut && engineIndex < engineOut.length ? engineOut[engineIndex] : 0.5;
     const v = p.min + applyCurve(raw, p.curve) * (p.max - p.min);
     return Math.max(0, Math.min(1, v));
   });
+}
+
+/** Create a backend-agnostic output card after every schema output is active. */
+export function createOutputParam(index: number): MFParam {
+  const suffix = index + 1;
+  const unique =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${index}`;
+  return {
+    id: `custom:${unique}`,
+    name: `Output ${suffix}`,
+    group: 'custom',
+    status: 'live',
+    val: 0.5,
+    min: 0,
+    max: 1,
+    curve: 0.5,
+  };
 }
 
 /**

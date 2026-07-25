@@ -75,6 +75,8 @@ export interface NispsModule {
   // RandomiseMlp). Mode ints: 0=Avoid 1=RandomiseOutputs 2=RandomiseMlp.
   // Action return ints come from FeedbackController::on_*; see feedback.hpp.
   _nisps_ml_feedback_set_mode(ml: number, mode: number): void;
+  /** Reset index-aligned feedback/exploration state without rebuilding the MLP. */
+  _nisps_ml_feedback_reset(ml: number): void;
   _nisps_ml_feedback_get_mode(ml: number): number;
   _nisps_ml_feedback_exploring(ml: number): number; // 1 = exploring
   _nisps_ml_feedback_set_focus(ml: number, mask_ptr: number, n: number): void;

@@ -401,6 +401,8 @@ int nisps_ml_reshape(void* ml, int input_size, int output_size,
     const MlDims d = sanitise_dims(input_size, output_size, hidden, n_hidden);
     if (!d.ok) return 0;
 
+    const auto feedback_mode = h->feedback.mode();
+    const auto avoid_style = h->feedback.avoid_style();
     BrowserMLP fresh(h->seed64, d.n_in, std::span<const std::size_t>(d.hidden, 3u), d.n_out);
     if (!fresh.valid()) return 0;
     fresh.draw_weights(spread);
@@ -409,6 +411,8 @@ int nisps_ml_reshape(void* ml, int input_size, int output_size,
     BrowserFeedback fb(h->seed64 ^ kFeedbackSalt, d.n_out, fresh.weight_count(),
                        kFeedbackUndoDepth, d.n_in, kFeedbackReplayCap);
     if (!fb.valid()) return 0;
+    fb.set_avoid_style(avoid_style);
+    fb.set_mode(feedback_mode, fresh);
 
     h->mlp      = static_cast<BrowserMLP&&>(fresh);
     h->feedback = static_cast<BrowserFeedback&&>(fb);
@@ -612,6 +616,28 @@ void nisps_ml_feedback_set_mode(void* ml, int mode) {
     else if (mode == 2) m = nisps::ml::FeedbackMode::RandomiseMlp;
     else if (mode == 3) m = nisps::ml::FeedbackMode::ExploreAndPlace;
     h->feedback.set_mode(m, h->mlp);
+}
+
+// Reset only the index-aligned feedback/exploration state. Same-capacity I/O
+// edits remap weights and examples without reconstructing the network, but
+// replay/scratch vectors have no stable parameter-identity contract.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_reset(void* ml) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    const auto feedback_mode = h->feedback.mode();
+    const auto avoid_style = h->feedback.avoid_style();
+    BrowserFeedback fb(h->seed64 ^ kFeedbackSalt, h->n_out(), h->mlp.weight_count(),
+                       kFeedbackUndoDepth, h->n_in(), kFeedbackReplayCap);
+    if (!fb.valid()) return;
+    fb.set_avoid_style(avoid_style);
+    fb.set_mode(feedback_mode, h->mlp);
+    h->feedback = static_cast<BrowserFeedback&&>(fb);
+    h->feedback_static_scratch.assign(h->n_out(), 0.f);
+    h->mlp.reset_optimizer_state();
+    h->jolt.release();
+    h->ou.reset();
+    h->jolt_scratch.assign(h->mlp.weight_count(), 0.f);
 }
 
 EMSCRIPTEN_KEEPALIVE

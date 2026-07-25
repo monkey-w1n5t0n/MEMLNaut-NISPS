@@ -30,7 +30,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useEngine, useEngineVersion, ExplorationController } from '../engine';
-import { MF_MODES, modeEngineId, shapeValues } from './model';
+import { MF_MODES, createOutputParam, modeEngineId, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
 import { ParticleStage } from './ParticleStage';
@@ -39,7 +39,6 @@ import { OutputStage } from './OutputStage';
 import { Manifold } from './Manifold';
 import { VerdictCluster } from './VerdictCluster';
 import { Dock } from './Dock';
-import { ReshapeModal } from './ReshapeModal';
 import type {
   ConsoleCtx,
   DrawerDepth,
@@ -57,6 +56,11 @@ import { DEFAULT_OUTPUT_MODE, outputDisplayCount, outputModeDescriptor } from '.
 import { useSettings, resolveInputMap } from '../settings/settings-store';
 import { useBackendManager } from '../backends';
 import { useInputLayer } from '../inputs';
+import {
+  completeDimensionMap,
+  resizeTarget,
+  type DimensionMap,
+} from '../engine/io-reshape';
 
 /**
  * Console debug seam, installed on `window.__mf` under `?debug=1` (see the
@@ -102,6 +106,7 @@ export function ConsoleApp() {
   const [modeId, setModeId] = useState('paf_synth');
   const mode = MF_MODES.find((m) => m.id === modeId) ?? MF_MODES[0];
   const [params, setParams] = useState<MFParam[]>(() => mode.params.map((p) => ({ ...p })));
+  const [paramsModeId, setParamsModeId] = useState(mode.id);
   const [pos, setPos] = useState<[number, number]>([0.5, 0.5]);
 
   const [noiseCap, setNoiseCap] = useState(0.12);
@@ -146,10 +151,13 @@ export function ConsoleApp() {
   // Per-backend transport settings (backends-spec §2.3/§2.4). Persisted via the
   // named-preset system; these are the live working values.
   const [midiOutputId, setMidiOutputId] = useState<string | null>(null);
-  const [midiCcCount, setMidiCcCount] = useState(8);
-  const displayOutputCount = outputDisplayCount(outputMode, params.length, {
-    midi: midiCcCount,
+  const [outputCounts, setOutputCounts] = useState<Partial<Record<OutputMode, number>>>({
+    midi: 8,
   });
+  const midiCcCount = outputDisplayCount('midi', params.length, outputCounts);
+  const setMidiCcCount = (n: number) =>
+    setOutputCounts((counts) => ({ ...counts, midi: Math.max(1, Math.floor(n)) }));
+  const displayOutputCount = outputDisplayCount(outputMode, params.length, outputCounts);
   const [oscUrl, setOscUrl] = useState('ws://localhost:8765');
   const [oscSendRaw, setOscSendRaw] = useState(false);
   // VCV bridge: WS URL of the Deno bridge that relays to the VCV module over UDP
@@ -249,9 +257,9 @@ export function ConsoleApp() {
   // level — the true gradient column-freeze (`train_masked`) is the C++ step.
   useEffect(() => {
     controllerRef.current?.setSoloMode(soloMode);
-    controllerRef.current?.setArmMask(buildArmMask(params));
+    controllerRef.current?.setArmMask(buildArmMask(params.slice(0, displayOutputCount)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, params, soloMode]);
+  }, [engine, params, displayOutputCount, soloMode]);
 
   // Keep the audio backend pointed at the current mode (audio itself is gated
   // behind a user gesture — see startAudio below).
@@ -276,6 +284,7 @@ export function ConsoleApp() {
   // reset transient state on mode switch
   useEffect(() => {
     setParams(mode.params.map((p) => ({ ...p })));
+    setParamsModeId(modeId);
     setPos([0.5, 0.5]);
     setExamples(0);
     setFollow(false);
@@ -301,43 +310,55 @@ export function ConsoleApp() {
   // `pushPad`; MIDI + gamepad are pulled by the layer's own rAF loop.
   const inputs = useInputLayer(engine);
 
-  // ---- Reshape offer (runtime-shaped net, P2) --------------------------------
-  // When the ACTIVE input layout CHANGES (source added/removed, MIDI-learn axes
-  // change, gamepad stick mode) to an axis count that differs from the net's
-  // current input arity, offer a warm-started reshape behind a confirm modal
-  // (locked decision: "reshapeable N-D net, reset-on-reshape modal"). We only
-  // offer on a genuine CHANGE — never on first load — so the default 32-input
-  // over-provisioned head is preserved untouched, and declining keeps the
-  // zero-padding path working. Once per layout change (debounced by the ref).
-  const [reshapeTarget, setReshapeTarget] = useState<number | null>(null);
-  const prevAxisCountRef = useRef<number | null>(null);
+  // ---- Identity-aware input-card migration -----------------------------------
+  // Input sources already expose add/remove cards (MIDI learns, gamepad axes).
+  // Preserve their semantic coordinates by source+label when those rows change.
+  const inputSlotsRef = useRef<Map<string, number> | null>(null);
+  const inputLayoutKey = inputs.channelLayout
+    .map((channel) => `${channel.source}\u0000${channel.label}`)
+    .join('\u0001');
   useEffect(() => {
     if (!engine) return;
-    const n = inputs.axisCount;
-    // Ignore the boot transient (sources attach a frame after mount, so the
-    // count ramps 0 → 2) and any "no active axes" lull — neither is a layout the
-    // user chose, and treating 0 as a baseline would make the first real layout
-    // look like a change and prompt on load.
-    if (n < 1) return;
+    const keys = inputLayoutKey ? inputLayoutKey.split('\u0001') : [];
+    if (keys.length < 1) return;
     const inSize = inputs.engineInputSize;
-    // First established layout is the baseline (default load) — record, never
-    // prompt. This is the default over-provisioned case that must stay untouched.
-    if (prevAxisCountRef.current === null) {
-      prevAxisCountRef.current = n;
+    const previous = inputSlotsRef.current;
+    if (previous === null) {
+      inputSlotsRef.current = new Map(keys.map((key, i) => [key, i]));
       return;
     }
-    if (n === prevAxisCountRef.current) return; // arity unchanged → no offer
-    prevAxisCountRef.current = n;
-    // Offer iff the new active layout no longer matches the net's arity.
-    if (n !== inSize) setReshapeTarget(n);
-    else setReshapeTarget(null);
-  }, [engine, inputs.axisCount, inputs.engineInputSize]);
-
-  const confirmReshape = () => {
-    const n = reshapeTarget;
-    setReshapeTarget(null);
-    if (engine && n != null) engine.reshape({ inputSize: n });
-  };
+    const activeMap: DimensionMap = keys.map((key) => previous.get(key) ?? null);
+    const target =
+      resizeTarget(keys.length, inSize, settings.networkResizePolicy) ?? inSize;
+    const inputMap = completeDimensionMap(activeMap, target, inSize);
+    const needsMigration =
+      target !== inSize || inputMap.some((oldIndex, newIndex) => oldIndex !== newIndex);
+    if (needsMigration) {
+      engine.reshape(
+        { inputSize: target },
+        randomisationSpread,
+        {
+          inputMap,
+          examples: settings.exampleResizePolicy,
+          addedInputValue: settings.addedInputExampleValue,
+          addedOutputValue: settings.addedOutputExampleValue,
+        },
+      );
+      controllerRef.current?.resetAfterIoChange();
+      syncController();
+      setExamples(engine.getState().exampleCount);
+    }
+    inputSlotsRef.current = new Map(keys.map((key, i) => [key, i]));
+  }, [
+    engine,
+    inputLayoutKey,
+    inputs.engineInputSize,
+    randomisationSpread,
+    settings.networkResizePolicy,
+    settings.exampleResizePolicy,
+    settings.addedInputExampleValue,
+    settings.addedOutputExampleValue,
+  ]);
 
   // ---- Console debug seam (`?debug=1`) ----------------------------------------
   // There is no instrument-mode picker in the UI yet (ctx.modes/setModeId are
@@ -389,6 +410,10 @@ export function ConsoleApp() {
   // spine and forwards routed outputs to the active backend; switching Mode
   // tears down the old backend, starts the new one, and gates synth audio
   // (mute on non-synth modes). MIDI/OSC config + names ride the shared params.
+  const backendParams = useMemo(
+    () => params.slice(0, displayOutputCount),
+    [params, displayOutputCount],
+  );
   const {
     manager: backendManager,
     status: backendStatus,
@@ -401,7 +426,7 @@ export function ConsoleApp() {
     engine,
     outputBackend,
     modeId,
-    params,
+    backendParams,
     { outputId: midiOutputId, ccCount: midiCcCount },
     { url: oscUrl, sendRaw: oscSendRaw },
     { url: vcvUrl, sendRaw: vcvSendRaw },
@@ -636,6 +661,104 @@ export function ConsoleApp() {
     });
   }, [version]);
 
+  /**
+   * The single output-card mutation seam. Callers provide the desired active
+   * cards; this module decides whether to keep capacity, permute in place, or
+   * reconstruct, then makes card order and MLP coordinates agree again.
+   */
+  const applyOutputCards = (activeCards: MFParam[], spareCards: MFParam[]) => {
+    if (activeCards.length < 1) return;
+    const oldCapacity = engine?.architecture.outputSize ?? mode.ml.outputSize;
+    const target =
+      resizeTarget(activeCards.length, oldCapacity, settings.networkResizePolicy) ??
+      oldCapacity;
+    const activeMap: DimensionMap = activeCards.map((param) => {
+      const index = param.engineIndex;
+      return index !== undefined && index >= 0 && index < oldCapacity ? index : null;
+    });
+    const outputMap = completeDimensionMap(activeMap, target, oldCapacity);
+    const oldByIndex = new Map<number, MFParam>();
+    for (const param of params) {
+      if (param.engineIndex !== undefined) oldByIndex.set(param.engineIndex, param);
+    }
+    const placed = new Set(activeCards.map((param) => param.id));
+    const ordered: MFParam[] = [...activeCards];
+    for (const oldIndex of outputMap.slice(activeCards.length)) {
+      if (oldIndex === null) continue;
+      const param = oldByIndex.get(oldIndex);
+      if (param && !placed.has(param.id)) {
+        ordered.push(param);
+        placed.add(param.id);
+      }
+    }
+    for (const param of [...spareCards, ...params]) {
+      if (!placed.has(param.id)) {
+        ordered.push(param);
+        placed.add(param.id);
+      }
+    }
+
+    const needsMigration =
+      target !== oldCapacity ||
+      outputMap.some((oldIndex, newIndex) => oldIndex !== newIndex);
+    if (engine && needsMigration) {
+      engine.reshape(
+        { outputSize: target },
+        randomisationSpread,
+        {
+          outputMap,
+          examples: settings.exampleResizePolicy,
+          addedInputValue: settings.addedInputExampleValue,
+          addedOutputValue: settings.addedOutputExampleValue,
+        },
+      );
+      controllerRef.current?.resetAfterIoChange();
+      syncController();
+      setExamples(engine.getState().exampleCount);
+    }
+    setParams(
+      ordered.map((param, index) => ({
+        ...param,
+        engineIndex: index < target ? index : undefined,
+      })),
+    );
+    setOutputCounts((counts) => ({ ...counts, [outputMode]: activeCards.length }));
+  };
+
+  const addOutput = () => {
+    const active = params.slice(0, displayOutputCount);
+    const next = params[displayOutputCount] ?? createOutputParam(params.length);
+    const spares = params
+      .slice(displayOutputCount + (params[displayOutputCount] ? 1 : 0))
+      .filter((param) => param.id !== next.id);
+    applyOutputCards([...active, next], spares);
+  };
+
+  const deleteOutput = (index: number) => {
+    if (displayOutputCount <= 1 || index < 0 || index >= displayOutputCount) return;
+    const active = params.slice(0, displayOutputCount);
+    const [removed] = active.splice(index, 1);
+    applyOutputCards(active, [removed, ...params.slice(displayOutputCount)]);
+  };
+
+  // Switching output targets (or changing the saved resize policy) reconciles
+  // the network to that target's persisted active-card count.
+  useEffect(() => {
+    if (paramsModeId !== modeId) return;
+    const count = outputDisplayCount(outputMode, params.length, outputCounts);
+    applyOutputCards(params.slice(0, count), params.slice(count));
+    // `params` is deliberately read as the current card catalogue but omitted:
+    // applyOutputCards itself replaces it, so including it would self-trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    engine,
+    modeId,
+    paramsModeId,
+    outputMode,
+    outputCounts[outputMode],
+    settings.networkResizePolicy,
+  ]);
+
   // Ref-mirror of everything the two global-listener effects below close over
   // that is NOT already React-stable (verdict/navigation handlers are plain
   // consts re-created every render; `pos`/`inputs.inputMode` are per-render
@@ -804,6 +927,8 @@ export function ConsoleApp() {
     },
     params,
     setParam,
+    addOutput,
+    deleteOutput,
     displayOutputCount,
     outputMode,
     setOutputMode,
@@ -840,8 +965,11 @@ export function ConsoleApp() {
     setSoloMode,
     exploring,
     learningPaused,
-    armedCount: params.filter((p) => p.armed).length,
-    clearArmed: () => setParams((ps) => ps.map((p) => (p.armed ? { ...p, armed: false } : p))),
+    armedCount: params.slice(0, displayOutputCount).filter((p) => p.armed).length,
+    clearArmed: () =>
+      setParams((ps) =>
+        ps.map((p, i) => (i < displayOutputCount && p.armed ? { ...p, armed: false } : p)),
+      ),
     // exploration gestures (Jolt + OU explore)
     joltActive,
     onJoltPress,
@@ -1123,14 +1251,6 @@ export function ConsoleApp() {
         }}
       />
 
-      {reshapeTarget !== null && (
-        <ReshapeModal
-          target={reshapeTarget}
-          current={inputs.engineInputSize}
-          onConfirm={confirmReshape}
-          onCancel={() => setReshapeTarget(null)}
-        />
-      )}
     </div>
   );
 }

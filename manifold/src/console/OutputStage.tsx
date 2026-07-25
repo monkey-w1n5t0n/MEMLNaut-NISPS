@@ -136,7 +136,7 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
         const placeRight = i > params.length - 4;
         return (
           <div
-            key={i}
+            key={p.id}
             style={{
               position: 'relative',
               flex: 1,

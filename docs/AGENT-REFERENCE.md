@@ -115,7 +115,7 @@ Two WASM instances at runtime:
 
 C API is in `nisps/wasm/bindings.cpp`. Build: `bash scripts/build-wasm.sh` (~94KB output to `manifold/public/`).
 
-The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_ml_create` honours `(input, output, hidden[3])`; non-positive/null args default to `32→[10,14,18]→126`. `nisps_ml_reshape` swaps in a new shape warm-started from the overlapping weights (examples + feedback state reset). Per-mode dims have been schema-real since P5.3 on both targets — modes no longer slice a shared 126-wide default.
+The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_ml_create` honours `(input, output, hidden[3])`; non-positive/null args default to `32→[10,14,18]→126`. Raw `nisps_ml_reshape` reconstructs and prefix-warm-starts a new shape. Manifold's higher-level `engine/io-reshape.ts` seam adds stable input/output identity: it can permute weights and examples without reconstruction while capacity suffices, or reconstruct with arbitrary surviving-dimension remaps. Persistent settings select capacity-vs-exact arity and adapt-vs-clear examples (neutral new-input/output defaults 0/0.5); feedback/exploration scratch state resets on either identity edit. Per-mode dims have been schema-real since P5.3 on both targets — modes no longer slice a shared 126-wide default.
 
 ### Known limitations
 

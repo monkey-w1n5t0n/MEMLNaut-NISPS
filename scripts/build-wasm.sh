@@ -46,7 +46,7 @@ EXPORTED_FUNCS='[
   "_nisps_ml_clear_examples",
   "_nisps_ml_weight_count","_nisps_ml_get_weights","_nisps_ml_set_weights",
   "_nisps_ml_draw_weights",
-  "_nisps_ml_feedback_set_mode","_nisps_ml_feedback_get_mode",
+  "_nisps_ml_feedback_set_mode","_nisps_ml_feedback_reset","_nisps_ml_feedback_get_mode",
   "_nisps_ml_feedback_exploring",
   "_nisps_ml_feedback_set_focus","_nisps_ml_feedback_down",
   "_nisps_ml_feedback_up","_nisps_ml_feedback_static_output",

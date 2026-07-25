@@ -134,12 +134,6 @@ const FEEDBACK_OPTS: { value: FeedbackModeUI; label: string }[] = [
   { value: 'geometric-dislike', label: 'Push away' },
   { value: 'explore-and-place', label: 'Explore & place' },
 ];
-const FEEDBACK_DESC: Record<FeedbackModeUI, string> = {
-  'geometric-dislike':
-    'Down carves the current sound away from what you like — directed repulsion (Mode 1).',
-  'explore-and-place':
-    'Down re-rolls the whole net into a scratchpad you audition; + places a liked sound (Mode 2).',
-};
 function ModelArchitecture() {
   const engine = useEngine();
   useEngineVersion(engine);
@@ -265,11 +259,6 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
 
       <SectionLabel>Down action · feedback mode</SectionLabel>
       <Segmented value={ctx.feedbackMode} onChange={ctx.setFeedbackMode} options={FEEDBACK_OPTS} />
-      {depth === 'expanded' && (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          {FEEDBACK_DESC[ctx.feedbackMode]}
-        </p>
-      )}
 
       <SectionLabel>Exploration</SectionLabel>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -307,9 +296,6 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         <Button size="sm" variant="secondary" onClick={ctx.onClear}>
           Clear
         </Button>
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
-          forget every example & wipe the on-map marks
-        </span>
       </div>
 
       <SectionLabel>Current model</SectionLabel>
@@ -478,12 +464,6 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
       )}
 
       {/* ---- Internal (XY pad / manifold) ---- */}
-      {inp.inputMode === 'internal' && depth === 'expanded' && (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Drag the on-screen manifold / XY pad. Two axes feed the net directly — this is the default.
-        </p>
-      )}
-
       {/* ---- Game Controller ---- */}
       {inp.inputMode === 'gamepad' && depth === 'expanded' && (
         <>
@@ -508,10 +488,6 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
               </div>
             ))}
           </div>
-          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-            Connect a controller and press any button to wake it. Sticks drive the input map;
-            buttons fire the verdicts above.
-          </p>
         </>
       )}
 
@@ -627,7 +603,7 @@ const VISUAL_NAMES = [
  * transport + tempo; the particle Mode names the outputs; MIDI/OSC/Editor show
  * their own affordances. Replaces the removed Synth + Visual drawers.
  */
-function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
+function ModeConfig(ctx: ConsoleCtx) {
   switch (ctx.outputMode) {
     case 'synth':
       return (
@@ -652,17 +628,9 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
     case 'midi':
       // The full MIDI config (port picker, CC count, per-output CC/channel/name)
       // + preset bar render via OutputsBackendConfig in RoutingDrawer below.
-      return depth === 'expanded' ? (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Each output sends a real Web MIDI CC. Pick a port and set CC# / channel per output.
-        </p>
-      ) : null;
+      return null;
     case 'osc':
-      return depth === 'expanded' ? (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Each output sends to an OSC path with a physical range, over the WebSocket bridge.
-        </p>
-      ) : null;
+      return null;
     default:
       return null;
   }
@@ -725,10 +693,10 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         <Chip tone="var(--danger)">muted {mutedN}</Chip>
         <BackendStatusChip ctx={ctx} />
       </div>
-      {ModeConfig(ctx, depth)}
+      {ModeConfig(ctx)}
       {/* Specialised per-backend config + named-preset bar (MIDI/OSC); hidden when condensed. */}
       {expanded && <OutputsBackendConfig ctx={ctx} backend={modeDesc.backend} />}
-      <SectionLabel>Outputs · M mute · S arm · off/fixed/live</SectionLabel>
+      <SectionLabel>Outputs</SectionLabel>
       <div
         style={{
           display: 'flex',

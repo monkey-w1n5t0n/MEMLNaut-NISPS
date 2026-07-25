@@ -355,9 +355,6 @@ function MidiConfig({ ctx }: { ctx: ConsoleCtx }) {
             </option>
           ))}
         </select>
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
-          {ctx.midiCcCount} MIDI output card{ctx.midiCcCount === 1 ? '' : 's'}
-        </span>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
 
@@ -394,11 +391,6 @@ function OscConfig({ ctx }: { ctx: ConsoleCtx }) {
         </label>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
-      <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-        The Deno OSC bridge process must be running locally (see manifold/osc-bridge). The browser sends over
-        WebSocket; the bridge encodes OSC and forwards over UDP.
-      </p>
-
       <SectionLabel>Per-output address · physical range</SectionLabel>
       <div style={{ maxHeight: 320, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -474,12 +466,6 @@ function VcvConfig({ ctx }: { ctx: ConsoleCtx }) {
         </label>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
-      <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-        The VCV Rack NISPS module AND the Deno OSC bridge (manifold/osc-bridge) must both be running. The browser drives
-        the module's inputs and forwards the verdict loop (thumbs up/down, explore-and-place) over the bridge, so the
-        module's embedded net trains in lock-step. Default module UDP port 7001.
-      </p>
-
       <SectionLabel>Per-output polarity</SectionLabel>
       <div style={{ maxHeight: 320, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -538,11 +524,6 @@ function CvConfig({ ctx }: { ctx: ConsoleCtx }) {
         </button>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
-      <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-        Flash the uSEQ main + expander with <code>firmware/useq-celium</code>, connect over USB, then assign each
-        model output to a CV jack or gate. 11 CV (3 main + 8 expander) + 3 gates, streamed at 100&nbsp;Hz.
-      </p>
-
       <SectionLabel>Per-output channel · gate threshold</SectionLabel>
       <div style={{ maxHeight: 320, overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>

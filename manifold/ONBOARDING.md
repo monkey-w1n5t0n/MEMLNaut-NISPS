@@ -146,7 +146,8 @@ for the narrow pane.
   icons, vertically centred macOS-dock style; **BOTTOM** = sandwich toggle.
 - Five drawers (`DRAWERS` in `Drawers.tsx`, each has `.render(ctx, depth)` — condensed 360px panel
   vs expanded 80vw×80vh modal):
-  - **learn** — feedback mode (explore-and-place / geometric-dislike) + solo mode + per-output arm.
+  - **learn** — feedback mode (explore-and-place / geometric-dislike) + solo mode + per-output arm,
+    plus a live model-architecture strip (inputs/outputs highlighted; hidden layers expand on click).
     At `expanded` depth ONLY it also renders `TrainingHealth.tsx`: the real per-iteration loss
     curve (`EngineApi.lossHistory()` ← `nisps_ml_loss_history` ← `MLPCore::loss_history`) plus
     the per-layer weight-health table (`getLayerStats`). **`depth === 'expanded'` is Manifold's
@@ -154,7 +155,8 @@ for the narrow pane.
     surface there rather than inventing one. The panel renders "no training run yet" when the
     core has no history; it never synthesises a curve.
   - **inputs** — enable/configure input sources (XY pad / MIDI / gamepad).
-  - **route** (label "Outputs") — per-output control matrix + per-backend config.
+  - **route** (label "Outputs") — per-output control matrix + per-backend config; at expanded depth
+    the output rows fill the remaining drawer height and scroll independently.
   - **settings** — icon style (monochrome/colour), input-map shape (xy/joystick/rect/circular), corner radius.
   - **help** — keymap pills + loop explanation.
 - `src/dock/` holds the output-routing internals used by the `route` drawer:
@@ -200,7 +202,7 @@ a setting → `--r-*` tokens.
 - `engine-api.ts` — **`EngineApi`, the framework-neutral facade** everything in the UI talks to:
   `setInput/setInputs`, `getOutputs/routedOutput`, training (`addExample/train/trainAsync/evalLoss`),
   weights (`getWeights/setWeights/process/randomise`), telemetry
-  (`lossHistory/getLayerStats`), `subscribe/version/on`, plus nested `.feedback` and `.audio`
+  (`architecture/weightCount/exampleCount/lossHistory/getLayerStats`), `subscribe/version/on`, plus nested `.feedback` and `.audio`
   facades. **`lossHistory()` reads SPINE STATE, not the MLP handle** — an async train runs on the
   worker's mirror net, so the main handle's own history is empty for those runs; both paths
   publish to the spine.

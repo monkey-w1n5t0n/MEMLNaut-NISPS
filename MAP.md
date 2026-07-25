@@ -40,7 +40,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   `worklet/nisps-processor.ts` (audio), thin WASM wrappers over the core pipelines + curve catalog (the TS
   `input-pipeline`/`output-pipeline`/`curves` implementations died at P4), `wasm-worker.ts`,
   `spine.ts` (the reactive spine BELOW React — `setInput` derives processed→ml→routed eagerly off-render),
-  `engine-api.ts` (`EngineApi` façade incl. `feedback.*` wrappers over the `nisps_ml_feedback_*` C ABI),
+  `engine-api.ts` (`EngineApi` façade incl. live architecture/weight/example metrics and `feedback.*` wrappers over the `nisps_ml_feedback_*` C ABI),
   `EngineProvider.tsx`/`useEngine.ts` (React binding via `useSyncExternalStore` version counter). nisps.js is
   loaded via fetch+indirect-eval (Emscripten MODULARIZE glue has no ES exports), base-aware via `document.baseURI`
   for the `/next` sub-path.
@@ -48,7 +48,8 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
 - `manifold/src/console/` — the convertible Console: `ConsoleApp`, `CompositeStage` (single-divider convertible
   with snap/magnetism/minimap-demotion), `OutputStage`/`SandwichStage`/`ParticleStage`/`Manifold` (canvas,
   rect↔circular + feedback markers), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
-  (Learning/Inputs/Outputs/Settings/Help), `TrainingHealth` (real per-iteration loss curve from
+  (Learning/Inputs/Outputs/Settings/Help; Learning includes the live model-architecture inspector and
+  expanded Outputs owns the remaining scroll height), `TrainingHealth` (real per-iteration loss curve from
   `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at
   the Learning drawer's `expanded` depth — that IS the advanced-surface flag), `VerdictCluster`
   (mode-aware), `OutputEditor`/`DualRange`/`CurvePad`, `icons.tsx`

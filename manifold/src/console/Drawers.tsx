@@ -20,7 +20,7 @@
  * Where engine support does not yet exist the UI + state are wired and a TODO
  * references the relevant spec — no faked engine behaviour.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Badge, Button, PillToggle, Slider, Switch } from '../primitives';
 import type { ConsoleCtx, DrawerDepth, DrawerKey, FeedbackModeUI, SoloMode } from './types';
 import type { InputMode } from '../inputs';
@@ -31,6 +31,7 @@ import { outputModeDescriptor } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
 import type { UnfocusedIconColour, InputMapMode } from '../settings/settings-store';
 import type { ExampleResizePolicy, NetworkResizePolicy } from '../engine/io-reshape';
+import { useEngine, useEngineVersion } from '../engine';
 import { EditorPanel } from '../serial/EditorPanel';
 import { TrainingHealth } from './TrainingHealth';
 import {
@@ -157,6 +158,119 @@ const SOLO_DESC: Record<SoloMode, string> = {
   'dont-care': 'Each example stores a per-output mask so stale labels never pull unarmed outputs.',
 };
 
+function ModelArchitecture() {
+  const engine = useEngine();
+  useEngineVersion(engine);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  if (!engine) {
+    return <p style={{ fontSize: 10, color: 'var(--fg-dim)', margin: 0 }}>engine not ready</p>;
+  }
+
+  const arch = engine.architecture;
+  const hidden = arch.hidden.filter((size) => size > 0);
+  const layerCount = arch.numLayers || hidden.length + 1;
+  const sizes = hidden.map((size) => size.toString()).join(' → ');
+  const stageStyle = (tone: string) => ({
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+    minWidth: 0,
+    padding: '6px 8px',
+    border: `1px solid ${tone}`,
+    borderRadius: 'var(--r-1)',
+    background: 'var(--bg-2)',
+  });
+  const labelStyle = {
+    fontSize: 9,
+    fontFamily: 'var(--font-mono)',
+    letterSpacing: '0.08em',
+    color: 'var(--fg-dim)',
+  };
+  const valueStyle = {
+    fontSize: 12,
+    fontFamily: 'var(--font-mono)',
+    fontVariantNumeric: 'tabular-nums',
+    color: 'var(--fg)',
+  };
+
+  return (
+    <div data-testid="model-architecture" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <Chip tone="var(--accent)">
+          {layerCount} layer{layerCount === 1 ? '' : 's'}
+        </Chip>
+        <Chip>{engine.weightCount.toLocaleString()} weights</Chip>
+        <Chip>{engine.exampleCount} examples</Chip>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 4, alignItems: 'stretch' }}>
+        <div style={stageStyle('var(--accent-2)')}>
+          <span style={{ ...labelStyle, color: 'var(--accent-2)' }}>INPUT</span>
+          <span style={valueStyle}>{arch.inputSize} units</span>
+        </div>
+        <div
+          aria-hidden="true"
+          style={{ alignSelf: 'center', color: 'var(--fg-dim)', fontFamily: 'var(--font-mono)', fontSize: 11 }}
+        >
+          →
+        </div>
+        <div style={stageStyle('var(--accent)')}>
+          <span style={{ ...labelStyle, color: 'var(--accent)' }}>OUTPUT</span>
+          <span style={valueStyle}>{arch.outputSize} units</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        aria-expanded={detailsOpen}
+        onClick={() => setDetailsOpen((open) => !open)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          width: '100%',
+          padding: '5px 8px',
+          border: '1px solid var(--line)',
+          borderRadius: 'var(--r-1)',
+          background: 'var(--bg-2)',
+          color: 'var(--fg-mute)',
+          cursor: 'pointer',
+          textAlign: 'left',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 10,
+        }}
+      >
+        <span style={{ color: 'var(--accent)' }}>{detailsOpen ? '▾' : '▸'}</span>
+        <span style={{ color: 'var(--fg)' }}>HIDDEN</span>
+        <span>{hidden.length} layer{hidden.length === 1 ? '' : 's'}</span>
+        {!detailsOpen && <span style={{ marginLeft: 'auto' }}>{sizes || 'none'}</span>}
+      </button>
+      {detailsOpen && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, paddingLeft: 12 }}>
+          {hidden.length > 0 ? (
+            hidden.map((size, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: 10,
+                  fontFamily: 'var(--font-mono)',
+                  color: 'var(--fg-mute)',
+                }}
+              >
+                <span>HIDDEN {i + 1}</span>
+                <span style={{ color: 'var(--fg)' }}>{size} units</span>
+              </div>
+            ))
+          ) : (
+            <span style={{ fontSize: 10, color: 'var(--fg-dim)' }}>no hidden layers</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
   return (
     <>
@@ -226,6 +340,9 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
           forget every example & wipe the on-map marks
         </span>
       </div>
+
+      <SectionLabel>Current model</SectionLabel>
+      <ModelArchitecture />
 
       {depth === 'expanded' && (
         <>
@@ -646,7 +763,9 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
           display: 'flex',
           flexDirection: 'column',
           gap: 4,
-          maxHeight: expanded ? 460 : 220,
+          flex: expanded ? 1 : undefined,
+          minHeight: expanded ? 0 : undefined,
+          maxHeight: expanded ? undefined : 220,
           overflow: 'auto',
         }}
       >

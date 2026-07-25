@@ -404,6 +404,14 @@ export class EngineApi {
     return this.iml.architecture;
   }
 
+  get weightCount(): number {
+    return this.iml.weightCount;
+  }
+
+  get exampleCount(): number {
+    return this.iml.exampleCount;
+  }
+
   // ---- Direct handle access (advanced consumers; spine pipelines, etc.) ----
   get ml(): WasmIML {
     return this.iml;

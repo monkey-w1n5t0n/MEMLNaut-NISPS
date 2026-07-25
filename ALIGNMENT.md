@@ -63,11 +63,56 @@ command surface to report through.
 **Rough cost.** Host half is done. On-device: ~a day, and it wants defect 3's serial protocol
 to have somewhere to send the number.
 
-### 6. RMSProp still deferred from `nisps/ml/` (2026-04-29; reaffirmed 2026-07-21)
+### 6. SGD-vs-RMSProp is not a research axis — it silently invalidated every ported hyperparameter (2026-04-29; **re-ranked 2026-07-25**)
 
-**What.** `training.hpp` ships SGD only; the legacy firmware used RMSProp for `TrainBatch`. Optimizer choice is a research axis. Not blocking current fits; will matter for harder loss landscapes. Port target: upstream MusicallyEmbodiedML `memlp` (the in-repo `src/memlp` copy is deleted; use the GitHub remote or archive branch).
+**What.** `training.hpp` ships SGD only. Upstream `memlp` (pinned `ea777502` by
+`upstream/main`) applies gradients with **RMSProp everywhere** — `Layer.h:239`, the
+`m_sq_grad_avg` running squared-gradient average at `Layer.h:601`, `StaticMLP.h:268`
+"Mini-batch RMSProp training". This was filed as an optimiser-choice research question
+and ranked last. That was wrong, and the 2026-07-25 benchmark work shows why.
 
-**Rough cost.** A day, plus batch-convergence tests.
+**Why it blocks the mission.** Every learning rate ported from upstream landed in a
+different optimiser than the one it was tuned for. RMSProp normalises each step by the
+running gradient magnitude, so `lr=1e-3` there is a normalised step; under SGD it is
+literally `1e-3 x raw gradient`. The two numbers are unrelated. Concretely:
+`feedback.hpp:789` carries `geo_lr_ = 0.001f  // upstream InterfaceRL.hpp:312` — an
+RMSProp LR pasted into a single SGD step. `tests/cpp/ml_bench.cpp` D1 measures the
+result: the geometric dislike aims at a target 0.5 output-units away and moves the
+mapping by **5.1e-5**, linearly, so ~10,000 presses would be needed for one press's
+intended effect. Meanwhile likes train at `lr 1.0 x 1000 iterations`, making a like
+~2e6x stronger than a dislike and heaving the whole mapping on every press
+(`ml_bench` U1/U4: `lurch_max` ~1.1 against a [0,1] output range).
+
+**Rough cost.** A day for the port plus batch-convergence tests — but it must come
+BEFORE any retuning of `geo_lr`, `kGeometricPushScale` or the neg-LR base, or those
+constants get tuned twice.
+
+### 6b. The geometric dislike was ported from a superseded upstream design (2026-07-25)
+
+**What.** `geo_push.hpp`/`replay.hpp` cite `memllib @ 0a541cc`. `upstream/main` now pins
+`e291192`, where the same code has been deliberately redesigned. Upstream:
+`kGeometricPushScale` 1.0 (ours 0.5); neg-LR base 1.5 (ours 0.5, `geo_push.hpp:92`);
+the `/(1+len)` taper **deleted**, with the comment "a 'no' should clearly move the
+mapping away even from a sound already far from the liked region (the taper used to
+kill exactly that case)" — ours still applies it at `geo_push.hpp:66`; negatives trained
+as a **batch over ALL of them every tick** rather than one item one step; and a fixed
+`kDislikeLifetimeMs = 2500` full-strength lifetime replacing the proportional decay we
+ported. On the shared constants (dedup radius 0.05, `kCentroidK` 4) we match.
+
+**Why it blocks the mission.** We are carrying a design upstream diagnosed and fixed,
+and the fix is documented in their source comments. Compounded with defect 6 the ported
+dislike is ~9.4x weaker on constants alone before the optimiser mismatch.
+
+**Rough cost.** Small once defect 6 lands — mostly deleting the taper and re-basing
+three constants, then re-running `scripts/bench-ml.sh` D1/A4/A7 to confirm.
+
+### 6c. `InterfaceRL` — the reference implementation — is not in the tree (2026-07-25)
+
+**What.** It lives in `memllib/examples/`, and the vendoring dropped `examples/`
+(`VENDORED.md`). So the source of truth for our most contested subsystem is absent, and
+the divergences in 6b went unnoticed for months. Either vendor
+`examples/InterfaceRL.{hpp,cpp,tpp}` read-only alongside the rest, or record its pinned
+commit and a fetch recipe in `VENDORED.md`.
 
 ## Open mission questions
 

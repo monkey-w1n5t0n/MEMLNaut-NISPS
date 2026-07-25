@@ -61,6 +61,7 @@ if(NOT EMSCRIPTEN)
         ${NISPS_TEST_DIR}/test_mlp_ou_noise.cpp
         ${NISPS_TEST_DIR}/test_mlp_feedback.cpp
         ${NISPS_TEST_DIR}/test_mlp_geo_dislike.cpp
+        ${NISPS_TEST_DIR}/test_ml_behaviour.cpp
         ${NISPS_TEST_DIR}/test_mlp_serialize.cpp
         ${NISPS_TEST_DIR}/test_pipeline.cpp
         ${NISPS_TEST_DIR}/test_vcv_iml_parity.cpp
@@ -187,6 +188,29 @@ if(NOT EMSCRIPTEN)
         )
     elseif(MSVC)
         target_compile_options(nisps_engine_bench PRIVATE /W4 /WX)
+    endif()
+
+    # ---------------------------------------------------------------------
+    # Standalone ML BEHAVIOUR benchmark. Same discipline as nisps_engine_bench:
+    # it reports numbers and asserts nothing, so it is not a ctest gate. It
+    # measures the shape of the control mapping and how interaction journeys
+    # deform it — see MAP.md § `tests/cpp/`. Driven by
+    # scripts/bench-ml.sh, which compiles the SAME source to WASM via emcc.
+    #
+    # Uses MLPCore<DynamicStorage>, so it is host-only by construction
+    # (dynamic_storage.hpp #errors on RP2350). That is correct: the point is
+    # arbitrary runtime shapes, which firmware deliberately cannot have.
+    # ---------------------------------------------------------------------
+    add_executable(nisps_ml_bench
+        ${NISPS_TEST_DIR}/ml_bench.cpp
+    )
+    target_link_libraries(nisps_ml_bench PRIVATE nisps_core)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(nisps_ml_bench PRIVATE
+            -Wall -Wextra -Werror -Wpedantic -O3
+        )
+    elseif(MSVC)
+        target_compile_options(nisps_ml_bench PRIVATE /W4 /WX)
     endif()
 
     # Standalone parity-check runner. NOT registered with ctest — it's

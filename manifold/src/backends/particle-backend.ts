@@ -23,13 +23,13 @@ import type { BackendStatus } from './backend';
 
 export class ParticleBackend extends PassthroughBackend {
   constructor() {
-    super('particles', 'Particle visualiser — outputs drive the flow field (no audio)');
+    super('particles', 'ready');
   }
 
   override status(): BackendStatus {
     return {
       state: 'ready',
-      message: 'Particle visualiser — outputs drive the flow field (no audio)',
+      message: 'ready',
     };
   }
 }

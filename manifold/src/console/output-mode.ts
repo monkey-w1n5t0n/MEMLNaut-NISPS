@@ -34,7 +34,7 @@ export const OUTPUT_MODES: readonly OutputModeDescriptor[] = [
   {
     id: 'particles',
     label: 'Particle System',
-    description: 'Flow-field visualiser driven by the model outputs (no audio).',
+    description: 'Visual output.',
     audio: false,
     backend: 'particles',
   },

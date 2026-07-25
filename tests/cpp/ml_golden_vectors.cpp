@@ -57,6 +57,13 @@ constexpr float         kInputY = 0.5f;
 constexpr float         kTol = 1.0e-5f;
 
 // Golden vectors captured 2026-04-29 from a clean build of the worktree.
+// Stages 2 and 3 RE-CAPTURED 2026-07-25 when the optimiser changed from SGD
+// to RMSProp (nisps/ml/training.hpp — the port of upstream memlp Layer.h
+// @ ea777502). That is a deliberate behaviour change, not a regression: an
+// upstream-tuned learning rate is a normalised step under RMSProp and a raw
+// gradient multiplier under SGD, so every ported hyperparameter was landing
+// in the wrong optimiser. Stages 0 and 1 are pre-training and did NOT move,
+// which is the cross-check that only the update rule changed.
 // To regenerate: NISPS_REGEN_GOLDEN=1 ./nisps_golden_tests
 //
 // The arrays below are the post-process() output vectors at each stage
@@ -89,24 +96,24 @@ constexpr std::array<float, 33u> kExpectedStage1 = {
 
 // Stage 2: after add_example x4 and train(lr=0.5, max_iter=100).
 constexpr std::array<float, 33u> kExpectedStage2 = {
-    0.58816862f, 0.54550838f, 0.52971077f, 0.57996541f, 0.51933926f,
-    0.52855897f, 0.52070957f, 0.51254886f, 0.63541287f, 0.60544819f,
-    0.62713605f, 0.50966084f, 0.54484981f, 0.62081128f, 0.46142119f,
-    0.58908224f, 0.53818786f, 0.63540941f, 0.56438410f, 0.48750070f,
-    0.57746446f, 0.56682873f, 0.54530638f, 0.62427443f, 0.62183237f,
-    0.47161084f, 0.62285376f, 0.63356918f, 0.60930848f, 0.54802805f,
-    0.60707289f, 0.61082870f, 0.63076299f,
+    0.66427404f, 0.62863928f, 0.63347638f, 0.68701935f, 0.62282497f,
+    0.59066784f, 0.57926202f, 0.61092430f, 0.75877625f, 0.71219701f,
+    0.76448023f, 0.64224732f, 0.67476881f, 0.75132567f, 0.60728127f,
+    0.69433212f, 0.66885883f, 0.75783861f, 0.70804310f, 0.65609163f,
+    0.69490194f, 0.71871793f, 0.70532608f, 0.78637725f, 0.78410172f,
+    0.65154189f, 0.75753516f, 0.78313172f, 0.77768368f, 0.69148761f,
+    0.74804193f, 0.76963025f, 0.77354264f,
 };
 
 // Stage 3: after move_weights(0.1, 0.3) and re-inference.
 constexpr std::array<float, 33u> kExpectedStage3 = {
-    0.59288090f, 0.51427215f, 0.53329450f, 0.54284835f, 0.54659188f,
-    0.55931354f, 0.49446660f, 0.55678725f, 0.65046465f, 0.57125282f,
-    0.59887666f, 0.52882028f, 0.56914681f, 0.65517074f, 0.51438135f,
-    0.51590335f, 0.47392485f, 0.63500941f, 0.56648540f, 0.53441441f,
-    0.54152828f, 0.55973053f, 0.52789825f, 0.60794514f, 0.62089235f,
-    0.43689638f, 0.56897777f, 0.65621388f, 0.60184997f, 0.60134500f,
-    0.63753480f, 0.53896642f, 0.60946816f,
+    0.66872150f, 0.58160317f, 0.61222225f, 0.60297203f, 0.64177775f,
+    0.64809793f, 0.54033780f, 0.63073188f, 0.76591563f, 0.64906687f,
+    0.69643915f, 0.63856536f, 0.67001587f, 0.76458490f, 0.63405144f,
+    0.61661869f, 0.56021708f, 0.74601728f, 0.64519984f, 0.62616533f,
+    0.64741832f, 0.68293601f, 0.62627184f, 0.74945569f, 0.75258166f,
+    0.56667519f, 0.69179827f, 0.80808818f, 0.72934091f, 0.74348420f,
+    0.75629526f, 0.67320448f, 0.75111967f,
 };
 
 // Inference helper: set both inputs, run process(), copy outputs into a

@@ -63,30 +63,6 @@ command surface to report through.
 **Rough cost.** Host half is done. On-device: ~a day, and it wants defect 3's serial protocol
 to have somewhere to send the number.
 
-### 6. SGD-vs-RMSProp is not a research axis — it silently invalidated every ported hyperparameter (2026-04-29; **re-ranked 2026-07-25**)
-
-**What.** `training.hpp` ships SGD only. Upstream `memlp` (pinned `ea777502` by
-`upstream/main`) applies gradients with **RMSProp everywhere** — `Layer.h:239`, the
-`m_sq_grad_avg` running squared-gradient average at `Layer.h:601`, `StaticMLP.h:268`
-"Mini-batch RMSProp training". This was filed as an optimiser-choice research question
-and ranked last. That was wrong, and the 2026-07-25 benchmark work shows why.
-
-**Why it blocks the mission.** Every learning rate ported from upstream landed in a
-different optimiser than the one it was tuned for. RMSProp normalises each step by the
-running gradient magnitude, so `lr=1e-3` there is a normalised step; under SGD it is
-literally `1e-3 x raw gradient`. The two numbers are unrelated. Concretely:
-`feedback.hpp:789` carries `geo_lr_ = 0.001f  // upstream InterfaceRL.hpp:312` — an
-RMSProp LR pasted into a single SGD step. `tests/cpp/ml_bench.cpp` D1 measures the
-result: the geometric dislike aims at a target 0.5 output-units away and moves the
-mapping by **5.1e-5**, linearly, so ~10,000 presses would be needed for one press's
-intended effect. Meanwhile likes train at `lr 1.0 x 1000 iterations`, making a like
-~2e6x stronger than a dislike and heaving the whole mapping on every press
-(`ml_bench` U1/U4: `lurch_max` ~1.1 against a [0,1] output range).
-
-**Rough cost.** A day for the port plus batch-convergence tests — but it must come
-BEFORE any retuning of `geo_lr`, `kGeometricPushScale` or the neg-LR base, or those
-constants get tuned twice.
-
 ### 6b. The geometric dislike was ported from a superseded upstream design (2026-07-25)
 
 **What.** `geo_push.hpp`/`replay.hpp` cite `memllib @ 0a541cc`. `upstream/main` now pins
@@ -100,11 +76,34 @@ as a **batch over ALL of them every tick** rather than one item one step; and a 
 ported. On the shared constants (dedup radius 0.05, `kCentroidK` 4) we match.
 
 **Why it blocks the mission.** We are carrying a design upstream diagnosed and fixed,
-and the fix is documented in their source comments. Compounded with defect 6 the ported
-dislike is ~9.4x weaker on constants alone before the optimiser mismatch.
+and the fix is documented in their source comments. On the constants alone the ported
+dislike is ~9.4x weaker than upstream's. (The optimiser half of this — an RMSProp LR
+pasted into an SGD step — is fixed as of 2026-07-25; see "Recently resolved". A single
+dislike now moves the mapping 1.6e-2 instead of 5.3e-5, but that is still ~14x weaker
+than the legacy Diffuse design measures in one press, `ml_bench` A4.)
 
-**Rough cost.** Small once defect 6 lands — mostly deleting the taper and re-basing
-three constants, then re-running `scripts/bench-ml.sh` D1/A4/A7 to confirm.
+**Rough cost.** Small — mostly deleting the taper and re-basing three constants, then
+re-running `scripts/bench-ml.sh` D1/A4/A7 to confirm.
+
+### 6d. One like still heaves the whole mapping (2026-07-25)
+
+**What.** A thumbs-up trains at `lr 1.0 x 1000 iterations` on every gesture. `ml_bench`
+U1/U4 measure **lurch** — how far the mapping the musician is playing moves per single
+gesture, averaged over the field: `lurch_max` 1.08 against a [0,1] output range, i.e.
+one thumbs-up can move the mapping somewhere in the space by more than the entire output
+range. Retention (how much of the previous teaching survives) is 0.38; at `iters=1` it
+is 0.80.
+
+**Why it blocks the mission.** This is the other half of the feedback asymmetry, and
+RMSProp did NOT fix it — normalising the step size does not change the dose. Upstream
+keeps both directions on small repeated steps; we take one enormous positive step and
+one small negative one, so teaching feels like a lurch and correcting feels like
+nothing. The two numbers now differ by ~70x rather than ~2e6x, which is progress and
+still not a design.
+
+**Rough cost.** Cheap to change, expensive to choose: the tuning space is now measurable
+(`ml_bench` U4 sweeps dose; U1 sweeps upstream's soft-target alpha, where alpha=1 is
+NISPS today). It wants a matched-N head-to-head, not a guess.
 
 ### 6c. `InterfaceRL` — the reference implementation — is not in the tree (2026-07-25)
 
@@ -137,6 +136,19 @@ Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user
 - **Manifold dock splits `state`/`muted`/`armed`** (2026-06-28) — deliberate divergence from the deployed conflated `frozen`↔`muted` model (dock-spec §3.3). `muted`-downstream and the `soloMode` gradient-mask variants remain UI-only; the C API exposes `set_focus` but no per-mode gradient masking yet. (The audit found `soloMode` behaviourally inert in the controller — plan L20 trims it until `train_masked` exists.)
 
 ## Recently resolved (delete after a few weeks)
+
+- 2026-07-25: **The optimiser mismatch (defect 6) is fixed.** `nisps/ml/training.hpp` was
+  SGD-only while upstream `memlp` (`ea777502`) applies **RMSProp everywhere**, so every
+  learning rate we ported landed in an optimiser that reads it differently — an RMSProp
+  `lr` is a normalised step, an SGD `lr` multiplies the raw gradient. `rmsprop_step()`
+  now ports `Layer.h:239 ApplyAccumulatedGradients` exactly (decay 0.9, eps 1e-6,
+  sq-avg clamp 1e6, one-sided adjusted-LR clamp 1.0), with the per-weight running
+  squared-gradient average living in the storage policies so the zero-heap contract
+  holds. Measured on `ml_bench` D1: one geometric dislike moves the mapping **1.6e-2,
+  up from 5.3e-5**, and repeated presses now converge on the intended 0.5 push (0.12 at
+  10 presses, 0.56 at 100) instead of creeping linearly. Golden vector stages 2 and 3
+  were re-captured; stages 0 and 1 are pre-training and did not move. What this does NOT
+  fix: the dose asymmetry, now tracked as defect 6d.
 
 - 2026-07-21: **Q4 (who owns memllib) closed.** Vendored at `firmware/MEMLNaut-NISPS/lib/memllib/`
   from upstream `e291192`; the submodule and the fork are both gone. **Q5 (legacy feedback modes)

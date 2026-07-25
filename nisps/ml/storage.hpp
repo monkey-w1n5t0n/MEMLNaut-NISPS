@@ -19,7 +19,11 @@
 //   dims:    n_in(), n_out(), fan_in_l<L>(), fan_out_l<L>(),
 //            max_examples(), max_iter_train(), weight_count()
 //   layers:  weights_l<L>(), biases_l<L>(), pre_act_l<L>(), act_l<L>(),
-//            grad_w_l<L>(), grad_b_l<L>(), delta_l<L>()  [backprop scratch,
+//            grad_w_l<L>(), grad_b_l<L>(),
+//            sq_grad_w_l<L>(), sq_grad_b_l<L>()          [RMSProp running
+//            squared-gradient averages, same shape as the gradient
+//            accumulators — see nisps/ml/training.hpp],
+//            delta_l<L>()                                [backprop scratch,
 //            sized fan_in(L)], eval_act_l<L>()           [const-eval scratch,
 //            sized fan_out(L), mutable]
 //   global:  input_buf(), output_buf(), ds_features(), ds_labels(),
@@ -139,6 +143,16 @@ class FixedStorage {
         if constexpr (L == 0u) return gb0_; else if constexpr (L == 1u) return gb1_;
         else if constexpr (L == 2u) return gb2_; else return gb3_;
     }
+    // RMSProp running squared-gradient averages (training.hpp). Optimiser
+    // state, not model state: excluded from weight_count()/copy_weights_to().
+    template <std::size_t L> NISPS_FORCE_INLINE std::span<float> sq_grad_w_l() noexcept {
+        if constexpr (L == 0u) return sw0_; else if constexpr (L == 1u) return sw1_;
+        else if constexpr (L == 2u) return sw2_; else return sw3_;
+    }
+    template <std::size_t L> NISPS_FORCE_INLINE std::span<float> sq_grad_b_l() noexcept {
+        if constexpr (L == 0u) return sb0_; else if constexpr (L == 1u) return sb1_;
+        else if constexpr (L == 2u) return sb2_; else return sb3_;
+    }
     // Backprop scratch (delta into layer L's input), sized fan_in(L).
     template <std::size_t L> NISPS_FORCE_INLINE std::span<float> delta_l() noexcept {
         if constexpr (L == 0u) return d0_; else if constexpr (L == 1u) return d1_;
@@ -209,6 +223,14 @@ class FixedStorage {
     std::array<float, NHidden2> gb1_{};
     std::array<float, NHidden3> gb2_{};
     std::array<float, NOut>     gb3_{};
+    std::array<float, NIn * NHidden1>      sw0_{};
+    std::array<float, NHidden1 * NHidden2> sw1_{};
+    std::array<float, NHidden2 * NHidden3> sw2_{};
+    std::array<float, NHidden3 * NOut>     sw3_{};
+    std::array<float, NHidden1> sb0_{};
+    std::array<float, NHidden2> sb1_{};
+    std::array<float, NHidden3> sb2_{};
+    std::array<float, NOut>     sb3_{};
     std::array<float, NIn>      d0_{};
     std::array<float, NHidden1> d1_{};
     std::array<float, NHidden2> d2_{};

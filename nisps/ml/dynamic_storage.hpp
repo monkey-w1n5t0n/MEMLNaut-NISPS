@@ -67,6 +67,8 @@ class DynamicStorage {
             off_a_[l]  = claim(fan_out(l));
             off_gw_[l] = claim(fan_in(l) * fan_out(l));
             off_gb_[l] = claim(fan_out(l));
+            off_sw_[l] = claim(fan_in(l) * fan_out(l));
+            off_sb_[l] = claim(fan_out(l));
             off_d_[l]  = claim(fan_in(l));
             off_e_[l]  = claim(fan_out(l));
         }
@@ -143,6 +145,14 @@ class DynamicStorage {
     template <std::size_t L> std::span<float> grad_b_l() noexcept {
         return {arena_ + off_gb_[L], fan_out_l<L>()};
     }
+    // RMSProp running squared-gradient averages (training.hpp). Optimiser
+    // state, not model state: excluded from weight_count()/copy_weights_to().
+    template <std::size_t L> std::span<float> sq_grad_w_l() noexcept {
+        return {arena_ + off_sw_[L], fan_in_l<L>() * fan_out_l<L>()};
+    }
+    template <std::size_t L> std::span<float> sq_grad_b_l() noexcept {
+        return {arena_ + off_sb_[L], fan_out_l<L>()};
+    }
     template <std::size_t L> std::span<float> delta_l() noexcept {
         return {arena_ + off_d_[L], fan_in_l<L>()};
     }
@@ -186,6 +196,7 @@ class DynamicStorage {
             off_w_[l] = o.off_w_[l];   off_b_[l] = o.off_b_[l];
             off_pa_[l] = o.off_pa_[l]; off_a_[l] = o.off_a_[l];
             off_gw_[l] = o.off_gw_[l]; off_gb_[l] = o.off_gb_[l];
+            off_sw_[l] = o.off_sw_[l]; off_sb_[l] = o.off_sb_[l];
             off_d_[l] = o.off_d_[l];   off_e_[l] = o.off_e_[l];
         }
         off_input_ = o.off_input_; off_output_ = o.off_output_;
@@ -200,6 +211,7 @@ class DynamicStorage {
     std::size_t max_iter_ = 0u;
     std::size_t off_w_[kNumLayers]{}, off_b_[kNumLayers]{}, off_pa_[kNumLayers]{},
                 off_a_[kNumLayers]{}, off_gw_[kNumLayers]{}, off_gb_[kNumLayers]{},
+                off_sw_[kNumLayers]{}, off_sb_[kNumLayers]{},
                 off_d_[kNumLayers]{}, off_e_[kNumLayers]{};
     std::size_t off_input_ = 0u, off_output_ = 0u, off_dsf_ = 0u, off_dsl_ = 0u,
                 off_flat_ = 0u, off_lh_ = 0u;

@@ -182,7 +182,8 @@ class MLPCore : public Storage {
     }
     const TrainConfig& train_config() const noexcept { return train_config_; }
 
-    // Full SGD training. `sample_weights`, if non-empty, must size to the
+    // Full per-sample training (RMSProp — see training.hpp). `sample_weights`,
+    // if non-empty, must size to the
     // current example count and sum to 1.0 (caller's responsibility — we
     // do NOT renormalize).
     //
@@ -204,7 +205,7 @@ class MLPCore : public Storage {
         float epoch_loss = 0.f;
         for (std::size_t iter = 0; iter < max_iter; ++iter) {
             epoch_loss = 0.f;
-            // SGD: per-sample forward → loss → backprop+update. The order
+            // Per-sample forward → loss → backprop+update. The order
             // is the dataset insertion order; we do not shuffle (matches
             // the legacy `Train()` exactly — `TrainBatch` shuffles, but
             // we're not implementing batch yet).
@@ -231,7 +232,7 @@ class MLPCore : public Storage {
                 // Backprop with the same w as the gradient scaler.
                 backprop_(x, deriv, w);
 
-                // Apply gradient (per-sample, SGD).
+                // Apply gradient (per-sample, RMSProp).
                 apply_grad_<3u>(lr);
                 apply_grad_<2u>(lr);
                 apply_grad_<1u>(lr);
@@ -316,11 +317,25 @@ class MLPCore : public Storage {
         clear_grad_<3u>();
     }
 
-    // Concept reset: clear weights, dataset, and loss history. Seed is
-    // intentionally NOT reset (use `seed()` for that).
+    // Zero the RMSProp running squared-gradient averages (upstream
+    // `MLP<T>::ResetOptimizerState`, MLP.h:205). Note `draw_weights()`
+    // deliberately does NOT call this: upstream's `DrawWeights` leaves the
+    // optimiser state alone, so a randomise gesture keeps the step-size
+    // statistics it had. Only a full `reset()` clears them.
+    void reset_optimizer_state() noexcept {
+        if (!storage_ok_()) return;
+        clear_sq_grad_<0u>();
+        clear_sq_grad_<1u>();
+        clear_sq_grad_<2u>();
+        clear_sq_grad_<3u>();
+    }
+
+    // Concept reset: clear weights, dataset, loss history and optimiser
+    // state. Seed is intentionally NOT reset (use `seed()` for that).
     void reset() noexcept {
         if (!storage_ok_()) return;
         clear_dataset_();
+        reset_optimizer_state();
         loss_history_count_ = 0u;
         // Re-init weights from current rng state with default spread.
         draw_weights(1.f);
@@ -527,24 +542,27 @@ class MLPCore : public Storage {
         backprop_layer_<0u>(input,                       this->template delta_l<1u>(), 1.f);
     }
 
-    // Apply accumulated gradient to weights+biases with clipping. Resets
-    // the accumulators to zero for the next sample/iteration.
+    // Apply accumulated gradient to weights+biases via RMSProp (clip, advance
+    // the running squared-gradient average, normalise the step — see
+    // training.hpp for the ported formula and why it is not SGD). Resets the
+    // accumulators to zero for the next sample/iteration; the squared-gradient
+    // averages PERSIST, which is the whole point of the optimiser.
     template <std::size_t L>
     NISPS_FORCE_INLINE void apply_grad_(float lr) noexcept {
         auto w  = this->template weights_l<L>();
         auto b  = this->template biases_l<L>();
         auto gw = this->template grad_w_l<L>();
         auto gb = this->template grad_b_l<L>();
+        auto sw = this->template sq_grad_w_l<L>();
+        auto sb = this->template sq_grad_b_l<L>();
         const std::size_t nw = gw.size();
         const std::size_t nb = gb.size();
         for (std::size_t i = 0; i < nw; ++i) {
-            const float g = clip_gradient(gw[i]);
-            w[i] -= lr * g;
+            w[i] -= rmsprop_step(gw[i], sw[i], lr);
             gw[i] = 0.f;
         }
         for (std::size_t i = 0; i < nb; ++i) {
-            const float g = clip_gradient(gb[i]);
-            b[i] -= lr * g;
+            b[i] -= rmsprop_step(gb[i], sb[i], lr);
             gb[i] = 0.f;
         }
     }
@@ -555,6 +573,14 @@ class MLPCore : public Storage {
         auto gb = this->template grad_b_l<L>();
         for (std::size_t i = 0; i < gw.size(); ++i) gw[i] = 0.f;
         for (std::size_t i = 0; i < gb.size(); ++i) gb[i] = 0.f;
+    }
+
+    template <std::size_t L>
+    NISPS_FORCE_INLINE void clear_sq_grad_() noexcept {
+        auto sw = this->template sq_grad_w_l<L>();
+        auto sb = this->template sq_grad_b_l<L>();
+        for (std::size_t i = 0; i < sw.size(); ++i) sw[i] = 0.f;
+        for (std::size_t i = 0; i < sb.size(); ++i) sb[i] = 0.f;
     }
 
     // const forward pass for diagnostics — writes into the mutable eval

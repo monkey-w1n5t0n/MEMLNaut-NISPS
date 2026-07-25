@@ -53,22 +53,25 @@ import type {
 import type { BackendId } from '../dock/output-state';
 import { buildArmMask } from '../dock/output-state';
 import { FeedbackController, type ProtoFeedbackMode } from '../feedback';
-import { DEFAULT_OUTPUT_MODE, outputModeDescriptor } from './output-mode';
+import { DEFAULT_OUTPUT_MODE, outputDisplayCount, outputModeDescriptor } from './output-mode';
 import { useSettings, resolveInputMap } from '../settings/settings-store';
 import { useBackendManager } from '../backends';
 import { useInputLayer } from '../inputs';
 
 /**
- * Instrument-mode debug seam, installed on `window.__mf` under `?debug=1`
- * (see the effect in ConsoleApp). UI-level analogue of the engine
- * `window.__nisps` probe — lets Playwright drive mode switches and read the
- * rendered param count, since no in-UI mode picker exists yet.
+ * Console debug seam, installed on `window.__mf` under `?debug=1` (see the
+ * effect in ConsoleApp). UI-level analogue of the engine `window.__nisps`
+ * probe — lets Playwright drive instrument/output configuration and inspect
+ * the resulting presentation.
  */
 export interface MfDebugHook {
   setMode: (id: string) => void;
   getModeId: () => string;
   paramCount: () => number;
   modeIds: () => string[];
+  setOutputMode: (mode: OutputMode) => void;
+  setMidiCcCount: (count: number) => void;
+  displayOutputCount: () => number;
 }
 
 declare global {
@@ -139,6 +142,9 @@ export function ConsoleApp() {
   // named-preset system; these are the live working values.
   const [midiOutputId, setMidiOutputId] = useState<string | null>(null);
   const [midiCcCount, setMidiCcCount] = useState(8);
+  const displayOutputCount = outputDisplayCount(outputMode, params.length, {
+    midi: midiCcCount,
+  });
   const [oscUrl, setOscUrl] = useState('ws://localhost:8765');
   const [oscSendRaw, setOscSendRaw] = useState(false);
   // VCV bridge: WS URL of the Deno bridge that relays to the VCV module over UDP
@@ -322,12 +328,11 @@ export function ConsoleApp() {
     if (engine && n != null) engine.reshape({ inputSize: n });
   };
 
-  // ---- Debug seam for instrument-mode switching (`?debug=1`) ------------------
+  // ---- Console debug seam (`?debug=1`) ----------------------------------------
   // There is no instrument-mode picker in the UI yet (ctx.modes/setModeId are
-  // plumbed but unrendered), so Playwright drives mode switches through this
-  // window hook — the UI-level analogue of the engine `window.__nisps` probe.
-  // Exposes the current modeId, the rendered param count, and the mode ids so
-  // the schema-modes e2e can switch a mode and assert the derived shape.
+  // plumbed but unrendered), so Playwright drives instrument/output changes
+  // through this window hook — the UI-level analogue of the engine
+  // `window.__nisps` probe.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const q = new URLSearchParams(window.location.search);
@@ -337,11 +342,14 @@ export function ConsoleApp() {
       getModeId: () => modeId,
       paramCount: () => params.length,
       modeIds: () => MF_MODES.map((m) => m.id),
+      setOutputMode,
+      setMidiCcCount,
+      displayOutputCount: () => displayOutputCount,
     };
     return () => {
       if (window.__mf) delete window.__mf;
     };
-  }, [modeId, params]);
+  }, [modeId, params, displayOutputCount]);
 
   // Drive a pad/joystick/manifold move through the input layer's XY-pad source,
   // then mirror the raw position into React state for readouts. The layer's loop
@@ -407,6 +415,14 @@ export function ConsoleApp() {
     // version drives re-read of the live (reused) output buffer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [params, version, engine],
+  );
+  const displayedParams = useMemo(
+    () => params.slice(0, displayOutputCount),
+    [params, displayOutputCount],
+  );
+  const displayedValues = useMemo(
+    () => values.slice(0, displayOutputCount),
+    [values, displayOutputCount],
   );
 
   /** Plot a feedback marker at the input location it was given (session-scoped). */
@@ -752,6 +768,7 @@ export function ConsoleApp() {
     },
     params,
     setParam,
+    displayOutputCount,
     outputMode,
     setOutputMode,
     // ---- output backend transport ----
@@ -863,8 +880,8 @@ export function ConsoleApp() {
                     engine={engine}
                     version={version}
                     pos={pos}
-                    layerCount={Math.min(params.length, 8)}
-                    names={params.map((p) => p.name)}
+                    layerCount={Math.min(displayedParams.length, 8)}
+                    names={displayedParams.map((p) => p.name)}
                   />
                 )}
               </div>
@@ -876,7 +893,7 @@ export function ConsoleApp() {
                   borderLeft: '1px solid var(--line)',
                 }}
               >
-                <OutputStage params={params} values={values} onChange={setParam} compact />
+                <OutputStage params={displayedParams} values={displayedValues} onChange={setParam} compact />
               </div>
             </div>
           ) : outputMode === 'particles' ? (
@@ -894,8 +911,8 @@ export function ConsoleApp() {
               variant={inputMapVariant}
               follow={follow}
               onLongPress={addPin}
-              params={params}
-              values={values}
+              params={displayedParams}
+              values={displayedValues}
               onChange={setParam}
             />
           )}

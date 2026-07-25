@@ -76,6 +76,8 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
 
   return (
     <div
+      data-testid="output-stage"
+      data-output-count={params.length}
       style={{
         position: 'absolute',
         inset: 0,

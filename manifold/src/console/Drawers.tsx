@@ -606,19 +606,20 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
 }
 
 function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
-  const values = shapeValues(ctx.params, null); // bar uses shaped held/live value snapshot
-  const counts = ctx.params.reduce<Record<string, number>>((a, p) => {
+  const activeParams = ctx.params.slice(0, ctx.displayOutputCount);
+  const values = shapeValues(activeParams, null); // bar uses shaped held/live value snapshot
+  const counts = activeParams.reduce<Record<string, number>>((a, p) => {
     a[p.status] = (a[p.status] || 0) + 1;
     return a;
   }, {});
-  const mutedN = ctx.params.filter((p) => p.muted).length;
+  const mutedN = activeParams.filter((p) => p.muted).length;
   const modeDesc = outputModeDescriptor(ctx.outputMode);
   // The particle Mode names its outputs; otherwise use the param names.
   const nameFor = (idx: number, fallback: string) =>
     ctx.outputMode === 'particles' ? VISUAL_NAMES[idx] ?? fallback : fallback;
 
   const expanded = depth === 'expanded';
-  const rows = expanded ? ctx.params : ctx.params.slice(0, 6);
+  const rows = expanded ? activeParams : activeParams.slice(0, 6);
   return (
     <>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -656,8 +657,8 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
           );
         })}
       </div>
-      {!expanded && ctx.params.length > 6 && (
-        <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>+{ctx.params.length - 6} more — expand to edit</span>
+      {!expanded && activeParams.length > 6 && (
+        <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>+{activeParams.length - 6} more — expand to edit</span>
       )}
     </>
   );

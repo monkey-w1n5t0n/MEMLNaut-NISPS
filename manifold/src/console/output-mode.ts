@@ -80,3 +80,22 @@ export const DEFAULT_OUTPUT_MODE: OutputMode = OUTPUT_MODES[0].id;
 export function outputModeDescriptor(id: OutputMode): OutputModeDescriptor {
   return OUTPUT_MODES.find((m) => m.id === id) ?? OUTPUT_MODES[0];
 }
+
+/**
+ * Number of output controls the active backend presents.
+ *
+ * The model may expose more parameters than a backend currently maps (MIDI is
+ * the live example: its CC count is adjustable). Keep that presentation
+ * boundary separate from the model arity so changing a backend count does not
+ * silently reshape the net and clear its examples.
+ */
+export function outputDisplayCount(
+  id: OutputMode,
+  availableCount: number,
+  configuredCounts: Partial<Record<OutputMode, number>> = {},
+): number {
+  const available = Math.max(0, Math.floor(availableCount));
+  const configured = configuredCounts[id];
+  if (configured === undefined || !Number.isFinite(configured)) return available;
+  return Math.max(0, Math.min(available, Math.floor(configured)));
+}

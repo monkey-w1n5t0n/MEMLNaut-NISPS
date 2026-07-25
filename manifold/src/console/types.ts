@@ -76,6 +76,8 @@ export interface ConsoleCtx {
   params: MFParam[];
   /** Patch one output row in the shared store (drives stage + dock in sync). */
   setParam: (i: number, patch: Partial<MFParam>) => void;
+  /** Active backend outputs currently presented by the stage + routing rows. */
+  displayOutputCount: number;
 
   // ---- Output backend transport (backends-spec §1–§5) ----
   /** Live status of the active output backend (MIDI/OSC connect state, etc.). */

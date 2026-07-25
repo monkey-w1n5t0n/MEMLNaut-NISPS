@@ -214,20 +214,9 @@ export function CompositeStage({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 10,
         }}
       >
         {renderPad(s)}
-        <span
-          style={{
-            fontSize: 10,
-            color: 'var(--fg-mute)',
-            fontFamily: 'var(--font-mono)',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {pos[0].toFixed(2)}, {pos[1].toFixed(2)}
-        </span>
       </div>
     );
   };

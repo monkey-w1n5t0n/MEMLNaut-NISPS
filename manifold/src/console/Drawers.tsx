@@ -10,7 +10,7 @@
  *                         "Particle/Visual" drawers are REMOVED — their config now
  *                         lives here under the active Mode (TOP dock selector).
  *   settings — Settings : icon style, input-map shape + feature flags
- *   help     — Help     : keymap + the loop explanation
+ *   help     — Help     : keymap + explainer link
  *
  * The TOP dock selector ("Mode") chooses the active OUTPUT backend/target; this
  * drawer renders whatever that backend needs.
@@ -22,7 +22,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Badge, Button, PillToggle, Slider, Switch } from '../primitives';
-import type { ConsoleCtx, DrawerDepth, DrawerKey, FeedbackModeUI, SoloMode } from './types';
+import type { ConsoleCtx, DrawerDepth, DrawerKey, FeedbackModeUI } from './types';
 import type { InputMode } from '../inputs';
 import { OutputControlRow } from '../dock/OutputControlRow';
 import { OutputsBackendConfig, BackendStatusChip } from '../dock/OutputsBackendConfig';
@@ -140,24 +140,6 @@ const FEEDBACK_DESC: Record<FeedbackModeUI, string> = {
   'explore-and-place':
     'Down re-rolls the whole net into a scratchpad you audition; + places a liked sound (Mode 2).',
 };
-/**
- * Solo behaviour. `mask-gradients` is the only variant the core actually
- * implements — `soloMode` has no other observable effect today (the other two
- * options need the C API's `train_masked` step). Rendered as a fixed,
- * non-selectable label rather than a picker that offers dead choices
- * (simplification audit L20).
- */
-const SOLO_OPTS: { value: SoloMode; label: string }[] = [
-  { value: 'mask-gradients', label: 'Mask gradients' },
-  { value: 'zero-loss', label: 'Zero loss' },
-  { value: 'dont-care', label: "Don't-care mask" },
-];
-const SOLO_DESC: Record<SoloMode, string> = {
-  'mask-gradients': 'Column-freeze (default) — only the armed output moves; the rest stay bit-identical.',
-  'zero-loss': 'Expressive, but armed and unarmed outputs share hidden weights, so others can drift.',
-  'dont-care': 'Each example stores a per-output mask so stale labels never pull unarmed outputs.',
-};
-
 function ModelArchitecture() {
   const engine = useEngine();
   useEngineVersion(engine);
@@ -308,9 +290,6 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         >
           Jolt {ctx.joltActive ? '(morphing…)' : '(hold)'}
         </Button>
-        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
-          hold to morph the whole net live · release to freeze
-        </span>
       </div>
       <Slider
         label="explore · output wander"
@@ -320,14 +299,6 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         step={0.01}
         onChange={ctx.setExploreIntensity}
       />
-      {depth === 'expanded' && (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Explore adds a slow random walk (Ornstein-Uhlenbeck) on the outputs so the sound roams;
-          likes and dislikes registered mid-wander steer the net toward what you want. 0 = off. Jolt
-          (firmware TogB1) and Explore (RVX1) drive the same core gestures as the MEMLNaut hardware.
-        </p>
-      )}
-
       <SectionLabel>Recorded examples</SectionLabel>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <Chip>
@@ -357,13 +328,6 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
                 : 'every live output learns'}
             </span>
           </div>
-          <SectionLabel>Solo behaviour</SectionLabel>
-          <Chip tone="var(--accent)">{SOLO_OPTS.find((o) => o.value === ctx.soloMode)?.label}</Chip>
-          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-            {SOLO_DESC[ctx.soloMode]} Solo only freezes the rest as far as a shared network allows.
-            The other two behaviours need real core support (`train_masked`) and aren't selectable yet.
-          </p>
-
           <SectionLabel>Live training params</SectionLabel>
           <Slider label="noise cap" value={ctx.noiseCap} min={0} max={0.5} step={0.01} onChange={ctx.setNoiseCap} />
         </>
@@ -371,12 +335,6 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
 
       {depth === 'expanded' && (
         <>
-          <SectionLabel>Feedback lab</SectionLabel>
-          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-            State machine: idle → exploring → commit / cancel. While Explore & place is exploring,
-            training is paused and the joystick auditions a random scratchpad net; + commits a placed
-            anchor and restores the real net.
-          </p>
           {ctx.xavierSpreadEnabled && (
             <Switch checked={ctx.spread} onChange={ctx.setSpread} label="Xavier (centred) weight regime" />
           )}
@@ -679,17 +637,7 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
             <Button size="sm" variant={ctx.audioStarted ? 'secondary' : 'primary'} onClick={ctx.onToggleAudio}>
               {ctx.audioStarted ? 'pause' : 'play'}
             </Button>
-            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>audio starts on the play gesture</span>
           </div>
-          {depth === 'expanded' && (
-            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-              The active engine follows the selected mode ({ctx.mode.label}).
-              {/* TODO(dock-spec §5): arpeggiator + tiered synth presets + the
-                  18-section group-override matrix are workstream E. Master
-                  volume + bpm sliders were deleted (simplification audit
-                  S16) — they drove no engine parameter. */}
-            </p>
-          )}
         </>
       );
     case 'editor':
@@ -700,12 +648,7 @@ function ModeConfig(ctx: ConsoleCtx, depth: DrawerDepth) {
         </>
       );
     case 'particles':
-      return depth === 'expanded' ? (
-        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Flow-field visualiser driven by the first {Math.min(20, ctx.params.length)} outputs (no audio).
-          {/* TODO(backends-spec §4): port FlowFieldVisualizer + visual preset chips. */}
-        </p>
-      ) : null;
+      return null;
     case 'midi':
       // The full MIDI config (port picker, CC count, per-output CC/channel/name)
       // + preset bar render via OutputsBackendConfig in RoutingDrawer below.
@@ -864,10 +807,6 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
             onChange={(v) => set('unfocusedIconColour', v as UnfocusedIconColour)}
             options={ICON_COLOUR_OPTS}
           />
-          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-            Focused / active icons are always accent orange. This sets the resting colour of unfocused
-            icons (preview below).
-          </p>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ color: unfocusedIconCss(settings.unfocusedIconColour), display: 'inline-flex' }}>
               <SettingsIcon size={20} />
@@ -885,13 +824,6 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
         onChange={(v) => set('inputMap', v as InputMapMode)}
         options={INPUT_MAP_OPTS}
       />
-      {depth === 'expanded' && (
-        <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          The 2D input surface: a rectangular XY map or a circular joystick-style disc. "Follow mode"
-          uses the active mode's declared input (joystick → circular, else rectangular).
-        </p>
-      )}
-
       <SectionLabel>I/O editing</SectionLabel>
       <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>Network size</div>
       <PillToggle
@@ -909,11 +841,6 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
       />
       {depth === 'expanded' && (
         <>
-          <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-            Keep capacity edits mappings in place and reconstructs only when the active cards outgrow
-            the network. Exact I/O keeps network arity equal to the cards. Surviving dimensions retain
-            their identity and weights; exploration scratch state resets after an I/O edit.
-          </p>
           <Slider
             label="New input example value"
             value={settings.addedInputExampleValue}
@@ -943,26 +870,12 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
         unit="px"
         onChange={(v) => set('cornerRadius', Math.round(v))}
       />
-      {depth === 'expanded' && (
-        <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Roundness of buttons, control rows, dock icons and panels. Pills and the circular verdict
-          buttons are intentionally exempt. Default 2px.
-        </p>
-      )}
-
       <SectionLabel>Experimental features</SectionLabel>
       <Switch
         checked={settings.xavierSpreadEnabled}
         onChange={(v) => set('xavierSpreadEnabled', v)}
         label="Xavier / spread randomisation"
       />
-      {depth === 'expanded' && (
-        <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
-          Off by default: new networks and re-rolls use full-range uniform weights for broad,
-          strongly varied mappings. Enable this to restore the legacy centred regime and its
-          Learning-drawer switch.
-        </p>
-      )}
     </>
   );
 }
@@ -1004,12 +917,6 @@ function HelpDrawer() {
           </div>
         ))}
       </div>
-      <SectionLabel>The loop</SectionLabel>
-      <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)', margin: 0, lineHeight: 1.7 }}>
-        Drag the manifold to explore. Hear something good → + to keep it. Wrong → − to push away or
-        re-roll (set the behaviour in the Learning drawer). Went too far → undo. The dock reveals
-        exactly as much machinery as you reach for.
-      </p>
       <SectionLabel>Learn more</SectionLabel>
       <a
         href="animations/"

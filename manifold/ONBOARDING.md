@@ -161,7 +161,7 @@ for the narrow pane.
     controls are available in both condensed and expanded views; the output rows fill the remaining drawer height
     and scroll independently at both depths. The orange drawer tab uses `<` to expand and `>` to condense.
   - **settings** — icon style (monochrome/colour), input-map shape (xy/joystick/rect/circular), corner radius.
-  - **help** — keymap pills + loop explanation.
+  - **help** — keymap pills + explainer link.
 - `src/dock/` holds the output-routing internals used by the `route` drawer:
   - `output-state.ts` — the per-output control model: `OutputControl` (state/muted/armed/min/max/
     curve/fixedValue + backend specs `MidiCcSpec`/`OscSpec`/`VcvSpec`), `toOutputControl()`,

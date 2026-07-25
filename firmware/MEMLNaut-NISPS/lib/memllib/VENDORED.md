@@ -23,9 +23,15 @@ migration) — only the wrapping `src/` folder and the `library.properties` mani
 new, both required for PlatformIO to discover and recursively compile this tree (see
 below).
 
-Dropped: `examples/` (17 files — never compiled; the firmware never referenced it, and
-its content that mattered was already ported into `nisps/ml/{jolt,ou_noise,feedback,
-geo_push}.hpp` per the pre-Phase-4 submodule-bump decision), `.git` (submodule gitlink),
+Dropped: `examples/` (never compiled; the firmware never referenced it, and its content
+that mattered was already ported into `nisps/ml/{jolt,ou_noise,feedback,geo_push}.hpp`
+per the pre-Phase-4 submodule-bump decision) — **except** `InterfaceRL.{hpp,cpp,tpp}` and
+`InterfaceRLFileFormat.hpp`, which were added back on 2026-07-25 under `reference/`.
+Dropping them was correct for the build and wrong for the codebase: `InterfaceRL` is the
+source of truth for the whole feedback subsystem we ported, and with it out of tree we
+missed upstream's redesign of the geometric dislike for months. `reference/` sits outside
+`src/`, so PlatformIO does not compile it; see `reference/README.md`. Also dropped:
+`.git` (submodule gitlink),
 `.gitignore` (build-artifact patterns, meaningless once vendored — this repo's own
 `.gitignore` covers it), `README.md` (described the old Arduino-IDE TFT_eSPI
 `User_Setup_Select.h` copy-paste workflow, which PlatformIO replaces with

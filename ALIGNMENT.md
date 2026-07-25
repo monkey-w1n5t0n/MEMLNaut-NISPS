@@ -105,14 +105,6 @@ still not a design.
 (`ml_bench` U4 sweeps dose; U1 sweeps upstream's soft-target alpha, where alpha=1 is
 NISPS today). It wants a matched-N head-to-head, not a guess.
 
-### 6c. `InterfaceRL` — the reference implementation — is not in the tree (2026-07-25)
-
-**What.** It lives in `memllib/examples/`, and the vendoring dropped `examples/`
-(`VENDORED.md`). So the source of truth for our most contested subsystem is absent, and
-the divergences in 6b went unnoticed for months. Either vendor
-`examples/InterfaceRL.{hpp,cpp,tpp}` read-only alongside the rest, or record its pinned
-commit and a fetch recipe in `VENDORED.md`.
-
 ## Open mission questions
 
 ### Q1: Per-mode MLP architectures or one shared shape? (2026-04-29)
@@ -137,6 +129,10 @@ Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user
 
 ## Recently resolved (delete after a few weeks)
 
+- 2026-07-25: **`InterfaceRL` is back in the tree (defect 6c).** Vendored verbatim from
+  memllib `e291192` at `firmware/MEMLNaut-NISPS/lib/memllib/reference/` — outside `src/`,
+  so PlatformIO never compiles it. Upstream drift in the feedback subsystem is a `diff`
+  again rather than an archaeology session.
 - 2026-07-25: **The optimiser mismatch (defect 6) is fixed.** `nisps/ml/training.hpp` was
   SGD-only while upstream `memlp` (`ea777502`) applies **RMSProp everywhere**, so every
   learning rate we ported landed in an optimiser that reads it differently — an RMSProp

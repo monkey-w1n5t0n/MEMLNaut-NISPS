@@ -647,9 +647,21 @@ export function ConsoleApp() {
       }),
     );
 
-  // A direct slider gesture is only an audition value. The next engine tick
-  // (normally caused by moving the input) returns that param to the live MLP.
+  // A direct slider gesture is only an audition value. Keep it visible while
+  // the input is stable; the next actual input change returns that param to
+  // the live MLP.
+  const lastInputRef = useRef<number[] | null>(null);
   useEffect(() => {
+    if (!engine) return;
+    const nextInput = Array.from(engine.inputVector());
+    const previousInput = lastInputRef.current;
+    lastInputRef.current = nextInput;
+    const inputChanged =
+      previousInput !== null &&
+      (previousInput.length !== nextInput.length ||
+        nextInput.some((value, index) => value !== previousInput[index]));
+    if (!inputChanged) return;
+
     setParams((ps) => {
       let changed = false;
       const next = ps.map((p) => {
@@ -659,7 +671,7 @@ export function ConsoleApp() {
       });
       return changed ? next : ps;
     });
-  }, [version]);
+  }, [engine, version]);
 
   /**
    * The single output-card mutation seam. Callers provide the desired active

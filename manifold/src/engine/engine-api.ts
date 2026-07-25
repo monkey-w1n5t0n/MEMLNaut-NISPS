@@ -109,7 +109,7 @@ export interface EngineApiOptions {
   learningRate?: number;
   /** Default max training iterations for train/trainAsync. */
   maxIterations?: number;
-  /** Default RL move speed / spread for thumbsDown. */
+  /** Default RL move speed / randomisation spread. Spread defaults to 0. */
   noiseCap?: number;
   spread?: number;
   /**
@@ -141,7 +141,7 @@ export class EngineApi {
     this.learningRate = opts.learningRate ?? ML_TRAIN_DEFAULTS.learningRate;
     this.maxIterations = opts.maxIterations ?? ML_TRAIN_DEFAULTS.maxIterations;
     this.noiseCap = opts.noiseCap ?? 0.3;
-    this.spread_ = opts.spread ?? 0.6;
+    this.spread_ = opts.spread ?? 0;
     // Persist the configured default on the underlying MLP too (S26) — makes
     // the WASM engine's OWN training config match EngineApi's knobs, the same
     // real runtime-configurability firmware/VCV get for free from
@@ -216,6 +216,7 @@ export class EngineApi {
     const spine = new Spine();
     const iml = await WasmIML.create({
       seed: opts.seed,
+      initialSpread: opts.spread ?? 0,
       storageKey: opts.storageKey,
       maxExamples: opts.maxExamples,
       sink: spine,

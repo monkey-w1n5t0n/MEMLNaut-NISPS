@@ -109,6 +109,11 @@ export function ConsoleApp() {
   const [addingExample, setAddingExample] = useState(false);
   const [busy, setBusy] = useState(false);
   const [spread, setSpread] = useState(false);
+  // Manifold's normal regime is a full-range uniform draw. The per-mode legacy
+  // spread remains available only when explicitly enabled in Settings.
+  const randomisationSpread = settings.xavierSpreadEnabled
+    ? (spread ? 1 : mode.ml.defaultSpread)
+    : 0;
   const [active, setActive] = useState<DrawerKey | null>(null);
   const [depth, setDepth] = useState<DrawerDepth>('condensed');
   // Sandwich (parameter-landscape) centre-stage toggle — dock-bottom layers icon.
@@ -172,7 +177,7 @@ export function ConsoleApp() {
   const controllerRef = useRef<FeedbackController | null>(null);
   if (engine && !controllerRef.current) {
     controllerRef.current = new FeedbackController(engine, {
-      spread: 0.6,
+      spread: randomisationSpread,
     });
   }
 
@@ -229,6 +234,12 @@ export function ConsoleApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, feedbackMode]);
 
+  // Settings changes affect future randomise/explore gestures without
+  // destructively re-drawing the currently audible network.
+  useEffect(() => {
+    controllerRef.current?.setSpread(randomisationSpread);
+  }, [engine, randomisationSpread]);
+
   // Push the selected solo-mode + the arm mask into the controller whenever they
   // change (dock-spec §1.2). The controller RESPECTS the arm mask at the example
   // level in BOTH modes and forwards it to engine.feedback.setFocus.
@@ -257,8 +268,8 @@ export function ConsoleApp() {
   // modal stays for input-LAYOUT changes only (see the reshape-offer effect).
   useEffect(() => {
     if (!engine) return;
-    const { inputSize, outputSize, hidden, defaultSpread } = mode.ml;
-    engine.reshape({ inputSize, outputSize, hidden }, defaultSpread);
+    const { inputSize, outputSize, hidden } = mode.ml;
+    engine.reshape({ inputSize, outputSize, hidden }, randomisationSpread);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, modeId]);
 
@@ -402,7 +413,7 @@ export function ConsoleApp() {
   const forwardVcvFeedback = (op: 'up' | 'down' | 'rand' | 'clear') => {
     backendManager?.forwardFeedback({
       op,
-      spread: spread ? 1 : 0.6,
+      spread: randomisationSpread,
       input: [pos[0], pos[1]],
       output: Array.from(engine?.getOutputs() ?? new Float32Array(0)),
     });
@@ -508,7 +519,7 @@ export function ConsoleApp() {
       c.reroll();
     } else {
       // Outside a scratchpad session a re-roll randomises the real net directly.
-      engine?.randomise(spread ? 1 : 0.6);
+      engine?.randomise(randomisationSpread);
     }
     // VCV bridged mode: re-roll the module's net too.
     forwardVcvFeedback('rand');
@@ -794,6 +805,7 @@ export function ConsoleApp() {
     inputs,
     spread,
     setSpread,
+    xavierSpreadEnabled: settings.xavierSpreadEnabled,
     noiseCap,
     setNoiseCap,
     // learning-behaviour

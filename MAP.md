@@ -84,7 +84,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   `backends/base-backend.ts` is its output-side counterpart (status + throttle + lastSent) used by the midi/osc/vcv transports.
 - `manifold/src/feedback/` — `controller.ts` (Explore-and-place scratchpad + geometric-dislike + solo; a thin
   driver over the shared C++ core).
-- `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius).
+- `manifold/src/settings/` — `settings-store.ts` (monochrome icons, input-map shape, corner radius, and the opt-in legacy Xavier/spread feature flag; Manifold randomisation is full-range uniform by default).
 - `manifold/src/serial/` — `memlnaut-serial.ts` Web Serial scaffold + `EditorPanel.tsx` (MEMLNaut Editor mode).
 - `manifold/src/engine/exploration.ts` — Jolt press + OU explore gestures (Learning drawer): a thin
   timer-driver over the shared C++ core via the `nisps_ml_jolt_*`/`nisps_ml_ou_*` bindings (the interim

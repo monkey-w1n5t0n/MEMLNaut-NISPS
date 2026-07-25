@@ -118,6 +118,8 @@ export interface ConsoleCtx {
 
   spread: boolean;
   setSpread: (v: boolean) => void;
+  /** Settings feature flag: expose and apply the legacy Xavier/spread regime. */
+  xavierSpreadEnabled: boolean;
   noiseCap: number;
   setNoiseCap: (v: number) => void;
 

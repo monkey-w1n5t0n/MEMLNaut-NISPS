@@ -8,6 +8,9 @@
  *  - inputMap: the 2D input-surface shape. 'follow-mode' (default) uses the
  *    active mode's declared input (joystick → circular, else rectangular);
  *    'rectangular' / 'circular' are explicit global overrides.
+ *  - xavierSpreadEnabled: compatibility feature flag for the old centred
+ *    Xavier/spread randomisation regime. Off by default, so Manifold initial
+ *    weights and re-rolls use the full uniform range.
  *
  * British spelling in copy. No React inside the store itself — the hook is a
  * separate, additive binding so a headless consumer (debug probe / test) can
@@ -35,6 +38,11 @@ export interface Settings {
    * verdict buttons are intentionally exempt (separate tokens).
    */
   cornerRadius: number;
+  /**
+   * Restore the legacy Xavier/spread randomisation regime and expose its
+   * Learning-drawer control. Off means full-range uniform randomisation.
+   */
+  xavierSpreadEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -42,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   unfocusedIconColour: 'off-white',
   inputMap: 'follow-mode',
   cornerRadius: 2,
+  xavierSpreadEnabled: false,
 };
 
 const STORAGE_KEY = 'mf-settings';

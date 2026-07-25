@@ -123,6 +123,11 @@ export interface WasmIMLOptions {
   outputSize?: number;
   hiddenLayers?: ReadonlyArray<number>;
   seed?: number;
+  /**
+   * Initial draw regime. Manifold defaults to 0 (full-range uniform); callers
+   * must opt into the legacy Xavier/spread behaviour explicitly.
+   */
+  initialSpread?: number;
   /** localStorage key the loaded weights/dataset will be persisted under. */
   storageKey?: string;
   /**
@@ -231,6 +236,10 @@ export class WasmIML {
     const seed = (opts.seed ?? (Date.now() >>> 0)) >>> 0;
     this.mlHandle = this.module._nisps_ml_create(wantedIn, wantedOut, 0, 0, seed);
     if (!this.mlHandle) throw new Error('[wasm-iml] nisps_ml_create returned null');
+    // The C ABI constructor retains the cross-platform core's historical
+    // initialisation. Manifold deliberately overrides it at its boundary so an
+    // unconfigured browser engine starts with genuinely broad randomisation.
+    this.module._nisps_ml_draw_weights(this.mlHandle, opts.initialSpread ?? 0);
 
     this.module._nisps_ml_describe(this.mlHandle, this.describePtr);
     const dims = new Int32Array(this.module.HEAP32.buffer, this.describePtr, 7);
@@ -354,7 +363,7 @@ export class WasmIML {
    */
   reshape(
     dims: { inputSize?: number; outputSize?: number; hidden?: readonly [number, number, number] },
-    spread = 0.6,
+    spread = 0,
   ): boolean {
     const wantIn = dims.inputSize ?? this.arch_.inputSize;
     const wantOut = dims.outputSize ?? this.arch_.outputSize;
@@ -743,7 +752,7 @@ export class WasmIML {
   // RL ops
   // -------------------------------------------------------------------
 
-  randomiseWeights(spread = 0.6): void {
+  randomiseWeights(spread = 0): void {
     this.module._nisps_ml_draw_weights(this.mlHandle, spread);
     this.sink.emit('ml.delta_update', { reason: 'randomise' });
     this.scheduleSave_();

@@ -251,7 +251,7 @@ a setting → `--r-*` tokens.
   match. Debug: `window.__nisps.reshape(nIn)` / `.describe()`. See the `manifold-mixed-inputs` memory
   for the locked design (adaptive slider viz when >2 dims is still pending).
 - **Per-mode net dims (P5.3):** switching INSTRUMENT mode reshapes the net to that mode's schema
-  `ml` config (`MFMode.ml` — input/hidden/output + spread) via a `ConsoleApp` effect keyed on
+  `ml` config (`MFMode.ml` — input/hidden/output + legacy spread) via a `ConsoleApp` effect keyed on
   `[engine, modeId]`. No confirm modal (switching instrument is deliberate); the axis-count
   `ReshapeModal` above is for input-LAYOUT changes only. The effect depends on `engine`, so on boot
   it fires once WASM is ready and lands the boot mode's dims (**paf_synth → 4→[10,10,14]→33**, weights
@@ -261,6 +261,10 @@ a setting → `--r-*` tokens.
   Debug seam for tests: under `?debug=1` ConsoleApp installs `window.__mf`
   (`setMode`/`getModeId`/`paramCount`/`modeIds`) — the UI-level analogue of `__nisps`, since no
   in-UI instrument picker exists yet (`ctx.modes`/`setModeId` are plumbed but unrendered).
+  Manifold passes `spread=0` for boot, mode-switch reshapes, direct re-rolls, explore-and-place
+  scratchpad rolls, and VCV-forwarded randomise gestures by default. Settings → Experimental
+  features → **Xavier / spread randomisation** restores the schema spread and reveals the centred
+  regime switch in the expanded Learning drawer.
 
 ### Feedback — `src/feedback/`
 - `controller.ts` — `FeedbackController`, framework-neutral, owned by ConsoleApp. **As of one-core-
@@ -291,7 +295,8 @@ a setting → `--r-*` tokens.
 
 ### Misc
 - `src/serial/memlnaut-serial.ts` — **STUB** Web Serial scaffold for the MEMLNaut Editor mode (protocol TODO). `EditorPanel.tsx` is its UI.
-- `src/settings/settings-store.ts` — localStorage settings (`mf-settings`): icon style, input-map shape, corner radius.
+- `src/settings/settings-store.ts` — localStorage settings (`mf-settings`): icon style, input-map
+  shape, corner radius, and the opt-in legacy Xavier/spread feature flag.
 - `src/midi-devices/` — codegen'd external-synth device templates.
 - `src/debug/probe.ts` — `window.__nisps` synchronous probe (engine/audio/bus). Some playground
   feature-store methods are present-but-inert (not ported yet) to keep the surface stable.

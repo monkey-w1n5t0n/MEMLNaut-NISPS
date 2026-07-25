@@ -63,6 +63,33 @@ test.describe('ML engine — debug probe contract', () => {
     expect(countChanged(before, after, 1e-3)).toBeGreaterThan(0);
   });
 
+  test('randomise defaults to a broad full-range mapping', async ({ page }) => {
+    const distribution = await page.evaluate(() => {
+      const probe = window.__nisps!;
+      const values: number[] = [];
+      for (let draw = 0; draw < 48; ++draw) {
+        probe.randomise();
+        probe.setInputs(0.5, 0.5);
+        values.push(...probe.getOutputs());
+      }
+      values.sort((a, b) => a - b);
+      const percentile = (p: number) => values[Math.floor((values.length - 1) * p)]!;
+      const centralFraction =
+        values.filter((value) => value >= 0.35 && value <= 0.65).length / values.length;
+      return {
+        p05: percentile(0.05),
+        p95: percentile(0.95),
+        centralFraction,
+      };
+    });
+
+    // The former implicit spread=0.6 regime put ~99.8% of values inside this
+    // central band. Uniform spread=0 must visibly reach both sides of it.
+    expect(distribution.p05).toBeLessThan(0.3);
+    expect(distribution.p95).toBeGreaterThan(0.7);
+    expect(distribution.centralFraction).toBeLessThan(0.8);
+  });
+
   test('setInputs runs inference and yields bounded outputs', async ({ page }) => {
     await page.evaluate(() => window.__nisps!.setInputs(0.25, 0.75));
     const outs = await getOutputs(page);

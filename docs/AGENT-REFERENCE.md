@@ -130,7 +130,7 @@ The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_m
 |-------|-------|---------|--------|
 | `debug` | 1 | _(off)_ | Exposes the `window.__nisps` debug probe. |
 
-(The playground-era `tame`/`spread`/`preset` URL params died with the playground; `spread` survives as an engine concept — see below.)
+(The playground-era `tame`/`spread`/`preset` URL params died with the playground; `spread` survives as an opt-in engine concept — see below.)
 
 ### `spread` — sigmoid saturation control
 
@@ -139,6 +139,13 @@ The MLP uses ReLU hidden layers with a sigmoid output. With uniform [-1,1] weigh
 - `spread=0` (polarised): uniform [-1,1] weights, RL noise cap 0.3, no decay. Outputs cluster at extremes — good for radical exploration.
 - `spread=1` (centered): Xavier-scaled weights, RL noise cap 0.05, 10% weight decay per move. Outputs spread across [0,1] — better for fine-grained shaping.
 - Intermediate values interpolate.
+
+Manifold deliberately defaults to `spread=0` at every browser boundary: initial construction,
+mode-switch reshape, direct re-roll, explore-and-place scratchpad re-roll, and forwarded VCV
+randomise. The old schema spread and the expanded Learning-drawer centred switch are available only
+after enabling Settings → Experimental features → **Xavier / spread randomisation**. This is a
+Manifold compatibility flag; the shared C++ core and generated mode schemas still expose spread for
+firmware, VCV, benchmarks, and explicit API callers.
 
 ## Verification chokepoints (user-confirmed)
 

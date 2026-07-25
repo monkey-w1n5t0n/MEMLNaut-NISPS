@@ -108,7 +108,7 @@ export interface FeedbackControllerState {
 }
 
 export interface FeedbackControllerOptions {
-  /** Master spread for randomise / nudge (mirrors the engine spread knob). */
+  /** Master spread for randomise / nudge. Defaults to full-range uniform (0). */
   spread?: number;
   /** Nudge perturbation standard deviation (small bounded weight jitter). */
   nudgeStddev?: number;
@@ -145,7 +145,7 @@ export class FeedbackController {
 
   constructor(engine: ControllerEngine, opts: FeedbackControllerOptions = {}) {
     this.engine = engine;
-    this.spread = opts.spread ?? 0.6;
+    this.spread = opts.spread ?? 0;
     this.nudgeStddev = opts.nudgeStddev ?? 0.05;
   }
 

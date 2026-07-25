@@ -9,7 +9,7 @@
  *                         MEMLNaut serial panel. The old separate "Synth" and
  *                         "Particle/Visual" drawers are REMOVED — their config now
  *                         lives here under the active Mode (TOP dock selector).
- *   settings — Settings : icon style + input-map shape (settings-store)
+ *   settings — Settings : icon style, input-map shape + feature flags
  *   help     — Help     : keymap + the loop explanation
  *
  * The TOP dock selector ("Mode") chooses the active OUTPUT backend/target; this
@@ -259,7 +259,9 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
             training is paused and the joystick auditions a random scratchpad net; + commits a placed
             anchor and restores the real net.
           </p>
-          <Switch checked={ctx.spread} onChange={ctx.setSpread} label="Xavier (centered) weight regime" />
+          {ctx.xavierSpreadEnabled && (
+            <Switch checked={ctx.spread} onChange={ctx.setSpread} label="Xavier (centred) weight regime" />
+          )}
 
           <SectionLabel>Training health</SectionLabel>
           <TrainingHealth />
@@ -740,6 +742,20 @@ function SettingsDrawer({ depth }: { ctx: ConsoleCtx; depth: DrawerDepth }) {
         <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
           Roundness of buttons, control rows, dock icons and panels. Pills and the circular verdict
           buttons are intentionally exempt. Default 2px.
+        </p>
+      )}
+
+      <SectionLabel>Experimental features</SectionLabel>
+      <Switch
+        checked={settings.xavierSpreadEnabled}
+        onChange={(v) => set('xavierSpreadEnabled', v)}
+        label="Xavier / spread randomisation"
+      />
+      {depth === 'expanded' && (
+        <p style={{ fontSize: 9, color: 'var(--fg-dim)', margin: 0, lineHeight: 1.6 }}>
+          Off by default: new networks and re-rolls use full-range uniform weights for broad,
+          strongly varied mappings. Enable this to restore the legacy centred regime and its
+          Learning-drawer switch.
         </p>
       )}
     </>

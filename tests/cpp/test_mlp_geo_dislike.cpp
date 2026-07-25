@@ -149,20 +149,50 @@ NISPS_TEST(geo_push_target_moves_away_from_centroid) {
         neg[j]  = 0.6f;
         mean[j] = 0.4f;  // dir = +0.2 per dim → push increases values
     }
-    const float step = nisps::ml::geo_push_step(-1.f);  // clamp(1,0.25,1)*0.5 = 0.5
-    NISPS_EXPECT_NEAR(step, 0.5f, 1e-7);
-    nisps::ml::compute_push_target(neg, mean, {}, step, rng, target);
+    const float step = nisps::ml::geo_push_step(-1.f);  // clamp(1,0.25,1)*1.0 = 1.0
+    NISPS_EXPECT_NEAR(step, 1.f, 1e-7);
+    nisps::ml::compute_push_target(neg, mean, {}, step, /*have_positives=*/true, rng, target);
     for (std::size_t j = 0; j < kNOut; ++j) {
         NISPS_EXPECT(target[j] > neg[j]);   // strictly away from the centroid
         NISPS_EXPECT(target[j] <= 1.f);
     }
 
-    // Taper: a far-away negative moves LESS than a near one for the same step.
-    std::array<float, kNOut> mean_far{};
-    std::array<float, kNOut> target_far{};
-    for (std::size_t j = 0; j < kNOut; ++j) mean_far[j] = 0.0f;  // larger len
-    nisps::ml::compute_push_target(neg, mean_far, {}, step, rng, target_far);
-    NISPS_EXPECT((target_far[0] - neg[0]) < (target[0] - neg[0]));
+    // NO TAPER (upstream e291192, InterfaceRL.tpp:724): distance from the
+    // liked centroid must NOT shrink the push. The direction is a unit
+    // vector either way, so a far-away negative is displaced exactly as far
+    // as a near one — which is the case the deleted /(1+len) used to kill.
+    // (Both are clamped at 1.0 here, so compare an unsaturated dim.)
+    std::array<float, kNOut> near_neg{}, far_mean{}, near_mean{};
+    std::array<float, kNOut> t_near{}, t_far{};
+    for (std::size_t j = 0; j < kNOut; ++j) {
+        near_neg[j]  = 0.5f;
+        near_mean[j] = 0.49f;  // len ~= 0.024 across 6 dims
+        far_mean[j]  = 0.0f;   // len ~= 1.22
+    }
+    nisps::ml::compute_push_target(near_neg, near_mean, {}, 0.1f, true, rng, t_near);
+    nisps::ml::compute_push_target(near_neg, far_mean,  {}, 0.1f, true, rng, t_far);
+    NISPS_EXPECT_NEAR(t_far[0] - near_neg[0], t_near[0] - near_neg[0], 1e-6);
+}
+
+// With nothing liked yet there is no centroid to push away from, so upstream
+// pushes in a RANDOM direction per dim rather than doing nothing
+// (`useRandom = !havePositives || ...`, InterfaceRL.tpp:745).
+NISPS_TEST(geo_push_target_random_direction_when_no_positives) {
+    nisps::Rng rng(11ull);
+    std::array<float, kNOut> neg{}, mean{}, target{};
+    for (std::size_t j = 0; j < kNOut; ++j) { neg[j] = 0.5f; mean[j] = 0.5f; }
+
+    nisps::ml::compute_push_target(neg, mean, {}, 0.25f, /*have_positives=*/false,
+                                   rng, target);
+    bool any_moved = false, any_down = false, any_up = false;
+    for (std::size_t j = 0; j < kNOut; ++j) {
+        if (target[j] != neg[j]) any_moved = true;
+        if (target[j] <  neg[j]) any_down  = true;
+        if (target[j] >  neg[j]) any_up    = true;
+        NISPS_EXPECT(target[j] >= 0.f && target[j] <= 1.f);
+    }
+    NISPS_EXPECT(any_moved);
+    NISPS_EXPECT(any_down && any_up);  // per-dim signs, not one global direction
 }
 
 NISPS_TEST(geo_push_respects_active_mask_and_clamps) {
@@ -175,7 +205,8 @@ NISPS_TEST(geo_push_respects_active_mask_and_clamps) {
         mean[j] = 0.01f;
     }
     std::array<std::uint8_t, kNOut> mask{1u, 0u, 1u, 0u, 1u, 0u};
-    nisps::ml::compute_push_target(neg, mean, mask, 0.5f, rng, target);
+    nisps::ml::compute_push_target(neg, mean, mask, 0.5f, /*have_positives=*/true,
+                                   rng, target);
     for (std::size_t j = 0; j < kNOut; ++j) {
         if (mask[j]) {
             NISPS_EXPECT(target[j] >= neg[j]);  // pushed (and clamped at 1)
@@ -197,27 +228,30 @@ NISPS_TEST(geo_dislike_cold_start_then_push) {
     set_inputs(m, 0.25f, 0.75f);
     m.process();
 
-    // Cold start: no positives yet → negative-LR fallback.
+    // Cold start: no positives yet. Since the 2026-07-25 re-base onto
+    // upstream e291192 this is NOT a separate inert branch — it is the same
+    // push, in a random direction because there is no centroid to move away
+    // from. So a 'no' moves the mapping even before anything is liked, which
+    // is exactly what upstream's comment at InterfaceRL.tpp:724 argues for.
     auto before = m.get_weights();
     std::array<float, GeoMLP::weight_count()> snap{};
     for (std::size_t i = 0; i < snap.size(); ++i) snap[i] = before[i];
 
-    // With the heard action == the net's own output the MSE derivative is
-    // zero, so the fallback is INERT — the conservative cold start the ADR
-    // mandates (never destabilise before any positives exist).
     const FeedbackAction a1 = fb.on_down(m, {}, 0.1f, 0.5f, {});
     NISPS_EXPECT(a1 == FeedbackAction::GeometricColdStart);
     NISPS_EXPECT(fb.negative_count() == 1u);
+    bool moved = false;
     {
         auto after = m.get_weights();
         for (std::size_t i = 0; i < snap.size(); ++i) {
-            NISPS_ASSERT(after[i] == snap[i]);
+            if (after[i] != snap[i]) { moved = true; break; }
         }
     }
+    NISPS_EXPECT(moved);
 
-    // When the HEARD action differs from the net's raw output (the real
-    // browser/firmware case — the user hears the post-pipeline vector), the
-    // negative-LR fallback trains AWAY from it: weights move.
+    // The same holds when the HEARD action differs from the net's raw output
+    // (the real browser/firmware case — the user hears the post-pipeline
+    // vector), which used to be the ONLY case that moved anything.
     std::array<float, kNOut> heard{};
     {
         auto outs = m.outputs();
@@ -227,14 +261,6 @@ NISPS_TEST(geo_dislike_cold_start_then_push) {
     }
     const FeedbackAction a1b = fb.on_down(m, heard, 0.1f, 0.5f, {});
     NISPS_EXPECT(a1b == FeedbackAction::GeometricColdStart);
-    bool moved = false;
-    {
-        auto after = m.get_weights();
-        for (std::size_t i = 0; i < snap.size(); ++i) {
-            if (after[i] != snap[i]) { moved = true; break; }
-        }
-    }
-    NISPS_EXPECT(moved);
 
     // Feed positives via the like path, then dislike → geometric push.
     set_inputs(m, 0.2f, 0.2f);

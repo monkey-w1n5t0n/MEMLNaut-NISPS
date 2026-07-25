@@ -416,11 +416,12 @@ class FeedbackControllerCore : public FbStorage {
     // Thumbs-down at the MLP's CURRENT input with heard action `current_out`
     // (empty ⇒ the MLP's live outputs). Runs the full upstream sequence:
     //   1. deepen-or-store the negative (dedup radius 0.05).
-    //   2. cold start (no positives): train AWAY from the heard action at
-    //      lr * 0.1 * avgRewardNeg (negative LR — upstream fallback).
-    //   3. else: k-NN(4) positive centroid → push-away target → train toward
-    //      it at lr * negLRRatio, gated by the focus/solo mask.
-    //   4. proportional decay + eviction of expired negatives.
+    //   2. k-NN(4) positive centroid — or zeros when nothing is liked yet —
+    //      → push-away target → train toward it at lr * negLRRatio, gated by
+    //      the focus/solo mask. With no positives the push direction is
+    //      random per dim, which is upstream's cold start (there is no
+    //      separate negative-LR branch any more; see the body).
+    //   3. proportional decay + eviction of expired negatives.
     template <typename M>
     FeedbackAction dislike_geometric(M& mlp, std::span<const float> current_out,
                                      float lr) noexcept {
@@ -439,28 +440,35 @@ class FeedbackControllerCore : public FbStorage {
         const std::size_t neg_total = replay.negative_count();
         const float avg_neg = replay.avg_negative_reward();
 
-        FeedbackAction action;
-        if (pos_total == 0u) {
-            // 2. cold-start fallback (InterfaceRL.cpp:746): negative-LR
-            // training away from the heard action; no geometric push. The
-            // caller shows the "like a few sounds first" prompt.
-            mlp.train_targets(x_neg, a_neg, lr * 0.1f * avg_neg, focus_span_());
-            action = FeedbackAction::GeometricColdStart;
+        // 2+3. ONE path, as upstream (InterfaceRL.tpp:696-761). With no likes
+        // stored there is no centroid to push away from, so the centroid is
+        // zeros and `have_positives=false` sends every dim in a random
+        // direction — upstream's `useRandom = !havePositives || ...`. We still
+        // report GeometricColdStart so the caller can show its "like a few
+        // sounds first" prompt, but the TRAINING is the same push at the same
+        // LR either way. (Until 2026-07-25 the cold start instead trained AWAY
+        // from the heard action at a NEGATIVE lr — a port of the older
+        // `0a541cc` fallback that upstream has since replaced.)
+        auto mean = this->centroid_buf();
+        const bool have_positives = (pos_total > 0u);
+        if (have_positives) {
+            (void)replay.knn_positive_centroid(x_neg, kCentroidK, mean);
         } else {
-            // 3. centroid → target → train (InterfaceRL.cpp:602-743).
-            auto mean = this->centroid_buf();
-            const std::size_t used =
-                replay.knn_positive_centroid(x_neg, kCentroidK, mean);
-            auto target = this->target_buf();
-            compute_push_target(a_neg.subspan(0, (a_neg.size() < n_out) ? a_neg.size() : n_out),
-                                std::span<const float>(mean.data(), n_out),
-                                focus_span_(), geo_push_step(avg_neg), rng_, target);
-            const float ratio = geo_neg_lr_ratio(neg_total, pos_total);
-            mlp.train_targets(x_neg, std::span<const float>(target.data(), n_out),
-                              lr * ratio, focus_span_());
-            (void)used;
-            action = FeedbackAction::GeometricPush;
+            for (std::size_t j = 0; j < n_out; ++j) mean[j] = 0.f;
         }
+
+        auto target = this->target_buf();
+        compute_push_target(a_neg.subspan(0, (a_neg.size() < n_out) ? a_neg.size() : n_out),
+                            std::span<const float>(mean.data(), n_out),
+                            focus_span_(), geo_push_step(avg_neg), have_positives,
+                            rng_, target);
+        const float ratio = geo_neg_lr_ratio(neg_total, pos_total);
+        mlp.train_targets(x_neg, std::span<const float>(target.data(), n_out),
+                          lr * ratio, focus_span_());
+
+        const FeedbackAction action = have_positives
+            ? FeedbackAction::GeometricPush
+            : FeedbackAction::GeometricColdStart;
 
         // 4. decay + evict expired negatives (InterfaceRL.cpp:752-760).
         replay.decay_negatives();

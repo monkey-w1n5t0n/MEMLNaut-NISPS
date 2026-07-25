@@ -63,28 +63,6 @@ command surface to report through.
 **Rough cost.** Host half is done. On-device: ~a day, and it wants defect 3's serial protocol
 to have somewhere to send the number.
 
-### 6b. The geometric dislike was ported from a superseded upstream design (2026-07-25)
-
-**What.** `geo_push.hpp`/`replay.hpp` cite `memllib @ 0a541cc`. `upstream/main` now pins
-`e291192`, where the same code has been deliberately redesigned. Upstream:
-`kGeometricPushScale` 1.0 (ours 0.5); neg-LR base 1.5 (ours 0.5, `geo_push.hpp:92`);
-the `/(1+len)` taper **deleted**, with the comment "a 'no' should clearly move the
-mapping away even from a sound already far from the liked region (the taper used to
-kill exactly that case)" — ours still applies it at `geo_push.hpp:66`; negatives trained
-as a **batch over ALL of them every tick** rather than one item one step; and a fixed
-`kDislikeLifetimeMs = 2500` full-strength lifetime replacing the proportional decay we
-ported. On the shared constants (dedup radius 0.05, `kCentroidK` 4) we match.
-
-**Why it blocks the mission.** We are carrying a design upstream diagnosed and fixed,
-and the fix is documented in their source comments. On the constants alone the ported
-dislike is ~9.4x weaker than upstream's. (The optimiser half of this — an RMSProp LR
-pasted into an SGD step — is fixed as of 2026-07-25; see "Recently resolved". A single
-dislike now moves the mapping 1.6e-2 instead of 5.3e-5, but that is still ~14x weaker
-than the legacy Diffuse design measures in one press, `ml_bench` A4.)
-
-**Rough cost.** Small — mostly deleting the taper and re-basing three constants, then
-re-running `scripts/bench-ml.sh` D1/A4/A7 to confirm.
-
 ### 6d. One like still heaves the whole mapping (2026-07-25)
 
 **What.** A thumbs-up trains at `lr 1.0 x 1000 iterations` on every gesture. `ml_bench`
@@ -124,11 +102,22 @@ Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user
 - **EOC effects chain, ShapeSeq sequencer, modular engine (Phase E)** — legacy features consciously out of the v1 rewrite; revisit only if a mode wants them.
 - **Inputs multi-source composition** (2026-06-28, reaffirmed 2026-07-21) — mix-and-match pad+gamepad+MIDI is a recorded, unreversed decision; the UI currently enforces exclusive single-source and the composition machinery sits dormant *by design*. Schedule or keep dormant — but the inputs-spec must stop presenting composition as current behaviour (plan §8).
 - **Schema content is partially placeholder** (2026-07-21) — 20 anonymous "Param NN" slots across paf_synth/channel_strip/xiasri and copy-pasted ML defaults across all 9 modes. Name them during the first curated-preset pass per mode (plan §6.5c), or shrink `output_size` where the engine allows.
-- **Geometric-dislike deliberate divergences** (2026-07-14, one-core P3): (1) the degenerate-branch RNG draws from the controller's deterministic `nisps::Rng`, not libc `rand()` — native==WASM parity holds; (2) upstream's async shuffled two-LR `optimise()` is collapsed into one synchronous `dislike_geometric()` training only the pressed negative's target — behavioural, not bitwise, parity with firmware upstream, by design; (3) `RandomiseMlp` uses `draw_weights(spread)` rather than the old asymmetric ranges. All intentional.
+- **Geometric-dislike deliberate divergences** (2026-07-14, one-core P3; reaffirmed 2026-07-25): (1) the degenerate-branch RNG draws from the controller's deterministic `nisps::Rng`, not libc `rand()` — native==WASM parity holds; (2) upstream's async shuffled two-LR `optimise()` is collapsed into one synchronous `dislike_geometric()` training only the pressed negative's target — behavioural, not bitwise, parity with firmware upstream, by design; (3) `RandomiseMlp` uses `draw_weights(spread)` rather than the old asymmetric ranges. All intentional. The 2026-07-25 re-base onto `e291192` took upstream's constants and deleted the taper but did NOT adopt (2)'s counterpart — upstream retrains a batch over ALL live negatives on every 200 Hz tick and holds each negative at full strength for a fixed `kDislikeLifetimeMs = 2500` instead of decaying it proportionally. Adopting that needs a per-tick call site and a millisecond clock inside `nisps/ml`, which the core does not have; it is a real interface decision, not a constant, and is tracked as its own task.
 - **Manifold dock splits `state`/`muted`/`armed`** (2026-06-28) — deliberate divergence from the deployed conflated `frozen`↔`muted` model (dock-spec §3.3). `muted`-downstream and the `soloMode` gradient-mask variants remain UI-only; the C API exposes `set_focus` but no per-mode gradient masking yet. (The audit found `soloMode` behaviourally inert in the controller — plan L20 trims it until `train_masked` exists.)
 
 ## Recently resolved (delete after a few weeks)
 
+- 2026-07-25: **The geometric dislike is re-based on upstream `e291192` (defect 6b).**
+  `kGeometricPushScale` 0.5 -> 1.0, `kNegLRBase` 0.5 -> 1.5, and the `/(1+len)` taper
+  deleted — upstream's own comment is that a "no" should clearly move the mapping away
+  even from a sound already far from the liked region, which is exactly the case the
+  taper killed. Cold start folded into the same path (random direction when nothing is
+  liked yet) instead of the superseded negative-LR branch, so a "no" now moves the
+  mapping before any likes exist (`ml_bench` E1: 0 -> 2.3e-3). One dislike moves the
+  mapping **5.3e-2**, up from 1.6e-2 after the RMSProp fix and 5.3e-5 before it — a
+  ~1000x change end to end, and now within ~4x of the legacy Diffuse design instead of
+  ~4100x (`ml_bench` A4). Not adopted: upstream's per-tick batch retraining and fixed
+  2500 ms dislike lifetime — see "Deferred / accepted debt".
 - 2026-07-25: **`InterfaceRL` is back in the tree (defect 6c).** Vendored verbatim from
   memllib `e291192` at `firmware/MEMLNaut-NISPS/lib/memllib/reference/` — outside `src/`,
   so PlatformIO never compiles it. Upstream drift in the feedback subsystem is a `diff`

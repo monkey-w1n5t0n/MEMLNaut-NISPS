@@ -115,8 +115,9 @@ Manifold ships a single "composite" altitude. Selection is now a plain three-way
 CompositeStage/SandwichStage. `Manifold.tsx` is the full-bleed 2D input surface (canvas trail + pins
 + feedback markers; pointer → `onMove`; **double-click the input mark → follow-mouse mode**, a window
 `pointermove` listener mapping the whole viewport onto this surface's space, Esc or a second
-double-click exits). `OutputStage.tsx` is the output columns; drag a bar to set value, and it takes a
-`compact` prop for the narrow pane.
+double-click exits). `OutputStage.tsx` is the output columns; click or drag a bar to temporarily
+audition a clamped value (the next engine tick restores the live MLP), and it takes a `compact` prop
+for the narrow pane.
 
 - **Output modes** (the TOP dock selector, NOT the same axis as `focus`): `src/console/output-mode.ts`
   defines `OUTPUT_MODES` = **particles** (default) / midi / osc / cv / synth / editor, each mapping to a

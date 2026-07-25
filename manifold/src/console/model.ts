@@ -105,6 +105,8 @@ export interface MFParam {
   group: string;
   status: ParamStatus;
   val: number;
+  /** Temporary value from a direct main-view slider gesture; released on the next engine tick. */
+  manualOverride?: boolean;
   min: number;
   max: number;
   curve: number;
@@ -364,7 +366,9 @@ export { applyCurve };
 export function shapeValues(params: MFParam[], engineOut: Float32Array | null): number[] {
   return params.map((p, i) => {
     if (p.status === 'off') return 0;
-    if (p.status === 'fixed') return p.val ?? 0.5;
+    if (p.status === 'fixed') {
+      return p.min + Math.max(0, Math.min(1, p.val ?? 0.5)) * (p.max - p.min);
+    }
     const raw = engineOut && i < engineOut.length ? engineOut[i] : 0.5;
     const v = p.min + applyCurve(raw, p.curve) * (p.max - p.min);
     return Math.max(0, Math.min(1, v));

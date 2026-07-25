@@ -609,7 +609,32 @@ export function ConsoleApp() {
   };
 
   const setParam = (i: number, patch: Partial<MFParam>) =>
-    setParams((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+    setParams((ps) =>
+      ps.map((p, j) => {
+        if (j !== i) return p;
+        const next = { ...p, ...patch };
+        // Any explicit edit other than the main-view gesture cancels the
+        // transient override, so normal dock/editor controls remain authoritative.
+        if (!Object.prototype.hasOwnProperty.call(patch, 'manualOverride')) {
+          next.manualOverride = undefined;
+        }
+        return next;
+      }),
+    );
+
+  // A direct slider gesture is only an audition value. The next engine tick
+  // (normally caused by moving the input) returns that param to the live MLP.
+  useEffect(() => {
+    setParams((ps) => {
+      let changed = false;
+      const next = ps.map((p) => {
+        if (!p.manualOverride) return p;
+        changed = true;
+        return { ...p, status: 'live' as const, manualOverride: undefined };
+      });
+      return changed ? next : ps;
+    });
+  }, [version]);
 
   // Ref-mirror of everything the two global-listener effects below close over
   // that is NOT already React-stable (verdict/navigation handlers are plain

@@ -3,7 +3,7 @@
  * columns. Drag/click a bar sets value; ⌥/alt-click cycles state; hover opens
  * the OutputEditor. Ported from `OutputStage.jsx`.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { MFParam, ParamStatus } from './model';
 import { GROUP_COLOR } from './model';
@@ -20,10 +20,12 @@ export interface OutputStageProps {
 
 export function OutputStage({ params, values, onChange, compact = false }: OutputStageProps) {
   const [open, setOpen] = useState<number | null>(null);
+  const [clampMarker, setClampMarker] = useState<{ id: string; value: number } | null>(null);
   const timers = useRef<{ open: ReturnType<typeof setTimeout> | null; close: ReturnType<typeof setTimeout> | null }>({
     open: null,
     close: null,
   });
+  const clampTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drag = useRef<{ i: number; moved: boolean; startY: number; el: HTMLDivElement | null; alt: boolean }>({
     i: -1,
     moved: false,
@@ -46,9 +48,47 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
     if (timers.current.close) clearTimeout(timers.current.close);
   };
 
+  useEffect(() => {
+    return () => {
+      if (clampTimer.current) clearTimeout(clampTimer.current);
+    };
+  }, []);
+
   const valFromEvent = (el: HTMLDivElement, clientY: number) => {
     const r = el.getBoundingClientRect();
     return Math.max(0, Math.min(1, 1 - (clientY - r.top) / r.height));
+  };
+  const showClampMarker = (id: string, value: number) => {
+    if (clampTimer.current) clearTimeout(clampTimer.current);
+    setClampMarker({ id, value });
+    clampTimer.current = setTimeout(() => {
+      setClampMarker(null);
+      clampTimer.current = null;
+    }, 700);
+  };
+  const clearClampMarker = () => {
+    if (clampTimer.current) clearTimeout(clampTimer.current);
+    clampTimer.current = null;
+    setClampMarker(null);
+  };
+  const setSliderValue = (i: number, raw: number) => {
+    const param = params[i];
+    if (!param) return;
+    const min = Math.max(0, Math.min(1, Math.min(param.min, param.max)));
+    const max = Math.max(0, Math.min(1, Math.max(param.min, param.max)));
+    const value = Math.max(min, Math.min(max, raw));
+    const wasClamped = value !== raw;
+    if (wasClamped) showClampMarker(param.id, value);
+    else clearClampMarker();
+
+    const span = max - min;
+    const fixedValue = span > 0 ? (value - min) / span : 0;
+    const temporary = param.manualOverride || param.status === 'live';
+    onChange(i, {
+      status: 'fixed',
+      val: fixedValue,
+      manualOverride: temporary ? true : undefined,
+    });
   };
   const down = (e: ReactPointerEvent<HTMLDivElement>, i: number) => {
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -64,13 +104,15 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
     const d = drag.current;
     if (d.i !== i) return;
     if (Math.abs(e.clientY - d.startY) > 3) d.moved = true;
-    if (d.moved && !d.alt && d.el) onChange(i, { val: valFromEvent(d.el, e.clientY) });
+    if (d.moved && !d.alt && d.el) setSliderValue(i, valFromEvent(d.el, e.clientY));
   };
   const up = (e: ReactPointerEvent<HTMLDivElement>, i: number) => {
     const d = drag.current;
     if (d.i !== i) return;
-    if (d.alt && !d.moved) onChange(i, { status: OUT_NEXT[params[i].status] || 'live' });
-    else if (!d.moved && d.el) onChange(i, { val: valFromEvent(d.el, e.clientY) });
+    if (d.alt && !d.moved) {
+      clearClampMarker();
+      onChange(i, { status: OUT_NEXT[params[i].status] || 'live', manualOverride: undefined });
+    } else if (!d.moved && d.el) setSliderValue(i, valFromEvent(d.el, e.clientY));
     drag.current = { i: -1, moved: false, startY: 0, el: null, alt: false };
   };
 
@@ -199,6 +241,21 @@ export function OutputStage({ params, values, onChange, compact = false }: Outpu
                     bottom: `${p.val * 100}%`,
                     height: 0,
                     borderTop: '1px dashed rgba(255,255,255,0.35)',
+                  }}
+                />
+              )}
+              {clampMarker?.id === p.id && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 1,
+                    right: 1,
+                    bottom: `${clampMarker.value * 100}%`,
+                    height: 0,
+                    borderTop: '1px dashed #ff4466',
+                    boxShadow: '0 0 5px rgba(255,68,102,0.8)',
+                    zIndex: 3,
+                    pointerEvents: 'none',
                   }}
                 />
               )}

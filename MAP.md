@@ -50,7 +50,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   rect↔circular + feedback markers; ParticleStage has interactive cursor-labelled heatmap sliders, an adjustable
   joystick, and double-click whole-screen follow-mouse input), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
   (Learning/Inputs/Outputs/Settings/Help; Learning includes the live model-architecture inspector and
-  expanded Outputs owns the remaining scroll height), `TrainingHealth` (real per-iteration loss curve from
+  Outputs owns the remaining scroll height), `TrainingHealth` (real per-iteration loss curve from
   `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at
   the Learning drawer's `expanded` depth — that IS the advanced-surface flag), `VerdictCluster`
   (mode-aware), `OutputEditor`/`DualRange`/`CurvePad`, `icons.tsx`

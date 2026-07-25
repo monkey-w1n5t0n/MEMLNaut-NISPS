@@ -757,9 +757,6 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
         <Chip>off {counts.off || 0}</Chip>
         <Chip tone="var(--danger)">muted {mutedN}</Chip>
         <BackendStatusChip ctx={ctx} />
-        <Button size="sm" variant="ghost" onClick={ctx.addOutput}>
-          + output
-        </Button>
       </div>
       {ModeConfig(ctx, depth)}
       {/* Specialised per-backend config + named-preset bar (MIDI/OSC); hidden when condensed. */}
@@ -787,9 +784,32 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
               onChange={(patch) => ctx.setParam(i, patch)}
               onDelete={activeParams.length > 1 ? () => ctx.deleteOutput(i) : undefined}
               showCurve={expanded}
+              showMidi={ctx.outputMode === 'midi'}
             />
           );
         })}
+        <button
+          type="button"
+          aria-label="+ output"
+          title="Add parameter"
+          onClick={ctx.addOutput}
+          style={{
+            alignSelf: 'center',
+            width: 30,
+            height: 26,
+            margin: '4px 0 2px',
+            border: '1px solid var(--line)',
+            borderRadius: 'var(--r-1)',
+            background: 'var(--bg-2)',
+            color: 'var(--accent)',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 18,
+            lineHeight: 1,
+          }}
+        >
+          +
+        </button>
       </div>
       {!expanded && activeParams.length > 6 && (
         <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>+{activeParams.length - 6} more — expand to edit</span>

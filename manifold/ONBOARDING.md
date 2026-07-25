@@ -166,9 +166,10 @@ for the narrow pane.
     curve/fixedValue + backend specs `MidiCcSpec`/`OscSpec`/`VcvSpec`), `toOutputControl()`,
     `buildArmMask()` (solo focus).
   - `OutputControlRow.tsx` — one output row: name · M(mute) · S(solo/arm) · off|fixed|live · dual-range
-    · curve pad · live value. **Writes eagerly to the shared `MFParam` store via `onChange`.**
-  - `OutputsBackendConfig.tsx` — preset bar (save/restore/rename/delete) + per-backend config (MIDI
-    CC#/channel, OSC path/range, VCV polarity).
+    · curve pad · live value; MIDI mode adds the card's name, CC#, and channel fields. **Writes eagerly
+    to the shared `MFParam` store via `onChange`.** The centered `+` control follows the last visible card.
+  - `OutputsBackendConfig.tsx` — preset bar (save/restore/rename/delete) + transport/device config (MIDI
+    port/templates, OSC path/range, VCV polarity); MIDI per-output fields live on `OutputControlRow`.
 
 ### Primitives — `src/primitives/` (barrel: `index.ts`)
 Seven: `Button`, `Slider`, `PillToggle`, `Badge`, `Switch`, `XYPad`, `VirtualJoystick`. Dumb,

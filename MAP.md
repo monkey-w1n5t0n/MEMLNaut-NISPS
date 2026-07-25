@@ -59,8 +59,8 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   consts (mode_id, engine_id, ml dims, params, voice_spaces, ui) — the SOURCE OF TRUTH for `MF_MODES`.
   Switching mode reshapes the WASM net to the mode's `ml` dims (ConsoleApp P5.3; boot mode paf_synth →
   4→[10,10,14]→33).
-- `manifold/src/dock/` — `OutputControlRow` (add/delete card identity + off/fixed/live + mute + solo/arm + min/max/curve), `output-state.ts`,
-  `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel — the sole per-backend editor).
+- `manifold/src/dock/` — `OutputControlRow` (add/delete card identity + off/fixed/live + mute + solo/arm + min/max/curve, plus MIDI card fields), `output-state.ts`,
+  `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel — the sole per-backend editor; the centered add-card control lives below the rows).
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
   (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `vcv-backend.ts` (VCV-over-WS), `cv-backend.ts`
   (`UseqCvBackend` — uSEQ CV/gate over USB Web Serial, backend id `cvgate`) + `useq-protocol.ts` (v2 wire
@@ -68,7 +68,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   `particle-backend.ts`, `passthrough-backend.ts`, `presets.ts` (named presets), `manager.ts`.
 - `manifold/src/midi-devices/` — external-synth device templates. `generated/` is codegen output from
   `schemas/midi_devices/` (`MIDI_DEVICES` catalogue + `MIDI_DEVICES_BY_ID`, params by name+CC). The MIDI Outputs
-  config (`dock/OutputsBackendConfig.tsx`) reads it for the device picker + param-select that fills the CC table.
+  config (`dock/OutputsBackendConfig.tsx`) reads it for the device picker + param-select that fills the per-card MIDI fields.
 - `manifold/src/inputs/` — modular INPUT layer feeding the ML head. The Inputs dock picks ONE exclusive mode
   (`InputMode` = `internal` | `gamepad` | `midi`; Internal/XY-pad is default). `input-layer.ts` owns a single rAF
   loop composing the active source's axes → **one dedicated engine input slot per axis, 1:1, no blending** → one

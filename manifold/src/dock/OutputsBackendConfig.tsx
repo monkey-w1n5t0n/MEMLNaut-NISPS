@@ -4,7 +4,8 @@
  *
  * Layout: ONE preset bar (save-as / restore / rename / delete, per-backend
  * namespace) on top, then a per-backend config section:
- *   - MIDI  → output-port picker, number-of-CCs, per-output CC#/channel/name.
+ *   - MIDI  → output-port picker, number-of-CCs, and device templates; each
+ *             output card owns its CC#/channel/name fields.
  *   - OSC   → bridge URL + connect status + send-raw toggle, per-output path/range.
  *   - VCV/CV→ bridge URL + connect status + send-raw toggle, per-output polarity
  *             (uni 0–10 V / bipolar ±5 V). The browser drives + trains the VCV
@@ -20,7 +21,7 @@
 import { useEffect, useState } from 'react';
 import type { ConsoleCtx } from '../console/types';
 import type { BackendId, CvChannelId } from './output-state';
-import { CV_CHANNELS, defaultCvSpec, defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from './output-state';
+import { CV_CHANNELS, defaultCvSpec, defaultOscSpec, defaultVcvSpec } from './output-state';
 import {
   applyPreset,
   deletePreset,
@@ -212,8 +213,8 @@ function PresetBar({ ctx, backend }: { ctx: ConsoleCtx; backend: BackendId }) {
 
 /**
  * Pick an external synth (e.g. Moog Sub 37), see its parameters BY NAME, tick the
- * ones to control, and "Apply" — this fills the per-output CC table (CC#, channel,
- * name) from the device template and sets the CC count. Pure local state + the
+ * ones to control, and "Apply" — this fills the per-output card fields (CC#,
+ * channel, name) from the device template and sets the CC count. Pure local state + the
  * existing setParam/setMidiCcCount; the applied result lives in the shared params
  * store, so it is saved/restored by the named-preset bar like any other config.
  */
@@ -355,72 +356,13 @@ function MidiConfig({ ctx }: { ctx: ConsoleCtx }) {
           ))}
         </select>
         <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
-          {ctx.midiCcCount} CC output{ctx.midiCcCount === 1 ? '' : 's'} · add/delete cards below
+          {ctx.midiCcCount} MIDI output card{ctx.midiCcCount === 1 ? '' : 's'}
         </span>
         <span style={{ fontSize: 9, color: statusColor }}>{s.message}</span>
       </div>
 
       <DeviceTemplatePicker ctx={ctx} />
 
-      <SectionLabel>Per-output CC · name · channel</SectionLabel>
-      <div style={{ maxHeight: 320, overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <Th>Name</Th>
-              <Th>CC#</Th>
-              <Th>Ch</Th>
-              <Th>State</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {ctx.params.slice(0, ctx.midiCcCount).map((p, i) => {
-              const m = p.midi ?? defaultMidiSpec(i);
-              return (
-                <tr key={i}>
-                  <td style={{ padding: '3px 6px' }}>
-                    <input
-                      style={cellInput}
-                      value={m.name}
-                      onChange={(e) => ctx.setParam(i, { midi: { ...m, name: e.target.value } })}
-                    />
-                  </td>
-                  <td style={{ padding: '3px 6px', width: 70 }}>
-                    <input
-                      type="number"
-                      min={0}
-                      max={127}
-                      style={cellInput}
-                      value={m.cc}
-                      onChange={(e) =>
-                        ctx.setParam(i, { midi: { ...m, cc: Math.max(0, Math.min(127, num(e.target.value, m.cc))) } })
-                      }
-                    />
-                  </td>
-                  <td style={{ padding: '3px 6px', width: 60 }}>
-                    <input
-                      type="number"
-                      min={1}
-                      max={16}
-                      style={cellInput}
-                      value={m.channel}
-                      onChange={(e) =>
-                        ctx.setParam(i, {
-                          midi: { ...m, channel: Math.max(1, Math.min(16, num(e.target.value, m.channel))) },
-                        })
-                      }
-                    />
-                  </td>
-                  <td style={{ padding: '3px 6px', fontSize: 'var(--fs-xs)', color: 'var(--fg-mute)' }}>
-                    {p.status}
-                    {p.muted ? ' · muted' : ''}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
     </>
   );
 }

@@ -12,6 +12,7 @@ import { GROUP_COLOR } from '../console/model';
 import type { MFParam, ParamStatus } from '../console/model';
 import { CurvePad } from '../console/CurvePad';
 import { DualRange } from '../console/DualRange';
+import { defaultMidiSpec } from './output-state';
 
 const STATE_META: { v: ParamStatus; label: string; color: string }[] = [
   { v: 'off', label: 'off', color: 'var(--fg-dim)' },
@@ -64,6 +65,8 @@ export interface OutputControlRowProps {
   onDelete?: () => void;
   /** Show the curve pad inline (expand depth); hidden in compact rows. */
   showCurve?: boolean;
+  /** Show the per-card MIDI name, CC, and channel controls. */
+  showMidi?: boolean;
 }
 
 export function OutputControlRow({
@@ -72,12 +75,14 @@ export function OutputControlRow({
   onChange,
   onDelete,
   showCurve = false,
+  showMidi = false,
 }: OutputControlRowProps) {
   const gc = `var(${GROUP_COLOR[param.group] || '--accent'})`;
   const muted = param.muted ?? false;
   const armed = param.armed ?? false;
   const off = param.status === 'off';
   const barVal = param.status === 'fixed' ? param.val : value;
+  const midi = param.midi ?? defaultMidiSpec(param.engineIndex ?? 0);
   return (
     <div
       style={{
@@ -93,19 +98,39 @@ export function OutputControlRow({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontSize: 'var(--fs-xs)',
-            color: 'var(--fg)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {param.name}
-        </span>
+        {showMidi ? (
+          <input
+            aria-label={`MIDI name for ${param.name}`}
+            value={midi.name}
+            onChange={(e) => onChange({ midi: { ...midi, name: e.target.value } })}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              width: 0,
+              border: 0,
+              borderBottom: '1px solid var(--line)',
+              background: 'transparent',
+              color: 'var(--fg)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 'var(--fs-xs)',
+              padding: '1px 0',
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 'var(--fs-xs)',
+              color: 'var(--fg)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {param.name}
+          </span>
+        )}
         <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>{param.group}</span>
         {onDelete && (
           <button
@@ -144,6 +169,59 @@ export function OutputControlRow({
           onClick={() => onChange({ armed: !armed })}
         />
       </div>
+
+      {showMidi && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--fg-mute)' }}>
+            CC
+            <input
+              aria-label={`MIDI CC for ${param.name}`}
+              type="number"
+              min={0}
+              max={127}
+              value={midi.cc}
+              onChange={(e) =>
+                onChange({ midi: { ...midi, cc: Math.max(0, Math.min(127, Number(e.target.value) || 0)) } })
+              }
+              style={{
+                width: 54,
+                background: 'var(--bg-1)',
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--r-1)',
+                color: 'var(--fg)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                padding: '2px 4px',
+              }}
+            />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, color: 'var(--fg-mute)' }}>
+            ch
+            <input
+              aria-label={`MIDI channel for ${param.name}`}
+              type="number"
+              min={1}
+              max={16}
+              value={midi.channel}
+              onChange={(e) =>
+                onChange({
+                  midi: { ...midi, channel: Math.max(1, Math.min(16, Number(e.target.value) || 1)) },
+                })
+              }
+              style={{
+                width: 44,
+                background: 'var(--bg-1)',
+                border: '1px solid var(--line)',
+                borderRadius: 'var(--r-1)',
+                color: 'var(--fg)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                padding: '2px 4px',
+              }}
+            />
+          </label>
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {/* tri-state segmented */}

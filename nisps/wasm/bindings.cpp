@@ -403,6 +403,9 @@ int nisps_ml_reshape(void* ml, int input_size, int output_size,
 
     const auto feedback_mode = h->feedback.mode();
     const auto avoid_style = h->feedback.avoid_style();
+    const float geo_lr = h->feedback.geo_lr();
+    const float geo_update_hz = h->feedback.geo_update_hz();
+    const float geo_lifetime_ms = h->feedback.geo_lifetime_ms();
     BrowserMLP fresh(h->seed64, d.n_in, std::span<const std::size_t>(d.hidden, 3u), d.n_out);
     if (!fresh.valid()) return 0;
     fresh.draw_weights(spread);
@@ -412,6 +415,9 @@ int nisps_ml_reshape(void* ml, int input_size, int output_size,
                        kFeedbackUndoDepth, d.n_in, kFeedbackReplayCap);
     if (!fb.valid()) return 0;
     fb.set_avoid_style(avoid_style);
+    fb.set_geo_lr(geo_lr);
+    fb.set_geo_update_hz(geo_update_hz);
+    fb.set_geo_lifetime_ms(geo_lifetime_ms);
     fb.set_mode(feedback_mode, fresh);
 
     h->mlp      = static_cast<BrowserMLP&&>(fresh);
@@ -627,10 +633,16 @@ void nisps_ml_feedback_reset(void* ml) {
     auto* h = static_cast<MLHandle*>(ml);
     const auto feedback_mode = h->feedback.mode();
     const auto avoid_style = h->feedback.avoid_style();
+    const float geo_lr = h->feedback.geo_lr();
+    const float geo_update_hz = h->feedback.geo_update_hz();
+    const float geo_lifetime_ms = h->feedback.geo_lifetime_ms();
     BrowserFeedback fb(h->seed64 ^ kFeedbackSalt, h->n_out(), h->mlp.weight_count(),
                        kFeedbackUndoDepth, h->n_in(), kFeedbackReplayCap);
     if (!fb.valid()) return;
     fb.set_avoid_style(avoid_style);
+    fb.set_geo_lr(geo_lr);
+    fb.set_geo_update_hz(geo_update_hz);
+    fb.set_geo_lifetime_ms(geo_lifetime_ms);
     fb.set_mode(feedback_mode, h->mlp);
     h->feedback = static_cast<BrowserFeedback&&>(fb);
     h->feedback_static_scratch.assign(h->n_out(), 0.f);
@@ -815,6 +827,29 @@ int nisps_ml_feedback_dislike_geometric(void* ml, const float* current_out, floa
     if (current_out) out = std::span<const float>(current_out, h->n_out());
     const float use_lr = (lr > 0.f) ? lr : h->feedback.geo_lr();
     return static_cast<int>(h->feedback.dislike_geometric(h->mlp, out, use_lr));
+}
+
+// Configure the replay dose. Non-negative values are accepted; zero update
+// rate or lifetime gives one-shot press behaviour. Defaults are upstream:
+// 1e-3, 200 Hz, 2500 ms.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_feedback_set_geometric_config(void* ml, float lr,
+                                            float update_hz,
+                                            float lifetime_ms) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    if (lr > 0.f) h->feedback.set_geo_lr(lr);
+    h->feedback.set_geo_update_hz(update_hz);
+    h->feedback.set_geo_lifetime_ms(lifetime_ms);
+}
+
+// Deterministic elapsed-time seam. The host owns the clock; every weight-
+// affecting step remains in the shared C++ core. Returns optimise cycles run.
+EMSCRIPTEN_KEEPALIVE
+int nisps_ml_feedback_advance_geometric(void* ml, float dt_seconds) {
+    if (!ml) return 0;
+    auto* h = static_cast<MLHandle*>(ml);
+    return static_cast<int>(h->feedback.advance_geometric(h->mlp, dt_seconds));
 }
 
 // Store a positive (like) into the replay memory so the k-NN centroid sees

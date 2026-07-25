@@ -18,9 +18,9 @@
 //                          - Geometric (DEFAULT) — the ported firmware k-NN
 //                            centroid push-away, backed by the controller's
 //                            own ReplayMemory (see dislike_geometric() below).
-//                            Cold-starts with a negative-LR fallback until the
-//                            first positive is stored. The old "geometric push
-//                            not ported" note is stale — it IS ported.
+//                            Replays all live negatives for a parameterised
+//                            wall-clock window; cold start uses a deterministic
+//                            random direction until a positive is stored.
 //                          - Diffuse — the pre-P3 undirected MLP::move_weights
 //                            perturb. Deliberately-retained research reserve,
 //                            not the product default (see its definition below
@@ -138,7 +138,7 @@ enum class FeedbackAction : std::uint8_t {
     CancelPlace   = 13,  // Placing→Exploring; backed out of placing (no store).
     // ---- Geometric dislike (append-only) ----
     GeometricPush      = 14,  // dislike trained toward the computed push-away target.
-    GeometricColdStart = 15,  // no positives yet: negative-LR fallback ran; UI shows the cold-start prompt.
+    GeometricColdStart = 15,  // no positives yet: random-direction push ran; UI shows the cold-start prompt.
 };
 
 // ---------------------------------------------------------------------------
@@ -180,6 +180,7 @@ class FixedFeedbackStorage {
     NISPS_FORCE_INLINE std::span<float> replay_inputs()  noexcept { return replay_in_; }
     NISPS_FORCE_INLINE std::span<float> replay_actions() noexcept { return replay_act_; }
     NISPS_FORCE_INLINE std::span<float> replay_rewards() noexcept { return replay_rew_; }
+    NISPS_FORCE_INLINE std::span<float> replay_ages_ms() noexcept { return replay_age_ms_; }
     // Centroid + push-target scratch (n_out each).
     NISPS_FORCE_INLINE std::span<float> centroid_buf() noexcept { return centroid_; }
     NISPS_FORCE_INLINE std::span<float> target_buf()   noexcept { return target_; }
@@ -194,6 +195,7 @@ class FixedFeedbackStorage {
     std::array<float, ReplayCap * NIn>  replay_in_{};
     std::array<float, ReplayCap * NOut> replay_act_{};
     std::array<float, ReplayCap>        replay_rew_{};
+    std::array<float, ReplayCap>        replay_age_ms_{};
     std::array<float, NOut>             centroid_{};
     std::array<float, NOut>             target_{};
 };
@@ -230,6 +232,17 @@ class FeedbackControllerCore : public FbStorage {
     // InterfaceRL default 1e-3, pre-scaling).
     void set_geo_lr(float lr) noexcept { geo_lr_ = lr; }
     float geo_lr() const noexcept { return geo_lr_; }
+    void set_geo_update_hz(float hz) noexcept {
+        geo_update_hz_ = (hz > 0.f) ? hz : 0.f;
+        geo_step_accum_ = 0.f;
+        if (!(geo_update_hz_ > 0.f)) replay_().remove_all_negatives();
+    }
+    float geo_update_hz() const noexcept { return geo_update_hz_; }
+    void set_geo_lifetime_ms(float ms) noexcept {
+        geo_lifetime_ms_ = (ms > 0.f) ? ms : 0.f;
+        if (!(geo_lifetime_ms_ > 0.f)) replay_().remove_all_negatives();
+    }
+    float geo_lifetime_ms() const noexcept { return geo_lifetime_ms_; }
 
     // `exploring()` is true whenever a scratchpad net is live and learning is
     // paused — for the legacy RANDOMISE_* modes, AND for ExploreAndPlace in
@@ -393,9 +406,9 @@ class FeedbackControllerCore : public FbStorage {
     void seed(std::uint64_t s) noexcept { rng_.seed(s); }
 
     // =========================================================================
-    // Geometric dislike (rl-feedback-design §2.1) — the press-time half and
-    // the async optimise() half of upstream InterfaceRL collapsed into ONE
-    // synchronous call (nisps has no background optimise driver).
+    // Geometric dislike (rl-feedback-design §2.1): press stores the rejection
+    // and performs one immediate update; advance_geometric() supplies the
+    // repeated, wall-clock-bounded optimise dose used by current upstream.
     // =========================================================================
 
     std::size_t replay_size() const noexcept { return replay_count_; }
@@ -416,18 +429,12 @@ class FeedbackControllerCore : public FbStorage {
     // Thumbs-down at the MLP's CURRENT input with heard action `current_out`
     // (empty ⇒ the MLP's live outputs). Runs the full upstream sequence:
     //   1. deepen-or-store the negative (dedup radius 0.05).
-    //   2. k-NN(4) positive centroid — or zeros when nothing is liked yet —
-    //      → push-away target → train toward it at lr * negLRRatio, gated by
-    //      the focus/solo mask. With no positives the push direction is
-    //      random per dim, which is upstream's cold start (there is no
-    //      separate negative-LR branch any more; see the body).
-    //   3. proportional decay + eviction of expired negatives.
+    //   2. immediately optimise all live negatives once. Subsequent updates
+    //      come from advance_geometric().
     template <typename M>
     FeedbackAction dislike_geometric(M& mlp, std::span<const float> current_out,
                                      float lr) noexcept {
         auto replay = replay_();
-        const std::size_t n_out = this->n_out();
-
         std::span<const float> a_neg = current_out.empty()
             ? std::span<const float>(mlp.outputs())
             : current_out;
@@ -436,44 +443,46 @@ class FeedbackControllerCore : public FbStorage {
         // 1. store/deepen the negative (InterfaceRL.cpp:42-66).
         replay.deepen_or_store_negative(x_neg, a_neg);
 
-        const std::size_t pos_total = replay.positive_count();
-        const std::size_t neg_total = replay.negative_count();
-        const float avg_neg = replay.avg_negative_reward();
-
-        // 2+3. ONE path, as upstream (InterfaceRL.tpp:696-761). With no likes
-        // stored there is no centroid to push away from, so the centroid is
-        // zeros and `have_positives=false` sends every dim in a random
-        // direction — upstream's `useRandom = !havePositives || ...`. We still
-        // report GeometricColdStart so the caller can show its "like a few
-        // sounds first" prompt, but the TRAINING is the same push at the same
-        // LR either way. (Until 2026-07-25 the cold start instead trained AWAY
-        // from the heard action at a NEGATIVE lr — a port of the older
-        // `0a541cc` fallback that upstream has since replaced.)
-        auto mean = this->centroid_buf();
-        const bool have_positives = (pos_total > 0u);
-        if (have_positives) {
-            (void)replay.knn_positive_centroid(x_neg, kCentroidK, mean);
-        } else {
-            for (std::size_t j = 0; j < n_out; ++j) mean[j] = 0.f;
+        const bool have_positives = replay.positive_count() > 0u;
+        (void)optimise_geometric_once_(mlp, lr);
+        if (!(geo_update_hz_ > 0.f) || !(geo_lifetime_ms_ > 0.f)) {
+            replay.remove_all_negatives();
         }
-
-        auto target = this->target_buf();
-        compute_push_target(a_neg.subspan(0, (a_neg.size() < n_out) ? a_neg.size() : n_out),
-                            std::span<const float>(mean.data(), n_out),
-                            focus_span_(), geo_push_step(avg_neg), have_positives,
-                            rng_, target);
-        const float ratio = geo_neg_lr_ratio(neg_total, pos_total);
-        mlp.train_targets(x_neg, std::span<const float>(target.data(), n_out),
-                          lr * ratio, focus_span_());
-
-        const FeedbackAction action = have_positives
+        return have_positives
             ? FeedbackAction::GeometricPush
             : FeedbackAction::GeometricColdStart;
+    }
 
-        // 4. decay + evict expired negatives (InterfaceRL.cpp:752-760).
-        replay.decay_negatives();
+    // Advance the upstream-style replay optimiser by elapsed wall-clock time.
+    // Returns the number of optimisation cycles applied. A long scheduler gap
+    // does not create an unbounded catch-up burst: upstream also cannot execute
+    // missed loop iterations while blocked. Ages still advance by the full dt.
+    template <typename M>
+    std::size_t advance_geometric(M& mlp, float dt_seconds) noexcept {
+        if (mode_ != FeedbackMode::Avoid || avoid_style_ != AvoidStyle::Geometric ||
+            !(dt_seconds > 0.f)) {
+            return 0u;
+        }
+        auto replay = replay_();
+        if (replay.negative_count() == 0u) {
+            geo_step_accum_ = 0.f;
+            return 0u;
+        }
 
-        return action;
+        constexpr float kMaxDoseDtSeconds = 0.1f;
+        const float dose_dt = (dt_seconds < kMaxDoseDtSeconds)
+            ? dt_seconds
+            : kMaxDoseDtSeconds;
+        geo_step_accum_ += dose_dt * geo_update_hz_;
+        std::size_t steps = static_cast<std::size_t>(geo_step_accum_);
+        geo_step_accum_ -= static_cast<float>(steps);
+
+        for (std::size_t i = 0; i < steps; ++i) {
+            if (!optimise_geometric_once_(mlp, geo_lr_)) break;
+        }
+        replay.advance_negative_ages(dt_seconds * 1000.f, geo_lifetime_ms_);
+        if (replay.negative_count() == 0u) geo_step_accum_ = 0.f;
+        return steps;
     }
 
     // =========================================================================
@@ -661,8 +670,43 @@ class FeedbackControllerCore : public FbStorage {
     // The replay view over the storage-owned buffers.
     ReplayView replay_() noexcept {
         return ReplayView(this->replay_inputs(), this->replay_actions(),
-                          this->replay_rewards(), this->n_in(), this->n_out(),
-                          this->replay_cap(), replay_count_);
+                          this->replay_rewards(), this->replay_ages_ms(),
+                          this->n_in(), this->n_out(), this->replay_cap(),
+                          replay_count_);
+    }
+
+    // One upstream-style optimise cycle over ALL live negatives. Unlike the
+    // upstream cursor-coupled implementation, the positive centroid is looked
+    // up at each negative's own stored input, so moving the cursor cannot
+    // reinterpret an older rejection.
+    template <typename M>
+    bool optimise_geometric_once_(M& mlp, float lr) noexcept {
+        auto replay = replay_();
+        const std::size_t pos_total = replay.positive_count();
+        const std::size_t neg_total = replay.negative_count();
+        if (neg_total == 0u) return false;
+        const float avg_neg = replay.avg_negative_reward();
+        const std::size_t n_out = this->n_out();
+        const float ratio = geo_neg_lr_ratio(neg_total, pos_total);
+
+        for (std::size_t i = 0; i < replay.size(); ++i) {
+            if (replay.reward(i) > 0.f) continue;
+            const auto x_neg = replay.input(i);
+            const auto a_neg = replay.action(i);
+            auto mean = this->centroid_buf();
+            const bool have_positives =
+                replay.knn_positive_centroid(x_neg, kCentroidK, mean) > 0u;
+            if (!have_positives) {
+                for (std::size_t j = 0; j < n_out; ++j) mean[j] = 0.f;
+            }
+            auto target = this->target_buf();
+            compute_push_target(a_neg, std::span<const float>(mean.data(), n_out),
+                                focus_span_(), geo_push_step(avg_neg),
+                                have_positives, rng_, target);
+            mlp.train_targets(x_neg, std::span<const float>(target.data(), n_out),
+                              lr * ratio, focus_span_());
+        }
+        return true;
     }
 
     // The focus mask as the geometric active-dims gate (empty ⇒ all active).
@@ -795,6 +839,9 @@ class FeedbackControllerCore : public FbStorage {
     // ---- Geometric dislike state ---------------------------------------------
     std::size_t  replay_count_       = 0u;
     float        geo_lr_             = 0.001f;  // upstream InterfaceRL.hpp:312
+    float        geo_update_hz_      = 200.f;   // upstream default optimise loop
+    float        geo_lifetime_ms_    = 2500.f;  // upstream kDislikeLifetimeMs
+    float        geo_step_accum_     = 0.f;
 
     // ---- ExploreAndPlace state ----------------------------------------------
     ExploreState ep_state_ = ExploreState::Idle;

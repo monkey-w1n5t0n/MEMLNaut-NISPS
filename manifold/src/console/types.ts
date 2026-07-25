@@ -5,6 +5,7 @@ import type { MFMode, MFParam } from './model';
 import type { FeedbackMode } from '../engine/types';
 import type { BackendStatus } from '../backends/backend';
 import type { UseInputLayer } from '../inputs';
+import type { GeometricFeedbackConfig } from '../engine';
 
 /** The two product feedback modes (dock-spec §1.1; rl-feedback-design §0). */
 export type FeedbackModeUI = 'explore-and-place' | 'geometric-dislike';
@@ -124,6 +125,8 @@ export interface ConsoleCtx {
   xavierSpreadEnabled: boolean;
   noiseCap: number;
   setNoiseCap: (v: number) => void;
+  geometricConfig: GeometricFeedbackConfig;
+  setGeometricConfig: (config: GeometricFeedbackConfig) => void;
 
   // ---- Learning-behaviour (dock-spec §1; rl-feedback-design) ----
   feedbackMode: FeedbackModeUI;

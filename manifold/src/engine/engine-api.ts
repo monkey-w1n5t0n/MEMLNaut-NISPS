@@ -23,6 +23,18 @@ import type { EngineId, FeedbackMode, LayerStats } from './types';
 import { WasmIML } from './wasm-iml';
 import type { IoMigration } from './io-reshape';
 
+export interface GeometricFeedbackConfig {
+  learningRate: number;
+  updatesPerSecond: number;
+  lifetimeMs: number;
+}
+
+export const DEFAULT_GEOMETRIC_FEEDBACK_CONFIG: Readonly<GeometricFeedbackConfig> = {
+  learningRate: 0.001,
+  updatesPerSecond: 200,
+  lifetimeMs: 2500,
+};
+
 export interface EngineFeedbackApi {
   /** Positive feedback (thumbs-up). Returns the FeedbackAction int. */
   thumbsUp(): number;
@@ -65,6 +77,10 @@ export interface EngineFeedbackApi {
    * FeedbackAction int (14=GeometricPush, 15=GeometricColdStart).
    */
   dislikeGeometric(heardVec?: Float32Array, lr?: number): number;
+  /** Configure upstream-style replay dose and wall-clock lifetime. */
+  setGeometricConfig(config: GeometricFeedbackConfig): void;
+  /** Advance replay by elapsed wall-clock time; returns optimise cycles run. */
+  advanceGeometric(dtSeconds: number): number;
   /** Feed a positive (like) into the k-NN centroid (null → live MLP output). */
   storePositive(vec?: Float32Array): void;
   positiveCount(): number;
@@ -185,6 +201,13 @@ export class EngineApi {
       placedOutput: () => this.iml.feedbackPlacedOutput(),
       dislikeGeometric: (heardVec?: Float32Array, lr = 0) =>
         this.iml.feedbackDislikeGeometric(heardVec, lr),
+      setGeometricConfig: (config) =>
+        this.iml.feedbackSetGeometricConfig(
+          config.learningRate,
+          config.updatesPerSecond,
+          config.lifetimeMs,
+        ),
+      advanceGeometric: (dtSeconds) => this.iml.feedbackAdvanceGeometric(dtSeconds),
       storePositive: (vec?: Float32Array) => this.iml.feedbackStorePositive(vec),
       positiveCount: () => this.iml.feedbackPositiveCount(),
       negativeCount: () => this.iml.feedbackNegativeCount(),

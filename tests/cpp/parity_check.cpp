@@ -281,10 +281,10 @@ int main(int argc, char** argv) {
         // ---- Stage 6: geometric dislike (one-core-engine P3) ----
         // Scripted feedback session — likes at two corners feed the replay
         // positives (via the Avoid+Geometric on_up path), then two dislikes at
-        // a probed input: the first stores the negative and trains toward the
-        // computed push-away target; the second deepens and pushes again. The
-        // weight trajectory must match native↔WASM within 1e-5 (the useRandom
-        // branch never fires here; the controller Rng is untouched).
+        // a probed input. Eight 5ms driver ticks cover the parameterised
+        // upstream-style 200 Hz replay seam over all live negatives. The weight
+        // trajectory must match native↔WASM within 1e-5 (the useRandom branch
+        // never fires here; the controller Rng is untouched).
         fb.set_mode(nisps::ml::FeedbackMode::Avoid, mlp);
 
         auto like_at = [&](float x, float y) {
@@ -316,6 +316,9 @@ int main(int argc, char** argv) {
         };
         dislike_at(0.25f, 0.75f);
         dislike_at(0.26f, 0.74f);  // within dedup radius → deepen + push
+        for (int i = 0; i < 8; ++i) {
+            fb.advance_geometric(mlp, 0.005f);
+        }
 
         payload.push_back(static_cast<float>(fb.positive_count()));
         payload.push_back(static_cast<float>(fb.negative_count()));

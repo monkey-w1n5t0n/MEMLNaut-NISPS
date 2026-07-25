@@ -104,6 +104,7 @@ function bind(Module) {
     feedbackLike:         cwrap('nisps_ml_feedback_like',          null,     ['number']),
     feedbackCommitPlace:  cwrap('nisps_ml_feedback_commit_place',  null,     ['number']),
     feedbackPlacedOutput: cwrap('nisps_ml_feedback_placed_output', 'number', ['number','number']),
+    feedbackAdvanceGeometric: cwrap('nisps_ml_feedback_advance_geometric', 'number', ['number','number']),
     feedbackPositiveCount: cwrap('nisps_ml_feedback_positive_count', 'number', ['number']),
     feedbackNegativeCount: cwrap('nisps_ml_feedback_negative_count', 'number', ['number']),
     describe:    cwrap('nisps_ml_describe',     null,     ['number','number']),
@@ -333,9 +334,9 @@ async function main() {
 
   // --- Stage 6: geometric dislike (one-core-engine P3) ---
   // Mirrors parity_check.cpp stage 6: two likes feed the replay positives via
-  // the Avoid+Geometric on_up path, then two dislikes (second deepens) train
-  // toward the computed push-away target. f32 arithmetic for the "heard"
-  // vector via Math.fround to match native float ops exactly.
+  // the Avoid+Geometric on_up path, then two dislikes (second deepens) plus
+  // eight 5ms replay ticks train toward the computed push-away target. f32
+  // arithmetic for the "heard" vector via Math.fround matches native exactly.
   const FB_AVOID = 0;
   api.feedbackSetMode(ml, FB_AVOID);
 
@@ -368,6 +369,7 @@ async function main() {
   };
   dislikeAt(0.25, 0.75);
   dislikeAt(0.26, 0.74);  // within dedup radius: deepen + push
+  for (let i = 0; i < 8; i++) api.feedbackAdvanceGeometric(ml, 0.005);
 
   feedbackFloats.push(api.feedbackPositiveCount(ml));
   feedbackFloats.push(api.feedbackNegativeCount(ml));

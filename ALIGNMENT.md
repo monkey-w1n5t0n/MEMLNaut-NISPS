@@ -72,12 +72,11 @@ one thumbs-up can move the mapping somewhere in the space by more than the entir
 range. Retention (how much of the previous teaching survives) is 0.38; at `iters=1` it
 is 0.80.
 
-**Why it blocks the mission.** This is the other half of the feedback asymmetry, and
-RMSProp did NOT fix it — normalising the step size does not change the dose. Upstream
-keeps both directions on small repeated steps; we take one enormous positive step and
-one small negative one, so teaching feels like a lurch and correcting feels like
-nothing. The two numbers now differ by ~70x rather than ~2e6x, which is progress and
-still not a design.
+**Why it blocks the mission.** RMSProp did NOT fix the positive lurch — normalising the
+step size does not change its dose. The negative path now exposes upstream-style repeated
+small steps (rate/lifetime/LR are live controls), so its old fixed ~70x comparison is no
+longer current. Positive teaching remains one enormous blocking train, and the two doses
+still need a matched head-to-head rather than independent tuning.
 
 **Rough cost.** Cheap to change, expensive to choose: the tuning space is now measurable
 (`ml_bench` U4 sweeps dose; U1 sweeps upstream's soft-target alpha, where alpha=1 is
@@ -102,7 +101,7 @@ Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user
 - **EOC effects chain, ShapeSeq sequencer, modular engine (Phase E)** — legacy features consciously out of the v1 rewrite; revisit only if a mode wants them.
 - **Inputs multi-source composition** (2026-06-28, reaffirmed 2026-07-21) — mix-and-match pad+gamepad+MIDI is a recorded, unreversed decision; the UI currently enforces exclusive single-source and the composition machinery sits dormant *by design*. Schedule or keep dormant — but the inputs-spec must stop presenting composition as current behaviour (plan §8).
 - **Schema content is partially placeholder** (2026-07-21) — 20 anonymous "Param NN" slots across paf_synth/channel_strip/xiasri and copy-pasted ML defaults across all 9 modes. Name them during the first curated-preset pass per mode (plan §6.5c), or shrink `output_size` where the engine allows.
-- **Geometric-dislike deliberate divergences** (2026-07-14, one-core P3; reaffirmed 2026-07-25): (1) the degenerate-branch RNG draws from the controller's deterministic `nisps::Rng`, not libc `rand()` — native==WASM parity holds; (2) upstream's async shuffled two-LR `optimise()` is collapsed into one synchronous `dislike_geometric()` training only the pressed negative's target — behavioural, not bitwise, parity with firmware upstream, by design; (3) `RandomiseMlp` uses `draw_weights(spread)` rather than the old asymmetric ranges. All intentional. The 2026-07-25 re-base onto `e291192` took upstream's constants and deleted the taper but did NOT adopt (2)'s counterpart — upstream retrains a batch over ALL live negatives on every 200 Hz tick and holds each negative at full strength for a fixed `kDislikeLifetimeMs = 2500` instead of decaying it proportionally. Adopting that needs a per-tick call site and a millisecond clock inside `nisps/ml`, which the core does not have; it is a real interface decision, not a constant, and is tracked as its own task.
+- **Geometric-dislike deliberate divergences** (2026-07-25): (1) the degenerate-branch RNG draws from deterministic `nisps::Rng`, not libc `rand()`; (2) each live rejection computes its liked centroid at its own stored input, rather than upstream reinterpreting every old rejection around the cursor's current position; (3) live negatives are applied as deterministic per-item RMSProp steps rather than one shuffled `TrainBatch`; (4) a repeated nearby rejection refreshes its lifetime (upstream's current dedup path leaves the original timestamp untouched); (5) upstream's default removal of a nearby positive is not yet adopted because Manifold also has a separate positive MLP dataset that would keep pulling; (6) `RandomiseMlp` uses `draw_weights(spread)` rather than old asymmetric ranges. Native↔WASM parity covers the elapsed-time replay path.
 - **Manifold dock splits `state`/`muted`/`armed`** (2026-06-28) — deliberate divergence from the deployed conflated `frozen`↔`muted` model (dock-spec §3.3). `muted`-downstream and the `soloMode` gradient-mask variants remain UI-only; the C API exposes `set_focus` but no per-mode gradient masking yet. (The audit found `soloMode` behaviourally inert in the controller — plan L20 trims it until `train_masked` exists.)
 
 ## Recently resolved (delete after a few weeks)
@@ -116,8 +115,10 @@ Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user
   mapping before any likes exist (`ml_bench` E1: 0 -> 2.3e-3). One dislike moves the
   mapping **5.3e-2**, up from 1.6e-2 after the RMSProp fix and 5.3e-5 before it — a
   ~1000x change end to end, and now within ~4x of the legacy Diffuse design instead of
-  ~4100x (`ml_bench` A4). Not adopted: upstream's per-tick batch retraining and fixed
-  2500 ms dislike lifetime — see "Deferred / accepted debt".
+  ~4100x (`ml_bench` A4). The follow-up now adopts upstream's repeated-all-negatives
+  schedule and full-strength wall-clock lifetime through a deterministic elapsed-time
+  core seam. Manifold defaults to 0.001 LR, 200 Hz and 2500 ms, exposes all three in the
+  expanded Learning panel, and allows rate/lifetime zero as an explicit one-shot A/B.
 - 2026-07-25: **`InterfaceRL` is back in the tree (defect 6c).** Vendored verbatim from
   memllib `e291192` at `firmware/MEMLNaut-NISPS/lib/memllib/reference/` — outside `src/`,
   so PlatformIO never compiles it. Upstream drift in the feedback subsystem is a `diff`

@@ -56,6 +56,7 @@ EXPORTED_FUNCS='[
   "_nisps_ml_feedback_undo_depth",
   "_nisps_ml_feedback_placed_output",
   "_nisps_ml_feedback_dislike_geometric","_nisps_ml_feedback_store_positive",
+  "_nisps_ml_feedback_set_geometric_config","_nisps_ml_feedback_advance_geometric",
   "_nisps_ml_feedback_positive_count","_nisps_ml_feedback_negative_count",
   "_nisps_ml_feedback_set_avoid_style",
   "_nisps_ml_jolt_press","_nisps_ml_jolt_step","_nisps_ml_jolt_release",

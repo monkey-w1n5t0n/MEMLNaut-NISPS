@@ -1,7 +1,7 @@
 /**
- * FeedbackController — framework-neutral learning-engine behaviour for the two
- * feedback modes plus solo/arm, prototyped in pure TS on the EXISTING engine
- * primitives (NO C++/WASM change).
+ * FeedbackController — framework-neutral browser driver for the two feedback
+ * modes plus solo/arm. Weight-affecting behaviour lives in the shared C++ core;
+ * this layer owns UI scheduling and caller-owned example storage.
  *
  * Authoritative design: docs/adr/rl-feedback-design.md (Mode 2 default;
  * Mode 1 selectable; SOLO default MaskGradients). Engine primitives audited in
@@ -14,7 +14,7 @@
  *   setInput(x,y) / getOutputs() — synchronous forward inference (the spine)
  *   process()                    — re-run last input after a weight change
  *   addExample([x,y], outVec)    — append a training example
- *   train()                      — SGD over the dataset
+ *   train()                      — supervised training over the dataset
  *   feedback.{setFocus,thumbsUp,dislikeGeometric,…}
  *                                — the SHARED C++ core's RL primitives
  *
@@ -27,6 +27,10 @@
  */
 
 import type { FeedbackMode } from '../engine/types';
+import {
+  DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+  type GeometricFeedbackConfig,
+} from '../engine/engine-api';
 
 /** The two product feedback modes (rl-feedback-design §0). */
 export type ProtoFeedbackMode = 'explore-and-place' | 'geometric-dislike';
@@ -67,6 +71,8 @@ export interface ControllerEngine {
     // `heardVec` is the post-pipeline (HEARD) output; returns the FeedbackAction
     // int (14=GeometricPush, 15=GeometricColdStart).
     dislikeGeometric(heardVec?: Float32Array, lr?: number): number;
+    setGeometricConfig(config: GeometricFeedbackConfig): void;
+    advanceGeometric(dtSeconds: number): number;
     positiveCount(): number;
     negativeCount(): number;
     // ExploreAndPlace lifecycle — the SHARED C++ core (mode 'explore_and_place').
@@ -112,12 +118,16 @@ export interface FeedbackControllerOptions {
   spread?: number;
   /** Nudge perturbation standard deviation (small bounded weight jitter). */
   nudgeStddev?: number;
+  geometricConfig?: GeometricFeedbackConfig;
 }
 
 export class FeedbackController {
   private engine: ControllerEngine;
   private spread: number;
   private nudgeStddev: number;
+  private geometricConfig: GeometricFeedbackConfig;
+  private geometricTimer: ReturnType<typeof setInterval> | null = null;
+  private geometricLastTickMs = 0;
 
   private mode: ProtoFeedbackMode = 'explore-and-place';
   private soloMode: ProtoSoloMode = 'mask-gradients';
@@ -147,6 +157,10 @@ export class FeedbackController {
     this.engine = engine;
     this.spread = opts.spread ?? 0;
     this.nudgeStddev = opts.nudgeStddev ?? 0.05;
+    this.geometricConfig = {
+      ...(opts.geometricConfig ?? DEFAULT_GEOMETRIC_FEEDBACK_CONFIG),
+    };
+    this.engine.feedback.setGeometricConfig(this.geometricConfig);
   }
 
   // ===================================================================
@@ -158,6 +172,7 @@ export class FeedbackController {
     // Switching mode aborts any active scratchpad session. For explore-and-place
     // the SHARED C++ core owns the scratchpad, so delegate the teardown to it.
     if (this.exploringFlag) this.cancel();
+    if (mode !== 'geometric-dislike') this.stopGeometricReplay();
     this.mode = mode;
     // Keep the C++ core's feedback mode in lockstep so the shared explore-and-
     // place lifecycle is active when this mode is selected.
@@ -176,11 +191,29 @@ export class FeedbackController {
     this.spread = spread;
   }
 
+  setGeometricConfig(config: GeometricFeedbackConfig): void {
+    this.geometricConfig = {
+      learningRate: Math.max(0.000001, config.learningRate),
+      updatesPerSecond: Math.max(0, config.updatesPerSecond),
+      lifetimeMs: Math.max(0, config.lifetimeMs),
+    };
+    this.engine.feedback.setGeometricConfig(this.geometricConfig);
+    if (this.geometricTimer) {
+      this.stopGeometricReplay();
+      if (this.engine.feedback.negativeCount() > 0) this.startGeometricReplay();
+    }
+  }
+
+  getGeometricConfig(): Readonly<GeometricFeedbackConfig> {
+    return this.geometricConfig;
+  }
+
   /**
    * An I/O identity edit resets the core's index-aligned scratch/replay state.
    * Mirror that reset locally without issuing another core transition.
    */
   resetAfterIoChange(): void {
+    this.stopGeometricReplay();
     this.exploringFlag = false;
     this.pickingFlag = false;
     this.anchors = [];
@@ -351,14 +384,15 @@ export class FeedbackController {
   /**
    * DISLIKE (thumbs-down in Mode 1). Push the current mapping away from the liked
    * centroid — the SHARED C++ core's geometric push (nisps/ml/geo_push.hpp +
-   * replay.hpp + mlp.train_targets, ported from upstream InterfaceRL 0a541cc).
+   * replay.hpp + mlp.train_targets, ported from upstream InterfaceRL e291192).
    *
    * The core uses the MLP's CURRENT input and the passed HEARD output vector:
    *   1. stores the negative (input, a_neg) in the ReplayStore (dedup within 0.05)
    *   2. k-NN(k=4) centroid of positives near the input
-   *   3. target[j] = clamp(a_neg[j] + dir/||dir|| · pushStep/(1+||dir||), 0, 1)
-   *   4. trains toward that target at lr·negLRRatio
-   *   5. cold-start fallback (negative-LR) when there are no positives yet.
+   *   3. target[j] = clamp(a_neg[j] + dir/||dir|| · pushStep, 0, 1)
+   *   4. trains all live negatives once immediately, then at the configured
+   *      replay rate until each rejection reaches its wall-clock lifetime
+   *   5. uses a deterministic random direction when there are no positives yet.
    * Soloed/active dims come from the core's focus mask (set via setArmMask).
    *
    * @param output  the HEARD (post-pipeline) output vector a_neg. MUST be the
@@ -369,7 +403,42 @@ export class FeedbackController {
   dislike(output: Float32Array): number {
     const action = this.engine.feedback.dislikeGeometric(output);
     this.engine.process();
+    this.startGeometricReplay();
     return action;
+  }
+
+  private startGeometricReplay(): void {
+    this.stopGeometricReplay();
+    if (
+      this.mode !== 'geometric-dislike' ||
+      this.geometricConfig.updatesPerSecond <= 0 ||
+      this.geometricConfig.lifetimeMs <= 0 ||
+      this.engine.feedback.negativeCount() <= 0
+    ) {
+      return;
+    }
+    this.geometricLastTickMs = Date.now();
+    const intervalMs = Math.max(
+      5,
+      Math.min(50, 1000 / this.geometricConfig.updatesPerSecond),
+    );
+    this.geometricTimer = setInterval(() => {
+      const now = Date.now();
+      const dtSeconds = Math.max(0, (now - this.geometricLastTickMs) / 1000);
+      this.geometricLastTickMs = now;
+      const steps = this.engine.feedback.advanceGeometric(dtSeconds);
+      if (steps > 0) this.engine.process();
+      if (this.engine.feedback.negativeCount() <= 0) this.stopGeometricReplay();
+    }, intervalMs);
+  }
+
+  private stopGeometricReplay(): void {
+    if (this.geometricTimer !== null) clearInterval(this.geometricTimer);
+    this.geometricTimer = null;
+  }
+
+  dispose(): void {
+    this.stopGeometricReplay();
   }
 
   /**

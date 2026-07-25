@@ -4,6 +4,26 @@
 
 ---
 
+### 2026-07-25 implementation amendment
+
+The verified upstream reference is now memllib `e291192`, vendored under
+`firmware/MEMLNaut-NISPS/lib/memllib/reference/`. Its geometric constants and schedule
+supersede the older `0a541cc` constants and synchronous-one-shot wording below:
+
+- push scale `1.0`, negative-LR base `1.5`, no distance taper; cold start pushes in a
+  deterministic random direction;
+- a press stores the rejection and performs one immediate update, then
+  `FeedbackControllerCore::advance_geometric(dt)` replays **all** live negatives at a
+  configurable rate for a full-strength wall-clock lifetime;
+- defaults match upstream: LR `0.001`, `200 Hz`, `2500 ms`; rate or lifetime zero is
+  explicit one-shot mode;
+- the host supplies elapsed time, but target computation and every weight mutation stay
+  in the allocation-free shared C++ core. Native↔WASM parity covers this seam.
+
+Manifold exposes LR/rate/lifetime at expanded Learning depth. Deliberate divergences are
+kept current in `ALIGNMENT.md`; source comparison evidence is immutable in
+`docs/specs/recon/findings-push-away-upstream-comparison.md`.
+
 ## 0. Decision summary
 
 | Setting | Default | Also selectable |

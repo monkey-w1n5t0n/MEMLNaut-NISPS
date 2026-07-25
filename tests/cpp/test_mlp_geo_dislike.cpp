@@ -3,9 +3,8 @@
 //
 // Covers: replay dedup/deepen at radius 0.05, k-NN centroid selection with
 // deterministic index tie-break, push direction sign (target moves AWAY from
-// the liked centroid), taper, cold-start posMemCount==0 fallback, decay/
-// eviction + dislike-multiplier bookkeeping, solo/focus gating, and fixed-seed
-// determinism.
+// the liked centroid), cold-start posMemCount==0 fallback, parameterised replay
+// dose/lifetime, solo/focus gating, and fixed-seed determinism.
 
 #include <array>
 #include <cmath>
@@ -36,10 +35,11 @@ struct RawReplay {
     std::array<float, kCap * kNIn>  in{};
     std::array<float, kCap * kNOut> act{};
     std::array<float, kCap>         rew{};
+    std::array<float, kCap>         age_ms{};
     std::size_t count = 0u;
 
     ReplayView view() {
-        return ReplayView(in, act, rew, kNIn, kNOut, kCap, count);
+        return ReplayView(in, act, rew, age_ms, kNIn, kNOut, kCap, count);
     }
 };
 
@@ -118,24 +118,27 @@ NISPS_TEST(replay_knn_centroid_deterministic_tie_break) {
     NISPS_EXPECT(used_after_neg == 3u);
 }
 
-NISPS_TEST(replay_decay_and_evict) {
+NISPS_TEST(replay_wall_clock_lifetime_and_evict) {
     RawReplay raw;
     auto r = raw.view();
     const float x[kNIn] = {0.1f, 0.1f};
     const float a[kNOut] = {};
-    // A shallow negative just above the evict threshold decays out in a few
-    // calls; rewards move by +0.0025*max(|r|,1) per call.
-    r.store(-0.012f, std::span<const float>(x), std::span<const float>(a));
+    r.store(-1.f, std::span<const float>(x), std::span<const float>(a));
     NISPS_ASSERT(r.size() == 1u);
-    std::size_t evicted = r.decay_negatives();  // -0.012 + 0.0025 = -0.0095 > -0.01 → evict
+    std::size_t evicted = r.advance_negative_ages(2499.f, 2500.f);
+    NISPS_EXPECT(evicted == 0u);
+    NISPS_EXPECT(r.size() == 1u);
+    NISPS_EXPECT_NEAR(r.age_ms(0), 2499.f, 1e-6);
+    evicted = r.advance_negative_ages(1.f, 2500.f);
     NISPS_EXPECT(evicted == 1u);
     NISPS_EXPECT(r.size() == 0u);
 
-    // Positives are never decayed/evicted.
+    // Positives do not age or expire.
     r.store(1.f, std::span<const float>(x), std::span<const float>(a));
-    evicted = r.decay_negatives();
+    evicted = r.advance_negative_ages(5000.f, 2500.f);
     NISPS_EXPECT(evicted == 0u);
     NISPS_EXPECT(r.size() == 1u);
+    NISPS_EXPECT(r.age_ms(0) == 0.f);
 }
 
 // -- compute_push_target --------------------------------------------------------
@@ -300,6 +303,38 @@ NISPS_TEST(geo_dislike_deterministic_under_fixed_seed) {
     for (std::size_t i = 0; i < w1.size(); ++i) {
         NISPS_ASSERT(w1[i] == w2[i]);
     }
+}
+
+NISPS_TEST(geo_dislike_replay_rate_and_lifetime_are_parameterised) {
+    GeoMLP m(88ull);
+    m.draw_weights(0.5f);
+    GeoFB fb(99ull);
+    NISPS_EXPECT(fb.geo_lr() == 0.001f);
+    NISPS_EXPECT(fb.geo_update_hz() == 200.f);
+    NISPS_EXPECT(fb.geo_lifetime_ms() == 2500.f);
+
+    fb.set_geo_lr(0.002f);
+    fb.set_geo_update_hz(20.f);
+    fb.set_geo_lifetime_ms(100.f);
+    set_inputs(m, 0.4f, 0.6f);
+    m.process();
+    fb.on_down(m, {}, 0.1f, 0.5f, {});  // one immediate update
+    NISPS_ASSERT(fb.negative_count() == 1u);
+
+    // 20 Hz gives one replay update per 50 ms. At 100 ms the rejection
+    // expires after its second scheduled update.
+    NISPS_EXPECT(fb.advance_geometric(m, 0.025f) == 0u);
+    NISPS_EXPECT(fb.advance_geometric(m, 0.025f) == 1u);
+    NISPS_EXPECT(fb.negative_count() == 1u);
+    NISPS_EXPECT(fb.advance_geometric(m, 0.05f) == 1u);
+    NISPS_EXPECT(fb.negative_count() == 0u);
+    NISPS_EXPECT(fb.advance_geometric(m, 0.05f) == 0u);
+
+    // Zero rate is an explicit one-shot mode: the press still updates once,
+    // but no stale negative remains to affect a later press.
+    fb.set_geo_update_hz(0.f);
+    fb.on_down(m, {}, 0.1f, 0.5f, {});
+    NISPS_EXPECT(fb.negative_count() == 0u);
 }
 
 NISPS_TEST(geo_dislike_diffuse_style_preserves_legacy_path) {

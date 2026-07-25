@@ -249,6 +249,7 @@ class DynamicFeedbackStorage {
                                 + replay_cap * n_in          // replay inputs
                                 + replay_cap * n_out         // replay actions
                                 + replay_cap                 // replay rewards
+                                + replay_cap                 // replay ages (ms)
                                 + n_out * 2u                 // centroid + target
                                 + focus_floats;
         arena_ = new (std::nothrow) float[total]();
@@ -260,7 +261,8 @@ class DynamicFeedbackStorage {
         off_replay_in_ = off_undo_ + n_weights_ * undo_cap_;
         off_replay_a_  = off_replay_in_ + replay_cap_ * n_in_;
         off_replay_r_  = off_replay_a_ + replay_cap_ * n_out_;
-        off_centroid_  = off_replay_r_ + replay_cap_;
+        off_replay_age_ = off_replay_r_ + replay_cap_;
+        off_centroid_  = off_replay_age_ + replay_cap_;
         off_target_    = off_centroid_ + n_out_;
         off_focus_     = off_target_ + n_out_;
     }
@@ -302,6 +304,7 @@ class DynamicFeedbackStorage {
     std::span<float> replay_inputs()  noexcept { return {arena_ + off_replay_in_, replay_cap_ * n_in_}; }
     std::span<float> replay_actions() noexcept { return {arena_ + off_replay_a_, replay_cap_ * n_out_}; }
     std::span<float> replay_rewards() noexcept { return {arena_ + off_replay_r_, replay_cap_}; }
+    std::span<float> replay_ages_ms() noexcept { return {arena_ + off_replay_age_, replay_cap_}; }
     std::span<float> centroid_buf()   noexcept { return {arena_ + off_centroid_, n_out_}; }
     std::span<float> target_buf()     noexcept { return {arena_ + off_target_, n_out_}; }
     std::span<std::uint8_t> focus() noexcept {
@@ -318,7 +321,8 @@ class DynamicFeedbackStorage {
         off_placed_ = o.off_placed_; off_snap_ = o.off_snap_;
         off_scratch_ = o.off_scratch_; off_undo_ = o.off_undo_; off_focus_ = o.off_focus_;
         off_replay_in_ = o.off_replay_in_; off_replay_a_ = o.off_replay_a_;
-        off_replay_r_ = o.off_replay_r_; off_centroid_ = o.off_centroid_;
+        off_replay_r_ = o.off_replay_r_; off_replay_age_ = o.off_replay_age_;
+        off_centroid_ = o.off_centroid_;
         off_target_ = o.off_target_;
         arena_ = o.arena_;
         o.arena_ = nullptr;
@@ -328,7 +332,7 @@ class DynamicFeedbackStorage {
     std::size_t off_placed_ = 0u, off_snap_ = 0u, off_scratch_ = 0u,
                 off_undo_ = 0u, off_focus_ = 0u, off_replay_in_ = 0u,
                 off_replay_a_ = 0u, off_replay_r_ = 0u, off_centroid_ = 0u,
-                off_target_ = 0u;
+                off_replay_age_ = 0u, off_target_ = 0u;
     float*      arena_ = nullptr;
 };
 

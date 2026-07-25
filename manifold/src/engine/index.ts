@@ -5,12 +5,17 @@
  * (everything except EngineProvider/useEngine) imports NO React.
  */
 
-export { EngineApi, createEngine } from './engine-api';
+export {
+  EngineApi,
+  createEngine,
+  DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+} from './engine-api';
 export type {
   EngineApiOptions,
   EngineAudioApi,
   EngineFeedbackApi,
   EngineExploreApi,
+  GeometricFeedbackConfig,
 } from './engine-api';
 
 export { Spine } from './spine';

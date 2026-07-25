@@ -978,6 +978,24 @@ export class WasmIML {
     return action;
   }
 
+  feedbackSetGeometricConfig(lr: number, updateHz: number, lifetimeMs: number): void {
+    this.module._nisps_ml_feedback_set_geometric_config(
+      this.mlHandle,
+      lr,
+      updateHz,
+      lifetimeMs,
+    );
+  }
+
+  feedbackAdvanceGeometric(dtSeconds: number): number {
+    const steps = this.module._nisps_ml_feedback_advance_geometric(this.mlHandle, dtSeconds);
+    if (steps > 0) {
+      this.sink.emit('ml.delta_update', { reason: 'geometric-replay' });
+      this.scheduleSave_();
+    }
+    return steps;
+  }
+
   /**
    * Feed a positive (like) into the replay memory so the k-NN centroid sees it.
    * `vec` is the heard output at the liked input (null → the live MLP output).

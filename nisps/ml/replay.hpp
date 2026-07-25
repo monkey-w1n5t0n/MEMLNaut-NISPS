@@ -5,7 +5,7 @@
 //   * `_perform_dislike_action()` (InterfaceRL.cpp:42-66) — nearby-negative
 //     deepening within Euclidean 0.05, else store reward=-1.
 //   * `optimise()` k-NN positive centroid (InterfaceRL.cpp:602-627).
-//   * proportional negative decay + eviction (InterfaceRL.cpp:664, :752-760).
+//   * wall-clock negative lifetime + eviction (current upstream e291192).
 //
 // STORAGE: the buffers live in the feedback controller's storage policy
 // (nisps/ml/feedback.hpp — fixed std::array on firmware, arena slice in the
@@ -29,22 +29,21 @@
 
 namespace nisps::ml {
 
-// Upstream constants (InterfaceRL.hpp:293-296, .cpp:42-66,664).
+// Upstream constants (InterfaceRL.hpp / InterfaceRL.tpp @ e291192).
 inline constexpr float       kReplayDedupRadius     = 0.05f;
-inline constexpr float       kReplayDecayStep       = 0.0025f;
-inline constexpr float       kReplayEvictThreshold  = -0.01f;
 inline constexpr float       kMaxDislikeMagnitude   = 16.f;
 inline constexpr std::size_t kCentroidK             = 4u;
 
 // A non-owning view over the replay buffers (inputs: cap×n_in, actions:
-// cap×n_out, rewards: cap) plus the live count. All methods deterministic,
+// cap×n_out, rewards/ages: cap) plus the live count. All methods deterministic,
 // allocation-free.
 class ReplayView {
    public:
     ReplayView(std::span<float> inputs, std::span<float> actions,
-               std::span<float> rewards, std::size_t n_in, std::size_t n_out,
-               std::size_t cap, std::size_t& count) noexcept
-        : inputs_(inputs), actions_(actions), rewards_(rewards),
+               std::span<float> rewards, std::span<float> ages_ms,
+               std::size_t n_in, std::size_t n_out, std::size_t cap,
+               std::size_t& count) noexcept
+        : inputs_(inputs), actions_(actions), rewards_(rewards), ages_ms_(ages_ms),
           n_in_(n_in), n_out_(n_out), cap_(cap), count_(count) {}
 
     std::size_t size() const noexcept { return count_; }
@@ -57,6 +56,7 @@ class ReplayView {
         return actions_.subspan(i * n_out_, n_out_);
     }
     float reward(std::size_t i) const noexcept { return rewards_[i]; }
+    float age_ms(std::size_t i) const noexcept { return ages_ms_[i]; }
 
     std::size_t positive_count() const noexcept {
         std::size_t n = 0u;
@@ -113,6 +113,7 @@ class ReplayView {
                 auto act = actions_.subspan(i * n_out_, n_out_);
                 const std::size_t n = (a.size() < n_out_) ? a.size() : n_out_;
                 for (std::size_t j = 0; j < n; ++j) act[j] = a[j];
+                ages_ms_[i] = 0.f;
                 return true;
             }
         }
@@ -162,26 +163,37 @@ class ReplayView {
         return used;
     }
 
-    // Proportional decay of every negative (`reward += 0.0025 * max(|r|, 1)`)
-    // and in-place eviction of items decayed past -0.01. Returns the number
-    // evicted (the caller halves its dislike multiplier per expiry, matching
-    // upstream InterfaceRL.cpp:752-760).
-    std::size_t decay_negatives() noexcept {
+    // Advance wall-clock age for every negative and remove those which have
+    // lived their configured full-strength window. Positives do not expire.
+    // Current upstream uses a timestamp and kDislikeLifetimeMs=2500; explicit
+    // elapsed time keeps the core deterministic on firmware, native, and WASM.
+    std::size_t advance_negative_ages(float dt_ms, float lifetime_ms) noexcept {
+        if (!(dt_ms > 0.f) || !(lifetime_ms > 0.f)) return 0u;
         std::size_t evicted = 0u;
         std::size_t i = 0u;
         while (i < count_) {
             if (rewards_[i] <= 0.f) {
-                const float mag = (rewards_[i] < 0.f) ? -rewards_[i] : rewards_[i];
-                rewards_[i] += kReplayDecayStep * ((mag > 1.f) ? mag : 1.f);
-                if (rewards_[i] > kReplayEvictThreshold) {
+                ages_ms_[i] += dt_ms;
+                if (ages_ms_[i] >= lifetime_ms) {
                     evict_(i);
                     ++evicted;
-                    continue;  // same index now holds the next item
+                    continue;
                 }
             }
             ++i;
         }
         return evicted;
+    }
+
+    void remove_all_negatives() noexcept {
+        std::size_t i = 0u;
+        while (i < count_) {
+            if (rewards_[i] <= 0.f) {
+                evict_(i);
+                continue;
+            }
+            ++i;
+        }
     }
 
     void clear() noexcept { count_ = 0u; }
@@ -207,6 +219,7 @@ class ReplayView {
         for (std::size_t j = 0; j < n_in_; ++j) in[j] = (j < nx) ? x[j] : 0.f;
         for (std::size_t j = 0; j < n_out_; ++j) act[j] = (j < na) ? a[j] : 0.f;
         rewards_[slot] = reward;
+        ages_ms_[slot] = 0.f;
     }
 
     // Remove item i, shifting everything after it down one slot.
@@ -219,6 +232,7 @@ class ReplayView {
             auto src_act = actions_.subspan(m * n_out_, n_out_);
             for (std::size_t j = 0; j < n_out_; ++j) dst_act[j] = src_act[j];
             rewards_[m - 1u] = rewards_[m];
+            ages_ms_[m - 1u] = ages_ms_[m];
         }
         --count_;
     }
@@ -226,6 +240,7 @@ class ReplayView {
     std::span<float> inputs_;
     std::span<float> actions_;
     std::span<float> rewards_;
+    std::span<float> ages_ms_;
     std::size_t n_in_;
     std::size_t n_out_;
     std::size_t cap_;

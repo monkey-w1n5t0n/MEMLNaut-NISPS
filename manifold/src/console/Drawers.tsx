@@ -31,7 +31,11 @@ import { outputModeDescriptor } from './output-mode';
 import { useSettings, unfocusedIconCss } from '../settings/settings-store';
 import type { UnfocusedIconColour, InputMapMode } from '../settings/settings-store';
 import type { ExampleResizePolicy, NetworkResizePolicy } from '../engine/io-reshape';
-import { useEngine, useEngineVersion } from '../engine';
+import {
+  useEngine,
+  useEngineVersion,
+  DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+} from '../engine';
 import { EditorPanel } from '../serial/EditorPanel';
 import { TrainingHealth } from './TrainingHealth';
 import {
@@ -315,7 +319,76 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
             </span>
           </div>
           <SectionLabel>Live training params</SectionLabel>
-          <Slider label="noise cap" value={ctx.noiseCap} min={0} max={0.5} step={0.01} onChange={ctx.setNoiseCap} />
+          {ctx.feedbackMode === 'geometric-dislike' ? (
+            <>
+              <Slider
+                label="push · learning rate"
+                value={ctx.geometricConfig.learningRate}
+                min={0.0001}
+                max={0.005}
+                step={0.0001}
+                format={(v) => v.toFixed(4)}
+                onChange={(learningRate) =>
+                  ctx.setGeometricConfig({ ...ctx.geometricConfig, learningRate })
+                }
+              />
+              <Slider
+                label="push · updates / second"
+                value={ctx.geometricConfig.updatesPerSecond}
+                min={0}
+                max={400}
+                step={10}
+                format={(v) => `${Math.round(v)} Hz`}
+                onChange={(updatesPerSecond) =>
+                  ctx.setGeometricConfig({ ...ctx.geometricConfig, updatesPerSecond })
+                }
+              />
+              <Slider
+                label="push · lifetime"
+                value={ctx.geometricConfig.lifetimeMs / 1000}
+                min={0}
+                max={5}
+                step={0.1}
+                format={(v) => `${v.toFixed(1)} s`}
+                onChange={(seconds) =>
+                  ctx.setGeometricConfig({
+                    ...ctx.geometricConfig,
+                    lifetimeMs: seconds * 1000,
+                  })
+                }
+              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    ctx.setGeometricConfig({ ...DEFAULT_GEOMETRIC_FEEDBACK_CONFIG })
+                  }
+                >
+                  Upstream defaults
+                </Button>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>
+                  {ctx.geometricConfig.updatesPerSecond <= 0 ||
+                  ctx.geometricConfig.lifetimeMs <= 0
+                    ? 'one immediate update per press'
+                    : `≈ ${Math.round(
+                        (ctx.geometricConfig.updatesPerSecond *
+                          ctx.geometricConfig.lifetimeMs) /
+                          1000,
+                      )} replay updates + the press`}
+                </span>
+              </div>
+            </>
+          ) : (
+            <Slider
+              label="noise cap"
+              value={ctx.noiseCap}
+              min={0}
+              max={0.5}
+              step={0.01}
+              onChange={ctx.setNoiseCap}
+            />
+          )}
         </>
       )}
 

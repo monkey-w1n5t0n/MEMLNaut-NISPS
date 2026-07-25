@@ -52,6 +52,8 @@ export interface DebugProbe {
    * int (14=GeometricPush, 15=GeometricColdStart).
    */
   dislikeGeometric(heardVec: ReadonlyArray<number>, lr?: number): number;
+  setGeometricConfig(learningRate: number, updatesPerSecond: number, lifetimeMs: number): void;
+  advanceGeometric(dtSeconds: number): number;
   /** Feed a positive into the k-NN centroid (omit vec → live MLP output). */
   storePositive(vec?: ReadonlyArray<number>): void;
   /** Replay-memory sizes (Mode 1). */
@@ -172,6 +174,20 @@ function makeProbe(engine: EngineApi): DebugProbe {
       const a = engine.feedback.dislikeGeometric(Float32Array.from(heardVec), lr);
       engine.process();
       return a;
+    },
+
+    setGeometricConfig(
+      learningRate: number,
+      updatesPerSecond: number,
+      lifetimeMs: number,
+    ): void {
+      engine.feedback.setGeometricConfig({ learningRate, updatesPerSecond, lifetimeMs });
+    },
+
+    advanceGeometric(dtSeconds: number): number {
+      const steps = engine.feedback.advanceGeometric(dtSeconds);
+      if (steps > 0) engine.process();
+      return steps;
     },
 
     storePositive(vec?: ReadonlyArray<number>): void {

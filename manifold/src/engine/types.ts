@@ -114,6 +114,13 @@ export interface NispsModule {
   // controller default (1e-3). Returns the FeedbackAction int (14=GeometricPush,
   // 15=GeometricColdStart when no positives exist yet).
   _nisps_ml_feedback_dislike_geometric(ml: number, current_out_ptr: number, lr: number): number;
+  _nisps_ml_feedback_set_geometric_config(
+    ml: number,
+    lr: number,
+    update_hz: number,
+    lifetime_ms: number,
+  ): void;
+  _nisps_ml_feedback_advance_geometric(ml: number, dt_seconds: number): number;
   // Store a positive (like) into the replay memory so the k-NN centroid sees it.
   // current_out may be null (live output used). Caller still runs addExample+train.
   _nisps_ml_feedback_store_positive(ml: number, current_out_ptr: number): void;

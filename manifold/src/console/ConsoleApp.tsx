@@ -29,7 +29,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { useEngine, useEngineVersion, ExplorationController } from '../engine';
+import {
+  useEngine,
+  useEngineVersion,
+  ExplorationController,
+  DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+  type GeometricFeedbackConfig,
+} from '../engine';
 import { MF_MODES, createOutputParam, modeEngineId, shapeValues } from './model';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
@@ -110,6 +116,9 @@ export function ConsoleApp() {
   const [pos, setPos] = useState<[number, number]>([0.5, 0.5]);
 
   const [noiseCap, setNoiseCap] = useState(0.12);
+  const [geometricConfig, setGeometricConfig] = useState<GeometricFeedbackConfig>(() => ({
+    ...DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+  }));
   const [examples, setExamples] = useState(0);
   const [addingExample, setAddingExample] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -186,6 +195,7 @@ export function ConsoleApp() {
   if (engine && !controllerRef.current) {
     controllerRef.current = new FeedbackController(engine, {
       spread: randomisationSpread,
+      geometricConfig,
     });
   }
 
@@ -210,6 +220,8 @@ export function ConsoleApp() {
   }
   useEffect(
     () => () => {
+      controllerRef.current?.dispose();
+      controllerRef.current = null;
       explorationRef.current?.dispose();
       explorationRef.current = null;
     },
@@ -247,6 +259,10 @@ export function ConsoleApp() {
   useEffect(() => {
     controllerRef.current?.setSpread(randomisationSpread);
   }, [engine, randomisationSpread]);
+
+  useEffect(() => {
+    controllerRef.current?.setGeometricConfig(geometricConfig);
+  }, [engine, geometricConfig]);
 
   // Push the selected solo-mode + the arm mask into the controller whenever they
   // change (dock-spec §1.2). The controller RESPECTS the arm mask at the example
@@ -968,6 +984,8 @@ export function ConsoleApp() {
     xavierSpreadEnabled: settings.xavierSpreadEnabled,
     noiseCap,
     setNoiseCap,
+    geometricConfig,
+    setGeometricConfig,
     // learning-behaviour
     feedbackMode,
     setFeedbackMode,

@@ -59,7 +59,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   consts (mode_id, engine_id, ml dims, params, voice_spaces, ui) — the SOURCE OF TRUTH for `MF_MODES`.
   Switching mode reshapes the WASM net to the mode's `ml` dims (ConsoleApp P5.3; boot mode paf_synth →
   4→[10,10,14]→33).
-- `manifold/src/dock/` — `OutputControlRow` (add/delete card identity + off/fixed/live + mute + solo/arm + min/max/curve, plus MIDI card fields), `output-state.ts`,
+- `manifold/src/dock/` — `OutputControlRow` (editable names, corner delete, cycling off/fixed/live status, mute + solo/arm + min/max/curve, plus MIDI card fields), `output-state.ts`,
   `OutputsBackendConfig.tsx` (per-backend specialised Outputs panel — the sole per-backend editor; the centered add-card control lives below the rows).
 - `manifold/src/backends/` — `OutputBackend` adapter + `BackendManager` (spine consumer); `midi-backend.ts`
   (WebMIDI), `osc-backend.ts`+`osc-client.ts` (OSC-over-WS), `vcv-backend.ts` (VCV-over-WS), `cv-backend.ts`

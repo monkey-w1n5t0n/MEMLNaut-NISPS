@@ -770,6 +770,7 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
           flex: expanded ? 1 : undefined,
           minHeight: expanded ? 0 : undefined,
           maxHeight: expanded ? undefined : 220,
+          padding: expanded ? '8px 10px' : '6px 10px',
           overflow: 'auto',
         }}
       >

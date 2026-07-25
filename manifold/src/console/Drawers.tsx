@@ -424,6 +424,11 @@ const INPUT_MODE_OPTS: { value: InputMode; label: string }[] = [
   { value: 'midi', label: 'MIDI' },
 ];
 
+const MODEL_INPUT_OPTS: { value: '2' | '4'; label: string }[] = [
+  { value: '2', label: '2 inputs' },
+  { value: '4', label: '4 inputs' },
+];
+
 /** Standard-mapping gamepad button → verdict legend (mirrors ConsoleApp). */
 const GAMEPAD_LEGEND: { btn: string; action: string }[] = [
   { btn: 'RB', action: 'Up · positive feedback' },
@@ -530,6 +535,20 @@ function InputsDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
 
       <SectionLabel>Input source</SectionLabel>
       <Segmented value={inp.inputMode} onChange={inp.setInputMode} options={INPUT_MODE_OPTS} />
+      <SectionLabel>Model inputs</SectionLabel>
+      {ctx.mode.input === 'audio_in' ? (
+        <span style={{ fontSize: 9, color: 'var(--fg-dim)' }}>
+          {inp.engineInputSize} analysis inputs (fixed by this mode)
+        </span>
+      ) : (
+        <div data-testid="model-input-size">
+          <Segmented
+            value={String(ctx.modelInputSize) as '2' | '4'}
+            onChange={(value) => ctx.setModelInputSize(Number(value) as 2 | 4)}
+            options={MODEL_INPUT_OPTS}
+          />
+        </div>
+      )}
       {active && depth === 'expanded' && (
         <span style={{ fontSize: 9, color: STATUS_TONE[active.status.state] ?? 'var(--fg-dim)' }}>
           {active.status.message}

@@ -21,6 +21,8 @@ export interface ManifoldProps {
   variant?: 'rectangular' | 'circular';
   frozen?: boolean;
   follow?: boolean;
+  /** Disable the built-in double-click follow mode when embedded in another gesture surface. */
+  followMouseEnabled?: boolean;
   onLongPress?: (pos: [number, number]) => void;
   /**
    * PICK-LOCATION (Explore & place, rl-feedback §2.2 §3). While true, the next
@@ -41,6 +43,7 @@ export function Manifold({
   variant = 'rectangular',
   frozen = false,
   follow = false,
+  followMouseEnabled = true,
   onLongPress,
   picking = false,
   onPickLocation,
@@ -152,6 +155,7 @@ export function Manifold({
    * mark is now under the cursor — exits.
    */
   const onDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (!followMouseEnabled) return;
     if (stateRef.current.frozen || stateRef.current.picking) return;
     if (followMouseRef.current) {
       setFollowMouse(false);

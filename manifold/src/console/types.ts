@@ -38,6 +38,9 @@ export interface FeedbackMarker {
 export type DrawerKey = 'learn' | 'inputs' | 'route' | 'settings' | 'help';
 export type DrawerDepth = 'condensed' | 'expanded';
 
+/** Manifold's supported normal-mode input arities. */
+export type ManifoldInputSize = 2 | 4;
+
 /**
  * The flat context the Dock + drawers read. Pruned 2026-07 (simplification
  * audit S19) to the fields Dock/Drawers/OutputsBackendConfig actually consume.
@@ -118,6 +121,9 @@ export interface ConsoleCtx {
   // ---- Modular input layer (workstream F; inputs-spec) ----
   /** The composed input layer: source enable/config/status + channel layout. */
   inputs: UseInputLayer;
+  /** UI-selected model input arity for normal Manifold modes. */
+  modelInputSize: ManifoldInputSize;
+  setModelInputSize: (size: ManifoldInputSize) => void;
 
   spread: boolean;
   setSpread: (v: boolean) => void;

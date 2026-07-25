@@ -8,7 +8,8 @@
  * debug seam (`window.__mf`), then asserts against the schema — never hard-coded
  * numbers — that:
  *
- *   - `describe()` reports the schema's exact input/hidden/output dims;
+ *   - `describe()` reports the schema's hidden/output dims and Manifold's
+ *     default 2-input working shape;
  *   - `getWeights().length` equals the schema-implied weight count;
  *   - post-ML outputs have length == output_size and stay bounded in [0,1];
  *   - the rendered UI param count equals `schema.params.length`;
@@ -49,6 +50,7 @@ const CASES: ReadonlyArray<ModeSchema> = [
  * must all reflect the target schema before we assert.
  */
 async function switchToMode(page: Page, schema: ModeSchema): Promise<void> {
+  const expectedInput = schema.ui.primary_input === 'audio_in' ? schema.ml.input_size : 2;
   await page.evaluate((id) => window.__mf!.setMode(id), schema.mode_id);
   await page.waitForFunction(
     (s) =>
@@ -56,7 +58,7 @@ async function switchToMode(page: Page, schema: ModeSchema): Promise<void> {
       window.__mf?.paramCount() === s.params &&
       window.__nisps?.describe().outputSize === s.out &&
       window.__nisps?.describe().inputSize === s.in,
-    { id: schema.mode_id, params: schema.params.length, out: schema.ml.output_size, in: schema.ml.input_size },
+    { id: schema.mode_id, params: schema.params.length, out: schema.ml.output_size, in: expectedInput },
     { timeout: 10_000 },
   );
 }
@@ -75,15 +77,21 @@ test.describe('schema-driven per-mode dims (P5 gate)', () => {
     test(`${schema.mode_id}: engine + UI match the schema`, async ({ page }) => {
       await switchToMode(page, schema);
 
-      // describe() reports the schema's exact dims.
+      // describe() reports schema hidden/output dims and the UI's effective
+      // input arity (2 for normal modes, schema-fixed for audio analysis).
       const arch = await page.evaluate(() => window.__nisps!.describe());
-      expect(arch.inputSize).toBe(schema.ml.input_size);
+      expect(arch.inputSize).toBe(schema.ui.primary_input === 'audio_in' ? schema.ml.input_size : 2);
       expect(arch.outputSize).toBe(schema.ml.output_size);
       expect(arch.hidden).toEqual([...schema.ml.hidden_layers]);
 
       // getWeights length equals the schema-implied weight count.
       const weights = await page.evaluate(() => window.__nisps!.getWeights().length);
-      expect(weights).toBe(weightCountFromMl(schema.ml));
+      expect(weights).toBe(
+        weightCountFromMl({
+          ...schema.ml,
+          input_size: schema.ui.primary_input === 'audio_in' ? schema.ml.input_size : 2,
+        }),
+      );
 
       // Outputs have length == output_size and stay bounded.
       await page.evaluate(() => window.__nisps!.setInputs(0.35, 0.65));
@@ -96,6 +104,18 @@ test.describe('schema-driven per-mode dims (P5 gate)', () => {
       expect(paramCount).toBe(schema.params.length);
     });
   }
+
+  test('normal modes can opt into four model inputs from the Inputs dock seam', async ({ page }) => {
+    await switchToMode(page, PafSynthSchema);
+    await page.getByTitle('Inputs').click();
+    await expect(page.getByTestId('model-input-size')).toBeVisible();
+    await page.getByTestId('model-input-size').getByRole('button', { name: '4 inputs' }).click();
+    await page.waitForFunction(() => window.__nisps?.describe().inputSize === 4);
+    expect(await page.evaluate(() => window.__mf!.getModelInputSize())).toBe(4);
+
+    await page.evaluate(() => window.__mf!.setModelInputSize(2));
+    await page.waitForFunction(() => window.__nisps?.describe().inputSize === 2);
+  });
 
   test('training works after a mode switch (per-mode dims flow to the worker)', async ({ page }) => {
     // Switch to a mode with distinct dims from the boot mode, then add a couple

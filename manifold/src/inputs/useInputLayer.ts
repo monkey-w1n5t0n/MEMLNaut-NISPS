@@ -62,7 +62,7 @@ export interface UseInputLayer {
   channelLayout: { source: string; label: string }[];
   /** Total composed axis count. */
   axisCount: number;
-  /** Engine input arity (the fixed WASM head = 2). */
+  /** Current runtime-shaped WASM model input arity. */
   engineInputSize: number;
 
   // ---- gamepad config ----

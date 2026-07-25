@@ -2,8 +2,9 @@
  * Runtime-shaped net reshape (one-core-engine P2.3 + P5.3).
  *
  * The WASM MLP is runtime-shaped. Since P5.3 the app reshapes the net to the
- * BOOT MODE's schema `ml` config once WASM is ready, so the debug harness boots
- * at the boot mode's dims (NOT the over-provisioned 32→126 default). This spec
+ * BOOT MODE's schema `ml` config once WASM is ready, with normal modes using
+ * Manifold's default 2-input working shape rather than the schema's 4-input
+ * capacity. This spec
  * asserts FROM the imported schema — never hard-coded dim numbers — that:
  *
  *   1. the net boots at the boot mode's schema dims + weight count;
@@ -18,9 +19,9 @@ import { PafSynthSchema } from '../../src/modes/generated';
 
 // The boot mode (ConsoleApp `modeId` initial state) is paf_synth.
 const BOOT = PafSynthSchema.ml;
-const BOOT_INPUT = BOOT.input_size; // 4
+const BOOT_INPUT = 2;
 const BOOT_OUTPUT = BOOT.output_size; // 33
-const BOOT_WEIGHTS = weightCountFromMl(BOOT); // 4→[10,10,14]→33 = 809
+const BOOT_WEIGHTS = weightCountFromMl({ ...BOOT, input_size: BOOT_INPUT }); // 2→[10,10,14]→33 = 787
 
 // A reshape target arity guaranteed to differ from the boot arity.
 const OTHER_INPUT = BOOT_INPUT + 6; // 10
@@ -32,7 +33,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('reshape — runtime-shaped MLP', () => {
-  test('boots at the boot mode schema shape', async ({ page }) => {
+  test('boots at the Manifold default input shape', async ({ page }) => {
     const arch = await page.evaluate(() => window.__nisps!.describe());
     expect(arch.inputSize).toBe(BOOT_INPUT);
     expect(arch.outputSize).toBe(BOOT_OUTPUT);

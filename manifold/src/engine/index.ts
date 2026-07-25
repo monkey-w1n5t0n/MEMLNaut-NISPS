@@ -9,6 +9,7 @@ export {
   EngineApi,
   createEngine,
   DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+  UPSTREAM_GEOMETRIC_FEEDBACK_CONFIG,
 } from './engine-api';
 export type {
   EngineApiOptions,

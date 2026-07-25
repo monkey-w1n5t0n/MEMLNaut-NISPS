@@ -30,10 +30,17 @@ export interface GeometricFeedbackConfig {
   lifetimeMs: number;
 }
 
-export const DEFAULT_GEOMETRIC_FEEDBACK_CONFIG: Readonly<GeometricFeedbackConfig> = {
+/** Verified upstream InterfaceRL replay settings, retained as an A/B preset. */
+export const UPSTREAM_GEOMETRIC_FEEDBACK_CONFIG: Readonly<GeometricFeedbackConfig> = {
   learningRate: 0.001,
   updatesPerSecond: 200,
   lifetimeMs: 2500,
+};
+
+/** Manifold's operator-calibrated product default. */
+export const DEFAULT_GEOMETRIC_FEEDBACK_CONFIG: Readonly<GeometricFeedbackConfig> = {
+  ...UPSTREAM_GEOMETRIC_FEEDBACK_CONFIG,
+  learningRate: 0.003,
 };
 
 export interface EngineFeedbackApi {

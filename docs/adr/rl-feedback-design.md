@@ -15,8 +15,11 @@ supersede the older `0a541cc` constants and synchronous-one-shot wording below:
 - a press stores the rejection and performs one immediate update, then
   `FeedbackControllerCore::advance_geometric(dt)` replays **all** live negatives at a
   configurable rate for a full-strength wall-clock lifetime;
-- defaults match upstream: LR `0.001`, `200 Hz`, `2500 ms`; rate or lifetime zero is
-  explicit one-shot mode;
+- the shared core fallback and Manifold's "Upstream defaults" experiment preset match
+  upstream: LR `0.001`, `200 Hz`, `2500 ms`; rate or lifetime zero is explicit one-shot
+  mode;
+- after operator calibration on 2026-07-25, Manifold starts at LR `0.003`, `200 Hz`,
+  `2500 ms`; this product default does not change the firmware/core fallback;
 - the host supplies elapsed time, but target computation and every weight mutation stay
   in the allocation-free shared C++ core. Native↔WASM parity covers this seam.
 

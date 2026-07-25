@@ -89,17 +89,19 @@ test.describe('geometric dislike (Mode 1) — core-backed', () => {
     expect(result).toEqual({ first: 1, live: 1, second: 1, expired: 0 });
   });
 
-  test('expanded Learning panel exposes the upstream-default experiment controls', async ({ page }) => {
+  test('expanded Learning panel starts calibrated and can restore upstream defaults', async ({ page }) => {
     await page.getByTitle('Learning', { exact: true }).click();
     await page.getByTitle('Expand', { exact: true }).click();
 
     await expect(page.getByText('push · learning rate', { exact: true })).toBeVisible();
     await expect(page.getByText('push · updates / second', { exact: true })).toBeVisible();
     await expect(page.getByText('push · lifetime', { exact: true })).toBeVisible();
-    await expect(page.getByText('0.0010', { exact: true })).toBeVisible();
+    await expect(page.getByText('0.0030', { exact: true })).toBeVisible();
     await expect(page.getByText('200 Hz', { exact: true })).toBeVisible();
     await expect(page.getByText('2.5 s', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Upstream defaults' })).toBeVisible();
     await expect(page.getByText('≈ 500 replay updates + the press')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Upstream defaults' }).click();
+    await expect(page.getByText('0.0010', { exact: true })).toBeVisible();
   });
 });

@@ -34,7 +34,7 @@ import type { ExampleResizePolicy, NetworkResizePolicy } from '../engine/io-resh
 import {
   useEngine,
   useEngineVersion,
-  DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
+  UPSTREAM_GEOMETRIC_FEEDBACK_CONFIG,
 } from '../engine';
 import { EditorPanel } from '../serial/EditorPanel';
 import { TrainingHealth } from './TrainingHealth';
@@ -362,7 +362,7 @@ function LearningDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
                   size="sm"
                   variant="secondary"
                   onClick={() =>
-                    ctx.setGeometricConfig({ ...DEFAULT_GEOMETRIC_FEEDBACK_CONFIG })
+                    ctx.setGeometricConfig({ ...UPSTREAM_GEOMETRIC_FEEDBACK_CONFIG })
                   }
                 >
                   Upstream defaults

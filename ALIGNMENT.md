@@ -117,8 +117,10 @@ Legacy a-immersive was mobile-first; Manifold is desktop-first. Defer until user
   ~1000x change end to end, and now within ~4x of the legacy Diffuse design instead of
   ~4100x (`ml_bench` A4). The follow-up now adopts upstream's repeated-all-negatives
   schedule and full-strength wall-clock lifetime through a deterministic elapsed-time
-  core seam. Manifold defaults to 0.001 LR, 200 Hz and 2500 ms, exposes all three in the
-  expanded Learning panel, and allows rate/lifetime zero as an explicit one-shot A/B.
+  core seam. After operator calibration, Manifold defaults to 0.003 LR, 200 Hz and
+  2500 ms, exposes all three in the expanded Learning panel, and allows rate/lifetime
+  zero as an explicit one-shot A/B. The shared core fallback and the panel's explicit
+  "Upstream defaults" preset remain 0.001 LR, 200 Hz and 2500 ms.
 - 2026-07-25: **`InterfaceRL` is back in the tree (defect 6c).** Vendored verbatim from
   memllib `e291192` at `firmware/MEMLNaut-NISPS/lib/memllib/reference/` — outside `src/`,
   so PlatformIO never compiles it. Upstream drift in the feedback subsystem is a `diff`

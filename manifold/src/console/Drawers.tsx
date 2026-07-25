@@ -624,6 +624,7 @@ function RoutingDrawer(ctx: ConsoleCtx, depth: DrawerDepth) {
     <>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <Chip tone="var(--accent)">{modeDesc.label}</Chip>
+        <Chip>{activeParams.length} output{activeParams.length === 1 ? '' : 's'}</Chip>
         <Chip tone="var(--accent)">live {counts.live || 0}</Chip>
         <Chip tone="var(--accent-2)">fixed {counts.fixed || 0}</Chip>
         <Chip>off {counts.off || 0}</Chip>

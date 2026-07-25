@@ -122,7 +122,8 @@ double-click exits). `OutputStage.tsx` is the output columns; drag a bar to set 
   defines `OUTPUT_MODES` = **particles** (default) / midi / osc / cv / synth / editor, each mapping to a
   `BackendId`. `DEFAULT_OUTPUT_MODE='particles'`. `outputDisplayCount()` is the shared presentation
   boundary for the stage and routing rows: MIDI uses its configured CC count, while backends without
-  a separate count present the full mode parameter set. This does not reshape the MLP or clear examples.
+  a separate count present the full mode parameter set. The condensed Outputs panel reports this as an
+  `N outputs` chip. This does not reshape the MLP or clear examples.
 - `src/console/output-mode.ts`, `types.ts`, `model.ts` are the shared vocabulary — read these first
   when touching anything cross-cutting:
   - `types.ts`: `Focus`, `OutputMode`, `DrawerKey`, `DrawerDepth`, `FeedbackModeUI`, `SoloMode`,

@@ -69,6 +69,15 @@ function noise2D(x: number, y: number): number {
 
 const TWO_PI = Math.PI * 2;
 
+export const N_FLOW_PARTICLES = 400;
+/**
+ * Contiguous id bands used to batch Canvas2D paths. Thirty-two bands keep the
+ * original hue sweep visually continuous (at most 3.75° between bands at the
+ * maximum 120° spread) while replacing 400 dynamic colour parses + fills with
+ * 32 per frame.
+ */
+export const FLOW_COLOR_BUCKETS = 32;
+
 /**
  * The 20 visual output params, in output order (p0..p19). Names are verbatim
  * from the a-immersive original (`VISUAL_PARAM_NAMES`, a-app.js:46).
@@ -157,7 +166,11 @@ export class FlowFieldVisualizer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private particles: Particle[] = [];
-  private numParticles = 400;
+  private colorBuckets: Particle[][] = Array.from(
+    { length: FLOW_COLOR_BUCKETS },
+    () => [],
+  );
+  private numParticles = N_FLOW_PARTICLES;
   private time = 0;
   private width = 0;
   private height = 0;
@@ -210,8 +223,15 @@ export class FlowFieldVisualizer {
 
   private initParticles(): void {
     this.particles = [];
+    for (const bucket of this.colorBuckets) bucket.length = 0;
     for (let i = 0; i < this.numParticles; i++) {
-      this.particles.push(this.makeParticle(i));
+      const particle = this.makeParticle(i);
+      this.particles.push(particle);
+      const bucket = Math.min(
+        FLOW_COLOR_BUCKETS - 1,
+        Math.floor((i * FLOW_COLOR_BUCKETS) / this.numParticles),
+      );
+      this.colorBuckets[bucket].push(particle);
     }
     this.ctx.fillStyle = '#0d0d0d';
     this.ctx.fillRect(0, 0, this.width, this.height);
@@ -317,10 +337,14 @@ export class FlowFieldVisualizer {
     ctx.fillStyle = `rgba(13, 13, 13, ${params.fadeRate})`;
     ctx.fillRect(0, 0, width, height);
 
-    for (const p of this.particles) {
-      const cx = width * 0.5;
-      const cy = height * 0.5;
+    const cx = width * 0.5;
+    const cy = height * 0.5;
+    const repulsorRadius = Math.min(width, height) * 0.28;
 
+    // Advance the simulation without touching Canvas state. Rendering is
+    // batched by colour below, avoiding one dynamic colour parse + fill call
+    // per particle.
+    for (const p of this.particles) {
       // Sample flow field
       const nx = p.x * params.scale;
       const ny = p.y * params.scale;
@@ -378,7 +402,6 @@ export class FlowFieldVisualizer {
       nextY -= nyCenter * dispersionForce;
 
       // Orbiting repulsor points carve dynamic voids and bursts.
-      const repulsorRadius = Math.min(width, height) * 0.28;
       for (let r = 0; r < params.repulsorCount; r++) {
         const phase = this.time * params.repulsorOrbitRate + (r / 4) * TWO_PI;
         const wobble = 0.6 + 0.15 * r;
@@ -404,14 +427,28 @@ export class FlowFieldVisualizer {
 
       p.age += 1;
       if (p.age >= p.life) this.respawnParticle(p);
+    }
 
-      // Colour based on particle id + hue params
-      const hue = (params.hueBase + (p.id / this.numParticles) * params.hueSpread) % 360;
-      const lightness = 50 + Math.sin(p.id * 0.1 + this.time) * 15;
-
+    // Preserve the original id-ordered hue/lightness sweep with one
+    // representative colour per contiguous band. Each band becomes one path
+    // and one fill instead of every particle parsing its own HSL string.
+    for (const bucket of this.colorBuckets) {
+      if (bucket.length === 0) continue;
+      const representative = bucket[Math.floor(bucket.length * 0.5)];
+      const hue =
+        (params.hueBase +
+          (representative.id / this.numParticles) * params.hueSpread) %
+        360;
+      const lightness =
+        50 + Math.sin(representative.id * 0.1 + this.time) * 15;
       ctx.fillStyle = `hsl(${hue}, 75%, ${lightness}%)`;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, params.particleSize, 0, TWO_PI);
+      for (const p of bucket) {
+        // Start an independent sub-path so adjacent circles never acquire a
+        // connecting edge when the whole colour band is filled at once.
+        ctx.moveTo(p.x + params.particleSize, p.y);
+        ctx.arc(p.x, p.y, params.particleSize, 0, TWO_PI);
+      }
       ctx.fill();
     }
   }

@@ -39,16 +39,19 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   framework-neutral: `wasm-iml.ts` (rewired off Solid stores onto an injected `EngineSink`), `engine-host.ts` +
   `worklet/nisps-processor.ts` (audio), thin WASM wrappers over the core pipelines + curve catalog (the TS
   `input-pipeline`/`output-pipeline`/`curves` implementations died at P4), `wasm-worker.ts`,
-  `spine.ts` (the reactive spine BELOW React — `setInput` derives processed→ml→routed eagerly off-render),
+  `spine.ts` (the reactive spine BELOW React — `setInput` derives processed→ml→routed eagerly off-render;
+  structural/training state and throttled live-output notifications are separate channels),
   `engine-api.ts` (`EngineApi` façade incl. live architecture/weight/example metrics and `feedback.*` wrappers over the `nisps_ml_feedback_*` C ABI),
-  `EngineProvider.tsx`/`useEngine.ts` (React binding via `useSyncExternalStore` version counter). nisps.js is
+  `EngineProvider.tsx`/`useEngine.ts` (React bindings via `useSyncExternalStore`: state version plus an
+  opt-in 30 Hz output version for DOM consumers; canvases read live buffers directly). nisps.js is
   loaded via fetch+indirect-eval (Emscripten MODULARIZE glue has no ES exports), base-aware via `document.baseURI`
   for the `/next` sub-path.
 - `manifold/src/primitives/` — the 7 design primitives as typed React (Badge, Button, PillToggle, Slider, Switch, VirtualJoystick, XYPad). Five unused ones were deleted in the 2026-07 sweep (L22).
 - `manifold/src/console/` — the convertible Console: `ConsoleApp`, `CompositeStage` (single-divider convertible
   with snap/magnetism/minimap-demotion), `OutputStage`/`SandwichStage`/`ParticleStage`/`Manifold` (canvas,
-  rect↔circular + feedback markers; ParticleStage has interactive cursor-labelled heatmap sliders, an adjustable
-  joystick, and double-click whole-screen follow-mouse input), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
+  rect↔circular + feedback markers; ParticleStage batches its 400 particles into 32 colour paths per frame,
+  has interactive cursor-labelled heatmap sliders, an adjustable circular Manifold pad with feedback markers and cursor trail,
+  and double-click whole-screen follow-mouse input), `Dock` (top Mode selector + 5 vertically-centred drawers), `Drawers`
   (Learning/Inputs/Outputs/Settings/Help; Learning includes the live model-architecture inspector and
   Outputs owns the remaining scroll height), `TrainingHealth` (real per-iteration loss curve from
   `nisps_ml_loss_history` + per-layer weight health from `nisps_ml_get_layer_stats`; rendered only at
@@ -73,10 +76,10 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
 - `manifold/src/inputs/` — modular INPUT layer feeding the ML head. The Inputs dock picks ONE exclusive mode
   (`InputMode` = `internal` | `gamepad` | `midi`; Internal/XY-pad is default). `input-layer.ts` owns a single rAF
   loop composing the active source's axes → **one dedicated engine input slot per axis, 1:1, no blending** → one
-  `setInputs`, plus an `onReducedInput` callback the manifold tracks. The WASM net is over-provisioned to a
-  32-input head (`MAX_AXES`, `nisps/wasm/bindings.cpp`); unused slots are zero-padded and a zero input is inert,
-  so idle sources cannot perturb the net. Mean-blending was removed deliberately — it diluted every source and
-  biased the net toward idle sources' resting values. Active-axis edits follow the persistent I/O policy:
+  `setInputs`, plus an `onReducedInput` callback the manifold tracks. Normal Manifold models default to a
+  runtime-shaped 2-input head; the Inputs dock can select 4 inputs, and active sources can grow the head when
+  they need more slots. Mean-blending was removed deliberately — it diluted every source and biased the net
+  toward idle sources' resting values. Active-axis edits follow the persistent I/O policy:
   keep-capacity permutes stable identities in place until more slots are required; exact-I/O reconstructs
   to the active count. Surviving weights and (under adapt policy) examples are identity-remapped; feedback
   scratch state resets. Sources: `xy-pad-source` (push-driven),
@@ -178,7 +181,7 @@ includes; no `nisps-core`.
 - C++ identifiers: `PascalCase` types, `snake_case` functions/variables, `kPascalCase` constexpr. JSON keys `snake_case`. TS types `PascalCase`, components `PascalCase.tsx`, modules `kebab-case.ts`.
 - `Curve` enum lives in `nisps/core/math.hpp` (lowercase: `linear/exp/log/square/sqrt/sigmoid/cubic`, plus the parameterised `centered_power` free function); generated mode headers re-export via `using Curve = ::nisps::Curve;`. Since P4 there is NO TS mirror — the browser samples the WASM catalog (`nisps_curve_apply(+batch)`).
 - Modes are TSX components composed of primitives; mode parameter contracts are JSON schemas with codegen → C++ **and** TS types (`MF_MODES` derives params/ml-config from the generated schemas since P5; labels/ordering stay a manifold overlay). **No declarative JSON UI.**
-- WASM and firmware share the same C++; the browser MLP is runtime-shaped (`MLPCore<DynamicStorage>`, since P2): `nisps_ml_create` honours `(input, output, hidden[3])` with non-positive/null args defaulting to `32→[10,14,18]→126`; `nisps_ml_reshape` warm-starts a new shape. Firmware keeps compile-time `MLP<...>` (zero heap). Per-mode dims are schema-real on both targets since P5.3 (the browser reshapes on mode switch).
+- WASM and firmware share the same C++; the browser MLP is runtime-shaped (`MLPCore<DynamicStorage>`, since P2): `nisps_ml_create` honours `(input, output, hidden[3])` with non-positive/null args defaulting to `32→[10,14,18]→126`; `nisps_ml_reshape` warm-starts a new shape. Firmware keeps compile-time `MLP<...>` (zero heap). Manifold normal modes use a 2-input UI default and can opt into 4 inputs; audio-analysis keeps its schema-defined feature arity. Firmware mode shapes remain schema-real.
 - Cross-platform parity: `scripts/parity-check.sh` enforces native vs WASM agreement within 1e-5.
 
 ## Gotchas

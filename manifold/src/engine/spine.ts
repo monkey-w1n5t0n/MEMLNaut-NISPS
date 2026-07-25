@@ -10,9 +10,10 @@
  * all C++/WASM chains since one-core-engine P4) and fires the single
  * `backend.send` at the action TAIL, off React's render cycle.
  *
- * React subscribes via `useSyncExternalStore(subscribe, version)` — the version
- * counter, NOT the array — and reads the live `Float32Array` imperatively (so
- * canvases never re-render per frame).
+ * Structural/training state uses `subscribe/version`; opt-in DOM output
+ * consumers use the throttled `subscribeOutputs/outputVersion` channel.
+ * Canvases read the live `Float32Array` imperatively and never re-render per
+ * frame.
  *
  * Buffers are reused (no per-frame allocation): `routedBuf` is a single
  * Float32Array threaded through the output pipeline and handed to the backend.
@@ -69,7 +70,11 @@ export class Spine implements EngineSink {
   };
 
   private listeners = new Set<() => void>();
+  private outputListeners = new Set<() => void>();
   private eventListeners = new Map<string, Set<(payload?: unknown) => void>>();
+  private outputVersion_ = 0;
+  private lastOutputNotifyMs = -Infinity;
+  private readonly outputNotifyIntervalMs = 1000 / 30;
 
   // Engine handles wired in via `attach`.
   private iml: WasmIML | null = null;
@@ -235,7 +240,9 @@ export class Spine implements EngineSink {
    * the 2-D manifold / XY-pad path — delegates to {@link setInputs}.
    */
   setInput(x: number, y: number): Float32Array | null {
-    return this.setInputs([x, y]);
+    this.rawInput[0] = x;
+    this.rawInput[1] = y;
+    return this.setInputs(this.rawInput);
   }
 
   /**
@@ -282,7 +289,7 @@ export class Spine implements EngineSink {
 
     // 3. ml (inference into the reused buffer; no alloc).
     iml.processInto(this.mlBuf);
-    this.liveOutputs.set(this.mlBuf.subarray(0, this.liveOutputs.length));
+    this.liveOutputs.set(this.mlBuf);
 
     // 4. routed (output chain, in place on the reused routedBuf → C++-side state).
     if (!this.routedBuf || this.routedBuf.length !== this.mlBuf.length) {
@@ -298,7 +305,7 @@ export class Spine implements EngineSink {
     // 5. single backend.send at the tail (off React render).
     if (this.backendSend && this.routedBuf) this.backendSend(this.routedBuf);
 
-    this.bump_();
+    this.publishOutputs_();
     return this.routedBuf;
   }
 
@@ -342,6 +349,18 @@ export class Spine implements EngineSink {
 
   version = (): number => this.state_.version;
 
+  /**
+   * Live-output subscription kept separate from structural/training state.
+   * Notifications are capped at 30 Hz for DOM consumers; canvas consumers read
+   * the reused output buffers directly in their own rAF loops.
+   */
+  subscribeOutputs = (cb: () => void): (() => void) => {
+    this.outputListeners.add(cb);
+    return () => { this.outputListeners.delete(cb); };
+  };
+
+  outputVersion = (): number => this.outputVersion_;
+
   getState(): Readonly<SpineState> {
     return this.state_;
   }
@@ -356,5 +375,15 @@ export class Spine implements EngineSink {
   private bump_(): void {
     this.state_ = { ...this.state_, version: this.state_.version + 1 };
     for (const fn of this.listeners) fn();
+  }
+
+  private publishOutputs_(): void {
+    this.outputVersion_++;
+    if (this.outputListeners.size === 0) return;
+    const now =
+      typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - this.lastOutputNotifyMs < this.outputNotifyIntervalMs) return;
+    this.lastOutputNotifyMs = now;
+    for (const fn of this.outputListeners) fn();
   }
 }

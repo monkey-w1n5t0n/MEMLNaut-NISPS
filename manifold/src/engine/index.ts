@@ -55,7 +55,12 @@ export type {
 
 export { EngineProvider, EngineContext } from './EngineProvider';
 export type { EngineProviderProps } from './EngineProvider';
-export { useEngine, useEngineOrThrow, useEngineVersion } from './useEngine';
+export {
+  useEngine,
+  useEngineOrThrow,
+  useEngineVersion,
+  useEngineOutputVersion,
+} from './useEngine';
 
 // Pipeline config types + defaults. The PROCESSING lives in the C++/WASM core
 // (one-core-engine P4); configure via EngineApi.setInputConfig / setOutputConfig.

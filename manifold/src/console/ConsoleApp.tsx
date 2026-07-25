@@ -6,8 +6,9 @@
  *  - The pseudo-inference (`MF_infer`, sin/cos) is GONE. The `values` every
  *    consumer reads now come from `engine.getOutputs()`, mapped onto the mode's
  *    params by `shapeValues` (status/min/max/curve applied here). Pad/joystick
- *    motion drives `engine.setInput(x,y)`; we subscribe to engine changes via
- *    `useEngineVersion` and re-derive `values` imperatively on render.
+ *    motion drives `engine.setInput(x,y)`; structural state and throttled DOM
+ *    outputs have separate subscriptions, while ParticleStage shapes the live
+ *    reused buffer directly in rAF.
  *  - Verdicts wire to the engine: commit → feedback.thumbsUp(); perturb →
  *    feedback.thumbsDown(); reroll → randomise(); each followed by process().
  *  - The default feedback mode is "Explore and place" → the shared C++ core's
@@ -31,6 +32,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
   useEngine,
+  useEngineOutputVersion,
   useEngineVersion,
   ExplorationController,
   DEFAULT_GEOMETRIC_FEEDBACK_CONFIG,
@@ -51,6 +53,7 @@ import type {
   DrawerKey,
   FeedbackMarker,
   FeedbackModeUI,
+  ManifoldInputSize,
   OutputMode,
   Pin,
   SoloMode,
@@ -82,6 +85,8 @@ export interface MfDebugHook {
   setOutputMode: (mode: OutputMode) => void;
   setMidiCcCount: (count: number) => void;
   displayOutputCount: () => number;
+  getModelInputSize: () => ManifoldInputSize;
+  setModelInputSize: (size: ManifoldInputSize) => void;
 }
 
 declare global {
@@ -106,11 +111,12 @@ function pillBtn(color: string): CSSProperties {
 
 export function ConsoleApp() {
   const engine = useEngine();
-  const version = useEngineVersion(engine);
+  const stateVersion = useEngineVersion(engine);
   const { settings } = useSettings();
 
   const [modeId, setModeId] = useState('paf_synth');
   const mode = MF_MODES.find((m) => m.id === modeId) ?? MF_MODES[0];
+  const [modelInputSize, setModelInputSizeState] = useState<ManifoldInputSize>(2);
   const [params, setParams] = useState<MFParam[]>(() => mode.params.map((p) => ({ ...p })));
   const [paramsModeId, setParamsModeId] = useState(mode.id);
   const [pos, setPos] = useState<[number, number]>([0.5, 0.5]);
@@ -156,6 +162,16 @@ export function ConsoleApp() {
   // Active output MODE (TOP dock selector) — default Particle System. The dock
   // backend + audio backend derive from this.
   const [outputMode, setOutputModeState] = useState<OutputMode>(DEFAULT_OUTPUT_MODE);
+  // Canvas stages read the live buffer imperatively. DOM-heavy stages opt into
+  // the separate 30 Hz output channel instead of making the whole console a
+  // per-inference subscriber.
+  const outputVersion = useEngineOutputVersion(
+    engine,
+    outputMode !== 'particles' ||
+      sandwich ||
+      params.some((param) => param.manualOverride),
+  );
+  const version = stateVersion + outputVersion;
   const outputBackend: BackendId = outputModeDescriptor(outputMode).backend;
   // Per-backend transport settings (backends-spec §2.3/§2.4). Persisted via the
   // named-preset system; these are the live working values.
@@ -283,19 +299,17 @@ export function ConsoleApp() {
     if (engine) engine.audio.setBackend(modeEngineId(modeId) as Parameters<typeof engine.audio.setBackend>[0]);
   }, [engine, modeId]);
 
-  // Per-mode net dims (one-core-engine P5.3). On mode switch — and once WASM is
-  // ready on boot (this effect depends on `engine`, so it fires when the engine
-  // transitions null→ready with the boot mode) — reshape the runtime-shaped MLP
-  // to the active mode's schema `ml` config (warm-started; the C-side dataset +
-  // feedback reset, which the transient reset below also clears). NO confirm
-  // modal: switching instrument is already a deliberate act. The P2.3 axis-count
-  // modal stays for input-LAYOUT changes only (see the reshape-offer effect).
+  // Per-mode net dims (one-core-engine P5.3). Normal Manifold modes expose a
+  // deliberately smaller 2-input working shape for now, while the Inputs dock
+  // can opt into the schema's usual 4-input shape. Audio-analysis is different:
+  // its schema input arity describes the feature vector and must stay intact.
   useEffect(() => {
     if (!engine) return;
-    const { inputSize, outputSize, hidden } = mode.ml;
+    const inputSize = mode.input === 'audio_in' ? mode.ml.inputSize : modelInputSize;
+    const { outputSize, hidden } = mode.ml;
     engine.reshape({ inputSize, outputSize, hidden }, randomisationSpread);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, modeId]);
+  }, [engine, modeId, modelInputSize]);
 
   // reset transient state on mode switch
   useEffect(() => {
@@ -344,8 +358,13 @@ export function ConsoleApp() {
       return;
     }
     const activeMap: DimensionMap = keys.map((key) => previous.get(key) ?? null);
+    // Keep the explicit dock choice as a minimum capacity. Active sources may
+    // still require more (for example, a double-stick gamepad), but a source
+    // with fewer axes must not silently shrink a deliberate 4-D model.
+    const minimumInputSize = mode.input === 'audio_in' ? mode.ml.inputSize : modelInputSize;
+    const requiredSize = Math.max(minimumInputSize, keys.length);
     const target =
-      resizeTarget(keys.length, inSize, settings.networkResizePolicy) ?? inSize;
+      resizeTarget(requiredSize, inSize, settings.networkResizePolicy) ?? inSize;
     const inputMap = completeDimensionMap(activeMap, target, inSize);
     const needsMigration =
       target !== inSize || inputMap.some((oldIndex, newIndex) => oldIndex !== newIndex);
@@ -369,6 +388,9 @@ export function ConsoleApp() {
     engine,
     inputLayoutKey,
     inputs.engineInputSize,
+    mode.input,
+    mode.ml.inputSize,
+    modelInputSize,
     randomisationSpread,
     settings.networkResizePolicy,
     settings.exampleResizePolicy,
@@ -393,11 +415,13 @@ export function ConsoleApp() {
       setOutputMode,
       setMidiCcCount,
       displayOutputCount: () => displayOutputCount,
+      getModelInputSize: () => modelInputSize,
+      setModelInputSize: (size) => setModelInputSizeState(size === 4 ? 4 : 2),
     };
     return () => {
       if (window.__mf) delete window.__mf;
     };
-  }, [modeId, params, displayOutputCount]);
+  }, [modeId, params, displayOutputCount, modelInputSize]);
 
   // Drive a pad/joystick/manifold move through the input layer's XY-pad source,
   // then mirror the raw position into React state for readouts. The layer's loop
@@ -644,7 +668,10 @@ export function ConsoleApp() {
     }
     setAddingExample(false);
     // Snapshot the current input → current (shaped) output as a training example.
-    engine?.addExample([pos[0], pos[1]], Array.from(values));
+    engine?.addExample(
+      [pos[0], pos[1]],
+      shapeValues(params, engine?.getOutputs() ?? null),
+    );
     setExamples((e) => e + 1);
     train();
   };
@@ -979,6 +1006,8 @@ export function ConsoleApp() {
     cvDisconnect,
     setParams: (next: MFParam[]) => setParams(next),
     inputs,
+    modelInputSize,
+    setModelInputSize: (size: ManifoldInputSize) => setModelInputSizeState(size),
     spread,
     setSpread,
     xavierSpreadEnabled: settings.xavierSpreadEnabled,
@@ -1096,6 +1125,7 @@ export function ConsoleApp() {
               params={displayedParams}
               values={displayedValues}
               onChange={setParam}
+              markers={markers}
             />
           ) : (
             <CompositeStage

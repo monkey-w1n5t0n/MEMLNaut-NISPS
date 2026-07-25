@@ -379,17 +379,32 @@ export { applyCurve };
  * onto its own N outputs; the `i < engineOut.length` guard keeps it safe during
  * the async reshape window.
  */
-export function shapeValues(params: MFParam[], engineOut: Float32Array | null): number[] {
-  return params.map((p, i) => {
-    if (p.status === 'off') return 0;
+export function shapeValuesInto<T extends { length: number; [index: number]: number }>(
+  params: MFParam[],
+  engineOut: Float32Array | null,
+  out: T,
+): T {
+  const count = Math.min(params.length, out.length);
+  for (let i = 0; i < count; i++) {
+    const p = params[i];
+    if (p.status === 'off') {
+      out[i] = 0;
+      continue;
+    }
     if (p.status === 'fixed') {
-      return p.min + Math.max(0, Math.min(1, p.val ?? 0.5)) * (p.max - p.min);
+      out[i] = p.min + Math.max(0, Math.min(1, p.val ?? 0.5)) * (p.max - p.min);
+      continue;
     }
     const engineIndex = p.engineIndex ?? i;
     const raw = engineOut && engineIndex < engineOut.length ? engineOut[engineIndex] : 0.5;
     const v = p.min + applyCurve(raw, p.curve) * (p.max - p.min);
-    return Math.max(0, Math.min(1, v));
-  });
+    out[i] = Math.max(0, Math.min(1, v));
+  }
+  return out;
+}
+
+export function shapeValues(params: MFParam[], engineOut: Float32Array | null): number[] {
+  return shapeValuesInto(params, engineOut, new Array<number>(params.length));
 }
 
 /** Create a backend-agnostic output card after every schema output is active. */

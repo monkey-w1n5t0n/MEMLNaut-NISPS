@@ -70,12 +70,13 @@ single `backend.send` at the action's tail, off-render. Contract rules:
   call in the derivation path.
 - **No per-frame allocation.** Buffers are reused (`routedBuf` threaded through the output
   pipeline and handed to the backend).
-- **Weights mutate only through engine actions** (train / feedback / reshape), each of which bumps
-  the spine's version counter — there is no write path that can update audio without notifying
-  the UI.
-- **React subscribes via `useSyncExternalStore(subscribe, version)`** — the version counter, not
-  the arrays; canvases read the live `Float32Array`s imperatively in rAF and never re-render per
-  frame.
+- **Weights mutate only through engine actions** (train / feedback / reshape). Structural/training
+  state bumps `version`; every inference advances a separate `outputVersion`. Both expose explicit
+  subscriptions, so audio propagation never depends on React scheduling.
+- **React state and live output are separate channels.** Structural/training consumers use
+  `useSyncExternalStore(subscribe, version)`. DOM output consumers opt into the throttled 30 Hz
+  `subscribeOutputs/outputVersion` channel. Canvases read and shape the live `Float32Array`s
+  imperatively in rAF and never re-render per frame.
 
 ### 2.2 The live-feedback guarantee and its e2e assertion
 

@@ -66,13 +66,13 @@ bun run test:e2e     # Playwright smoke (needs `bun run build` first; runs again
   │    ConsoleApp = spine of the UI: holds state, picks a Stage,      │
   │    renders the Dock. "Convertible" = swappable Stages.            │
   └───────────────┬─────────────────────────────────────────────────-┘
-                  │ reads engine.version (useSyncExternalStore), reads buffers imperatively
+                  │ reads state/output versions (useSyncExternalStore), canvases read buffers imperatively
                   │ writes via engine.setInput / setParam / feedback.*
   ┌───────────────▼─────────────────────────────────────────────────┐
   │  Engine layer (NO React)     src/engine/  src/inputs/  src/feedback/  src/backends/
   │    Spine = reactive store below React. Per-frame ML inference is  │
-  │    eager + synchronous, OFF the render cycle. React only watches  │
-  │    a monotonic version counter.                                   │
+  │    eager + synchronous, OFF the render cycle. React watches state │
+  │    changes plus an opt-in 30 Hz output channel for DOM surfaces.  │
   └───────────────┬─────────────────────────────────────────────────┘
                   │ C ABI
   ┌───────────────▼─────────────────────────────────────────────────┐
@@ -109,7 +109,7 @@ Manifold ships a single "composite" altitude. Selection is now a plain three-way
 |---|---|---|---|
 | CompositeStage | `CompositeStage.tsx` | **default / hero** | Draggable split-ratio; magnet-snaps to 0.14/0.33/0.5/0.66/0.86; collapses a side to a corner minimap at extremes. |
 | SandwichStage | `SandwichStage.tsx` | `sandwich===true` (wins over the others) | Three-pane layout: `Manifold` input surface left, 3D parameter-landscape centre (input → MLP heatmap grid → outputs, drag to orbit), compact `OutputStage` right. |
-| ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400-particle Canvas2D port) + interactive output heatmap sliders with cursor tooltips + a larger, explicitly adjustable/repositionable joystick; double-click anywhere in the stage enters whole-screen follow-mouse mode. |
+| ParticleStage | `ParticleStage.tsx` | `outputMode==='particles'` | Flow-field visualiser (`flow-field.ts`, 400 particles batched into 32 contiguous colour paths per frame) + interactive output heatmap sliders with cursor tooltips + a larger, explicitly adjustable/repositionable circular Manifold pad (feedback markers + cursor trail); double-click anywhere in the stage enters whole-screen follow-mouse mode. |
 
 `Manifold.tsx` and `OutputStage.tsx` are no longer top-level stages — they are panes composed by
 CompositeStage/SandwichStage. `Manifold.tsx` is the full-bleed 2D input surface (canvas trail + pins
@@ -208,12 +208,15 @@ a setting → `--r-*` tokens.
 - `engine-api.ts` — **`EngineApi`, the framework-neutral facade** everything in the UI talks to:
   `setInput/setInputs`, `getOutputs/routedOutput`, training (`addExample/train/trainAsync/evalLoss`),
   weights (`getWeights/setWeights/process/randomise`), telemetry
-  (`architecture/weightCount/exampleCount/lossHistory/getLayerStats`), `subscribe/version/on`, plus nested `.feedback` and `.audio`
+  (`architecture/weightCount/exampleCount/lossHistory/getLayerStats`), structural `subscribe/version`,
+  throttled `subscribeOutputs/outputVersion`, and `on`, plus nested `.feedback` and `.audio`
   facades. **`lossHistory()` reads SPINE STATE, not the MLP handle** — an async train runs on the
   worker's mirror net, so the main handle's own history is empty for those runs; both paths
   publish to the spine.
 - `EngineProvider.tsx` / `useEngine.ts` — the **only** React coupling. `useEngine()` returns the API
-  (null until WASM ready); `useEngineVersion()` = `useSyncExternalStore(subscribe, version)`.
+  (null until WASM ready); `useEngineVersion()` watches structural/training state, while
+  `useEngineOutputVersion()` opts DOM consumers into the throttled 30 Hz output channel. Particle canvases
+  use neither output subscription nor React state for live values; they shape the reused buffer in rAF.
 - `engine-host.ts` — main-thread audio wiring: AudioContext (user-gesture gated), fetch `nisps.wasm`,
   register + feed the worklet.
 - `wasm-iml.ts` (**~750 lines**) — the ML interface to `nisps.wasm`: one MLP handle, dataset, heap
@@ -243,16 +246,16 @@ a setting → `--r-*` tokens.
 
 ### Inputs — `src/inputs/`
 - `input-layer.ts` — composition hub. One rAF loop polls sources, pulls all axes into a vector,
-  forwards N→engine. **`MAX_AXES = 32`** (WASM net over-provisioned to 32 inputs). **Dedicated
-  dimensions, NO mean-blending** — each active axis drives its own engine slot 1:1; unused slots
-  zero-padded (inert). Changing the layout uses the same persisted identity-aware I/O policy as output
-  cards.
+  forwards N→engine. **`MAX_AXES = 32`** is the source-vector safety cap, not the model shape.
+  **Dedicated dimensions, NO mean-blending** — each active axis drives its own engine slot 1:1;
+  the ConsoleApp reshapes the runtime model when the selected 2/4-input capacity or active layout
+  requires it. Changing the layout uses the same persisted identity-aware I/O policy as output cards.
 - `base-source.ts` + sources: `xy-pad-source.ts` (push, 2 axes), `gamepad-source.ts` (single=2 /
   double=4 axes, deadzone 0.08), `midi-input-source.ts` (Web MIDI, batch CC-learn, multi-port).
 - `useInputLayer.ts` — React binding; manages exclusive input mode + gamepad stick mode + MIDI
   device/learn map; exposes `pushPad`, `sources`, `channelLayout`, etc.
-- **I/O migration (P2.3, live):** the net is **runtime-shaped**. It boots at the default
-  over-provisioned 32-input head (zero-padding preserved), and `EngineApi.reshape({ inputSize, … })`
+- **I/O migration (P2.3, live):** the net is **runtime-shaped**. Normal Manifold modes boot at
+  2 inputs; the Inputs dock can select 4, and active layouts can grow the model further. `EngineApi.reshape({ inputSize, … })`
   → `WasmIML.reshape`. `engine/io-reshape.ts` owns the identity map: **Keep capacity** (default)
   permutes weights/examples in place and reconstructs only when active I/O outgrows the net;
   **Exact I/O** reconstructs whenever active arity changes. Existing examples either adapt by
@@ -262,14 +265,15 @@ a setting → `--r-*` tokens.
   (`wasm-worker.ts`) carries the current dims in its train message and re-creates its mirror net to
   match. The raw debug `window.__nisps.reshape(nIn)` remains a low-level reconstruct-and-clear call.
 - **Per-mode net dims (P5.3):** switching INSTRUMENT mode reshapes the net to that mode's schema
-  `ml` config (`MFMode.ml` — input/hidden/output + legacy spread) via a `ConsoleApp` effect keyed on
-  `[engine, modeId]`. No confirm modal (switching instrument is deliberate). The effect depends on `engine`, so on boot
-  it fires once WASM is ready and lands the boot mode's dims (**paf_synth → 4→[10,10,14]→33**, weights
-  809 — NOT the 32→126 default). The reshape-offer effect reads the engine's CURRENT `inputSize`
+  hidden/output config plus Manifold's effective input arity via a `ConsoleApp` effect keyed on
+  `[engine, modeId, modelInputSize]`. No confirm modal (switching instrument is deliberate). Normal
+  modes boot at **2 inputs** (paf_synth → 2→[10,10,14]→33, weights 787); the Inputs dock's **4 inputs**
+  option is retained across mode switches. Audio-analysis keeps its schema-defined input feature count.
+  The reshape-offer effect reads the engine's CURRENT `inputSize`
   live, so a mode switch that changes arity doesn't spuriously prompt (its baseline tracks axis
-  COUNT, unchanged by a pure dim change). Non-schema modes restore `DEFAULT_MODE_ML` (32→126).
+  COUNT, unchanged by a pure dim change). Manifold-only modes use the same 2/4 input selector.
   Debug seam for tests: under `?debug=1` ConsoleApp installs `window.__mf`
-  (`setMode`/`getModeId`/`paramCount`/`modeIds`) — the UI-level analogue of `__nisps`, since no
+  (`setMode`/`getModeId`/`paramCount`/`modeIds`/`getModelInputSize`/`setModelInputSize`) — the UI-level analogue of `__nisps`, since no
   in-UI instrument picker exists yet (`ctx.modes`/`setModeId` are plumbed but unrendered).
   Manifold passes `spread=0` for boot, mode-switch reshapes, direct re-rolls, explore-and-place
   scratchpad rolls, and VCV-forwarded randomise gestures by default. Settings → Experimental

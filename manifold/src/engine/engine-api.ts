@@ -10,8 +10,9 @@
  * The engine imports NO React. The only React in `engine/` is the
  * EngineProvider/useEngine binding layer (separate files).
  *
- * `subscribe(cb)` + `version()` are the `useSyncExternalStore` contract: React
- * re-reads on a version bump but consumers read the live Float32Array
+ * `subscribe(cb)` + `version()` expose structural/training state changes.
+ * `subscribeOutputs(cb)` + `outputVersion()` expose a throttled live-output
+ * channel for DOM consumers. Canvas consumers read the live Float32Array
  * imperatively via `getOutputs()` / `routedOutput()`.
  */
 
@@ -408,6 +409,16 @@ export class EngineApi {
   /** Monotonically-increasing counter, bumped on every state change. */
   version(): number {
     return this.spine.version();
+  }
+
+  /** Subscribe to throttled live-output changes for non-canvas UI consumers. */
+  subscribeOutputs(cb: () => void): () => void {
+    return this.spine.subscribeOutputs(cb);
+  }
+
+  /** Latest live-output revision; increments on every inference. */
+  outputVersion(): number {
+    return this.spine.outputVersion();
   }
 
   /** Subscribe to a named engine event (`ml.*`, `feedback.*`, …). */

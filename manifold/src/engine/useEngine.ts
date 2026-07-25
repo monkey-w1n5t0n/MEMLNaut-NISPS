@@ -3,12 +3,9 @@
  *
  * `useEngine()` returns the EngineApi from context (or null before it loads).
  *
- * `useEngineVersion()` subscribes to engine state changes via
- * `useSyncExternalStore(engine.subscribe, engine.version)`. It returns the
- * VERSION COUNTER (a number), NOT the output array — so a component re-renders
- * when engine state changes but reads the live `Float32Array` imperatively
- * (`engine.getOutputs()` / `engine.routedOutput()`) inside a rAF loop or on
- * render. This keeps per-frame audio inference off React's render cycle.
+ * `useEngineVersion()` subscribes only to structural/training state.
+ * `useEngineOutputVersion()` is the opt-in, throttled live-output channel for
+ * DOM consumers. Canvas consumers read live buffers imperatively instead.
  */
 
 import { useContext, useSyncExternalStore } from 'react';
@@ -38,6 +35,21 @@ export function useEngineVersion(engine: EngineApi | null): number {
   return useSyncExternalStore(
     (cb) => (engine ? engine.subscribe(cb) : () => {}),
     () => (engine ? engine.version() : 0),
+    () => 0,
+  );
+}
+
+/**
+ * Subscribe to the engine's throttled live-output channel. Disabled consumers
+ * neither subscribe nor re-render and report version 0.
+ */
+export function useEngineOutputVersion(
+  engine: EngineApi | null,
+  enabled = true,
+): number {
+  return useSyncExternalStore(
+    (cb) => (engine && enabled ? engine.subscribeOutputs(cb) : () => {}),
+    () => (engine && enabled ? engine.outputVersion() : 0),
     () => 0,
   );
 }

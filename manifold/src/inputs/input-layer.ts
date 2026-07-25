@@ -5,7 +5,7 @@
  * Sits ABOVE the engine: it owns a single rAF loop that, each frame,
  *  1. polls poll-based sources (gamepad buttons → actions),
  *  2. pulls every active source's axes into the shared `vector` (pull-based),
- *  3. blends/maps the N-dim vector down to the engine's input arity, and
+ *  3. maps the N-dim vector onto the engine's input arity, and
  *  4. fires engine.setInputs(...) exactly once.
  *
  * The XY pad remains push-driven via the existing onMove handler — when it's the
@@ -14,14 +14,12 @@
  * composable and the channel layout coherent.
  *
  * ── Dedicated dimensions (no blending) ──────────────────────────────────────
- * The WASM net is over-provisioned to a 32-input head (= MAX_AXES; see
- * nisps/wasm/bindings.cpp). Each active axis drives its OWN engine input slot
- * 1:1 — a double-stick gamepad is 4 genuine dims, a learned MIDI surface is N
- * genuine dims. `compose()` simply forwards the active axes; the engine
- * zero-pads the remaining slots and a zero input is inert (0 × weight = 0), so
- * unused dimensions never perturb the net. We do NOT mean-blend (the previous
- * behaviour) — that diluted every source and biased the net toward idle
- * sources' resting values.
+ * Each active axis drives its OWN engine input slot 1:1 — a double-stick
+ * gamepad is 4 genuine dims, and a learned MIDI surface is N genuine dims.
+ * `compose()` forwards the active axes and truncates only when a transient or
+ * deliberately smaller model cannot accept all of them. We do NOT mean-blend
+ * (the previous behaviour) — that diluted every source and biased the net
+ * toward idle sources' resting values.
  *
  * Changing the ACTIVE layout runs through ConsoleApp's persistent I/O policy:
  * keep-capacity remaps stable dimensions in place until capacity is exceeded;
@@ -42,6 +40,7 @@ export class InputLayer {
   private sources: InputSource[] = [];
   private engine: InputEngineSink | null = null;
   private vector = new Float32Array(MAX_AXES);
+  private reduced: number[] = [];
   private running = false;
   private rafId: number | null = null;
   private actionListeners = new Set<(a: InputAction) => void>();
@@ -136,7 +135,7 @@ export class InputLayer {
     }
     if (n === 0) return;
 
-    // 3. reduce to the engine's input arity (see file header — blend, not fake).
+    // 3. reduce to the engine's current input arity (dedicated, not blended).
     const reduced = this.compose(n, engine.architecture.inputSize);
 
     // 4. one engine write.
@@ -157,17 +156,14 @@ export class InputLayer {
    * the engine zero-pads the slots beyond `count` and a zero input is inert
    * (0 × weight = 0), so unused dimensions never perturb the net.
    *
-   * The net's input arity is over-provisioned (32, = MAX_AXES), so `inputSize`
-   * is effectively always ≥ n; the `min` only guards a transient where more
-   * axes are active than the net can take. We deliberately do NOT mean-blend
-   * (the old behaviour) — that diluted every source and biased the net toward
-   * idle sources' resting values.
+   * The ConsoleApp owns the reshape policy and grows the model when needed.
+   * The `min` guards the short transition without blending or reassigning axes.
    */
   private compose(n: number, inputSize: number): number[] {
     const count = Math.min(n, inputSize);
-    const out = new Array<number>(count);
-    for (let i = 0; i < count; i++) out[i] = this.vector[i];
-    return out;
+    this.reduced.length = count;
+    for (let i = 0; i < count; i++) this.reduced[i] = this.vector[i];
+    return this.reduced;
   }
 
   // ---- actions + layout fan-out -------------------------------------------

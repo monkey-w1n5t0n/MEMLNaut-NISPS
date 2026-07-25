@@ -21,8 +21,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useEngine } from '../engine';
-import { VirtualJoystick } from '../primitives/VirtualJoystick';
-import type { MFParam } from './model';
+import { shapeValuesInto, type MFParam } from './model';
+import { Manifold } from './Manifold';
+import type { FeedbackMarker } from './types';
 import {
   FlowFieldVisualizer,
   N_VISUAL_OUTPUTS,
@@ -36,16 +37,19 @@ export interface ParticleStageProps {
   params: MFParam[];
   values: number[];
   onChange: (i: number, patch: Partial<MFParam>) => void;
+  markers?: FeedbackMarker[];
 }
 
-export function ParticleStage({ pos, onMove, params, values, onChange }: ParticleStageProps) {
+export function ParticleStage({ pos, onMove, params, values, onChange, markers = [] }: ParticleStageProps) {
   const engine = useEngine();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vizRef = useRef<FlowFieldVisualizer | null>(null);
   const barsRef = useRef<(HTMLDivElement | null)[]>([]);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const outputsRef = useRef<Float32Array | null>(null);
-  const valuesRef = useRef(values);
+  const displayOutputsRef = useRef<ArrayLike<number>>(values);
+  const shapedOutputsRef = useRef(new Float32Array(N_VISUAL_OUTPUTS));
+  const paramsRef = useRef(params);
   const hoverRef = useRef<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 12, y: 28 });
@@ -73,7 +77,7 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
     startX: 0,
     el: null,
   });
-  valuesRef.current = values;
+  paramsRef.current = params;
   onMoveRef.current = onMove;
 
   const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
@@ -125,7 +129,7 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
       x: Math.min(e.clientX + 12, Math.max(12, window.innerWidth - 190)),
       y: Math.min(e.clientY + 12, Math.max(28, window.innerHeight - 32)),
     });
-    const output = valuesRef.current[i] ?? outputsRef.current?.[i] ?? 0;
+    const output = displayOutputsRef.current[i] ?? outputsRef.current?.[i] ?? 0;
     if (tooltipRef.current) tooltipRef.current.textContent = `${VISUAL_PARAM_NAMES[i]}: ${output.toFixed(3)}`;
   };
 
@@ -194,7 +198,11 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
       const outputs = engine?.getOutputs();
       if (outputs) {
         outputsRef.current = outputs;
-        const displayOutputs = valuesRef.current.length >= N_VISUAL_OUTPUTS ? valuesRef.current : outputs;
+        const displayOutputs =
+          paramsRef.current.length >= N_VISUAL_OUTPUTS
+            ? shapeValuesInto(paramsRef.current, outputs, shapedOutputsRef.current)
+            : outputs;
+        displayOutputsRef.current = displayOutputs;
         viz.setParams(displayOutputs);
         // Drive the heatmap bar widths imperatively (cheap; no React churn).
         for (let i = 0; i < N_VISUAL_OUTPUTS; i++) {
@@ -394,7 +402,10 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
         </div>
       )}
 
-      {/* Adjustable circular pad — explicit edit handles keep repositioning/resizing deliberate. */}
+      {/* Adjustable circular pad — reuse Manifold's visual surface so Particle
+          mode shows the same feedback marks and cursor trail as every other
+          input presentation. The outer stage owns follow-mouse, therefore the
+          embedded Manifold's double-click mode is disabled. */}
       <div
         style={{
           position: 'absolute',
@@ -406,14 +417,21 @@ export function ParticleStage({ pos, onMove, params, values, onChange }: Particl
           pointerEvents: 'none',
         }}
       >
-        <VirtualJoystick
-          size={padSize}
-          position={pos}
-          onMove={onMove}
-          disabled={padEdit || followMouse}
-          ariaLabel="particle input pad"
-          style={{ pointerEvents: padEdit || followMouse ? 'none' : 'auto' }}
-        />
+        <div
+          role="application"
+          aria-label="particle input pad"
+          tabIndex={padEdit || followMouse ? -1 : 0}
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'auto' }}
+        >
+          <Manifold
+            pos={pos}
+            onMove={onMove}
+            markers={markers}
+            variant="circular"
+            frozen={padEdit || followMouse}
+            followMouseEnabled={false}
+          />
+        </div>
         <button
           type="button"
           aria-label={padEdit ? 'Finish adjusting joystick' : 'Adjust joystick size and position'}

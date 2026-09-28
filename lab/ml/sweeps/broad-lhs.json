@@ -1,0 +1,23 @@
+{
+  "name": "broad-lhs",
+  "description": "First-pass sensitivity map: a 64-point Latin hypercube over most knobs, all scenarios. Feed to Phase 4 main-effects / importance analysis.",
+  "sample": {
+    "method": "lhs",
+    "n": 64,
+    "seed": 1,
+    "params": {
+      "shape.h1": { "int": [4, 32] },
+      "shape.h2": { "int": [4, 32] },
+      "shape.h3": { "int": [4, 32] },
+      "init.spread": { "range": [0, 1] },
+      "train.lr": { "log": [0.0001, 1] },
+      "train.max_iterations": { "int": [1, 1000] },
+      "act.hidden": { "choice": ["leaky_relu", "tanh", "hard_sigmoid"] },
+      "optim.rms_decay": { "range": [0.5, 0.99] },
+      "fb.geo_lr": { "log": [0.0001, 0.1] },
+      "fb.move_speed": { "log": [0.01, 1] },
+      "bench.press_hold_ms": { "choice": [0, 1000, 2500] }
+    }
+  },
+  "seeds": 3
+}

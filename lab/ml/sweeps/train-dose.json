@@ -1,0 +1,10 @@
+{
+  "name": "train-dose",
+  "description": "How the per-like training dose (lr x epochs) trades placement accuracy and retention against how far each like moves the whole mapping.",
+  "grid": {
+    "train.lr": [0.0001, 0.001, 0.01, 0.1, 1.0],
+    "train.max_iterations": [1, 10, 100, 1000]
+  },
+  "seeds": 5,
+  "scenarios": ["A1_at_example", "A2_around_example", "A3_far_field", "J1_positive_only", "J6_long_session", "J8_revisit", "J10_sweep_teach"]
+}

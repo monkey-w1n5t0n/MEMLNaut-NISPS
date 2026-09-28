@@ -1,0 +1,11 @@
+{
+  "name": "dislike-hold",
+  "description": "The dislike as Manifold delivers it: the immediate step plus advance_geometric over press_hold_ms, against geo_lr and lifetime. press_hold_ms=0 is the pre-lab bench.",
+  "grid": {
+    "bench.press_hold_ms": [0, 250, 1000, 2500],
+    "fb.geo_lr": [0.0001, 0.001, 0.01],
+    "fb.geo_lifetime_ms": [500, 2500]
+  },
+  "seeds": 5,
+  "scenarios": ["A4_negative_once", "A5_negative_twice_same", "A7_negative_near_positive", "A12_like_then_dislike", "J3_mixed_session", "J7_dislike_storm", "J9_two_region"]
+}

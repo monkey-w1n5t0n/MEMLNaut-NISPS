@@ -62,6 +62,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -82,46 +83,142 @@ using nisps::ml::FeedbackControllerCore;
 using nisps::ml::FeedbackMode;
 using nisps::ml::MLPCore;
 
-using Mlp      = MLPCore<DynamicStorage>;
+// ---------------------------------------------------------------------------
+// LAB POLICY — runtime-selectable activations and optimiser step.
+//
+// The shipped MLP fixes both at compile time (kLayerActivation, rmsprop_step).
+// The lab needs them sweepable, so the bench instantiates MLPCore with its own
+// policy that reads process-global settings. One process runs one config
+// (docs/specs/plans/ml-lab-spec.md §3.1), so a global is safe and is set once
+// in main() before any Rig exists. At the defaults this policy computes
+// exactly what DefaultMlpPolicy does — same functions, same constants, same
+// operation order — so a default run stays bit-identical.
+//
+// Lab-only choices (hard_sigmoid, clamp01, linear, sgd) live HERE, not in
+// nisps/: the lab may diverge from the products (spec §1.4, §3.5).
+// ---------------------------------------------------------------------------
+enum class LabAct : int { LeakyRelu, Tanh, Sigmoid, HardSigmoid, Linear, Clamp01 };
+enum class LabOptim : int { RmsProp, Sgd };
+
+struct LabSettings {
+    LabAct   hidden     = LabAct::LeakyRelu;
+    LabAct   output     = LabAct::Sigmoid;
+    LabOptim optim      = LabOptim::RmsProp;
+    float    decay      = nisps::ml::kRmsPropDecay;
+    float    decay_inv  = nisps::ml::kRmsPropDecayInv;
+    float    eps        = nisps::ml::kRmsPropEpsilon;
+    float    clip       = nisps::ml::kGradClip;
+    float    max_adj_lr = nisps::ml::kMaxAdjustedLr;
+};
+LabSettings g_lab;
+
+inline float clamp01(float x) { return x < 0.f ? 0.f : (x > 1.f ? 1.f : x); }
+
+inline float lab_act(LabAct a, float x) {
+    switch (a) {
+        case LabAct::LeakyRelu:   return nisps::ml::relu(x);
+        case LabAct::Tanh:        return nisps::ml::tanh_act(x);
+        case LabAct::Sigmoid:     return nisps::ml::sigmoid(x);
+        case LabAct::HardSigmoid: return clamp01(0.2f * x + 0.5f);  // Keras form
+        case LabAct::Linear:      return x;
+        case LabAct::Clamp01:     return clamp01(x);
+    }
+    return x;
+}
+
+inline float lab_act_deriv_pre(LabAct a, float pre) {
+    switch (a) {
+        case LabAct::LeakyRelu:   return nisps::ml::relu_deriv_pre(pre);
+        case LabAct::Tanh:        return nisps::ml::tanh_deriv_pre(pre);
+        case LabAct::Sigmoid:     return nisps::ml::sigmoid_deriv_pre(pre);
+        case LabAct::HardSigmoid: return (pre > -2.5f && pre < 2.5f) ? 0.2f : 0.f;
+        case LabAct::Linear:      return 1.f;
+        case LabAct::Clamp01:     return (pre > 0.f && pre < 1.f) ? 1.f : 0.f;
+    }
+    return 1.f;
+}
+
+struct LabMlpPolicy {
+    template <std::size_t L>
+    static float act(float x) noexcept {
+        return lab_act((L == 3u) ? g_lab.output : g_lab.hidden, x);
+    }
+    template <std::size_t L>
+    static float act_deriv_pre(float pre) noexcept {
+        return lab_act_deriv_pre((L == 3u) ? g_lab.output : g_lab.hidden, pre);
+    }
+    // Same formula and clamp order as nisps/ml/training.hpp rmsprop_step, with
+    // the constants read from g_lab.
+    static float step(float grad, float& sq_avg, float lr) noexcept {
+        float g = grad;
+        if (g >  g_lab.clip) g =  g_lab.clip;
+        if (g < -g_lab.clip) g = -g_lab.clip;
+        if (g_lab.optim == LabOptim::Sgd) return lr * g;
+        float sq = (g_lab.decay * sq_avg) + (g_lab.decay_inv * g * g);
+        if (sq > nisps::ml::kMaxSqGradAvg) sq = nisps::ml::kMaxSqGradAvg;
+        sq_avg = sq;
+        float adj_lr = lr / (std::sqrt(sq) + g_lab.eps);
+        if (adj_lr > g_lab.max_adj_lr) adj_lr = g_lab.max_adj_lr;
+        return adj_lr * g;
+    }
+};
+
+using Mlp      = MLPCore<DynamicStorage, LabMlpPolicy>;
 using Feedback = FeedbackControllerCore<DynamicFeedbackStorage>;
 
-// Pinned constants of the experiment. These are deliberately NOT knobs: a
-// benchmark whose every parameter floats cannot be compared across runs.
-constexpr float       kMoveSpeed       = 0.1f;   // nominal perturbation "speed"
-
-// EXCEPT these two, which are the live design questions and therefore have to
-// be sweepable:
-//
-//   spread  — 1.0 is Xavier (scale 1/sqrt(fan_in)), 0.0 is plain uniform
-//             [-1,1] with NO fan_in coupling. `--spread 0` is exactly the
-//             behaviour the core would have once the spread knob and Xavier
-//             are removed, so this flag measures that change BEFORE paying for
-//             the refactor (which shifts every golden vector).
-//   geo_lr  — feedback.hpp's default is 0.001, ported from upstream
-//             InterfaceRL.hpp:312. Upstream applied it inside a multi-pass
-//             optimise() loop; NISPS applies it ONCE per press. `--geo-lr`
-//             makes the consequence measurable.
-constexpr std::size_t kUndoDepth       = 4u;
-constexpr std::size_t kReplayCap       = 64u;
-constexpr std::size_t kProbePoints     = 2048u;  // sample set size for field metrics
-constexpr float       kNearRadius[]    = {0.01f, 0.05f, 0.10f, 0.25f};
-constexpr std::size_t kNearRings       = sizeof(kNearRadius) / sizeof(float);
-
 // ---------------------------------------------------------------------------
-// Config
+// Config — every knob of the experiment. Each field is registered by name in
+// the parameter registry (see params() near main), which is the ONE list the
+// sweep driver validates against (`--list-params`) and the report echoes.
+// Defaults reproduce the bench as it was before the lab (a6b8f87).
 // ---------------------------------------------------------------------------
 struct Config {
+    // shape.*
     std::size_t n_in      = 2u;   // operator default (2026-07-25)
     std::size_t hidden[3] = {16u, 16u, 16u};
     std::size_t n_out     = 8u;   // operator default (2026-07-25)
+    // bench.*
     std::uint64_t seed    = 0x5EEDu;
     std::size_t max_examples = 128u;
-    std::string only;             // run one scenario by id, empty = all
+    // Simulated wall time after each down press, advanced through
+    // advance_geometric() in tick_ms steps. Manifold calls advance_geometric
+    // every frame (manifold/src/engine/wasm-iml.ts), so a dislike there keeps
+    // pushing for fb.geo_lifetime_ms; 0 measures only the immediate step,
+    // which is what this bench measured before the lab.
+    float press_hold_ms = 0.f;
+    float tick_ms       = 5.f;
+    std::string only;             // scenario filter: comma list, `X*` = prefix; empty = all
     bool        smoke = false;    // reduced point counts, proves it still runs
-    float       spread = 1.0f;    // 1 = Xavier, 0 = uniform (post-removal)
+    // init.*
+    //   spread — 1.0 is Xavier (scale 1/sqrt(fan_in)), 0.0 is plain uniform
+    //            [-1,1] with NO fan_in coupling, i.e. the core's behaviour once
+    //            the spread knob and Xavier are removed.
+    float       spread = 1.0f;
+    // train.* — the no-arg train() dose (schemas/ml_defaults.json)
+    float       train_lr       = ::nisps::ml::generated::kMlTrainDefaults.learning_rate;
+    std::size_t train_max_iter = ::nisps::ml::generated::kMlTrainDefaults.max_iterations;
+    float       train_min_err  = ::nisps::ml::generated::kMlTrainDefaults.min_error;
+    // act.* / optim.* — copied into g_lab
+    LabSettings lab{};
+    // fb.*
+    //   geo_lr — feedback.hpp's default is 0.001, ported from upstream
+    //            InterfaceRL.hpp:312. Upstream applied it inside a multi-pass
+    //            optimise() loop; NISPS applies it ONCE per press.
     float       geo_lr = 0.001f;  // feedback.hpp default
     std::size_t geo_iters = 1u;   // presses applied per dislike (1 = today)
+    float       geo_update_hz   = 200.f;   // feedback.hpp default
+    float       geo_lifetime_ms = 2500.f;  // feedback.hpp default
+    AvoidStyle  avoid_style = AvoidStyle::Geometric;  // for scenarios that do not choose
+    float       move_speed  = 0.1f;   // nominal perturbation "speed"
+    std::size_t undo_depth  = 4u;
+    std::size_t replay_cap  = 64u;
 };
+
+// Pinned constants of the experiment. These are deliberately NOT knobs: a
+// benchmark whose every parameter floats cannot be compared across runs.
+constexpr std::size_t kProbePoints     = 2048u;  // sample set size for field metrics
+constexpr float       kNearRadius[]    = {0.01f, 0.05f, 0.10f, 0.25f};
+constexpr std::size_t kNearRings       = sizeof(kNearRadius) / sizeof(float);
 
 std::size_t probe_points(const Config& c) { return c.smoke ? 128u : kProbePoints; }
 
@@ -186,9 +283,9 @@ struct Rig {
           fb(c.seed ^ 0xF33DBACCull,
              c.n_out,
              mlp.weight_count(),
-             kUndoDepth,
+             c.undo_depth,
              c.n_in,
-             kReplayCap),
+             c.replay_cap),
           rng(c.seed ^ 0xA5A5A5A5ull),
           sampler(c.n_in) {
         const std::size_t n = probe_points(c);
@@ -198,6 +295,9 @@ struct Rig {
             sampler.point(k, std::span<float>(&probe_pts[k * c.n_in], c.n_in));
         }
         fb.set_geo_lr(c.geo_lr);
+        fb.set_geo_update_hz(c.geo_update_hz);
+        fb.set_geo_lifetime_ms(c.geo_lifetime_ms);
+        mlp.set_train_config(c.train_lr, c.train_max_iter, c.train_min_err);
         // MLPCore's ctor draws at spread=1; re-draw when the experiment asks
         // for a different init regime. Same RNG stream either way.
         if (c.spread != 1.0f) mlp.draw_weights(c.spread);
@@ -526,11 +626,13 @@ Dataset make_dataset(const Config& cfg, const char* layout, std::size_t count, R
 // Report emission. Plain JSON on stdout — bench-ml.sh captures it and
 // tests/cpp/ml_bench_report.mjs formats + diffs it, mirroring bench_report.mjs.
 // ---------------------------------------------------------------------------
+std::string params_json(const Config& c);
+
 class Json {
    public:
     void begin_run(const Config& c) {
         printf("{\n");
-        printf("  \"schema\": \"nisps-ml-bench/1\",\n");
+        printf("  \"schema\": \"nisps-ml-bench/2\",\n");
         printf("  \"shape\": {\"n_in\": %zu, \"hidden\": [%zu, %zu, %zu], \"n_out\": %zu},\n",
                c.n_in, c.hidden[0], c.hidden[1], c.hidden[2], c.n_out);
         printf("  \"seed\": %llu,\n", static_cast<unsigned long long>(c.seed));
@@ -538,6 +640,11 @@ class Json {
         printf("  \"spread\": %.6g, \"geo_lr\": %.6g, \"geo_iters\": %zu,\n",
                static_cast<double>(c.spread), static_cast<double>(c.geo_lr), c.geo_iters);
         printf("  \"target\": \"%s\",\n", target_name());
+        // Every registered parameter, resolved (spec §3.3). The legacy fields
+        // above stay for report readers written against schema 1.
+        printf("  \"params\": {%s},\n", params_json(c).c_str());
+        printf("  \"scenario_filter\": \"%s\",\n", c.only.c_str());
+        printf("  \"smoke\": %s,\n", c.smoke ? "true" : "false");
         printf("  \"scenarios\": [\n");
     }
     void end_run() { printf("\n  ]\n}\n"); }
@@ -607,8 +714,28 @@ class Json {
 // ---------------------------------------------------------------------------
 // Scenario plumbing
 // ---------------------------------------------------------------------------
-bool selected(const Config& c, const char* id) {
-    return c.only.empty() || c.only == id;
+// Scenario selection. `only` is a comma list of keys; a token ending in `*` is
+// a prefix (`J*`, `U4*`). Keys are the ones each scenario function gates on,
+// which for multi-row scenarios (A4, U1–U4) differ from the emitted row ids.
+//
+// --list-scenarios runs the whole corpus in LISTING mode: every gate records
+// its key and returns false, so nothing executes. That is the scenario
+// registry — there is no second list to drift out of date.
+bool g_listing = false;
+std::vector<std::string> g_keys;          // every key seen (listing mode)
+std::vector<std::string> g_filter;        // parsed `only`
+
+bool token_matches(const std::string& tok, const char* id) {
+    if (!tok.empty() && tok.back() == '*')
+        return std::strncmp(id, tok.c_str(), tok.size() - 1u) == 0;
+    return tok == id;
+}
+
+bool selected(const Config&, const char* id) {
+    if (g_listing) { g_keys.emplace_back(id); return false; }
+    if (g_filter.empty()) return true;
+    for (const std::string& tok : g_filter) if (token_matches(tok, id)) return true;
+    return false;
 }
 
 // Place ONE positive example the way the real product path does.
@@ -630,6 +757,22 @@ void place_positive(Rig& rig, std::span<const float> x, std::span<const float> y
     rig.mlp.process();
     rig.mlp.add_example(x, y);
     rig.fb.store_positive(rig.mlp, y);
+}
+
+// A down press the way the product delivers it: on_down, then — when
+// bench.press_hold_ms > 0 — the wall time until the next gesture, fed to
+// advance_geometric() in bench.tick_ms steps, as Manifold does every frame.
+// advance_geometric is a no-op outside Avoid+Geometric, so this is safe for
+// every mode. D1 deliberately bypasses it: it decomposes the immediate step.
+nisps::ml::FeedbackAction press_down(Rig& rig, std::span<const float> heard) {
+    const auto a = rig.fb.on_down(rig.mlp, heard, rig.cfg.move_speed, rig.spread(), {});
+    if (rig.cfg.press_hold_ms > 0.f) {
+        const auto ticks = static_cast<std::size_t>(
+            std::ceil(rig.cfg.press_hold_ms / rig.cfg.tick_ms));
+        const float dt = rig.cfg.tick_ms * 0.001f;
+        for (std::size_t t = 0; t < ticks; ++t) rig.fb.advance_geometric(rig.mlp, dt);
+    }
+    return a;
 }
 
 // The ExploreAndPlace accessor contract, in one place because getting it wrong
@@ -789,7 +932,7 @@ void probe_negative_once(const Config& cfg, Json& js) {
         rig.fb.set_avoid_style(v.style);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, press[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+        press_down(rig, heard);
 
         std::vector<float> after;
         rig.field(after);
@@ -814,7 +957,7 @@ void probe_negative_twice(const Config& cfg, Json& js) {
     Dataset ds = make_dataset(cfg, "scattered", 12u, rig.rng);
     std::vector<float> pos_xs = teach(rig, ds);
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
     std::vector<float> press(cfg.n_in);
     for (std::size_t j = 0; j < cfg.n_in; ++j) press[j] = 0.5f * (ds.xs[j] + ds.xs[cfg.n_in + j]);
@@ -825,7 +968,7 @@ void probe_negative_twice(const Config& cfg, Json& js) {
         rig.at(press, heard);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, press[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+        press_down(rig, heard);
         rig.field(press_i == 0 ? s1 : s2);
     }
 
@@ -858,7 +1001,7 @@ void probe_negative_adjacent(const Config& cfg, Json& js) {
         Dataset ds = make_dataset(cfg, "scattered", 12u, rig.rng);
         std::vector<float> pos_xs = teach(rig, ds);
         rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-        rig.fb.set_avoid_style(AvoidStyle::Geometric);
+        rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
         std::vector<float> a(cfg.n_in), b(cfg.n_in);
         for (std::size_t j = 0; j < cfg.n_in; ++j) {
@@ -874,7 +1017,7 @@ void probe_negative_adjacent(const Config& cfg, Json& js) {
             rig.at(p, heard);
             for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, p[j]);
             rig.mlp.process();
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            press_down(rig, heard);
         };
 
         press_at(a);
@@ -915,7 +1058,7 @@ void probe_negative_near_positive(const Config& cfg, Json& js) {
         Dataset ds = make_dataset(cfg, "scattered", 8u, rig.rng);
         std::vector<float> pos_xs = teach(rig, ds);
         rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-        rig.fb.set_avoid_style(AvoidStyle::Geometric);
+        rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
         // The protected positive is example 0. Press `sep` away from it.
         std::vector<float> press(cfg.n_in);
@@ -929,7 +1072,7 @@ void probe_negative_near_positive(const Config& cfg, Json& js) {
         rig.at(press, heard);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, press[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+        press_down(rig, heard);
 
         rig.field(after);
         rig.at(std::span<const float>(&ds.xs[0], cfg.n_in), at_pos_after);
@@ -977,9 +1120,9 @@ void probe_randomise_and_place(const Config& cfg, Json& js) {
     rig.mlp.process();
 
     // Down = enter randomise; down again = re-roll. Audition three patches.
-    rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+    press_down(rig, heard);
     std::size_t rerolls = 0u;
-    for (int i = 0; i < 2; ++i) { rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {}); ++rerolls; }
+    for (int i = 0; i < 2; ++i) { press_down(rig, heard); ++rerolls; }
 
     // Take the held static vector and place it as a positive example.
     std::vector<float> patch(cfg.n_out, 0.f);
@@ -1055,7 +1198,7 @@ void journey_randomise_place_only(const Config& cfg, Json& js) {
         rig.at(where, heard);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, where[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});   // enter/roll
+        press_down(rig, heard);   // enter/roll
         rig.fb.static_output(patch);
         place_positive(rig, where, patch);
         rig.mlp.train();
@@ -1087,7 +1230,7 @@ void journey_mixed(const Config& cfg, Json& js) {
     const std::size_t N = cfg.smoke ? 8u : 24u;
     Dataset ds = make_dataset(cfg, "scattered", N, rig.rng);
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
     js.begin_scenario("J3_mixed_session", "likes and dislikes interleaved");
     std::vector<float> heard, got;
@@ -1103,7 +1246,7 @@ void journey_mixed(const Config& cfg, Json& js) {
             rig.at(dis, heard);
             for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, dis[j]);
             rig.mlp.process();
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            press_down(rig, heard);
         }
         if ((k + 1u) % 8u == 0u) {
             FieldMetrics fm = measure_field(rig);
@@ -1178,11 +1321,11 @@ void journey_branch(const Config& cfg, Json& js) {
 
         if (b.kind == 1) {
             rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-            rig.fb.set_avoid_style(AvoidStyle::Geometric);
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            rig.fb.set_avoid_style(rig.cfg.avoid_style);
+            press_down(rig, heard);
         } else if (b.kind == 2) {
             rig.fb.set_mode(FeedbackMode::RandomiseOutputs, rig.mlp);
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            press_down(rig, heard);
             rig.fb.static_output(patch);
             place_positive(rig, p, patch);
             rig.mlp.train();
@@ -1215,9 +1358,9 @@ void edge_cases(const Config& cfg, Json& js) {
         rig.field(before);
         rig.at(p, heard);
         rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-        rig.fb.set_avoid_style(AvoidStyle::Geometric);
+        rig.fb.set_avoid_style(rig.cfg.avoid_style);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+        press_down(rig, heard);
         rig.field(after);
         Displacement d = measure_displacement(rig, before, after, p, {});
         js.begin_scenario("E1_cold_start_dislike", "dislike with zero examples stored");
@@ -1320,7 +1463,7 @@ void edge_cases(const Config& cfg, Json& js) {
     }
 
     // E7 — undo depth exhaustion: more scratchpad ops than the undo ring
-    // holds (kUndoDepth). Reports how far back the user can actually get.
+    // holds (fb.undo_depth). Reports how far back the user can actually get.
     if (selected(cfg, "E7_undo_exhaustion")) {
         Rig rig(cfg);
         Dataset ds = make_dataset(cfg, "scattered", 6u, rig.rng);
@@ -1330,16 +1473,16 @@ void edge_cases(const Config& cfg, Json& js) {
         std::vector<float> origin;
         rig.field(origin);
         rig.fb.enter_explore(rig.mlp, rig.spread());
-        for (std::size_t i = 0; i < kUndoDepth + 3u; ++i) rig.fb.reroll(rig.mlp, rig.spread());
+        for (std::size_t i = 0; i < cfg.undo_depth + 3u; ++i) rig.fb.reroll(rig.mlp, rig.spread());
         const std::size_t depth_before = rig.fb.undo_depth();
-        for (std::size_t i = 0; i < kUndoDepth + 3u; ++i) rig.fb.undo(rig.mlp);
+        for (std::size_t i = 0; i < cfg.undo_depth + 3u; ++i) rig.fb.undo(rig.mlp);
         rig.fb.exit_explore(rig.mlp);
 
         std::vector<float> restored;
         rig.field(restored);
         js.begin_scenario("E7_undo_exhaustion", "more rerolls than the undo ring holds");
-        js.kv("undo_cap", kUndoDepth);
-        js.kv("ops", kUndoDepth + 3u);
+        js.kv("undo_cap", cfg.undo_depth);
+        js.kv("ops", cfg.undo_depth + 3u);
         js.kv("depth_before_undo", depth_before);
         js.kv("residual", l2(origin, restored));   // 0 = fully recovered
         js.end_scenario();
@@ -1408,7 +1551,7 @@ void diag_geo_anatomy(const Config& cfg, Json& js) {
         rig.at(press, h);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, press[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, h, kMoveSpeed, rig.spread(), {});
+        rig.fb.on_down(rig.mlp, h, rig.cfg.move_speed, rig.spread(), {});
     };
 
     press_once();
@@ -1604,13 +1747,13 @@ void probe_like_then_dislike(const Config& cfg, Json& js) {
     const float held_before = l2(got, y);
 
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
     for (std::size_t i = 0; i < cfg.geo_iters; ++i) {
         std::vector<float> h;
         rig.at(x, h);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, x[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, h, kMoveSpeed, rig.spread(), {});
+        press_down(rig, h);
     }
 
     rig.field(after);
@@ -1647,10 +1790,10 @@ void probe_dislike_then_repair(const Config& cfg, Json& js) {
     rig.at(where, disliked);
 
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
     for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, where[j]);
     rig.mlp.process();
-    rig.fb.on_down(rig.mlp, disliked, kMoveSpeed, rig.spread(), {});
+    press_down(rig, disliked);
 
     // Now repair: explore for something else and place it here.
     rig.fb.set_mode(FeedbackMode::ExploreAndPlace, rig.mlp);
@@ -1692,7 +1835,7 @@ void probe_focus_mask(const Config& cfg, Json& js) {
     for (std::size_t j = 0; j < cfg.n_out; j += 2u) mask[j] = 1u;   // evens active
     rig.fb.set_focus_mask(mask);
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
     std::vector<float> where(cfg.n_in);
     for (std::size_t j = 0; j < cfg.n_in; ++j)
@@ -1705,7 +1848,7 @@ void probe_focus_mask(const Config& cfg, Json& js) {
         rig.at(where, h);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, where[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, h, kMoveSpeed, rig.spread(), {});
+        press_down(rig, h);
     }
     rig.at(where, aft);
 
@@ -1780,7 +1923,7 @@ void journey_long_session(const Config& cfg, Json& js) {
     const std::size_t N = cfg.smoke ? 20u : 120u;
     Dataset ds = make_dataset(cfg, "scattered", N, rig.rng);
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
     Kronecker kd(cfg.n_in);
     std::vector<float> dis(cfg.n_in), heard;
 
@@ -1794,7 +1937,7 @@ void journey_long_session(const Config& cfg, Json& js) {
             rig.at(dis, heard);
             for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, dis[j]);
             rig.mlp.process();
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            press_down(rig, heard);
         }
         const std::size_t every = cfg.smoke ? 10u : 40u;
         if ((k + 1u) % every == 0u) {
@@ -1827,7 +1970,7 @@ void journey_dislike_storm(const Config& cfg, Json& js) {
     std::vector<float> pos_xs = teach(rig, ds);
     rig.mlp.train();
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
     std::vector<float> before;
     rig.field(before);
@@ -1843,7 +1986,7 @@ void journey_dislike_storm(const Config& cfg, Json& js) {
         rig.at(p, heard);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, p[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+        press_down(rig, heard);
     }
 
     std::vector<float> after;
@@ -1931,7 +2074,7 @@ void journey_two_region(const Config& cfg, Json& js) {
 
     // Now hammer region B with dislikes.
     rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-    rig.fb.set_avoid_style(AvoidStyle::Geometric);
+    rig.fb.set_avoid_style(rig.cfg.avoid_style);
     std::vector<float> xb(cfg.n_in), heard;
     const std::size_t M = cfg.smoke ? 10u : 30u;
     for (std::size_t i = 0; i < M; ++i) {
@@ -1940,7 +2083,7 @@ void journey_two_region(const Config& cfg, Json& js) {
         rig.at(xb, heard);
         for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, xb[j]);
         rig.mlp.process();
-        rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+        press_down(rig, heard);
     }
 
     float held_after = 0.f;
@@ -2074,7 +2217,7 @@ void edge_cases_2(const Config& cfg, Json& js) {
         teach(rig, ds);
         rig.mlp.train();
         rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-        rig.fb.set_avoid_style(AvoidStyle::Geometric);
+        rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
         std::span<const float> x(&ds.xs[0], cfg.n_in);
         std::span<const float> y(&ds.ys[0], cfg.n_out);
@@ -2086,7 +2229,7 @@ void edge_cases_2(const Config& cfg, Json& js) {
             rig.at(x, heard);
             for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, x[j]);
             rig.mlp.process();
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            press_down(rig, heard);
         }
         rig.at(x, got);
         auto w = rig.mlp.get_weights();
@@ -2134,7 +2277,7 @@ void edge_cases_2(const Config& cfg, Json& js) {
         std::vector<std::uint8_t> mask(cfg.n_out, 0u);   // nothing active
         rig.fb.set_focus_mask(mask);
         rig.fb.set_mode(FeedbackMode::Avoid, rig.mlp);
-        rig.fb.set_avoid_style(AvoidStyle::Geometric);
+        rig.fb.set_avoid_style(rig.cfg.avoid_style);
 
         std::vector<float> before, after, heard, p(cfg.n_in, 0.1f);
         rig.field(before);
@@ -2142,7 +2285,7 @@ void edge_cases_2(const Config& cfg, Json& js) {
             rig.at(p, heard);
             for (std::size_t j = 0; j < cfg.n_in; ++j) rig.mlp.set_input(j, p[j]);
             rig.mlp.process();
-            rig.fb.on_down(rig.mlp, heard, kMoveSpeed, rig.spread(), {});
+            press_down(rig, heard);
         }
         rig.field(after);
         js.begin_scenario("E13_all_outputs_masked", "dislike with every output masked off");
@@ -2488,9 +2631,9 @@ void upstream_balanced_positives(const Config& cfg, Json& js) {
 }
 
 // ---------------------------------------------------------------------------
-void run(const Config& cfg) {
-    Json js;
-    js.begin_run(cfg);
+// The corpus, in report order. Also the scenario registry: --list-scenarios
+// walks it in listing mode (see selected()).
+void run_corpus(const Config& cfg, Json& js) {
     probe_at_example(cfg, js);
     probe_around_example(cfg, js);
     probe_far_field(cfg, js);
@@ -2523,66 +2666,270 @@ void run(const Config& cfg) {
     upstream_balanced_positives(cfg, js);
     edge_cases(cfg, js);
     edge_cases_2(cfg, js);
+}
+
+void run(const Config& cfg) {
+    Json js;
+    js.begin_run(cfg);
+    run_corpus(cfg, js);
     js.end_run();
+}
+
+std::vector<std::string> list_scenario_keys(const Config& cfg) {
+    g_listing = true;
+    g_keys.clear();
+    Json js;  // never written to: every gate returns false while listing
+    run_corpus(cfg, js);
+    g_listing = false;
+    return g_keys;
+}
+
+// ---------------------------------------------------------------------------
+// PARAMETER REGISTRY — the one list of knobs (docs/specs/plans/ml-lab-spec.md
+// §3.2). `--set name=value` assigns any entry; `--list-params` prints them all
+// as JSON for the sweep driver; the report header echoes every resolved value.
+// An unknown name or an out-of-range value is a usage error, never a silent
+// default: a typo in a 500-run sweep must not measure the default 500 times.
+// ---------------------------------------------------------------------------
+struct Param {
+    const char* name;
+    const char* type;   // "int" | "float" | "enum"
+    const char* desc;
+    std::string range;  // JSON fragment: "min":..,"max":.. or "choices":[..]
+    std::function<const char*(Config&, const char*)> set;  // nullptr = ok, else why not
+    std::function<std::string(const Config&)> get;         // JSON literal
+};
+
+// Shortest decimal that reads back as the same float, so the header says
+// `0.001`, not `0.00100000005`, and still round-trips exactly.
+std::string fmt_float(float v) {
+    char b[48];
+    for (int prec = 6; prec <= 9; ++prec) {
+        snprintf(b, sizeof b, "%.*g", prec, static_cast<double>(v));
+        if (std::strtof(b, nullptr) == v) break;
+    }
+    return b;
+}
+
+Param p_float(const char* name, const char* desc, std::function<float&(Config&)> f,
+              float lo, float hi) {
+    return {name, "float", desc,
+            "\"min\": " + fmt_float(lo) + ", \"max\": " + fmt_float(hi),
+            [f, lo, hi](Config& c, const char* v) -> const char* {
+                char* end = nullptr;
+                const float x = std::strtof(v, &end);
+                if (end == v || *end != '\0' || !std::isfinite(x)) return "not a finite float";
+                if (x < lo || x > hi) return "out of range";
+                f(c) = x;
+                return nullptr;
+            },
+            [f](const Config& c) { return fmt_float(f(const_cast<Config&>(c))); }};
+}
+
+template <typename T>
+Param p_int(const char* name, const char* desc, std::function<T&(Config&)> f,
+            unsigned long long lo, unsigned long long hi) {
+    return {name, "int", desc,
+            "\"min\": " + std::to_string(lo) + ", \"max\": " + std::to_string(hi),
+            [f, lo, hi](Config& c, const char* v) -> const char* {
+                if (*v == '-' || *v == '\0') return "not a non-negative integer";
+                char* end = nullptr;
+                const unsigned long long x = std::strtoull(v, &end, 0);
+                if (*end != '\0') return "not a non-negative integer";
+                if (x < lo || x > hi) return "out of range";
+                f(c) = static_cast<T>(x);
+                return nullptr;
+            },
+            [f](const Config& c) {
+                return std::to_string(static_cast<unsigned long long>(f(const_cast<Config&>(c))));
+            }};
+}
+
+template <typename E>
+Param p_enum(const char* name, const char* desc, std::function<E&(Config&)> f,
+             std::vector<std::pair<const char*, E>> choices) {
+    std::string range = "\"choices\": [";
+    for (std::size_t i = 0; i < choices.size(); ++i)
+        range += std::string(i ? ", " : "") + "\"" + choices[i].first + "\"";
+    range += "]";
+    return {name, "enum", desc, range,
+            [f, choices](Config& c, const char* v) -> const char* {
+                for (const auto& ch : choices)
+                    if (std::strcmp(ch.first, v) == 0) { f(c) = ch.second; return nullptr; }
+                return "not one of the choices";
+            },
+            [f, choices](const Config& c) -> std::string {
+                const E e = f(const_cast<Config&>(c));
+                for (const auto& ch : choices)
+                    if (ch.second == e) return std::string("\"") + ch.first + "\"";
+                return "null";
+            }};
+}
+
+const std::vector<Param>& params() {
+    using C = Config;
+    const std::vector<std::pair<const char*, LabAct>> hidden_acts = {
+        {"leaky_relu", LabAct::LeakyRelu}, {"tanh", LabAct::Tanh}, {"sigmoid", LabAct::Sigmoid},
+        {"hard_sigmoid", LabAct::HardSigmoid}, {"linear", LabAct::Linear},
+        {"clamp01", LabAct::Clamp01}};
+    // Output activations must land in [0,1]: every field metric assumes it.
+    const std::vector<std::pair<const char*, LabAct>> output_acts = {
+        {"sigmoid", LabAct::Sigmoid}, {"hard_sigmoid", LabAct::HardSigmoid},
+        {"clamp01", LabAct::Clamp01}};
+    static const std::vector<Param> reg = {
+        p_int<std::size_t>("shape.n_in",  "input dimensions",          [](C& c) -> std::size_t& { return c.n_in; }, 1, 256),
+        p_int<std::size_t>("shape.h1",    "hidden layer 1 width",      [](C& c) -> std::size_t& { return c.hidden[0]; }, 1, 1024),
+        p_int<std::size_t>("shape.h2",    "hidden layer 2 width",      [](C& c) -> std::size_t& { return c.hidden[1]; }, 1, 1024),
+        p_int<std::size_t>("shape.h3",    "hidden layer 3 width",      [](C& c) -> std::size_t& { return c.hidden[2]; }, 1, 1024),
+        p_int<std::size_t>("shape.n_out", "output dimensions",         [](C& c) -> std::size_t& { return c.n_out; }, 1, 256),
+        p_int<std::uint64_t>("bench.seed", "seed for net init, feedback and scenario RNGs",
+                           [](C& c) -> std::uint64_t& { return c.seed; }, 0, 0xFFFFFFFFFFFFull),
+        p_int<std::size_t>("bench.max_examples", "training-set ring capacity (FIFO eviction)",
+                           [](C& c) -> std::size_t& { return c.max_examples; }, 1, 65536),
+        p_float("bench.press_hold_ms", "simulated time after each down press, fed to advance_geometric (0 = immediate step only)",
+                [](C& c) -> float& { return c.press_hold_ms; }, 0.f, 60000.f),
+        p_float("bench.tick_ms", "advance_geometric step size while holding",
+                [](C& c) -> float& { return c.tick_ms; }, 0.1f, 1000.f),
+        p_float("init.spread", "weight init/perturbation regime: 1 = Xavier, 0 = uniform [-1,1]",
+                [](C& c) -> float& { return c.spread; }, 0.f, 10.f),
+        p_float("train.lr", "learning rate of the per-gesture train()",
+                [](C& c) -> float& { return c.train_lr; }, 0.f, 100.f),
+        p_int<std::size_t>("train.max_iterations", "epochs per train() call",
+                           [](C& c) -> std::size_t& { return c.train_max_iter; }, 0, 100000),
+        p_float("train.min_error", "early-stop loss for train()",
+                [](C& c) -> float& { return c.train_min_err; }, 0.f, 1000.f),
+        p_enum<LabAct>("act.hidden", "hidden-layer activation (leaky_relu slope 0.01; hard_sigmoid = clamp(0.2x+0.5))",
+                       [](C& c) -> LabAct& { return c.lab.hidden; }, hidden_acts),
+        p_enum<LabAct>("act.output", "output-layer activation (must map into [0,1])",
+                       [](C& c) -> LabAct& { return c.lab.output; }, output_acts),
+        p_enum<LabOptim>("optim.kind", "optimiser: rmsprop (shipped) or sgd (lab-only)",
+                         [](C& c) -> LabOptim& { return c.lab.optim; },
+                         {{"rmsprop", LabOptim::RmsProp}, {"sgd", LabOptim::Sgd}}),
+        p_float("optim.rms_decay", "RMSProp squared-gradient decay",
+                [](C& c) -> float& { return c.lab.decay; }, 0.f, 0.9999f),
+        p_float("optim.rms_eps", "RMSProp epsilon",
+                [](C& c) -> float& { return c.lab.eps; }, 1e-12f, 1.f),
+        p_float("optim.grad_clip", "per-element gradient clip",
+                [](C& c) -> float& { return c.lab.clip; }, 1e-6f, 1e6f),
+        p_float("optim.max_adj_lr", "RMSProp cap on the normalised step",
+                [](C& c) -> float& { return c.lab.max_adj_lr; }, 1e-9f, 1e6f),
+        p_float("fb.geo_lr", "geometric-dislike base learning rate",
+                [](C& c) -> float& { return c.geo_lr; }, 0.f, 100.f),
+        p_int<std::size_t>("fb.geo_iters", "presses applied per dislike in A12/A14",
+                           [](C& c) -> std::size_t& { return c.geo_iters; }, 1, 100000),
+        p_float("fb.geo_update_hz", "replay optimiser rate while negatives live (needs bench.press_hold_ms > 0)",
+                [](C& c) -> float& { return c.geo_update_hz; }, 0.f, 10000.f),
+        p_float("fb.geo_lifetime_ms", "negative lifetime in replay (needs bench.press_hold_ms > 0)",
+                [](C& c) -> float& { return c.geo_lifetime_ms; }, 0.f, 600000.f),
+        p_enum<AvoidStyle>("fb.avoid_style", "dislike style for scenarios that do not choose one",
+                           [](C& c) -> AvoidStyle& { return c.avoid_style; },
+                           {{"geometric", AvoidStyle::Geometric}, {"diffuse", AvoidStyle::Diffuse}}),
+        p_float("fb.move_speed", "perturbation speed passed to on_down",
+                [](C& c) -> float& { return c.move_speed; }, 0.f, 10.f),
+        p_int<std::size_t>("fb.undo_depth", "explore undo ring depth",
+                           [](C& c) -> std::size_t& { return c.undo_depth; }, 1, 1024),
+        p_int<std::size_t>("fb.replay_cap", "replay memory capacity (positives + negatives)",
+                           [](C& c) -> std::size_t& { return c.replay_cap; }, 1, 65536),
+    };
+    return reg;
+}
+
+std::string params_json(const Config& c) {
+    std::string out;
+    for (const Param& p : params()) {
+        if (!out.empty()) out += ", ";
+        out += std::string("\"") + p.name + "\": " + p.get(c);
+    }
+    return out;
+}
+
+void list_params() {
+    const Config def;
+    printf("[\n");
+    const auto& reg = params();
+    for (std::size_t i = 0; i < reg.size(); ++i) {
+        const Param& p = reg[i];
+        printf("  {\"name\": \"%s\", \"type\": \"%s\", \"default\": %s, %s, \"desc\": \"%s\"}%s\n",
+               p.name, p.type, p.get(def).c_str(), p.range.c_str(), p.desc,
+               (i + 1u < reg.size()) ? "," : "");
+    }
+    printf("]\n");
+}
+
+bool set_param(Config& c, const std::string& name, const std::string& value) {
+    for (const Param& p : params()) {
+        if (name != p.name) continue;
+        if (const char* why = p.set(c, value.c_str())) {
+            fprintf(stderr, "ml_bench: %s=%s: %s (%s)\n", name.c_str(), value.c_str(), why,
+                    p.range.c_str());
+            return false;
+        }
+        return true;
+    }
+    fprintf(stderr, "ml_bench: unknown parameter '%s' (see --list-params)\n", name.c_str());
+    return false;
 }
 
 void usage() {
     fprintf(stderr,
         "ml_bench — behavioural benchmark for the NISPS control mapping\n"
         "\n"
-        "  --shape N_IN,H1,H2,H3,N_OUT   default 2,16,16,16,8\n"
-        "  --seed N                      default 0x5EED\n"
-        "  --max-examples N              default 128\n"
-        "  --scenario ID                 run one scenario\n"
-        "  --spread F                    1=Xavier (default), 0=uniform/no fan_in\n"
-        "  --geo-lr F                    geometric-dislike LR (default 0.001)\n"
-        "  --geo-iters N                 gradient steps per dislike (default 1)\n"
+        "  --set NAME=VALUE              set any registered parameter (repeatable)\n"
+        "  --list-params                 print the parameter registry as JSON\n"
+        "  --list-scenarios              print the scenario keys as JSON\n"
+        "  --scenario A,B,J*             run a subset (comma list; X* = prefix)\n"
         "  --smoke                       reduced point counts\n"
         "\n"
-        "Emits JSON on stdout. Asserts nothing — see scripts/bench-ml.sh --compare.\n");
+        "Aliases: --shape N_IN,H1,H2,H3,N_OUT  --seed N  --max-examples N\n"
+        "         --spread F  --geo-lr F  --geo-iters N\n"
+        "\n"
+        "Emits JSON on stdout. Asserts nothing — see scripts/bench-ml.sh --compare\n"
+        "and lab/ml/sweep.mjs for multi-config sweeps.\n");
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
     Config cfg;
+    bool want_params = false, want_scenarios = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> const char* { return (i + 1 < argc) ? argv[++i] : nullptr; };
-        if (a == "--shape") {
+        // Legacy single-knob flags, mapped onto the registry.
+        const std::pair<const char*, const char*> aliases[] = {
+            {"--seed", "bench.seed"}, {"--max-examples", "bench.max_examples"},
+            {"--spread", "init.spread"}, {"--geo-lr", "fb.geo_lr"}, {"--geo-iters", "fb.geo_iters"}};
+        const char* alias = nullptr;
+        for (const auto& al : aliases) if (a == al.first) alias = al.second;
+
+        if (alias) {
+            const char* v = next();
+            if (!v) { usage(); return 2; }
+            if (!set_param(cfg, alias, v)) return 2;
+        } else if (a == "--set") {
+            const char* v = next();
+            const char* eq = v ? std::strchr(v, '=') : nullptr;
+            if (!eq) { fprintf(stderr, "ml_bench: --set needs NAME=VALUE\n"); return 2; }
+            if (!set_param(cfg, std::string(v, eq), eq + 1)) return 2;
+        } else if (a == "--shape") {
             const char* v = next();
             if (!v) { usage(); return 2; }
             std::size_t d[5] = {0, 0, 0, 0, 0};
             int n = std::sscanf(v, "%zu,%zu,%zu,%zu,%zu", &d[0], &d[1], &d[2], &d[3], &d[4]);
             if (n != 5) { fprintf(stderr, "ml_bench: --shape needs 5 comma-separated dims\n"); return 2; }
-            cfg.n_in = d[0]; cfg.hidden[0] = d[1]; cfg.hidden[1] = d[2];
-            cfg.hidden[2] = d[3]; cfg.n_out = d[4];
-        } else if (a == "--seed") {
-            const char* v = next();
-            if (!v) { usage(); return 2; }
-            cfg.seed = std::strtoull(v, nullptr, 0);
-        } else if (a == "--max-examples") {
-            const char* v = next();
-            if (!v) { usage(); return 2; }
-            cfg.max_examples = std::strtoull(v, nullptr, 0);
+            const char* names[5] = {"shape.n_in", "shape.h1", "shape.h2", "shape.h3", "shape.n_out"};
+            for (int k = 0; k < 5; ++k)
+                if (!set_param(cfg, names[k], std::to_string(d[k]))) return 2;
         } else if (a == "--scenario") {
             const char* v = next();
             if (!v) { usage(); return 2; }
             cfg.only = v;
-        } else if (a == "--spread") {
-            const char* v = next();
-            if (!v) { usage(); return 2; }
-            cfg.spread = static_cast<float>(std::atof(v));
-        } else if (a == "--geo-lr") {
-            const char* v = next();
-            if (!v) { usage(); return 2; }
-            cfg.geo_lr = static_cast<float>(std::atof(v));
-        } else if (a == "--geo-iters") {
-            const char* v = next();
-            if (!v) { usage(); return 2; }
-            cfg.geo_iters = std::strtoull(v, nullptr, 0);
         } else if (a == "--smoke") {
             cfg.smoke = true;
+        } else if (a == "--list-params") {
+            want_params = true;
+        } else if (a == "--list-scenarios") {
+            want_scenarios = true;
         } else if (a == "--help" || a == "-h") {
             usage();
             return 0;
@@ -2592,10 +2939,39 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
-    if (cfg.n_in == 0u || cfg.n_out == 0u ||
-        cfg.hidden[0] == 0u || cfg.hidden[1] == 0u || cfg.hidden[2] == 0u) {
-        fprintf(stderr, "ml_bench: all dims must be >= 1\n");
-        return 2;
+
+    // RMSProp's (1 - decay) term: keep the shipped constant bit-exact at the
+    // default (1.f - 0.9f is not 0.1f in float).
+    cfg.lab.decay_inv = (cfg.lab.decay == nisps::ml::kRmsPropDecay)
+                      ? nisps::ml::kRmsPropDecayInv : 1.f - cfg.lab.decay;
+    g_lab = cfg.lab;
+
+    if (want_params) { list_params(); return 0; }
+
+    const std::vector<std::string> keys = list_scenario_keys(cfg);
+    if (want_scenarios) {
+        printf("[");
+        for (std::size_t i = 0; i < keys.size(); ++i)
+            printf("%s\"%s\"", i ? ", " : "", keys[i].c_str());
+        printf("]\n");
+        return 0;
+    }
+
+    // Parse the filter and reject tokens that match no scenario BEFORE running.
+    for (std::size_t p = 0; p < cfg.only.size();) {
+        std::size_t q = cfg.only.find(',', p);
+        if (q == std::string::npos) q = cfg.only.size();
+        if (q > p) g_filter.push_back(cfg.only.substr(p, q - p));
+        p = q + 1u;
+    }
+    for (const std::string& tok : g_filter) {
+        bool any = false;
+        for (const std::string& k : keys) any = any || token_matches(tok, k.c_str());
+        if (!any) {
+            fprintf(stderr, "ml_bench: --scenario '%s' matches no scenario (see --list-scenarios)\n",
+                    tok.c_str());
+            return 2;
+        }
     }
     run(cfg);
     return 0;

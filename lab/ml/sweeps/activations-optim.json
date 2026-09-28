@@ -1,0 +1,10 @@
+{
+  "name": "activations-optim",
+  "description": "Hidden/output activation and optimiser choice across the whole corpus. hard_sigmoid hidden is the upstream MEMLNaut choice.",
+  "grid": {
+    "act.hidden": ["leaky_relu", "tanh", "sigmoid", "hard_sigmoid"],
+    "act.output": ["sigmoid", "hard_sigmoid", "clamp01"],
+    "optim.kind": ["rmsprop", "sgd"]
+  },
+  "seeds": 5
+}

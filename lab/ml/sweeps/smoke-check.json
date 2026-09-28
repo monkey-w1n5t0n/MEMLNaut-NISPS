@@ -1,0 +1,8 @@
+{
+  "name": "smoke-check",
+  "description": "Tiny end-to-end check of the lab pipeline (safe on the VPS): 4 configs x 2 seeds, 3 scenarios, smoke-sized.",
+  "grid": { "train.lr": [0.1, 1.0], "act.hidden": ["leaky_relu", "tanh"] },
+  "seeds": 2,
+  "scenarios": ["A1_at_example", "A4_negative_once", "J6_long_session"],
+  "smoke": true
+}

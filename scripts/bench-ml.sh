@@ -24,9 +24,14 @@
 #   scripts/bench-ml.sh --smoke                      # fast, proves it runs
 #   scripts/bench-ml.sh --shape 2,16,16,16,8         # any net shape
 #   scripts/bench-ml.sh --sweep-shape                # the architecture sweep
-#   scripts/bench-ml.sh --scenario A4_negative_once
+#   scripts/bench-ml.sh --scenario A4_negative_once   # or a list: A1_at_example,J*
+#   scripts/bench-ml.sh --set train.lr=0.1 --set act.hidden=tanh   # any registered knob
 #   scripts/bench-ml.sh --compare old.json
 #   scripts/bench-ml.sh --out bench-ml-2026-07-25.json
+#
+# Knobs: `nisps/build/nisps_ml_bench --list-params` prints every registered
+# parameter. For many configs x seeds use scripts/ml-sweep.sh (the ML lab,
+# docs/specs/plans/ml-lab-spec.md) instead of looping this script.
 #
 # Env:
 #   NISPS_BUILD_DIR   default nisps/build
@@ -53,6 +58,7 @@ COMPARE=""
 OUT=""
 SWEEP_SHAPE=0
 SEED=""
+SETS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -61,10 +67,11 @@ while [[ $# -gt 0 ]]; do
         --shape)       SHAPE="$2"; shift 2 ;;
         --seed)        SEED="$2"; shift 2 ;;
         --scenario)    SCENARIO="$2"; shift 2 ;;
+        --set)         SETS+=(--set "$2"); shift 2 ;;
         --compare)     COMPARE="$2"; shift 2 ;;
         --out)         OUT="$2"; shift 2 ;;
         --sweep-shape) SWEEP_SHAPE=1; shift ;;
-        -h|--help)     sed -n '2,40p' "$0"; exit 0 ;;
+        -h|--help)     sed -n '2,48p' "$0"; exit 0 ;;
         *) echo "bench-ml: unknown arg '$1'" >&2; exit 2 ;;
     esac
 done
@@ -77,6 +84,7 @@ bench_args() {
     [[ -n "$SHAPE"    ]] && a+=(--shape "$SHAPE")
     [[ -n "$SEED"     ]] && a+=(--seed "$SEED")
     [[ -n "$SCENARIO" ]] && a+=(--scenario "$SCENARIO")
+    [[ ${#SETS[@]} -gt 0 ]] && a+=("${SETS[@]}")
     printf '%s\n' "${a[@]:-}"
 }
 

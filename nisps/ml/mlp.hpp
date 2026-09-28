@@ -88,7 +88,26 @@ template <std::size_t L>
 inline constexpr Activation kLayerActivation =
     (L == 3u) ? Activation::Sigmoid : Activation::ReLU;
 
-template <typename Storage>
+// Per-layer activation and optimiser step as a policy. The default IS the
+// shipped model (kLayerActivation + rmsprop_step), so every existing
+// instantiation compiles to the same code. A non-default policy exists only
+// for the host-side ML lab (docs/specs/plans/ml-lab-spec.md §3.5), which needs
+// these runtime-selectable without touching the firmware path.
+struct DefaultMlpPolicy {
+    template <std::size_t L>
+    static NISPS_FORCE_INLINE float act(float x) noexcept {
+        return activate<kLayerActivation<L>>(x);
+    }
+    template <std::size_t L>
+    static NISPS_FORCE_INLINE float act_deriv_pre(float pre) noexcept {
+        return activate_deriv_pre<kLayerActivation<L>>(pre);
+    }
+    static NISPS_FORCE_INLINE float step(float grad, float& sq_avg, float lr) noexcept {
+        return rmsprop_step(grad, sq_avg, lr);
+    }
+};
+
+template <typename Storage, typename Policy = DefaultMlpPolicy>
 class MLPCore : public Storage {
    public:
     static constexpr std::size_t kNumLayers = kMlpNumLayers;
@@ -487,7 +506,7 @@ class MLPCore : public Storage {
                 sum += w[row + j] * in[j];
             }
             pa[node] = sum;
-            a[node]  = activate<kLayerActivation<L>>(sum);
+            a[node]  = Policy::template act<L>(sum);
         }
     }
 
@@ -519,7 +538,7 @@ class MLPCore : public Storage {
         for (std::size_t node = 0; node < fan_out; ++node) {
             const float err_signal =
                 upstream_err[node] *
-                activate_deriv_pre<kLayerActivation<L>>(pa[node]) * sample_weight;
+                Policy::template act_deriv_pre<L>(pa[node]) * sample_weight;
             const std::size_t row = node * fan_in;
             for (std::size_t j = 0; j < fan_in; ++j) {
                 gw[row + j] += err_signal * input[j];
@@ -558,11 +577,11 @@ class MLPCore : public Storage {
         const std::size_t nw = gw.size();
         const std::size_t nb = gb.size();
         for (std::size_t i = 0; i < nw; ++i) {
-            w[i] -= rmsprop_step(gw[i], sw[i], lr);
+            w[i] -= Policy::step(gw[i], sw[i], lr);
             gw[i] = 0.f;
         }
         for (std::size_t i = 0; i < nb; ++i) {
-            b[i] -= rmsprop_step(gb[i], sb[i], lr);
+            b[i] -= Policy::step(gb[i], sb[i], lr);
             gb[i] = 0.f;
         }
     }
@@ -596,7 +615,7 @@ class MLPCore : public Storage {
             const std::size_t row = node * fan_in;
             float sum = b[node];
             for (std::size_t j = 0; j < fan_in; ++j) sum += w[row + j] * in[j];
-            out[node] = activate<kLayerActivation<L>>(sum);
+            out[node] = Policy::template act<L>(sum);
         }
     }
 

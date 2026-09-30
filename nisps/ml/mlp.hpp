@@ -102,8 +102,9 @@ struct DefaultMlpPolicy {
     static NISPS_FORCE_INLINE float act_deriv_pre(float pre) noexcept {
         return activate_deriv_pre<kLayerActivation<L>>(pre);
     }
-    static NISPS_FORCE_INLINE float step(float grad, float& sq_avg, float lr) noexcept {
-        return rmsprop_step(grad, sq_avg, lr);
+    static NISPS_FORCE_INLINE float step(float grad, float& sq_avg, float lr,
+                                         const OptimConfig& optim) noexcept {
+        return rmsprop_step(grad, sq_avg, lr, optim);
     }
 };
 
@@ -200,6 +201,13 @@ class MLPCore : public Storage {
         train_config_.min_error      = min_err;
     }
     const TrainConfig& train_config() const noexcept { return train_config_; }
+
+    // Runtime RMSProp settings (see OptimConfig in training.hpp). Defaults
+    // reproduce the shipped optimiser exactly; only the ML lab and Manifold's
+    // opt-in `optim` engine option call this. Leaves the running
+    // squared-gradient averages alone.
+    void set_optim(const OptimConfig& c) noexcept { optim_ = c; }
+    const OptimConfig& optim() const noexcept { return optim_; }
 
     // Full per-sample training (RMSProp — see training.hpp). `sample_weights`,
     // if non-empty, must size to the
@@ -577,11 +585,11 @@ class MLPCore : public Storage {
         const std::size_t nw = gw.size();
         const std::size_t nb = gb.size();
         for (std::size_t i = 0; i < nw; ++i) {
-            w[i] -= Policy::step(gw[i], sw[i], lr);
+            w[i] -= Policy::step(gw[i], sw[i], lr, optim_);
             gw[i] = 0.f;
         }
         for (std::size_t i = 0; i < nb; ++i) {
-            b[i] -= Policy::step(gb[i], sb[i], lr);
+            b[i] -= Policy::step(gb[i], sb[i], lr, optim_);
             gb[i] = 0.f;
         }
     }
@@ -640,6 +648,7 @@ class MLPCore : public Storage {
     std::size_t dataset_head_       = 0u;
     std::size_t loss_history_count_ = 0u;
     TrainConfig train_config_{};
+    OptimConfig optim_{};
 
     Rng rng_;
 };

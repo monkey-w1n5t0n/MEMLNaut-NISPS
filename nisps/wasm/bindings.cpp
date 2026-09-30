@@ -410,6 +410,14 @@ int nisps_ml_reshape(void* ml, int input_size, int output_size,
     if (!fresh.valid()) return 0;
     fresh.draw_weights(spread);
     nisps::ml::warm_start_copy(fresh, h->mlp);
+    // Runtime settings live on the net, so a fresh net would otherwise reset
+    // them to the shipped defaults on every reshape (ConsoleApp reshapes at
+    // boot and on every I/O edit).
+    {
+        const auto& tc = h->mlp.train_config();
+        fresh.set_train_config(tc.learning_rate, tc.max_iterations, tc.min_error);
+        fresh.set_optim(h->mlp.optim());
+    }
 
     BrowserFeedback fb(h->seed64 ^ kFeedbackSalt, d.n_out, fresh.weight_count(),
                        kFeedbackUndoDepth, d.n_in, kFeedbackReplayCap);
@@ -524,6 +532,23 @@ void nisps_ml_set_train_config(void* ml, float lr, int max_iter, float min_err) 
     auto* h = static_cast<MLHandle*>(ml);
     if (max_iter <= 0) max_iter = 1;
     h->mlp.set_train_config(lr, static_cast<std::size_t>(max_iter), min_err);
+}
+
+// Runtime RMSProp settings (nisps::ml::OptimConfig via MLPCore::set_optim).
+// Defaults reproduce the shipped optimiser bit for bit, and Manifold only calls
+// this when an `optim` engine option is given, so the product path is
+// unchanged. `max_adj_lr` is the one that matters: it caps the normalised step,
+// and at the shipped 1.0 every lr in [1e-3, 1] saturates it (see
+// docs/specs/recon/findings-learning-does-little-2026-09-30.md). Survives
+// nisps_ml_reshape. Does not train.
+EMSCRIPTEN_KEEPALIVE
+void nisps_ml_set_optim(void* ml, float decay, float eps, float clip, float max_adj_lr) {
+    if (!ml) return;
+    auto* h = static_cast<MLHandle*>(ml);
+    // Reject values the update cannot survive (NaN, non-positive) rather than
+    // let a bad slider poison the weights.
+    if (!(decay >= 0.f && decay < 1.f) || !(eps > 0.f) || !(clip > 0.f) || !(max_adj_lr > 0.f)) return;
+    h->mlp.set_optim(nisps::ml::OptimConfig::make(decay, eps, clip, max_adj_lr));
 }
 
 EMSCRIPTEN_KEEPALIVE

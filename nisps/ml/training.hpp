@@ -70,6 +70,39 @@ inline constexpr float kRmsPropEpsilon  = 1.e-6f;
 inline constexpr float kMaxSqGradAvg    = 1.e6f;
 inline constexpr float kMaxAdjustedLr   = 1.f;
 
+// Runtime optimiser settings. The defaults ARE the constants above, so a
+// default-constructed OptimConfig reproduces the shipped RMSProp bit for bit
+// (the golden vectors pin that). It exists because `max_adj_lr` decides which
+// regime an `lr` lands in: RMSProp only NORMALISES the step while
+// lr / sqrt(sq_avg) stays under the cap. The MLP scales every per-sample
+// gradient by 1/N, so gradients are ~1e-3 and any lr above ~1e-3 hits the
+// cap of 1 on nearly every step — the optimiser then degenerates to plain SGD
+// at rate 1, and `lr` stops meaning anything (docs/specs/recon/
+// findings-learning-does-little-2026-09-30.md). Making the cap settable lets
+// the ML lab measure that regime against a normalised one before a default
+// is changed.
+struct OptimConfig {
+    float decay      = kRmsPropDecay;
+    // 1 - decay, kept as its own field: 1.f - 0.9f is not bit-equal to the
+    // shipped kRmsPropDecayInv, and the default must stay exact.
+    float decay_inv  = kRmsPropDecayInv;
+    float eps        = kRmsPropEpsilon;
+    float clip       = kGradClip;
+    float max_adj_lr = kMaxAdjustedLr;
+
+    // Build from the four user-facing knobs; decay_inv follows decay.
+    static constexpr OptimConfig make(float decay_, float eps_, float clip_,
+                                      float max_adj_lr_) noexcept {
+        OptimConfig c;
+        c.decay      = decay_;
+        c.decay_inv  = (decay_ == kRmsPropDecay) ? kRmsPropDecayInv : 1.f - decay_;
+        c.eps        = eps_;
+        c.clip       = clip_;
+        c.max_adj_lr = max_adj_lr_;
+        return c;
+    }
+};
+
 NISPS_FORCE_INLINE float clip_gradient(float g) noexcept {
     if (g >  kGradClip) return  kGradClip;
     if (g < -kGradClip) return -kGradClip;
@@ -79,15 +112,18 @@ NISPS_FORCE_INLINE float clip_gradient(float g) noexcept {
 // One RMSProp update for a single weight or bias. `sq_avg` is that element's
 // running squared-gradient average and is advanced in place. Returns the
 // value to SUBTRACT from the parameter (upstream writes `w -= adj_lr * g`).
-NISPS_FORCE_INLINE float rmsprop_step(float grad, float& sq_avg, float lr) noexcept {
-    const float g = clip_gradient(grad);
+NISPS_FORCE_INLINE float rmsprop_step(float grad, float& sq_avg, float lr,
+                                      const OptimConfig& c) noexcept {
+    float g = grad;
+    if (g >  c.clip) g =  c.clip;
+    if (g < -c.clip) g = -c.clip;
 
-    float sq = (kRmsPropDecay * sq_avg) + (kRmsPropDecayInv * g * g);
+    float sq = (c.decay * sq_avg) + (c.decay_inv * g * g);
     if (sq > kMaxSqGradAvg) sq = kMaxSqGradAvg;
     sq_avg = sq;
 
-    float adj_lr = lr / (std::sqrt(sq) + kRmsPropEpsilon);
-    if (adj_lr > kMaxAdjustedLr) adj_lr = kMaxAdjustedLr;  // one-sided, as upstream
+    float adj_lr = lr / (std::sqrt(sq) + c.eps);
+    if (adj_lr > c.max_adj_lr) adj_lr = c.max_adj_lr;  // one-sided, as upstream
 
     return adj_lr * g;
 }

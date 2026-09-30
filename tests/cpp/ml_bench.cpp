@@ -105,7 +105,6 @@ struct LabSettings {
     LabAct   output     = LabAct::Sigmoid;
     LabOptim optim      = LabOptim::RmsProp;
     float    decay      = nisps::ml::kRmsPropDecay;
-    float    decay_inv  = nisps::ml::kRmsPropDecayInv;
     float    eps        = nisps::ml::kRmsPropEpsilon;
     float    clip       = nisps::ml::kGradClip;
     float    max_adj_lr = nisps::ml::kMaxAdjustedLr;
@@ -147,19 +146,18 @@ struct LabMlpPolicy {
     static float act_deriv_pre(float pre) noexcept {
         return lab_act_deriv_pre((L == 3u) ? g_lab.output : g_lab.hidden, pre);
     }
-    // Same formula and clamp order as nisps/ml/training.hpp rmsprop_step, with
-    // the constants read from g_lab.
-    static float step(float grad, float& sq_avg, float lr) noexcept {
-        float g = grad;
-        if (g >  g_lab.clip) g =  g_lab.clip;
-        if (g < -g_lab.clip) g = -g_lab.clip;
-        if (g_lab.optim == LabOptim::Sgd) return lr * g;
-        float sq = (g_lab.decay * sq_avg) + (g_lab.decay_inv * g * g);
-        if (sq > nisps::ml::kMaxSqGradAvg) sq = nisps::ml::kMaxSqGradAvg;
-        sq_avg = sq;
-        float adj_lr = lr / (std::sqrt(sq) + g_lab.eps);
-        if (adj_lr > g_lab.max_adj_lr) adj_lr = g_lab.max_adj_lr;
-        return adj_lr * g;
+    // RMSProp is the PRODUCT's own rmsprop_step with the rig's runtime
+    // OptimConfig (MLPCore::set_optim) — the same path Manifold takes, so the
+    // bench cannot drift from it. SGD is the lab-only alternative.
+    static float step(float grad, float& sq_avg, float lr,
+                      const nisps::ml::OptimConfig& c) noexcept {
+        if (g_lab.optim == LabOptim::Sgd) {
+            float g = grad;
+            if (g >  c.clip) g =  c.clip;
+            if (g < -c.clip) g = -c.clip;
+            return lr * g;
+        }
+        return nisps::ml::rmsprop_step(grad, sq_avg, lr, c);
     }
 };
 
@@ -298,6 +296,8 @@ struct Rig {
         fb.set_geo_update_hz(c.geo_update_hz);
         fb.set_geo_lifetime_ms(c.geo_lifetime_ms);
         mlp.set_train_config(c.train_lr, c.train_max_iter, c.train_min_err);
+        mlp.set_optim(nisps::ml::OptimConfig::make(c.lab.decay, c.lab.eps, c.lab.clip,
+                                                   c.lab.max_adj_lr));
         // MLPCore's ctor draws at spread=1; re-draw when the experiment asks
         // for a different init regime. Same RNG stream either way.
         if (c.spread != 1.0f) mlp.draw_weights(c.spread);
@@ -2570,6 +2570,10 @@ void upstream_balanced_positives(const Config& cfg, Json& js) {
         {"U4_pos_upstream_1tick",    0.001f,    1u,   1u},  // upstream dose, 1/600th of its rate
         {"U4_pos_upstream_100tick",  0.001f,    1u, 100u},
         {"U4_pos_upstream_600tick",  0.001f,    1u, 600u},  // ~3 s between gestures @200 Hz
+        // The dose the current --set train.* / optim.* flags select, so any
+        // candidate optimiser setting gets the same lurch + retention numbers
+        // as the rows above (this is what the ML lab sweeps).
+        {"U4_pos_config",            cfg.train_lr, cfg.train_max_iter, 1u},
     };
 
     for (const V& v : variants) {
@@ -2940,10 +2944,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    // RMSProp's (1 - decay) term: keep the shipped constant bit-exact at the
-    // default (1.f - 0.9f is not 0.1f in float).
-    cfg.lab.decay_inv = (cfg.lab.decay == nisps::ml::kRmsPropDecay)
-                      ? nisps::ml::kRmsPropDecayInv : 1.f - cfg.lab.decay;
     g_lab = cfg.lab;
 
     if (want_params) { list_params(); return 0; }

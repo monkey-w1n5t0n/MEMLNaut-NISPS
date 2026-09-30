@@ -9,6 +9,7 @@
 // gradient or weight-update path.
 
 #include <array>
+#include <cmath>
 
 #include "test_helpers.hpp"
 
@@ -129,6 +130,67 @@ NISPS_TEST(mlp_dataset_ring_buffer_evicts_oldest) {
         m.add_example(std::span<const float>(f), std::span<const float>(l));
     }
     NISPS_EXPECT(m.example_count() == 4u);
+}
+
+// ---------------------------------------------------------------------------
+// OptimConfig (runtime RMSProp settings) and the saturated step cap.
+//
+// The MLP scales each per-sample gradient by 1/N, so gradients are ~1e-3 and
+// RMSProp's step is min(lr / sqrt(sq), max_adj_lr) * g: at the shipped cap of 1
+// every lr from ~1e-3 up hits the cap on nearly every step, and training is
+// plain SGD at rate 1 whatever lr says. These tests pin that (so nobody
+// "tunes" lr and wonders why nothing moves) and pin that lifting the cap
+// makes lr a real, normalised step.
+// docs/specs/recon/findings-learning-does-little-2026-09-30.md
+// ---------------------------------------------------------------------------
+
+using Wide = nisps::ml::MLP<2, 10, 10, 14, 8, 16, 1024>;
+
+float fit_loss(float lr, std::size_t iters, const nisps::ml::OptimConfig* optim) {
+    Wide m(5ull);
+    m.draw_weights(0.f);
+    if (optim) m.set_optim(*optim);
+    // 12 deterministic examples with awkward 8-D targets.
+    for (std::size_t i = 0; i < 12u; ++i) {
+        const float fi = static_cast<float>(i);
+        const std::array<float, 2> x = {std::fmod(0.37f * fi + 0.11f, 1.f), std::fmod(0.61f * fi + 0.29f, 1.f)};
+        std::array<float, 8> y{};
+        for (std::size_t j = 0; j < 8u; ++j) {
+            y[j] = 0.1f + 0.8f * std::fmod(0.173f * (fi + 1.f) * static_cast<float>(j + 1u), 1.f);
+        }
+        m.add_example(std::span<const float>(x), std::span<const float>(y));
+    }
+    return m.train(lr, iters, 0.f);
+}
+
+NISPS_TEST(optim_default_config_is_a_no_op) {
+    // Setting the shipped defaults explicitly must not change one bit.
+    const nisps::ml::OptimConfig shipped{};
+    const nisps::ml::OptimConfig rebuilt = nisps::ml::OptimConfig::make(
+        nisps::ml::kRmsPropDecay, nisps::ml::kRmsPropEpsilon, nisps::ml::kGradClip, nisps::ml::kMaxAdjustedLr);
+    NISPS_EXPECT(fit_loss(1.f, 50u, nullptr) == fit_loss(1.f, 50u, &shipped));
+    NISPS_EXPECT(fit_loss(1.f, 50u, nullptr) == fit_loss(1.f, 50u, &rebuilt));
+}
+
+NISPS_TEST(optim_learning_rate_is_nearly_inert_at_the_shipped_cap) {
+    const float at_1    = fit_loss(1.f,    300u, nullptr);
+    const float at_p01  = fit_loss(0.01f,  300u, nullptr);
+    const float at_p001 = fit_loss(0.001f, 300u, nullptr);
+    // A 1000x change in lr moves the loss by well under 5%.
+    NISPS_EXPECT(std::fabs(at_p01 - at_1) < 0.05f * at_1);
+    NISPS_EXPECT(std::fabs(at_p001 - at_1) < 0.05f * at_1);
+}
+
+NISPS_TEST(optim_lifting_the_cap_makes_learning_rate_real) {
+    const nisps::ml::OptimConfig uncapped =
+        nisps::ml::OptimConfig::make(nisps::ml::kRmsPropDecay, nisps::ml::kRmsPropEpsilon,
+                                     nisps::ml::kGradClip, 1.0e6f);
+    const float shipped = fit_loss(1.f, 300u, nullptr);
+    const float normalised = fit_loss(0.01f, 300u, &uncapped);
+    // A normalised step fits the same examples far better...
+    NISPS_EXPECT(normalised < 0.5f * shipped);
+    // ...and lr now matters: 100x higher is a genuinely different result.
+    NISPS_EXPECT(std::fabs(fit_loss(1.f, 300u, &uncapped) - normalised) > 0.05f * normalised);
 }
 
 }  // namespace

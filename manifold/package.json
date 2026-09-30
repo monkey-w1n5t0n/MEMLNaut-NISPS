@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test src tests/*.test.ts",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "lab": "bun --preload ./scripts/lab/bun-shim.ts scripts/lab/run.ts"
   },
   "dependencies": {
     "react": "^18.3.1",

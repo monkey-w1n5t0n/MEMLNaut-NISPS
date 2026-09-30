@@ -6,7 +6,7 @@
  * installed once the engine is live.
  */
 
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { EngineProvider } from './engine/EngineProvider';
 import type { EngineApiOptions } from './engine/engine-api';
 import { useEngine } from './engine/useEngine';
@@ -72,7 +72,26 @@ function ProbeInstaller() {
   return null;
 }
 
+// The hidden ML lab (`?lab=1`) — code-split so the product bundle never loads
+// it. It needs no live engine: its workers boot their own (src/lab/).
+const LabApp = lazy(() => import('./lab/LabApp'));
+
+function isLab(): boolean {
+  try {
+    return new URLSearchParams(window.location.search).get('lab') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function App() {
+  if (isLab()) {
+    return (
+      <Suspense fallback={<Loading />}>
+        <LabApp />
+      </Suspense>
+    );
+  }
   return (
     <EngineProvider options={engineOptions()} fallback={<Loading />}>
       <ProbeInstaller />

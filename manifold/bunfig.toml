@@ -1,0 +1,4 @@
+[test]
+# EngineApi reaches a Vite `?worker&url` import (engine-host.ts); stub it
+# for bun (see scripts/lab/bun-shim.ts). Tests never start audio.
+preload = ["./scripts/lab/bun-shim.ts"]

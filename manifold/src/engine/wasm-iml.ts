@@ -147,6 +147,15 @@ export interface WasmIMLOptions {
   maxExamples?: number;
   /** Injected side-effect boundary. Defaults to a no-op sink (headless use). */
   sink?: EngineSink;
+  /**
+   * Instantiate the Emscripten module yourself instead of fetching the glue
+   * relative to `document.baseURI`. Headless hosts (the ML lab's Web Worker,
+   * bun scripts) have no document; they pass a loader here.
+   */
+  loadModule?: () => Promise<NispsModule>;
+  /** Persist weights + dataset to localStorage (default true). The lab passes
+   *  false so a simulated session never reads or clobbers the user's state. */
+  persist?: boolean;
 }
 
 export class WasmIML {
@@ -211,9 +220,12 @@ export class WasmIML {
 
   static MAX_BATCH = 4096;
 
+  private readonly persist: boolean;
+
   private constructor(opts: WasmIMLOptions) {
     this.storageKey = opts.storageKey ?? 'nisps:wasm-iml';
     this.sink = opts.sink ?? noopSink;
+    this.persist = opts.persist ?? true;
   }
 
   static async create(opts: WasmIMLOptions = {}): Promise<WasmIML> {
@@ -223,10 +235,14 @@ export class WasmIML {
   }
 
   private async init_(opts: WasmIMLOptions): Promise<void> {
-    const factory = await getFactory();
-    this.module = await factory({
-      locateFile: (path: string) => (path.endsWith('.wasm') ? assetUrl('nisps.wasm') : path),
-    });
+    if (opts.loadModule) {
+      this.module = await opts.loadModule();
+    } else {
+      const factory = await getFactory();
+      this.module = await factory({
+        locateFile: (path: string) => (path.endsWith('.wasm') ? assetUrl('nisps.wasm') : path),
+      });
+    }
 
     // Default shape (null handle). Since one-core-engine P2 the MLP is
     // runtime-shaped: create() honours requested dims; we pass the caller's
@@ -291,7 +307,7 @@ export class WasmIML {
     });
     this.sink.setOutputs(new Float32Array(this.arch_.outputSize));
 
-    this.tryLoadFromStorage_();
+    if (this.persist) this.tryLoadFromStorage_();
   }
 
   // -------------------------------------------------------------------
@@ -1143,12 +1159,13 @@ export class WasmIML {
   // -------------------------------------------------------------------
 
   private scheduleSave_(): void {
+    if (!this.persist) return;
     if (this.saveTimer !== null) clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => this.saveNow(), 500);
   }
 
   saveNow(): void {
-    if (this.destroyed) return;
+    if (this.destroyed || !this.persist) return;
     if (this.saveTimer !== null) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;

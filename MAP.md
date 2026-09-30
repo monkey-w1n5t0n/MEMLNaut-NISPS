@@ -97,6 +97,7 @@ anchor + locked decisions) and the `docs/specs/*-spec.md` set.
   TS math and `jolt.ts`/`ou-explore.ts` were deleted when P3 landed).
 - `manifold/src/engine/io-reshape.ts` — the deep identity-migration module for I/O card edits:
   exact-vs-capacity reconstruction decisions, flat weight remapping, and example vector adaptation.
+- `manifold/src/lab/` — the hidden ML lab (`?lab=1`, code-split; CLI `cd manifold && bun run lab`, runner in `manifold/scripts/lab/`): simulated musicians (personas × hidden place/taste goals) play the real `EngineApi` + `FeedbackController` in Web Workers under a `VirtualClock`, one-at-a-time around the shipped defaults with paired 95% intervals, and recommend default changes plus a confirm run. Shipped values are imported from `manifold/src/console/boot-defaults.ts` (new single home of ConsoleApp's boot mode / input arity / feedback mode / spread), `ML_TRAIN_DEFAULTS`, and `DEFAULT_GEOMETRIC_FEEDBACK_CONFIG`. Spec: `docs/specs/plans/ml-lab-spec.md` Phase 3.
 - `manifold/src/debug/probe.ts` — `window.__nisps` (`?debug=1`). `manifold/tests/e2e/` — `smoke`,
   `probe-api` (engine-contract port), `spine` (spine invariant + probe-survives-mode-switch),
   `geo-dislike`, `reshape`, `schema-modes`, `training-health` (the loss/layer-stats panel + its
@@ -176,6 +177,7 @@ includes; no `nisps-core`.
 - **Engine benchmark**: `bash scripts/bench-engines.sh` (add `--compare nisps/build/bench/latest.json` to diff against the previous run).
 - **ML behaviour benchmark**: `bash scripts/bench-ml.sh` (`--smoke` for a fast run, `--shape 2,16,16,16,8`, `--set name=value`, `--sweep-shape` for the architecture/arity sweep, `--compare` to diff).
 - **ML lab sweeps**: `scripts/ml-sweep.sh run lab/ml/sweeps/<name>.json [--dry-run]` → `nisps/build/ml-lab/<name>/`.
+- **Manifold defaults lab**: `cd manifold && bun run lab [-- --seeds 16 --jobs 6 --out lab.json | --confirm k=v,...]`, or open Manifold with `?lab=1`.
 - **All tests**: `bash scripts/run-all-tests.sh` (stage 6 is a bench smoke report; it does not gate).
 - **Playwright**: `cd manifold && node node_modules/.bin/playwright test` (non-snap node runner on the VPS — BUILD-PLAN gotcha; `bunx playwright test` works elsewhere).
 - **Codegen**: `cd codegen && bun run generate.ts` (regenerates `nisps/modes/generated/` + `nisps/ml/generated/` C++ and `manifold/src/modes/generated/` TS).

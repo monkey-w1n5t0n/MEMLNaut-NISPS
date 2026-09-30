@@ -298,6 +298,24 @@ a setting → `--r-*` tokens.
   "Like a few sounds first…" banner (dismissed on the next like or the dismiss button; rl-feedback §7).
 - The interim `rng.ts` (`SeededRng`) and the `C++ GAP` approximation markers are **gone** — the seeded
   RNG, geometric push, jolt, and OU all run in the core now.
+- The constructor syncs the C++ core to the controller's initial mode (the core boots in Avoid and
+  `setMode()` early-returns on an unchanged mode — before the sync, a session BOOTED in explore-and-
+  place never explored). `scheduler` injects the replay timer's clock (the ML lab passes a virtual one).
+
+### ML lab — `src/lab/` (hidden: `?lab=1`; CLI `bun run lab`)
+- Simulated musicians (personas with hidden **place**/**taste** goals) play the REAL engine +
+  `FeedbackController` in Web Workers to choose Manifold's shipping defaults. Knobs + their shipped
+  values come from `src/console/boot-defaults.ts`, `ML_TRAIN_DEFAULTS`, and
+  `DEFAULT_GEOMETRIC_FEEDBACK_CONFIG` — **change a default there, not in ConsoleApp**. Method, limits
+  and findings: `docs/specs/plans/ml-lab-spec.md` Phase 3.
+- `episode.ts` mirrors ConsoleApp's gesture handlers call for call — **if you change what a like,
+  dislike, place or finalise calls in ConsoleApp, change `episode.ts` too** (or better, extract the
+  handlers so both share them).
+- Headless seams it relies on: `EngineApiOptions.loadModule` + `persist: false` (no fetch/document/
+  localStorage), `FeedbackControllerOptions.scheduler`. Under bun, `bunfig.toml` preloads
+  `scripts/lab/bun-shim.ts` to stub the Vite `?worker&url` import in `engine-host.ts`.
+- Worker messages are namespaced `lab:*`: `engine/wasm-worker.ts` installs its trainer listener in
+  ANY worker whose graph imports the engine, and answers a bare `{kind:'init'}`.
 
 ### Backends — `src/backends/`
 - `manager.ts` — `BackendManager`, the **single consumer of the engine spine** for output: subscribes,

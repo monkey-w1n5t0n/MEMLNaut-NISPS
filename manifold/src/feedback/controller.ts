@@ -113,12 +113,30 @@ export interface FeedbackControllerState {
   negativeCount: number;
 }
 
+/**
+ * Time source for the geometric replay timer. Production uses the wall clock;
+ * the ML lab (src/lab/) passes a virtual clock so a simulated session advances
+ * the replay deterministically and faster than real time.
+ */
+export interface FeedbackScheduler {
+  now(): number;
+  setInterval(fn: () => void, ms: number): unknown;
+  clearInterval(handle: unknown): void;
+}
+
+const wallClock: FeedbackScheduler = {
+  now: () => Date.now(),
+  setInterval: (fn, ms) => setInterval(fn, ms),
+  clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
+};
+
 export interface FeedbackControllerOptions {
   /** Master spread for randomise / nudge. Defaults to full-range uniform (0). */
   spread?: number;
   /** Nudge perturbation standard deviation (small bounded weight jitter). */
   nudgeStddev?: number;
   geometricConfig?: GeometricFeedbackConfig;
+  scheduler?: FeedbackScheduler;
 }
 
 export class FeedbackController {
@@ -126,7 +144,8 @@ export class FeedbackController {
   private spread: number;
   private nudgeStddev: number;
   private geometricConfig: GeometricFeedbackConfig;
-  private geometricTimer: ReturnType<typeof setInterval> | null = null;
+  private scheduler: FeedbackScheduler;
+  private geometricTimer: unknown = null;
   private geometricLastTickMs = 0;
 
   private mode: ProtoFeedbackMode = 'explore-and-place';
@@ -157,10 +176,17 @@ export class FeedbackController {
     this.engine = engine;
     this.spread = opts.spread ?? 0;
     this.nudgeStddev = opts.nudgeStddev ?? 0.05;
+    this.scheduler = opts.scheduler ?? wallClock;
     this.geometricConfig = {
       ...(opts.geometricConfig ?? DEFAULT_GEOMETRIC_FEEDBACK_CONFIG),
     };
     this.engine.feedback.setGeometricConfig(this.geometricConfig);
+    // Put the C++ core in this controller's initial mode. The core boots in
+    // Avoid while this.mode starts as explore-and-place, and setMode() below
+    // early-returns on an unchanged mode — so without this sync, a session
+    // that BOOTS in explore-and-place never switches the core, and
+    // enterExplore/reroll silently do nothing. (Found by the ML lab.)
+    this.engine.feedback.setMode(this.mode === 'explore-and-place' ? 'explore_and_place' : 'avoid');
   }
 
   // ===================================================================
@@ -417,13 +443,13 @@ export class FeedbackController {
     ) {
       return;
     }
-    this.geometricLastTickMs = Date.now();
+    this.geometricLastTickMs = this.scheduler.now();
     const intervalMs = Math.max(
       5,
       Math.min(50, 1000 / this.geometricConfig.updatesPerSecond),
     );
-    this.geometricTimer = setInterval(() => {
-      const now = Date.now();
+    this.geometricTimer = this.scheduler.setInterval(() => {
+      const now = this.scheduler.now();
       const dtSeconds = Math.max(0, (now - this.geometricLastTickMs) / 1000);
       this.geometricLastTickMs = now;
       const steps = this.engine.feedback.advanceGeometric(dtSeconds);
@@ -433,7 +459,7 @@ export class FeedbackController {
   }
 
   private stopGeometricReplay(): void {
-    if (this.geometricTimer !== null) clearInterval(this.geometricTimer);
+    if (this.geometricTimer !== null) this.scheduler.clearInterval(this.geometricTimer);
     this.geometricTimer = null;
   }
 

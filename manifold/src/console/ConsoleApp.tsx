@@ -39,6 +39,13 @@ import {
   type GeometricFeedbackConfig,
 } from '../engine';
 import { MF_MODES, createOutputParam, modeEngineId, shapeValues } from './model';
+import {
+  BOOT_FEEDBACK_MODE,
+  BOOT_MODEL_INPUT_SIZE,
+  BOOT_MODE_ID,
+  BOOT_RANDOMISATION_SPREAD,
+  BOOT_SOLO_MODE,
+} from './boot-defaults';
 import type { MFParam } from './model';
 import { CompositeStage } from './CompositeStage';
 import { ParticleStage } from './ParticleStage';
@@ -114,9 +121,9 @@ export function ConsoleApp() {
   const stateVersion = useEngineVersion(engine);
   const { settings } = useSettings();
 
-  const [modeId, setModeId] = useState('paf_synth');
+  const [modeId, setModeId] = useState(BOOT_MODE_ID);
   const mode = MF_MODES.find((m) => m.id === modeId) ?? MF_MODES[0];
-  const [modelInputSize, setModelInputSizeState] = useState<ManifoldInputSize>(2);
+  const [modelInputSize, setModelInputSizeState] = useState<ManifoldInputSize>(BOOT_MODEL_INPUT_SIZE);
   const [params, setParams] = useState<MFParam[]>(() => mode.params.map((p) => ({ ...p })));
   const [paramsModeId, setParamsModeId] = useState(mode.id);
   const [pos, setPos] = useState<[number, number]>([0.5, 0.5]);
@@ -133,7 +140,7 @@ export function ConsoleApp() {
   // spread remains available only when explicitly enabled in Settings.
   const randomisationSpread = settings.xavierSpreadEnabled
     ? (spread ? 1 : mode.ml.defaultSpread)
-    : 0;
+    : BOOT_RANDOMISATION_SPREAD;
   const [active, setActive] = useState<DrawerKey | null>(null);
   const [depth, setDepth] = useState<DrawerDepth>('condensed');
   // Sandwich (parameter-landscape) centre-stage toggle — dock-bottom layers icon.
@@ -142,8 +149,8 @@ export function ConsoleApp() {
   // Learning-behaviour store (dock-spec §1; rl-feedback-design). Default
   // feedback mode = "Push away" (geometric); default solo = "Mask gradients".
   // (Explore-and-place is selectable but the geometric push is the better default.)
-  const [feedbackMode, setFeedbackModeState] = useState<FeedbackModeUI>('geometric-dislike');
-  const [soloMode, setSoloMode] = useState<SoloMode>('mask-gradients');
+  const [feedbackMode, setFeedbackModeState] = useState<FeedbackModeUI>(BOOT_FEEDBACK_MODE);
+  const [soloMode, setSoloMode] = useState<SoloMode>(BOOT_SOLO_MODE);
   const [exploring, setExploring] = useState(false);
   const [learningPaused, setLearningPaused] = useState(false);
   // One-time cold-start prompt for geometric dislike: set when a dislike runs

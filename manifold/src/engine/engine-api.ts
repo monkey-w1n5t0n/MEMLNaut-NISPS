@@ -21,7 +21,7 @@ import { ML_TRAIN_DEFAULTS } from '../modes/generated/ml_defaults';
 import type { InputConfig, OutputConfig } from './pipeline-types';
 import { Spine, type BackendSend } from './spine';
 import type { EngineId, FeedbackMode, LayerStats } from './types';
-import { WasmIML } from './wasm-iml';
+import { WasmIML, type WasmIMLOptions } from './wasm-iml';
 import type { IoMigration } from './io-reshape';
 
 export interface GeometricFeedbackConfig {
@@ -143,6 +143,9 @@ export interface EngineApiOptions {
    * production (real-time wall-clock dt).
    */
   debugClockDt?: number;
+  /** Headless module loader + persistence switch (see WasmIMLOptions). */
+  loadModule?: WasmIMLOptions['loadModule'];
+  persist?: boolean;
 }
 
 export class EngineApi {
@@ -252,6 +255,8 @@ export class EngineApi {
       storageKey: opts.storageKey,
       maxExamples: opts.maxExamples,
       sink: spine,
+      loadModule: opts.loadModule,
+      persist: opts.persist,
     });
     const host = new EngineHost();
     return new EngineApi(iml, spine, host, opts);

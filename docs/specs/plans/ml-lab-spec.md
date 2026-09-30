@@ -12,6 +12,12 @@ environment**. It is used to design, change, and evaluate models and configurati
 later be ported to the firmware, stay browser-only, or stay in the lab. **The lab does not have to
 match firmware or Manifold behaviour.** Code claims were read from the tree at `a6b8f87`.*
 
+*Revised 2026-09-28 (operator: "make the lab a (hidden) part of manifold and use it to inform us
+what defaults manifold should be shipping with"). There are now **two labs** with different
+contracts (§1.5): the **native lab** (Phases 1–2, C++, may diverge) for core-level design, and the
+**Manifold lab** (Phase 3, TypeScript, hidden `?lab=1` page + `bun run lab`), which must run what
+Manifold ships, because its output is a recommendation about Manifold's defaults.*
+
 **Reading order:** §1 (what exists) → §2 (nouns) → §3 (architecture and contracts) → §4 (phases).
 §5 is the compute budget. The Open section lists what the operator must still decide.
 
@@ -22,6 +28,9 @@ match firmware or Manifold behaviour.** Code claims were read from the tree at `
 - `nisps/ml/mlp.hpp`, `nisps/ml/training.hpp`, `nisps/ml/activations.hpp` — the model under test.
 - `nisps/ml/feedback.hpp`, `nisps/ml/replay.hpp`, `nisps/ml/geo_push.hpp` — the feedback algorithms.
 - `lab/ml/` (new) — sweep definitions and the sweep driver.
+- `manifold/src/lab/` (new) — the Manifold lab: episodes, personas, goals, sweep statistics, the
+  hidden page (`LabApp.tsx`) and its worker pool. `manifold/scripts/lab/` — the CLI runner.
+- `manifold/src/console/boot-defaults.ts` (new) — the boot defaults the Manifold lab evaluates.
 
 ---
 
@@ -64,6 +73,13 @@ equivalent in firmware or Manifold. Parity (`scripts/parity-check.sh`) is a prod
 not a lab contract.
 **Why:** The operator wants a design space that is larger than what currently ships. Porting is a
 separate, deliberate step (§3.7).
+
+§1.5 **The Manifold lab is the exception: it MUST match Manifold.** Its question is "which defaults
+should Manifold ship?", so a knob is listed only if Manifold can run another value today, and every
+simulated gesture goes through the product's own `EngineApi` + `FeedbackController` calls (§4.3.2).
+A config that only the native lab can express is a native-lab experiment until it is ported.
+**Why:** A recommendation measured on a model the product does not run is not a recommendation
+about the product.
 
 ## 2. Ontology
 
@@ -267,22 +283,100 @@ interruption without re-running finished runs, and yields `summary.csv`.
 echo matched the requested overrides in every report. A resume refuses to mix runs from a
 different engine binary unless `--fresh` is given.
 
-### Phase 3 — Simulated musician (goal-directed scenarios)
+### Phase 3 — Simulated musicians, in Manifold (the defaults lab)
 
-§4.3.1 A musician has a hidden **goal**: a target output vector at a target region, or a smooth
-target field T(x) drawn from the seed. It also has a **policy**: how it moves through input space
-(random walk, sweep, dwell), when it likes (perceived distance below a threshold, or an
-improvement), when it dislikes (worse than a threshold), when it explores or places, and the
-**noise** in its judgement (a flip probability, a perception threshold).
+**Status 2026-09-28: built.** Hidden page `?lab=1` (code-split; not linked from the UI), CLI
+`cd manifold && bun run lab`, e2e `tests/e2e/lab.spec.ts`, unit tests `src/lab/lab.test.ts`.
 
-§4.3.2 Personas are named parameter sets, for example `patient`, `impatient`, `noisy`, and
-`explorer`. They are swept like any other parameter (`musician.*`).
+§4.3.1 **Episode.** One persona with one hidden goal plays one config for a gesture budget
+(`src/lab/episode.ts`). The engine boots exactly as a new session does: `createEngine` with the
+training dose and spread, then ConsoleApp's boot reshape to the boot mode's net
+(`paf_synth`: 2 → 10/10/14 → 33), then a `FeedbackController` in the configured feedback mode. The
+lab scores the REAL net (`inferBatch`) after every gesture; while a scratchpad is live the real
+net is set aside, so the last real value is carried.
 
-§4.3.3 Metrics: gestures to satisfaction (the first gesture after which the goal error stays below
-ε), final goal error over the whole field, the regret curve (error against gesture count), the
-stuck rate (no improvement over K gestures), and the number of undos used.
-**Why:** This is the only lab measurement that asks whether the interaction helps a user get what
-they want. The Phase 1 metrics then explain why one config reaches the goal faster.
+§4.3.2 **Fidelity contract.** Each gesture is the call ConsoleApp's handler makes, cited inline:
+like → `controller.like(pos, engine.getOutputs())` (the raw output); dislike (pointer-down) →
+`controller.dislike(engine.routedOutput())`; push-away nudge pill → `engine.feedback.nudge(0.05)`;
+push-away randomise pill → `engine.randomise(spread)`; explore-and-place → `enterExplore`,
+`reroll`, `nudge`, `undo`, `place` + `placeCommit(x, y)`, `finalise`. Time between gestures runs
+on a `VirtualClock` injected through the controller's new `scheduler` option, so the geometric
+replay timer fires as it would over that wall-clock gap. The engine gets its WASM through a new
+`loadModule` option and `persist: false`, so a simulated session never touches the user's saved
+state. **Known gap:** the handlers are mirrored, not shared. Extracting ConsoleApp's gesture
+handlers into a framework-neutral module both use would remove that drift risk.
+
+§4.3.3 **Goals** (`src/lab/goals.ts`). Every goal has a **salience** vector: the listener attends
+to 6 outputs and the rest weigh 0.05. All distances are salience-weighted RMS.
+**Why:** Without salience, a random 33-D or 126-D target cannot be reached by any gesture sequence,
+and every config scores 0.
+- `place` — 3 target sounds at 3 spaced pad locations. Quality = share of targets whose real-net
+  error is below the persona's `accept`.
+- `taste` — 2 liked regions in output space (width 0.15). Quality = coverage (share of a 16×16
+  pad grid with utility > 0.5) × (0.5 + 0.5 × variety), where variety is the normalised entropy
+  of which liked region each covered cell is nearest.
+
+§4.3.4 **Personas** (`src/lab/personas.ts`): `patient` (2.5 s between gestures, good ears,
+80 gestures), `casual` (0.9 s, 50), `noisy` (σ = 0.07 on every judgement, 60). A persona sets the
+gesture gap, judgement noise, thresholds, patience per target, and the stuck limit before a nudge
+or randomise. Policies (one per goal × mode): push-away → go to a target, like it when right,
+dislike otherwise, nudge or randomise when stuck; explore-and-place → coarse rerolls while far, fine
+nudges when close, undo anything worse, place the best found, finalise, re-check.
+
+§4.3.5 **Score** (provisional, until Phase 5 calibrates it): 0.5 × final quality + 0.5 × mean
+quality over the session, so reaching the goal sooner scores higher. Reported in points (0–100).
+
+§4.3.6 **Method** (`src/lab/sweep.ts`). One-at-a-time around shipped, once per feedback mode:
+shipped, the other mode's base, and each knob's candidates alone. Mode-specific knobs vary only in
+their mode. **Every config plays the same episodes** (seed × goal × persona). A config's effect is
+the mean of paired per-episode differences against shipped, with a normal 95% interval. A change is
+*credible* only when its whole interval clears zero. The recommendation takes the better mode if
+credible, then each knob's best credible candidate within that mode. Because knobs were varied
+alone, the combined proposal is a hypothesis: `Confirm combined recommendation` (page) or
+`bun run lab -- --confirm k=v,...` (CLI) re-runs shipped against it before anyone ships it.
+
+§4.3.7 **Knobs** (`src/lab/settings.ts`, each shipped value imported from its single source):
+boot feedback mode, hidden widths, weight-draw spread, like learning rate and max iterations,
+dislike learning rate, replay rate and lifetime (push-away only), and scratchpad nudge size
+(explore-and-place only). Not yet knobs: OU explore intensity, input/output pipeline smoothing,
+input arity (2 or 4), max examples (the C ABI ignores it), and `min_error` (EngineApi does not
+expose it).
+
+§4.3.8 **Cost.** An episode takes 15–300 ms in bun (the like-training dose dominates). The full
+one-at-a-time sweep at 8 seeds is about 3,600 episodes, about 6 CPU-minutes.
+
+§4.3.9 **Product defects found while building it** (fixed in the same change):
+1. `FeedbackController` never put the C++ core into explore-and-place when it was constructed in
+   that mode. The core boots in Avoid, and `setMode()` early-returns on an unchanged mode. Manifold
+   worked only because it boots in push-away and switches later. Had the boot default been changed
+   to explore-and-place, enter-explore and reroll would have silently done nothing. Pinned by
+   `src/lab/lab.test.ts`.
+2. `engine/wasm-worker.ts` installs its trainer `message` listener in **any** worker whose module
+   graph imports the engine, and it answers a bare `{kind:'init'}`. The lab namespaces its protocol
+   (`lab:*`). Any future worker that imports engine code will meet the same trap. **Not fixed.**
+
+§4.3.10 **First findings (2026-09-28, uncommitted tree on top of `599bd90`).** One-at-a-time
+sweep: 63 configs × 2 goals × 3 personas × 8 seeds = 3,024 episodes, 125 s on 3 jobs, 0 failures.
+Confirm run: 16 held-out seeds (1001–1016), 192 episodes.
+
+| Finding | Evidence (Δ in score points vs shipped, paired 95% CI) |
+|---|---|
+| Shipped push-away barely learns in simulation: it scores 5.2 / 100 | shipped score 0.052 |
+| Explore & place, all else shipped, beats it | +10.8 ± 4.1, wins 64% |
+| In push-away, the like dose (lr, iterations) has **no effect** | every lr/iteration row Δ = 0.0 ± ≤0.1 (the musician rarely likes) |
+| In explore & place, `learningRate` 0.1 ≡ 1.0 exactly | the RMSProp cap (§4.1.5) reproduced in Manifold |
+| Scratchpad nudge 0.05 → 0.2 helps (explore & place) | +8.3 ± 3.6 over the mode base |
+| First hidden layer 10 → 16 helps (explore & place) | +7.6 ± 5.5 over the mode base |
+| **Combined: explore & place + h1 = 16 + nudge 0.2 (held-out seeds)** | **+20.6 ± 4.1, wins 87%** (place +22.9, taste +18.3) |
+
+**Not a shipping decision yet.** Threats to validity, in order of size:
+1. **Policy bias.** The explore-and-place musician is a competent hill-climber (reroll far, nudge
+   near, undo worse). The push-away musician only dislikes until a sound is acceptable and never
+   likes partial improvements. A better push-away policy could close part of the mode gap. Add
+   push-away strategies (like-when-better, move-and-retry) before trusting the mode comparison.
+2. **Uncalibrated score** (Phase 5). The goals, salience model, and thresholds are proxies.
+3. **Mirrored handlers** (§4.3.2). Drift between `episode.ts` and ConsoleApp would invalidate
+   results without failing a test.
 
 ### Phase 4 — Qualities, scoring, and analysis
 
@@ -306,9 +400,9 @@ and qualities that do not predict the ratings are revised.
 **Why:** Metrics are proxies. About one hour of playing makes all later sweeps trustworthy. Without
 it the lab can optimise a number that does not feel good.
 
-§4.5.2 This needs a way to load a lab config in a playable surface. Manifold is the likely host,
-because it already runs `MLPCore<DynamicStorage>` in WASM. This is the first point where the lab
-touches a product, and it is opt-in (a debug or lab panel).
+§4.5.2 This needs a way to load a lab config in a playable surface. The Manifold lab's knobs are
+exactly Manifold's defaults, so the natural surface is a `?lab-config=<encoded config>` override
+that boots the normal console with those defaults. It does not exist yet.
 
 ### Phase 6 — Model interface (non-MLPCore models)
 

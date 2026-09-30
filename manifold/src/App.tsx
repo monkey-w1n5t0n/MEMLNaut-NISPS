@@ -12,6 +12,7 @@ import type { EngineApiOptions } from './engine/engine-api';
 import { useEngine } from './engine/useEngine';
 import { installDebugProbe } from './debug/probe';
 import { ConsoleApp } from './console';
+import { RigProvider } from './rig/RigProvider';
 
 /**
  * Engine options derived from the URL. Under `?debug=1` (the Playwright /
@@ -95,7 +96,9 @@ export function App() {
   return (
     <EngineProvider options={engineOptions()} fallback={<Loading />}>
       <ProbeInstaller />
-      <ConsoleApp />
+      <RigProvider>
+        <ConsoleApp />
+      </RigProvider>
     </EngineProvider>
   );
 }

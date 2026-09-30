@@ -249,3 +249,18 @@ export const GLYPH_FALLBACK = {
   synth: '🔊',
   editor: '🔌',
 } as const;
+
+/** Sequencer — a row of steps with a raised note. */
+export function SequencerIcon({ size = 18, style }: IconProps) {
+  return svg(
+    size,
+    style,
+    <>
+      <path d="M4 18h3M10 18h3M16 18h4" />
+      <path d="M5.5 18V11M11.5 18V6M18 18V13" />
+      <circle cx="5.5" cy="10" r="1.2" />
+      <circle cx="11.5" cy="5" r="1.2" />
+      <circle cx="18" cy="12" r="1.2" />
+    </>,
+  );
+}

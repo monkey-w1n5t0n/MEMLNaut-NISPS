@@ -27,7 +27,7 @@ import type { MFParam, ParamStatus } from '../console/model';
 export type OutputState = ParamStatus; // 'off' | 'fixed' | 'live'
 
 /** The selectable output backend (dock-spec §3.4; backends-spec §1). */
-export type BackendId = 'synth' | 'particles' | 'midi' | 'osc' | 'cvgate' | 'vcv';
+export type BackendId = 'synth' | 'psynth' | 'particles' | 'midi' | 'osc' | 'cvgate' | 'vcv';
 
 // ---- Backend-specific per-output specs (dock-spec §4) ----------------------
 

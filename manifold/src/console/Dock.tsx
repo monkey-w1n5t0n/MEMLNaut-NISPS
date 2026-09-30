@@ -57,6 +57,7 @@ const MODE_ICON: Record<OutputMode, { Icon: (p: IconProps) => JSX.Element; glyph
   osc: { Icon: OscIcon, glyph: GLYPH_FALLBACK.osc },
   cv: { Icon: OscIcon, glyph: GLYPH_FALLBACK.cv },
   synth: { Icon: SynthIcon, glyph: GLYPH_FALLBACK.synth },
+  psynth: { Icon: SynthIcon, glyph: GLYPH_FALLBACK.synth },
   editor: { Icon: EditorIcon, glyph: GLYPH_FALLBACK.editor },
 };
 
@@ -183,7 +184,7 @@ export interface DockProps {
   setSandwich: (v: boolean) => void;
 }
 
-const ORDER: DrawerKey[] = ['learn', 'inputs', 'route', 'settings', 'help'];
+const ORDER: DrawerKey[] = ['learn', 'inputs', 'route', 'sequencer', 'settings', 'help'];
 
 export function Dock({ ctx, active, setActive, depth, setDepth, sandwich, setSandwich }: DockProps) {
   const { settings } = useSettings();

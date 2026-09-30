@@ -120,7 +120,7 @@ audition a clamped value (the next actual input change restores the live MLP), a
 for the narrow pane.
 
 - **Output modes** (the TOP dock selector, NOT the same axis as `focus`): `src/console/output-mode.ts`
-  defines `OUTPUT_MODES` = **particles** (default) / midi / osc / cv / synth / editor, each mapping to a
+  defines `OUTPUT_MODES` = **particles** (default) / midi / osc / cv / synth / psynth (Powerful Synth Engine) / editor, each mapping to a
   `BackendId`. `DEFAULT_OUTPUT_MODE='particles'`. `outputDisplayCount()` is the shared active-card
   boundary for the stage, backend context, and routing rows. MIDI starts with eight cards; every
   backend can add a card or delete any individual card in condensed and expanded Outputs drawers.
@@ -139,15 +139,20 @@ for the narrow pane.
     schemas in `src/modes/generated/`** (one-core-engine P5.2) — real param names/groups/count,
     plus each mode's `ml` net shape (`MFMode.ml`) and schema `engine_id` (`MFMode.engineId`)
     come from schema truth. A thin manifold OVERLAY (`SCHEMA_MODES` in model.ts) supplies only
-    label/glyph/ModeClass/input/ordering. Two schema-less manifold-only modes (`visualizer`,
-    `c15` placeholder) stay hand-written on `DEFAULT_MODE_ML`. Do NOT hand-edit
+    label/glyph/ModeClass/input/ordering. One schema-less manifold-only mode (`visualizer`)
+    stays hand-written on `DEFAULT_MODE_ML`; the Powerful Synth Engine modes `psynth:<presetId>` are
+    generated from `synth/psynth-presets.ts` (`psynthModes()`). Do NOT hand-edit
     `src/modes/generated/` — it is codegen output (`bun run codegen/generate.ts`).
 
 ### The Dock (right-edge rail) — `src/console/Dock.tsx` + `Drawers.tsx`
-- 48px right rail: **TOP** = mode selector (the 5 output modes, popover); **MIDDLE** = 5 drawer
+- 48px right rail: **TOP** = mode selector (the 5 output modes, popover); **MIDDLE** = 6 drawer
   icons, vertically centred macOS-dock style; **BOTTOM** = sandwich toggle.
-- Five drawers (`DRAWERS` in `Drawers.tsx`, each has `.render(ctx, depth)` — condensed 360px panel
+- Six drawers (`DRAWERS` in `Drawers.tsx`, each has `.render(ctx, depth)` — condensed 360px panel
   vs expanded 80vw×80vh modal):
+  - **sequencer** (`SequencerDrawer.tsx`) — dual-engine menu: dual-mode toggle + play, synth preset,
+    melody maker (Euclid+Turing / Walker / Steps), scale + root, steps, octave range/offset, tempo, gate,
+    live view of the sequencer MLP's outputs, like / push-away for the sequencer engine. Dual mode
+    switches on by itself when a gamepad appears (see `src/rig/`); the E2E `dual-mode.spec.ts` injects a fake pad.
   - **learn** — feedback mode (explore-and-place / geometric-dislike) + solo mode + per-output arm,
     plus a live model-architecture strip (inputs/outputs highlighted; hidden layers expand on click).
     At `expanded` depth ONLY it also renders `TrainingHealth.tsx`: the real per-iteration loss

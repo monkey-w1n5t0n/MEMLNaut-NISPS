@@ -38,8 +38,10 @@ import {
 } from '../engine';
 import { EditorPanel } from '../serial/EditorPanel';
 import { TrainingHealth } from './TrainingHealth';
+import { SequencerDrawer } from './SequencerDrawer';
 import {
   LearningIcon,
+  SequencerIcon,
   InputsIcon,
   OutputsIcon,
   SettingsIcon,
@@ -708,6 +710,18 @@ function ModeConfig(ctx: ConsoleCtx) {
           </div>
         </>
       );
+    case 'psynth':
+      return (
+        <>
+          <SectionLabel>Transport</SectionLabel>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <Button size="sm" variant={ctx.audioStarted ? 'secondary' : 'primary'} onClick={ctx.onToggleAudio}>
+              {ctx.audioStarted ? 'pause' : 'play'}
+            </Button>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--fg-dim)' }}>Presets and melody: Sequencer drawer</span>
+          </div>
+        </>
+      );
     case 'editor':
       return (
         <>
@@ -1013,6 +1027,7 @@ export interface DrawerSection {
 export const DRAWERS: Record<DrawerKey, DrawerSection> = {
   learn: { icon: <LearningIcon />, glyph: '🧠', label: 'Learning', render: LearningDrawer },
   inputs: { icon: <InputsIcon />, glyph: '🎚', label: 'Inputs', render: InputsDrawer },
+  sequencer: { icon: <SequencerIcon />, glyph: '♪', label: 'Sequencer', render: (c, d) => <SequencerDrawer ctx={c} depth={d} /> },
   route: { icon: <OutputsIcon />, glyph: '🔀', label: 'Outputs', render: RoutingDrawer },
   settings: { icon: <SettingsIcon />, glyph: '⚙', label: 'Settings', render: (c, d) => <SettingsDrawer ctx={c} depth={d} /> },
   help: { icon: <HelpIcon />, glyph: '?', label: 'Help', render: HelpDrawer },

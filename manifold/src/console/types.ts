@@ -6,6 +6,7 @@ import type { FeedbackMode } from '../engine/types';
 import type { BackendStatus } from '../backends/backend';
 import type { UseInputLayer } from '../inputs';
 import type { GeometricFeedbackConfig } from '../engine';
+import type { DualRig, RigSnapshot } from '../rig/dual-rig';
 
 /** The two product feedback modes (dock-spec §1.1; rl-feedback-design §0). */
 export type FeedbackModeUI = 'explore-and-place' | 'geometric-dislike';
@@ -24,7 +25,7 @@ export interface Pin {
  * (operator dock restructure). "Built-in Synth" is the synth backend — the
  * string "C15" must NEVER appear. Particle + Editor are non-audio.
  */
-export type OutputMode = 'particles' | 'midi' | 'osc' | 'cv' | 'synth' | 'editor';
+export type OutputMode = 'particles' | 'midi' | 'osc' | 'cv' | 'synth' | 'psynth' | 'editor';
 
 /** Feedback marker plotted on the 2D map at the input location it was given. */
 export interface FeedbackMarker {
@@ -35,7 +36,7 @@ export interface FeedbackMarker {
   polarity: 'positive' | 'negative';
 }
 
-export type DrawerKey = 'learn' | 'inputs' | 'route' | 'settings' | 'help';
+export type DrawerKey = 'learn' | 'inputs' | 'route' | 'sequencer' | 'settings' | 'help';
 export type DrawerDepth = 'condensed' | 'expanded';
 
 /** Manifold's supported normal-mode input arities. */
@@ -162,6 +163,9 @@ export interface ConsoleCtx {
   // ---- Synth engine (dock-spec §5) ----
   audioStarted: boolean;
   onToggleAudio: () => void;
+  /** Dual-engine rig (second MLP + sequencer + Powerful Synth); null before it loads. */
+  rig: DualRig | null;
+  rigState: RigSnapshot | null;
 
   // ---- Explore-and-place scratchpad session (workstream B; rl-feedback §2.2) ----
   /** True while awaiting a manifold location pick after pressing "place". */

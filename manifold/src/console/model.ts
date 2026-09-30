@@ -12,8 +12,9 @@
  * concerns a schema has no opinion on: label, glyph, ModeClass, input kind,
  * and catalogue ORDER (insertion order of the object's keys) — those are
  * legitimately hand-curated display truth, not mechanically derivable, and
- * survive here. Two manifold-only modes with no schema (`visualizer`, `c15`
- * placeholder) stay hand-written and use the default net shape.
+ * survive here. One manifold-only mode with no schema (`visualizer`) stays hand-written
+ * and uses the default net shape; the Powerful Synth Engine modes are
+ * generated from its presets (see {@link psynthModes}).
  *
  * KEY CHANGE vs the JSX reference: the pseudo-inference `MF_infer` (sin/cos
  * placeholder) and the `useInstrument` hook are GONE. The `values` every
@@ -21,11 +22,11 @@
  * onto a mode's params here via {@link shapeValues}. This file keeps only the
  * mode/param DATA + the pure shaping maths.
  *
- * The `c15` mode and its synth label are relabelled to "Powerful Synth Engine"
- * — the string "C15" must never appear in the UI (it survives only as an
- * internal mode id).
+ * The synth is labelled "Powerful Synth Engine" — the string "C15" must never
+ * appear in the UI.
  */
 
+import { listPresets, presetParamSpecs } from '../synth/preset-model';
 import type { ModeSchema } from '../modes/generated/types';
 import { ALL_MODE_SCHEMAS } from '../modes/generated';
 import { applyCurve } from '../backends/mapping';
@@ -50,8 +51,8 @@ export type ModeInput = 'xy' | 'joystick' | 'audio_in';
  * strings (`schemas/modes/*.json` uses `verb`, `sequencer`, `kick`, `snare`,
  * `filterbank`, `operators`, … — only `pitch` overlaps). For every
  * schema-backed mode this means almost every param falls through to the
- * `--accent` default; the map only does real work for the two hand-written
- * manifold-only modes (`visualizer`, `c15`), whose {@link MANIFOLD_ONLY_MODES}
+ * `--accent` default; the map only does real work for the hand-written
+ * manifold-only mode (`visualizer`), whose {@link MANIFOLD_ONLY_MODES}
  * groups (`mod`/`amp`/`fx`) were chosen to match it. A hash-to-palette
  * function over arbitrary group strings would fix this for schema-driven
  * groups too, but `console/OutputStage.tsx` — the hero output view, and the
@@ -298,8 +299,8 @@ const SCHEMA_MODES: MFMode[] = Object.entries(SCHEMA_MODE_OVERLAYS).flatMap(
 
 /**
  * Manifold-only modes with NO schema — hand-written params on the DEFAULT net
- * shape. `visualizer` is a pure browser visual; `c15` is the "Powerful Synth
- * Engine" placeholder (id stays `c15`; the string "C15" must never surface).
+ * shape. `visualizer` is a pure browser visual. (The Powerful Synth Engine modes are
+ * generated from its presets — see {@link psynthModes}.)
  */
 const MANIFOLD_ONLY_MODES: MFMode[] = [
   {
@@ -316,22 +317,46 @@ const MANIFOLD_ONLY_MODES: MFMode[] = [
       ['fx', ['grain', 'trail']],
     ]),
   },
-  {
-    // Internal id stays `c15`; the UI label is "Powerful Synth Engine".
-    id: 'c15',
-    label: 'Powerful Synth Engine',
-    cls: 'Synth',
-    glyph: '◆',
-    input: 'xy',
-    placeholder: true,
-    badge: 'soon',
-    ml: DEFAULT_MODE_ML,
-    engineId: 'thru',
-    params: mkParams([['amp', ['a', 'b']]]),
-  },
 ];
 
-export const MF_MODES: MFMode[] = [...SCHEMA_MODES, ...MANIFOLD_ONLY_MODES];
+/** Mode id prefix of the Powerful Synth Engine presets (`psynth:<presetId>`). */
+export const PSYNTH_MODE_PREFIX = 'psynth:';
+
+/**
+ * One mode per Powerful Synth Engine preset. A preset decides WHICH synth
+ * parameters the MLP controls (its outputs, in order) and each output's range
+ * and curve; every other parameter is held at a safe value by the synth
+ * backend. Param id = the synth parameter's machine name (stable identity).
+ */
+function psynthModes(): MFMode[] {
+  return listPresets().flatMap((group) =>
+    group.presets.map((preset): MFMode => {
+      const specs = presetParamSpecs(preset.id);
+      return {
+        id: PSYNTH_MODE_PREFIX + preset.id,
+        label: `Powerful Synth Engine ${preset.name}`,
+        cls: 'Synth',
+        glyph: '◆',
+        input: 'xy',
+        ml: { ...DEFAULT_MODE_ML, outputSize: specs.length },
+        engineId: 'thru',
+        params: specs.map((spec, i): MFParam => ({
+          id: spec.name,
+          engineIndex: i,
+          name: spec.label,
+          group: spec.group,
+          status: 'live',
+          val: 0.5,
+          min: spec.min,
+          max: spec.max,
+          curve: spec.curve,
+        })),
+      };
+    }),
+  );
+}
+
+export const MF_MODES: MFMode[] = [...SCHEMA_MODES, ...MANIFOLD_ONLY_MODES, ...psynthModes()];
 
 /**
  * L38 (simplification 2026-07): this used to be a SECOND, divergent

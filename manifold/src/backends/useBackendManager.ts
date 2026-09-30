@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EngineApi } from '../engine';
 import type { MFParam } from '../console/model';
-import type { BackendContext, BackendStatus, OutputMapping } from './backend';
+import type { BackendContext, BackendStatus, OutputBackend, OutputMapping } from './backend';
 import type { BackendId, CvSpec, MidiCcSpec, OscSpec, VcvSpec } from '../dock/output-state';
 import { defaultCvSpec, defaultMidiSpec, defaultOscSpec, defaultVcvSpec } from '../dock/output-state';
 import { BackendManager } from './manager';
@@ -72,6 +72,7 @@ export function useBackendManager(
   midiSettings: MidiSettings,
   oscSettings: OscSettings,
   vcvSettings: VcvSettings,
+  extraBackends?: Partial<Record<BackendId, OutputBackend>>,
 ): UseBackendManager {
   const managerRef = useRef<BackendManager | null>(null);
   const [status, setStatus] = useState<BackendStatus>({ state: 'idle', message: 'idle' });
@@ -79,9 +80,15 @@ export function useBackendManager(
 
   // One manager per engine.
   if (engine && !managerRef.current) {
-    managerRef.current = new BackendManager(engine);
+    managerRef.current = new BackendManager(engine, extraBackends);
   }
   const manager = managerRef.current;
+
+  // Backends that load after the manager exists (the dual-engine rig's synth).
+  const psynthBackend = extraBackends?.psynth;
+  useEffect(() => {
+    if (manager && psynthBackend) manager.register('psynth', psynthBackend);
+  }, [manager, psynthBackend]);
 
   useEffect(() => {
     return () => {

@@ -67,6 +67,13 @@ export const OUTPUT_MODES: readonly OutputModeDescriptor[] = [
     backend: 'synth',
   },
   {
+    id: 'psynth',
+    label: 'Powerful Synth Engine',
+    description: 'Rich synth driven by the MLP, played by the sequencer.',
+    audio: false,
+    backend: 'psynth',
+  },
+  {
     id: 'editor',
     label: 'MEMLNaut Editor',
     description: 'Connect to the MEMLNaut hardware over USB serial (configure / save / restore).',

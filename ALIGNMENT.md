@@ -18,7 +18,7 @@ The clean-slate rewrite (2026-04-29) consolidated everything into one C++20 code
 
 **Why it blocks the mission.** Vision bullet 2 is precisely this. Until the control-tick orchestration exists once in C++, every new mode behaviour is a dual implementation with drift risk.
 
-**Rough cost.** Spec first, then ~a week: storage-policy the ModeBase orchestration the way P2 did MLPCore (verified shape in plan §6.5a — *not* binding monolithic mode objects, which would contradict the locked two-instance RT architecture). Related honesty gap: Manifold currently catalogues 4 modes that structurally cannot run in the browser (no mic input, event-only engines) — plan §6.5b (absorbs the old C15/mic-input defect; C15 itself lives on `archive/playground-solidjs`).
+**Rough cost.** Spec first, then ~a week: storage-policy the ModeBase orchestration the way P2 did MLPCore (verified shape in plan §6.5a — *not* binding monolithic mode objects, which would contradict the locked two-instance RT architecture). Related honesty gap: Manifold currently catalogues 4 modes that structurally cannot run in the browser (no mic input, event-only engines) — plan §6.5b (absorbs the old C15/mic-input defect; C15 itself is now `manifold/src/synth/`, the "Powerful Synth Engine", 2026-09-30).
 
 ### 2. No curated/advanced split and no in-UI mode picker — the UI fights vision 3 (2026-07-21)
 

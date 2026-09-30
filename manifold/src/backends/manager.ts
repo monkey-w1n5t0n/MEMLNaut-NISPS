@@ -65,6 +65,7 @@ export class BackendManager {
       ['midi', backends?.midi ?? new WebMidiBackend()],
       ['osc', backends?.osc ?? new OscBridgeBackend()],
       ['synth', backends?.synth ?? new PassthroughBackend('synth', 'Built-in Synth — audio plays in the engine')],
+      ['psynth', backends?.psynth ?? new PassthroughBackend('psynth', 'Powerful Synth Engine — waiting for the synth rig')],
       ['particles', backends?.particles ?? new ParticleBackend()],
       ['cvgate', backends?.cvgate ?? new UseqCvBackend()],
       ['vcv', backends?.vcv ?? new VcvBackend()],
@@ -91,6 +92,11 @@ export class BackendManager {
         this.active.send(this.routedScratch);
       }
     });
+  }
+
+  /** Install (or replace) a backend that only exists after construction (the synth rig loads async). */
+  register(id: BackendId, backend: OutputBackend): void {
+    this.backends.set(id, backend);
   }
 
   /** Typed handle to a concrete backend (for the dock's per-backend config). */

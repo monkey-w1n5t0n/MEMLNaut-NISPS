@@ -71,7 +71,11 @@ import { FeedbackController, type ProtoFeedbackMode } from '../feedback';
 import { DEFAULT_OUTPUT_MODE, outputDisplayCount, outputModeDescriptor } from './output-mode';
 import { useSettings, resolveInputMap } from '../settings/settings-store';
 import { useBackendManager } from '../backends';
-import { useInputLayer } from '../inputs';
+import { useInputLayer, type InputMode } from '../inputs';
+import { useRigOptional, useRigSnapshot } from '../rig/RigProvider';
+import { gamepadPresent } from '../rig/gamepad-presence';
+import { PSYNTH_MODE_PREFIX } from './model';
+import { DEFAULT_SYNTH_PRESET } from '../rig/dual-rig';
 import {
   completeDimensionMap,
   resizeTarget,
@@ -347,6 +351,39 @@ export function ConsoleApp() {
   // `pushPad`; MIDI + gamepad are pulled by the layer's own rAF loop.
   const inputs = useInputLayer(engine);
 
+  // ---- Dual-engine rig ---------------------------------------------------
+  // While a gamepad is present the app reconfigures itself: this (main) engine
+  // drives the Powerful Synth Engine with the left stick, and the rig's second
+  // MLP engine drives the sequencer with the right stick. Leaving dual mode
+  // restores what the user had.
+  const rig = useRigOptional();
+  const rigState = useRigSnapshot(rig);
+  const rigActive = rigState?.active ?? false;
+  const preDualRef = useRef<{ modeId: string; outputMode: OutputMode; inputMode: InputMode } | null>(null);
+  useEffect(() => {
+    if (!rig) return;
+    if (rigActive) {
+      preDualRef.current = { modeId, outputMode, inputMode: inputs.inputMode };
+      setModeId(modeId.startsWith(PSYNTH_MODE_PREFIX) ? modeId : PSYNTH_MODE_PREFIX + DEFAULT_SYNTH_PRESET);
+      setOutputModeState('psynth');
+      if (gamepadPresent()) {
+        inputs.setInputMode('gamepad');
+        inputs.setGamepadStickMode('single');
+      }
+    } else if (preDualRef.current) {
+      const prev = preDualRef.current;
+      preDualRef.current = null;
+      setModeId(prev.modeId);
+      setOutputModeState(prev.outputMode);
+      inputs.setInputMode(prev.inputMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rig, rigActive]);
+  // Keep the synth backend's preset in step with the selected synth mode.
+  useEffect(() => {
+    if (rig && modeId.startsWith(PSYNTH_MODE_PREFIX)) rig.setPreset(modeId.slice(PSYNTH_MODE_PREFIX.length));
+  }, [rig, modeId]);
+
   // ---- Identity-aware input-card migration -----------------------------------
   // Input sources already expose add/remove cards (MIDI learns, gamepad axes).
   // Preserve their semantic coordinates by source+label when those rows change.
@@ -477,6 +514,7 @@ export function ConsoleApp() {
     { outputId: midiOutputId, ccCount: midiCcCount },
     { url: oscUrl, sendRaw: oscSendRaw },
     { url: vcvUrl, sendRaw: vcvSendRaw },
+    rig ? { psynth: rig.backend } : undefined,
   );
 
   // VCV bridge: forward a verdict op to the module's embedded learner. No-op
@@ -957,6 +995,11 @@ export function ConsoleApp() {
   }, [inputs.onAction, inputs.onReducedInput]);
 
   const onToggleAudio = () => {
+    if (rig && outputMode === 'psynth') {
+      if (rigState?.audioRunning) void rig.stopAudio();
+      else void rig.startAudio();
+      return;
+    }
     if (!engine) return;
     if (engine.audio.isStarted) {
       void engine.audio.stop();
@@ -1041,8 +1084,10 @@ export function ConsoleApp() {
     exploreIntensity,
     setExploreIntensity,
     // synth
-    audioStarted,
+    audioStarted: outputMode === 'psynth' ? (rigState?.audioRunning ?? false) : audioStarted,
     onToggleAudio,
+    rig,
+    rigState,
     // explore-and-place scratchpad session (workstream B)
     picking,
     anchorCount,

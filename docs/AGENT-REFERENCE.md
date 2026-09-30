@@ -12,7 +12,7 @@ MEMLNaut-NISPS — Neural Interactive Shaping of Parameter Spaces. A research pl
 1. **RP2350 firmware** for the MEMLNaut hardware platform (`firmware/`).
 2. **WASM** in the Manifold React browser app (`manifold/`) — same engines + ML, run through an AudioWorklet.
 
-(The former SolidJS playground was retired 2026-07-13 at P1 of `docs/specs/plans/one-core-engine-refactor.md`; archived on branch `archive/playground-solidjs`, tag `playground-solidjs-final`. The browser-only C15 engine currently lives only there.) Parameter contracts are JSON schemas (`schemas/`) with codegen producing the C++ headers AND the TypeScript modules (both live since P5; CI fails if either is stale).
+(The former SolidJS playground was retired 2026-07-13 at P1 of `docs/specs/plans/one-core-engine-refactor.md`; archived on branch `archive/playground-solidjs`, tag `playground-solidjs-final`. The browser-only C15 engine was ported back into Manifold on 2026-09-30 as the "Powerful Synth Engine" — see `manifold/src/synth/`.) Parameter contracts are JSON schemas (`schemas/`) with codegen producing the C++ headers AND the TypeScript modules (both live since P5; CI fails if either is stale).
 
 Project documentation: https://musicallyembodiedml.github.io/memlnaut/approaches/nisps
 
@@ -120,7 +120,7 @@ The browser MLP is runtime-shaped since P2 (`MLPCore<DynamicStorage>`): `nisps_m
 ### Known limitations
 
 - Mic input through the worklet for XIASRI / SoundAnalysisMIDI is not wired in manifold.
-- C15 has no home on main (see `ALIGNMENT.md` defect 1, browser mode coverage).
+- The Powerful Synth Engine (old C15 WASM synth) lives in `manifold/src/synth/` + `manifold/public/psynth/` (2026-09-30). It is browser-only, uses a SharedArrayBuffer ring (needs COOP/COEP) and its own AudioContext; only one instance can run per page. Dual-engine mode (`manifold/src/rig/`) pairs it with a sequencer driven by a second MLP engine. Not covered by C++ parity tests.
 - (P3, 2026-07-14) The browser Jolt/OU gestures and the geometric dislike run the C++ core through WASM: `nisps_ml_jolt_*`, `nisps_ml_explore_*`, `nisps_ml_feedback_dislike_geometric` — no TS gesture math remains.
 - (§6.5e, 2026-07-21) The per-iteration loss curve IS plumbed: `nisps_ml_loss_history(ml, out, max)` returns the total entry count and fills `min(count, max)`, so `max=0` is a count probe. Both train paths publish it to the spine; `EngineApi.lossHistory()` reads it and `console/TrainingHealth.tsx` displays it at `expanded` drawer depth. `MLPCore::train()` resets the history per run; `train_targets()` (geometric dislike) does not record.
 

@@ -314,6 +314,11 @@ a setting → `--r-*` tokens.
 - Headless seams it relies on: `EngineApiOptions.loadModule` + `persist: false` (no fetch/document/
   localStorage), `FeedbackControllerOptions.scheduler`. Under bun, `bunfig.toml` preloads
   `scripts/lab/bun-shim.ts` to stub the Vite `?worker&url` import in `engine-host.ts`.
+- Knobs now include the optimiser step cap (`EngineApiOptions.optim.maxAdjLr` → `nisps_ml_set_optim`)
+  and opt-in background learning (`FeedbackControllerOptions.backgroundLearning`); both are OFF in the
+  product. Why the cap matters: at the shipped cap of 1 the like-training `learningRate` is inert
+  (`docs/specs/recon/findings-learning-does-little-2026-09-30.md`). Also: presets (`--presets`,
+  "Compare presets"), a two-knob grid (`--grid`), `--base`, and the lurch / like-error side measures.
 - Worker messages are namespaced `lab:*`: `engine/wasm-worker.ts` installs its trainer listener in
   ANY worker whose graph imports the engine, and answers a bare `{kind:'init'}`.
 

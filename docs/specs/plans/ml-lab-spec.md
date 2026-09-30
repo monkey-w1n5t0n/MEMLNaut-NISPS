@@ -234,8 +234,20 @@ firmware was not built for this change. The core change is a defaulted template 
 RMSProp step reaches the `optim.max_adj_lr = 1` cap. So `train.lr` values of 0.01, 0.1, and 1.0
 give identical results, and `optim.kind=sgd` at lr 0.1 gives exactly the same result as `rmsprop`
 with the cap at 0.1. The shipped optimiser therefore behaves as clipped SGD at lr 1. The dose knob
-that has an effect is the cap, not `train.lr`. This must be confirmed at full size over several
-seeds (`sweeps/train-dose.json`) before `ALIGNMENT.md` records it.
+that has an effect is the cap, not `train.lr`. **Explained and confirmed 2026-09-30:**
+the cap of 1 binds on nearly every step because the MLP scales each per-sample gradient by 1/N, so
+`train.lr` is inert in [1e-3, 1] and the shipped `lr = 1.0` is an SGD-era number. Details, numbers
+and upstream comparison: `docs/specs/recon/findings-learning-does-little-2026-09-30.md`.
+
+§4.1.6 **Runtime optimiser settings (2026-09-30).** The RMSProp constants are now a runtime
+`OptimConfig` (`nisps/ml/training.hpp`; `MLPCore::set_optim`; WASM `nisps_ml_set_optim`; TS
+`EngineApiOptions.optim`). The defaults are the constants, so ctest, the golden vectors and parity
+are unchanged, and the settings survive `nisps_ml_reshape`. The bench's `optim.*` parameters now use
+this product path, so the bench cannot drift from what Manifold runs. New tests pin the finding:
+`optim_default_config_is_a_no_op`, `optim_learning_rate_is_nearly_inert_at_the_shipped_cap`,
+`optim_lifting_the_cap_makes_learning_rate_real`.
+**Why:** The Manifold lab can only recommend a default that Manifold can run. A constant in C++ is
+not a knob, so the lab could not test the fix before it was chosen.
 
 ### Phase 2 — Sweep driver
 
@@ -336,11 +348,36 @@ alone, the combined proposal is a hypothesis: `Confirm combined recommendation` 
 `bun run lab -- --confirm k=v,...` (CLI) re-runs shipped against it before anyone ships it.
 
 §4.3.7 **Knobs** (`src/lab/settings.ts`, each shipped value imported from its single source):
-boot feedback mode, hidden widths, weight-draw spread, like learning rate and max iterations,
-dislike learning rate, replay rate and lifetime (push-away only), and scratchpad nudge size
-(explore-and-place only). Not yet knobs: OU explore intensity, input/output pipeline smoothing,
-input arity (2 or 4), max examples (the C ABI ignores it), and `min_error` (EngineApi does not
-expose it).
+boot feedback mode; like learning (`burst` = shipped synchronous retrain, or `background`); hidden
+widths; weight-draw spread; the optimiser step cap (`optimMaxAdjLr`); like learning rate and max
+iterations (burst only); background ticks per second, per-tick learning rate and duration
+(background only); dislike learning rate, replay rate and lifetime (push-away only); scratchpad nudge
+size (explore-and-place only). A knob that does nothing in a config is pinned to its shipped value
+(`canon()`), so behaviourally equal configs are one config. Not yet knobs: OU explore intensity,
+input/output pipeline smoothing, input arity (2 or 4), max examples (the C ABI ignores it),
+`min_error` (EngineApi does not expose it), and anything the browser engine cannot express
+(activation, batch-mean gradients).
+
+§4.3.11 **Background learning** (`FeedbackController` option `backgroundLearning`, off by default).
+A like only stores the example; a timer takes `hz` normalised steps per second at `lr` for `ms`
+after the last like. It is upstream's shape of learning, built from primitives Manifold has, and it
+needs a normalised optimiser (cap lifted) to mean anything. In explore-and-place, `finalise()` uses
+the same path. The lab runs it on the virtual clock.
+
+§4.3.12 **Presets and grids.** `PRESETS` are named whole configs: `shipped`, `cap10`,
+`real-rmsprop`, `upstream-like` (background learning + upstream dislike; hard-sigmoid, batch-mean
+gradients, nearby-like removal and reflected OU are not expressible), `real-rmsprop-explore`.
+`--presets` / "Compare presets" plays them head to head on held-out seeds. `--grid a,b` /
+"Run grid" plays every pair of two knobs' candidates (needed because the learning rate and the step
+cap interact, which a one-at-a-time sweep cannot see). `--base k=v,...` moves the origin the deltas
+and the recommendation are measured against.
+
+§4.3.13 **Two side measures** per episode. *Lurch*: total salience-weighted RMS change of the real
+net's output over a 12×12 pad grid between consecutive gestures, divided by the number of gestures
+(explore-and-place scratchpad gestures count as zero: the real net changes only at its commit step).
+*Like error*: at the end, the mean salience-weighted error between what the net plays where the
+musician liked or placed a sound and the sound they liked. They explain a score; they are not part
+of it.
 
 §4.3.8 **Cost.** An episode takes 15–300 ms in bun (the like-training dose dominates). The full
 one-at-a-time sweep at 8 seeds is about 3,600 episodes, about 6 CPU-minutes.
@@ -369,7 +406,14 @@ Confirm run: 16 held-out seeds (1001–1016), 192 episodes.
 | First hidden layer 10 → 16 helps (explore & place) | +7.6 ± 5.5 over the mode base |
 | **Combined: explore & place + h1 = 16 + nudge 0.2 (held-out seeds)** | **+20.6 ± 4.1, wins 87%** (place +22.9, taste +18.3) |
 
+**Second round (2026-09-30).** Findings on why the like and dislike settings "do little", with the
+upstream comparison and the presets: `docs/specs/recon/findings-learning-does-little-2026-09-30.md`.
+Headline: the like learning rate is inert at the shipped step cap; the held dislike erases likes;
+and the optimiser fix improves retention (like error 0.089 → 0.054) more than the goal score.
+
 **Not a shipping decision yet.** Threats to validity, in order of size:
+0. The lab's hosted page (`/next/?lab=1`) runs on the deployed build, so results there describe
+   what is deployed, not this branch.
 1. **Policy bias.** The explore-and-place musician is a competent hill-climber (reroll far, nudge
    near, undo worse). The push-away musician only dislikes until a sound is acceptable and never
    likes partial improvements. A better push-away policy could close part of the mode gap. Add

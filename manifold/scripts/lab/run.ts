@@ -5,8 +5,11 @@
  *
  *   bun run lab                                   # one-at-a-time sweep, 8 seeds
  *   bun run lab -- --seeds 16 --jobs 6 --out lab.json
- *   bun run lab -- --confirm learningRate=0.01,nudgeStddev=0.1
+ *   bun run lab -- --confirm learningRate=0.01,nudgeStddev=0.1     # ';' separates several candidates
  *   bun run lab -- --knobs learningRate,maxIterations --goals place
+ *   bun run lab -- --grid learningRate,optimMaxAdjLr        # every pair of values
+ *   bun run lab -- --presets all                            # named configs head to head
+ *   bun run lab -- --base optimMaxAdjLr=1000000,learningRate=0.003   # OAT around a new origin
  *
  * Parallelism is one child bun process per job (each loads its own WASM), fed
  * episode specs over stdin and answering results over stdout, one JSON per
@@ -22,8 +25,8 @@ import { fileURLToPath } from 'node:url';
 import { runEpisode, type EpisodeResult, type EpisodeSpec } from '../../src/lab/episode';
 import type { GoalKind } from '../../src/lab/goals';
 import { PERSONAS } from '../../src/lab/personas';
-import { describeDiff, KNOBS, SHIPPED, type KnobKey, type LabConfig } from '../../src/lab/settings';
-import { planConfirm, planOat, recommend, summarise, type Plan } from '../../src/lab/sweep';
+import { describeDiff, KNOBS, PRESETS, SHIPPED, type KnobKey, type LabConfig } from '../../src/lab/settings';
+import { originFrom, planConfirm, planGrid, planOat, planPresets, recommend, summarise, type Plan } from '../../src/lab/sweep';
 import { loadModule } from './load-module';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -62,6 +65,9 @@ const opt = {
   personas: PERSONAS.map((p) => p.id),
   knobs: KNOBS.map((k) => k.key) as KnobKey[],
   confirm: null as string | null,
+  base: null as string | null,
+  grid: null as string | null,
+  presets: null as string | null,
   out: null as string | null,
 };
 for (let i = 0; i < argv.length; i++) {
@@ -73,6 +79,9 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '--personas') opt.personas = v().split(',');
   else if (a === '--knobs') opt.knobs = v().split(',') as KnobKey[];
   else if (a === '--confirm') opt.confirm = v();
+  else if (a === '--base') opt.base = v();
+  else if (a === '--grid') opt.grid = v();
+  else if (a === '--presets') opt.presets = v();
   else if (a === '--out') opt.out = v();
   else die(`unknown flag ${a}`);
 }
@@ -80,19 +89,33 @@ for (const k of opt.knobs) if (!KNOBS.some((x) => x.key === k)) die(`unknown kno
 for (const p of opt.personas) if (!PERSONAS.some((x) => x.id === p)) die(`unknown persona ${p}`);
 for (const g of opt.goals) if (g !== 'place' && g !== 'taste') die(`unknown goal ${g}`);
 
-function parseConfig(s: string): LabConfig {
-  const c: Record<string, unknown> = { ...SHIPPED };
+function parseConfig(s: string, from: LabConfig = originFrom()): LabConfig {
+  const c: Record<string, unknown> = { ...from };
   for (const kv of s.split(',')) {
     const [k, raw] = kv.split('=');
     const knob = KNOBS.find((x) => x.key === k);
-    if (!knob || raw === undefined) die(`bad --confirm entry '${kv}'`);
-    c[k!] = knob.kind === 'enum' ? raw : Number(raw);
+    if (!knob || raw === undefined) die(`bad config entry '${kv}' (want knob=value)`);
+    if (knob.kind === 'enum' && !knob.choices!.includes(raw)) die(`${k}: '${raw}' is not one of ${knob.choices!.join(', ')}`);
+    const n = Number(raw);
+    if (knob.kind !== 'enum' && !Number.isFinite(n)) die(`${k}: '${raw}' is not a number`);
+    c[k!] = knob.kind === 'enum' ? raw : n;
   }
   return c as unknown as LabConfig;
 }
 
 const so = { seeds: opt.seeds, goals: opt.goals, personas: opt.personas };
-const plan: Plan = opt.confirm ? planConfirm([parseConfig(opt.confirm)], so) : planOat(so, opt.knobs);
+const origin = opt.base ? parseConfig(opt.base) : originFrom();
+let plan: Plan;
+if (opt.confirm) plan = planConfirm(opt.confirm.split(';').map((c) => parseConfig(c, origin)), so, origin);
+else if (opt.grid) {
+  const [a, b] = opt.grid.split(',') as KnobKey[];
+  if (!a || !b) die('--grid needs two knobs: --grid learningRate,optimMaxAdjLr');
+  plan = planGrid(so, a, b, origin);
+} else if (opt.presets) {
+  const ids = opt.presets === 'all' ? PRESETS.map((p) => p.id) : opt.presets.split(',');
+  for (const i of ids) if (!PRESETS.some((p) => p.id === i)) die(`unknown preset ${i} (have: ${PRESETS.map((p) => p.id).join(', ')})`);
+  plan = planPresets(PRESETS.filter((p) => ids.includes(p.id)), so);
+} else plan = planOat(so, opt.knobs, origin);
 console.error(`[lab] ${plan.kind}: ${plan.configs.length} configs x ${opt.goals.length} goals x ${opt.personas.length} personas x ${opt.seeds} seeds = ${plan.specs.length} episodes on ${opt.jobs} jobs`);
 
 const results: EpisodeResult[] = new Array(plan.specs.length);
@@ -132,15 +155,16 @@ await new Promise<void>((resolve) => {
 });
 
 const ok = results.filter(Boolean);
-const summaries = summarise(plan.configs, ok);
-const { recs, proposed } = recommend(ok);
+const summaries = summarise(plan.configs, ok, plan.origin);
+const { recs, proposed } = plan.kind === 'oat' ? recommend(ok, plan.origin) : { recs: [], proposed: plan.origin };
 
 const pct = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}`;
-console.log(`\n${'config (vs shipped)'.padEnd(58)} score   Δ vs shipped (95% CI)   win   place Δ   taste Δ`);
+const originIsShipped = describeDiff(plan.origin) === 'shipped';
+console.log(`\n${(originIsShipped ? 'config (vs shipped)' : 'config (vs origin)').padEnd(58)} score   Δ (95% CI)          win   place Δ   taste Δ   lurch  likeErr`);
 for (const s of summaries) {
   const sig = s.delta.n > 1 && (s.delta.mean - s.delta.ci > 0 ? ' ▲' : s.delta.mean + s.delta.ci < 0 ? ' ▼' : '  ');
   const g = (k: GoalKind) => (s.deltaByGoal[k] ? pct(s.deltaByGoal[k]!.mean).padStart(7) : '      -');
-  console.log(`${s.diff.replace('feedbackMode=explore-and-place', 'explore&place').replace('feedbackMode=geometric-dislike', 'push-away').slice(0, 58).padEnd(58)} ${s.score.mean.toFixed(3)}   ${pct(s.delta.mean).padStart(6)} ± ${(s.delta.ci * 100).toFixed(1).padStart(4)}${sig}      ${(s.winRate * 100).toFixed(0).padStart(3)}%  ${g('place')}  ${g('taste')}`);
+  console.log(`${s.diff.replace('feedbackMode=explore-and-place', 'explore&place').replace('feedbackMode=geometric-dislike', 'push-away').padEnd(58)} ${s.score.mean.toFixed(3)}   ${pct(s.delta.mean).padStart(6)} ± ${(s.delta.ci * 100).toFixed(1).padStart(4)}${sig}      ${(s.winRate * 100).toFixed(0).padStart(3)}%  ${g('place')}  ${g('taste')}  ${s.lurch.mean.toFixed(3).padStart(6)}  ${(s.likeErr.n ? s.likeErr.mean.toFixed(3) : '-').padStart(6)}`);
 }
 if (plan.kind === 'confirm') {
   console.log(`\nconfirm run on held-out seeds ${plan.specs[0]?.seed}..${plan.specs[0]!.seed + opt.seeds - 1}: a credible Δ above (▲) means the combination holds up.`);
@@ -153,6 +177,7 @@ if (plan.kind === 'oat' && recs.length) {
   const flag = KNOBS.filter((k) => proposed[k.key] !== SHIPPED[k.key]).map((k) => `${k.key}=${proposed[k.key]}`).join(',');
   console.log(`\nconfirm with:  bun run lab -- --confirm ${flag}`);
 }
+if (plan.kind === 'compare') console.log('\npresets: ' + PRESETS.map((p) => p.id).join(', '));
 console.error(`[lab] ${ok.length} ok, ${failed} failed, ${((performance.now() - t0) / 1000).toFixed(0)}s`);
 
 if (opt.out) {

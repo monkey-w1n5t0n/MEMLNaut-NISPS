@@ -56,6 +56,21 @@ export interface EpisodeResult {
   curve: number[];
   counts: Record<GestureName, number>;
   field: FieldSummary;
+  /**
+   * How much the playable mapping moves under the musician per gesture: the
+   * total, over the session, of the salience-weighted RMS change of the real net's
+   * output over a 12x12 pad grid between consecutive gestures (0..1 per
+   * output), divided by the number of gestures. High = the instrument keeps
+   * shifting under them, whether or not they asked for it.
+   */
+  lurch: number;
+  /**
+   * Retention: mean salience-weighted error, at the end, between what the net
+   * now plays at each place the musician liked/placed and the sound they
+   * liked there. Lower = teaching survived later gestures. null = none liked.
+   */
+  likeErr: number | null;
+  nLiked: number;
   wallMs: number;
 }
 
@@ -81,6 +96,7 @@ function grid(n: number): Point[] {
   return pts;
 }
 const GOAL_GRID = grid(GRID);
+const LURCH_PTS = grid(12);
 const FIELD_PTS = grid(FIELD_GRID);
 
 function quantile(xs: number[], q: number): number {
@@ -102,6 +118,8 @@ class Session {
   ) as Record<GestureName, number>;
   gestures = 0;
   likes = 0;
+  /** Every place the musician liked/placed, with the sound they liked there. */
+  liked: { at: Point; out: Float32Array }[] = [];
 
   constructor(eng: EngineApi, fc: FeedbackController, clock: VirtualClock, private p: Persona) {
     this.eng = eng;
@@ -137,6 +155,7 @@ class Session {
   like(at: Point): void {
     this.hear(at);
     // ConsoleApp commit: c.like(pos, engine.getOutputs()) — the RAW output.
+    this.liked.push({ at, out: new Float32Array(this.eng.getOutputs()) });
     this.fc.like(at, this.eng.getOutputs());
     this.likes++;
     this.tick('like');
@@ -183,6 +202,9 @@ class Session {
     this.fc.place(); // thumbs-up while exploring
     this.tick('place');
     this.fc.placeCommit(at[0], at[1]); // tap the pad (re-enters explore)
+    const anchors = this.fc.getAnchors();
+    const a = anchors[anchors.length - 1];
+    if (a) this.liked.push({ at, out: new Float32Array(a.output) });
     this.tick('commit');
   }
   finalise(): void {
@@ -287,6 +309,7 @@ export async function runEpisode(
     learningRate: cfg.learningRate,
     maxIterations: cfg.maxIterations,
     spread: cfg.spread,
+    optim: { maxAdjLr: cfg.optimMaxAdjLr },
   });
   eng.reshape({ inputSize: BOOT_IO.inputSize, outputSize: BOOT_IO.outputSize, hidden: [cfg.h1, cfg.h2, cfg.h3] }, cfg.spread);
 
@@ -300,6 +323,8 @@ export async function runEpisode(
       lifetimeMs: cfg.geoLifetimeMs,
     },
     scheduler: clock,
+    backgroundLearning:
+      cfg.likeMode === 'background' ? { hz: cfg.bgHz, lr: cfg.bgLr, ms: cfg.bgMs } : undefined,
   });
   fc.setMode(cfg.feedbackMode);
 
@@ -331,10 +356,25 @@ export async function runEpisode(
   const curve: number[] = [];
   let last = quality();
   let gesturesToSuccess: number | null = null;
+  // Lurch: the real net's field on a fixed grid, compared gesture to gesture.
+  // While a scratchpad is live the real net is set aside and the heard mapping
+  // is DELIBERATELY changing, so those gestures are skipped, not counted.
+  let prevField: Float32Array | null = new Float32Array(eng.inferBatch(LURCH_PTS));
+  let lurchSum = 0;
   s.onGesture = () => {
     if (!s.exploring) {
       last = quality();
       if (gesturesToSuccess === null && met()) gesturesToSuccess = s.gestures;
+      const f = new Float32Array(eng.inferBatch(LURCH_PTS));
+      if (prevField) {
+        const n = s.nOut;
+        let acc = 0;
+        for (let i = 0; i < LURCH_PTS.length; i++) {
+          acc += perceived(f.subarray(i * n, (i + 1) * n), prevField.subarray(i * n, (i + 1) * n), goal.salience);
+        }
+        lurchSum += acc / LURCH_PTS.length;
+      }
+      prevField = f;
     }
     curve.push(last);
   };
@@ -357,6 +397,13 @@ export async function runEpisode(
   const mean = curve.length ? curve.reduce((a, b) => a + b, 0) / curve.length : qualityEnd;
   const score = 0.5 * qualityEnd + 0.5 * mean;
   const field = fieldSummary(eng);
+  let likeErr: number | null = null;
+  if (s.liked.length) {
+    const n = s.nOut;
+    const out = eng.inferBatch(s.liked.map((l) => l.at));
+    likeErr =
+      s.liked.reduce((a, l, i) => a + perceived(out.subarray(i * n, (i + 1) * n), l.out, goal.salience), 0) / s.liked.length;
+  }
   fc.dispose();
   eng.dispose();
   return {
@@ -376,6 +423,11 @@ export async function runEpisode(
     curve,
     counts: s.counts,
     field,
+    // Per gesture of ANY kind: an explore-and-place scratchpad gesture moves
+    // the real net by nothing, and its commit step carries the whole change.
+    lurch: s.gestures ? lurchSum / s.gestures : 0,
+    likeErr,
+    nLiked: s.liked.length,
     wallMs: performance.now() - t0,
   };
 }

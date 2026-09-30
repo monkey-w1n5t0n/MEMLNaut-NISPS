@@ -21,7 +21,7 @@ import { ML_TRAIN_DEFAULTS } from '../modes/generated/ml_defaults';
 import type { InputConfig, OutputConfig } from './pipeline-types';
 import { Spine, type BackendSend } from './spine';
 import type { EngineId, FeedbackMode, LayerStats } from './types';
-import { WasmIML, type WasmIMLOptions } from './wasm-iml';
+import { WasmIML, type OptimSettings, type WasmIMLOptions } from './wasm-iml';
 import type { IoMigration } from './io-reshape';
 
 export interface GeometricFeedbackConfig {
@@ -143,6 +143,8 @@ export interface EngineApiOptions {
    * production (real-time wall-clock dt).
    */
   debugClockDt?: number;
+  /** RMSProp settings (see WasmIML.setOptim). Omit to keep the shipped optimiser. */
+  optim?: OptimSettings;
   /** Headless module loader + persistence switch (see WasmIMLOptions). */
   loadModule?: WasmIMLOptions['loadModule'];
   persist?: boolean;
@@ -175,6 +177,7 @@ export class EngineApi {
     // real runtime-configurability firmware/VCV get for free from
     // MLPCore::TrainConfig's default member initialisers.
     this.iml.setTrainConfig(this.learningRate, this.maxIterations, ML_TRAIN_DEFAULTS.minError);
+    if (opts.optim) this.iml.setOptim(opts.optim);
     if (opts.debugClockDt !== undefined) this.spine.setFixedDt(opts.debugClockDt);
 
     // Wire the spine's backend.send to push routed params into the worklet.
@@ -340,6 +343,16 @@ export class EngineApi {
 
   train(): number {
     return this.iml.train(this.learningRate, this.maxIterations);
+  }
+
+  /**
+   * A few epochs at an explicit learning rate, over the whole dataset, WITHOUT
+   * touching the configured `train()` defaults. This is the primitive behind
+   * background learning (FeedbackController `backgroundLearning`): upstream
+   * trains continuously in small steps instead of one large retrain per like.
+   */
+  trainStep(lr: number, epochs = 1): number {
+    return this.iml.train(lr, Math.max(1, Math.floor(epochs)), 0);
   }
 
   trainAsync(): Promise<number> {

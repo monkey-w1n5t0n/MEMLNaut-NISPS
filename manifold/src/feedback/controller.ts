@@ -64,6 +64,8 @@ export interface ControllerEngine {
   process(): void;
   addExample(features: ReadonlyArray<number>, labels: ReadonlyArray<number>): boolean;
   train(): number;
+  /** Small explicit-lr training step; required only for `backgroundLearning`. */
+  trainStep?(lr: number, epochs?: number): number;
   readonly feedback: {
     thumbsUp(): number;
     setFocus(mask: Uint8Array | null): void;
@@ -130,6 +132,27 @@ const wallClock: FeedbackScheduler = {
   clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
 };
 
+/**
+ * OPT-IN background learning. Off by default — the product trains
+ * synchronously, to convergence, on the press (train() at lr 1.0 for up to
+ * 1000 epochs). Upstream does the opposite: a like only STORES the example,
+ * and a ~100 Hz loop takes small normalised steps toward the liked examples,
+ * so the mapping drifts to them over seconds instead of jumping. This mode is
+ * that shape of learning, built from primitives Manifold already has; it needs
+ * an optimiser whose step really is normalised (engine `optim.maxAdjLr`
+ * raised) to mean anything. Used by the ML lab to evaluate the idea.
+ */
+export interface BackgroundLearning {
+  /** Training ticks per second. */
+  hz: number;
+  /** Learning rate of each tick (normalised-step regime: ~1e-4..1e-2). */
+  lr: number;
+  /** Keep learning for this long after the last like / placement. */
+  ms: number;
+  /** Epochs over the dataset per tick (default 1). */
+  epochs?: number;
+}
+
 export interface FeedbackControllerOptions {
   /** Master spread for randomise / nudge. Defaults to full-range uniform (0). */
   spread?: number;
@@ -137,6 +160,7 @@ export interface FeedbackControllerOptions {
   nudgeStddev?: number;
   geometricConfig?: GeometricFeedbackConfig;
   scheduler?: FeedbackScheduler;
+  backgroundLearning?: BackgroundLearning;
 }
 
 export class FeedbackController {
@@ -146,6 +170,9 @@ export class FeedbackController {
   private geometricConfig: GeometricFeedbackConfig;
   private scheduler: FeedbackScheduler;
   private geometricTimer: unknown = null;
+  private background: BackgroundLearning | null;
+  private bgTimer: unknown = null;
+  private bgUntilMs = 0;
   private geometricLastTickMs = 0;
 
   private mode: ProtoFeedbackMode = 'explore-and-place';
@@ -177,6 +204,7 @@ export class FeedbackController {
     this.spread = opts.spread ?? 0;
     this.nudgeStddev = opts.nudgeStddev ?? 0.05;
     this.scheduler = opts.scheduler ?? wallClock;
+    this.background = opts.backgroundLearning ?? null;
     this.geometricConfig = {
       ...(opts.geometricConfig ?? DEFAULT_GEOMETRIC_FEEDBACK_CONFIG),
     };
@@ -378,7 +406,7 @@ export class FeedbackController {
       this.engine.addExample([a.input[0], a.input[1]], Array.from(a.output));
     }
     if (placed > 0) {
-      this.engine.train();
+      this.learn();
     }
     this.engine.process();
     this.endSession();
@@ -465,6 +493,38 @@ export class FeedbackController {
 
   dispose(): void {
     this.stopGeometricReplay();
+    this.stopBackgroundLearning();
+  }
+
+  // ---- Background learning (opt-in; see BackgroundLearning) -----------------
+
+  /**
+   * Train on the dataset the way this controller is configured to: the
+   * shipped synchronous retrain, or — with `backgroundLearning` — (re)arm the
+   * background loop and return immediately.
+   */
+  private learn(): void {
+    const bg = this.background;
+    if (!bg || !this.engine.trainStep) {
+      this.engine.train();
+      return;
+    }
+    this.bgUntilMs = this.scheduler.now() + bg.ms;
+    if (this.bgTimer !== null) return;
+    const intervalMs = Math.max(5, 1000 / Math.max(1, bg.hz));
+    this.bgTimer = this.scheduler.setInterval(() => {
+      if (this.scheduler.now() >= this.bgUntilMs) {
+        this.stopBackgroundLearning();
+        return;
+      }
+      this.engine.trainStep!(bg.lr, bg.epochs ?? 1);
+      this.engine.process();
+    }, intervalMs);
+  }
+
+  private stopBackgroundLearning(): void {
+    if (this.bgTimer !== null) this.scheduler.clearInterval(this.bgTimer);
+    this.bgTimer = null;
   }
 
   /**
@@ -481,7 +541,7 @@ export class FeedbackController {
     // (setMode maps 'geometric-dislike' → 'avoid') so this path is active.
     this.engine.feedback.thumbsUp();
     this.engine.addExample([input[0], input[1]], Array.from(output));
-    this.engine.train();
+    this.learn();
     this.engine.process();
   }
 

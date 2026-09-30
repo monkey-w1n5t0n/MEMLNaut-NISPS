@@ -14,22 +14,31 @@ import type { EpisodeResult } from './episode';
 import type { GoalKind } from './goals';
 import { PERSONAS } from './personas';
 import { LabPool } from './pool';
-import { BOOT_IO, configKey, KNOBS, SHIPPED, type KnobKey, type LabConfig } from './settings';
+import { applies, BOOT_IO, canon, configKey, describeDiff, KNOBS, PRESETS, SHIPPED, type FeedbackModeId, type KnobKey, type LabConfig, type LikeModeId } from './settings';
 import {
+  originFrom,
   pairedDelta,
   planConfirm,
+  planGrid,
   planOat,
+  planPresets,
   recommend,
   summarise,
   type ConfigSummary,
   type Plan,
+  type PlanKind,
   type Stat,
 } from './sweep';
 
-const LAST_KEY = 'mf-lab-last';
+const LAST_KEY = 'mf-lab-last-2';
+
+const KIND_LABEL: Record<PlanKind, string> = { oat: 'one-at-a-time', grid: 'grid', compare: 'presets', confirm: 'confirm' };
 
 interface RunState {
-  plan: Plan;
+  kind: PlanKind;
+  configs: LabConfig[];
+  origin: LabConfig;
+  total: number;
   results: EpisodeResult[];
   done: number;
   failed: number;
@@ -61,11 +70,17 @@ const h2: CSSProperties = { fontSize: 'var(--fs-md)', margin: '0 0 var(--sp-3)',
 const dim: CSSProperties = { color: 'var(--fg-dim)' };
 const th: CSSProperties = { textAlign: 'left', padding: '4px 8px', color: 'var(--fg-dim)', fontWeight: 400, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 const td: CSSProperties = { padding: '4px 8px', borderBottom: '1px solid var(--line)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
+// Config names can be long; let them wrap so the numeric columns stay on the card.
+const tdWrap: CSSProperties = { ...td, whiteSpace: 'normal', overflowWrap: 'anywhere', minWidth: 220, maxWidth: 420 };
+const switchRow: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: '8px 24px' };
+const switchGrid: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '8px 16px', maxWidth: 820 };
 
 const pts = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}`;
 const fmtVal = (v: number | string) => (typeof v === 'number' ? String(v) : v);
 const shortDiff = (d: string) =>
   d.replace('feedbackMode=explore-and-place', 'explore & place').replace('feedbackMode=geometric-dislike', 'push away');
+const modeName = (m: FeedbackModeId) => (m === 'geometric-dislike' ? 'Push away' : 'Explore & place');
+const likeName = (l: LikeModeId) => (l === 'burst' ? 'burst learning' : 'background learning');
 
 function Delta({ s }: { s: Stat | undefined }) {
   if (!s || s.n === 0) return <span style={dim}>–</span>;
@@ -91,9 +106,8 @@ function Section({ title, children, aside }: { title: string; children: ReactNod
   );
 }
 
-/** Δ-vs-mode-base for each candidate of one knob, with 95% whiskers. */
-function KnobChart({ knob, mode, results }: { knob: (typeof KNOBS)[number]; mode: LabConfig['feedbackMode']; results: EpisodeResult[] }) {
-  const base: LabConfig = { ...SHIPPED, feedbackMode: mode };
+/** Δ-vs-base for each candidate of one knob, with 95% whiskers. */
+function KnobChart({ knob, base, results }: { knob: (typeof KNOBS)[number]; base: LabConfig; results: EpisodeResult[] }) {
   const baseKey = configKey(base);
   const rows = knob.candidates.map((v) => {
     const key = configKey({ ...base, [knob.key]: v } as LabConfig);
@@ -115,7 +129,7 @@ function KnobChart({ knob, mode, results }: { knob: (typeof KNOBS)[number]; mode
           const c = r.isBase ? 'var(--accent)' : up ? 'var(--good)' : down ? 'var(--bad)' : 'var(--fg-dim)';
           return (
             <g key={String(r.v)}>
-              <title>{`${knob.key}=${r.v}: ${pts(r.s.mean)} ± ${(r.s.ci * 100).toFixed(1)} pts vs this mode's shipped`}</title>
+              <title>{`${knob.key}=${r.v}: ${pts(r.s.mean)} ± ${(r.s.ci * 100).toFixed(1)} pts vs this base`}</title>
               <line x1={x(i)} x2={x(i)} y1={y(r.s.mean - r.s.ci)} y2={y(r.s.mean + r.s.ci)} stroke={c} />
               <circle cx={x(i)} cy={y(r.s.mean)} r={r.isBase ? 4.5 : 3.5} fill={r.isBase ? 'none' : c} stroke={c} strokeWidth={1.5} />
               <text x={x(i)} y={H + 12} fill="var(--fg-dim)" fontSize="10" textAnchor="middle">{fmtVal(r.v)}</text>
@@ -142,10 +156,15 @@ export default function LabApp() {
   const [personas, setPersonas] = useState<string[]>(PERSONAS.map((p) => p.id));
   const [knobs, setKnobs] = useState<KnobKey[]>(KNOBS.map((k) => k.key));
   const [workers, setWorkers] = useState(() => Math.max(1, (navigator.hardwareConcurrency || 4) - 1));
+  const [gridA, setGridA] = useState<KnobKey>('learningRate');
+  const [gridB, setGridB] = useState<KnobKey>('optimMaxAdjLr');
+  const [gridMode, setGridMode] = useState<FeedbackModeId>(SHIPPED.feedbackMode);
   const [run, setRun] = useState<RunState | null>(() => {
     try {
       const raw = localStorage.getItem(LAST_KEY);
-      return raw ? { ...(JSON.parse(raw) as RunState), restored: true } : null;
+      const r = raw ? (JSON.parse(raw) as Partial<RunState>) : null;
+      // Anything from an older layout of this page is dropped, not guessed at.
+      return r && Array.isArray(r.configs) && Array.isArray(r.results) && r.origin ? ({ ...r, restored: true } as RunState) : null;
     } catch {
       return null;
     }
@@ -159,15 +178,24 @@ export default function LabApp() {
   const opts = { seeds, goals, personas };
   const oatPreview = useMemo(() => planOat(opts, knobs), [seeds, goals, personas, knobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const gridPreview = useMemo(
+    () => planGrid(opts, gridA, gridB, originFrom({ feedbackMode: gridMode })),
+    [seeds, goals, personas, gridA, gridB, gridMode], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const presetPreview = useMemo(() => planPresets(PRESETS, opts), [seeds, goals, personas]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const summaries: ConfigSummary[] = useMemo(
-    () => (run ? summarise(run.plan.configs, run.results) : []),
+    () => (run ? summarise(run.configs, run.results, run.origin) : []),
     [run, run?.results.length], // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const rec = useMemo(() => (run && run.plan.kind === 'oat' ? recommend(run.results) : null), [run, run?.results.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rec = useMemo(() => (run && run.kind === 'oat' ? recommend(run.results, run.origin) : null), [run, run?.results.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function start(plan: Plan) {
     if (running) return;
-    const state: RunState = { plan, results: [], done: 0, failed: 0, started: Date.now(), finished: null };
+    const state: RunState = {
+      kind: plan.kind, configs: plan.configs, origin: plan.origin, total: plan.specs.length,
+      results: [], done: 0, failed: 0, started: Date.now(), finished: null,
+    };
     setRun(state);
     setRunning(true);
     const pool = new LabPool(workers);
@@ -209,9 +237,12 @@ export default function LabApp() {
     return () => clearInterval(t);
   }, [running]);
 
-  const total = run?.plan.specs.length ?? 0;
+  const total = run?.total ?? 0;
   const eta = run && run.done > 0 && running ? (elapsed / run.done) * (total - run.done) : 0;
-  const shipped = summaries.find((s) => s.key === configKey(SHIPPED as LabConfig));
+  const originSummary = run ? summaries.find((s) => s.key === configKey(run.origin)) : undefined;
+  const originIsShipped = run ? configKey(run.origin) === configKey(SHIPPED as LabConfig) : true;
+  const vs = originIsShipped ? 'shipped' : 'the origin';
+  const gridKnobs = KNOBS.filter((k) => k.kind !== 'enum');
 
   return (
     <div style={page}>
@@ -226,7 +257,8 @@ export default function LabApp() {
           <b>taste</b> (fill the pad with sounds they like, with variety) — playing {BOOT_IO.modeId} ({BOOT_IO.inputSize} →{' '}
           {SHIPPED.h1}/{SHIPPED.h2}/{SHIPPED.h3} → {BOOT_IO.outputSize}) through the same controller calls the console makes. Every config
           plays the same episodes, so Δ is a paired difference in score points (0–100) against what ships. Scores are provisional
-          proxies until calibrated against real play.
+          proxies until calibrated against real play. Two side measures: <b>lurch</b> (how much the playable mapping moves per
+          gesture) and <b>like error</b> (how well liked sounds are still played at the end).
         </p>
       </header>
 
@@ -236,7 +268,11 @@ export default function LabApp() {
           <tbody>
             {KNOBS.map((k) => (
               <tr key={k.key}>
-                <td style={td}>{k.label}{k.onlyIn ? <span style={dim}> ({k.onlyIn === 'explore-and-place' ? 'explore & place' : 'push away'} only)</span> : null}</td>
+                <td style={td}>
+                  {k.label}
+                  {k.onlyIn ? <span style={dim}> ({k.onlyIn === 'explore-and-place' ? 'explore & place' : 'push away'} only)</span> : null}
+                  {k.onlyLike ? <span style={dim}> ({likeName(k.onlyLike)} only)</span> : null}
+                </td>
                 <td style={{ ...td, color: 'var(--accent)' }}>{fmtVal(SHIPPED[k.key])}</td>
                 <td style={{ ...td, ...dim }}>{k.candidates.map(fmtVal).join(' · ')}</td>
                 <td style={{ ...td, ...dim, fontSize: 'var(--fs-xs)' }}>{k.source}</td>
@@ -244,6 +280,23 @@ export default function LabApp() {
             ))}
           </tbody>
         </table>
+      </Section>
+
+      <Section title="Presets" aside={<span style={dim}>whole configs to compare head to head</span>}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse' }}>
+          <thead><tr><th style={th}>preset</th><th style={th}>differs from shipped by</th><th style={th}>what it is</th></tr></thead>
+          <tbody>
+            {PRESETS.map((p) => (
+              <tr key={p.id}>
+                <td style={td}>{p.label}</td>
+                <td style={{ ...tdWrap, fontSize: 'var(--fs-xs)' }}>{shortDiff(describeDiff(p.config))}</td>
+                <td style={{ ...tdWrap, ...dim, fontSize: 'var(--fs-xs)', maxWidth: 480 }}>{p.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
       </Section>
 
       <Section title="Sweep">
@@ -258,20 +311,24 @@ export default function LabApp() {
           </label>
           <div>
             <div style={dim}>goals</div>
-            {(['place', 'taste'] as GoalKind[]).map((g) => (
-              <Switch key={g} label={g} checked={goals.includes(g)} onChange={() => setGoals((xs) => toggle(xs, g))} />
-            ))}
+            <div style={switchRow}>
+              {(['place', 'taste'] as GoalKind[]).map((g) => (
+                <Switch key={g} label={g} checked={goals.includes(g)} onChange={() => setGoals((xs) => toggle(xs, g))} />
+              ))}
+            </div>
           </div>
           <div>
             <div style={dim}>personas</div>
-            {PERSONAS.map((p) => (
-              <Switch key={p.id} label={p.label} checked={personas.includes(p.id)} onChange={() => setPersonas((xs) => toggle(xs, p.id))} />
-            ))}
+            <div style={switchRow}>
+              {PERSONAS.map((p) => (
+                <Switch key={p.id} label={p.label} checked={personas.includes(p.id)} onChange={() => setPersonas((xs) => toggle(xs, p.id))} />
+              ))}
+            </div>
           </div>
           <div>
             <div style={dim}>vary (one at a time)</div>
-            <div style={{ columns: 2, columnGap: 'var(--sp-4)' }}>
-              {KNOBS.filter((k) => k.key !== 'feedbackMode').map((k) => (
+            <div style={switchGrid}>
+              {KNOBS.filter((k) => k.key !== 'feedbackMode' && k.key !== 'likeMode').map((k) => (
                 <Switch key={k.key} label={k.label} checked={knobs.includes(k.key)} onChange={() => setKnobs((xs) => toggle(xs, k.key))} />
               ))}
             </div>
@@ -282,16 +339,37 @@ export default function LabApp() {
             Run one-at-a-time ({oatPreview.configs.length} configs · {oatPreview.specs.length} episodes)
           </Button>
           {rec && rec.recs.length > 0 && (
-            <Button disabled={running} onClick={() => start(planConfirm([rec.proposed], opts))}>
+            <Button disabled={running} onClick={() => start(planConfirm([rec.proposed], opts, run?.origin ?? originFrom()))}>
               Confirm combined recommendation
             </Button>
           )}
+          <Button disabled={running || !goals.length || !personas.length} onClick={() => start(presetPreview)}>
+            Compare presets ({presetPreview.configs.length} · {presetPreview.specs.length} episodes, held-out seeds)
+          </Button>
           {running && <Button onClick={stop}>Stop</Button>}
           {run && !running && (
-            <Button variant="ghost" onClick={() => download(`manifold-lab-${new Date().toISOString().slice(0, 19)}.json`, { schema: 'manifold-lab/1', shipped: SHIPPED, ...run, summaries, recommendation: rec })}>
+            <Button variant="ghost" onClick={() => download(`manifold-lab-${new Date().toISOString().slice(0, 19)}.json`, { schema: 'manifold-lab/2', shipped: SHIPPED, ...run, summaries, recommendation: rec })}>
               Export JSON
             </Button>
           )}
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center', marginTop: 'var(--sp-3)', flexWrap: 'wrap' }}>
+          <span style={dim}>grid</span>
+          {[[gridA, setGridA], [gridB, setGridB]].map(([v, set], i) => (
+            <select key={i} value={v as KnobKey} onChange={(e) => (set as (k: KnobKey) => void)(e.target.value as KnobKey)}
+              style={{ background: 'var(--bg-2)', color: 'var(--fg)', border: '1px solid var(--border)', fontFamily: 'inherit' }}>
+              {gridKnobs.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+            </select>
+          ))}
+          <span style={dim}>in</span>
+          <select value={gridMode} onChange={(e) => setGridMode(e.target.value as FeedbackModeId)}
+            style={{ background: 'var(--bg-2)', color: 'var(--fg)', border: '1px solid var(--border)', fontFamily: 'inherit' }}>
+            <option value="geometric-dislike">Push away</option>
+            <option value="explore-and-place">Explore &amp; place</option>
+          </select>
+          <Button disabled={running || gridA === gridB || !goals.length || !personas.length} onClick={() => start(gridPreview)}>
+            Run grid ({gridPreview.configs.length} configs · {gridPreview.specs.length} episodes)
+          </Button>
         </div>
         {run && (
           <div style={{ marginTop: 'var(--sp-3)' }}>
@@ -299,7 +377,7 @@ export default function LabApp() {
               <div style={{ height: '100%', width: `${total ? (100 * run.done) / total : 0}%`, background: 'var(--accent)' }} />
             </div>
             <div style={{ ...dim, marginTop: 4 }}>
-              {run.plan.kind === 'oat' ? 'one-at-a-time' : 'confirm'} · {run.done}/{total} episodes
+              {KIND_LABEL[run.kind]} · {run.done}/{total} episodes
               {run.failed ? ` · ${run.failed} failed` : ''} · {elapsed.toFixed(0)} s{running && eta ? ` · ~${eta.toFixed(0)} s left` : ''}
               {run.restored ? ' · restored from your last visit' : ''}
             </div>
@@ -310,7 +388,7 @@ export default function LabApp() {
       {rec && (
         <Section title="Recommendation">
           {rec.recs.length === 0 ? (
-            <p style={dim}>Nothing credibly beats shipped at this sample size (every 95% interval crosses zero). More seeds narrow the intervals.</p>
+            <p style={dim}>Nothing credibly beats {vs} at this sample size (every 95% interval crosses zero). More seeds narrow the intervals.</p>
           ) : (
             <>
               <table style={{ borderCollapse: 'collapse' }}>
@@ -329,44 +407,59 @@ export default function LabApp() {
               <p style={{ ...dim, marginTop: 'var(--sp-3)' }}>
                 Each change was measured alone. Run <i>Confirm combined recommendation</i> before shipping them together — knobs
                 interact, and the confirm run uses held-out seeds, so it also corrects for having picked the winners on these ones.
+                Note a knob can only be seen to matter where it applies: the optimiser step cap and the like learning rate interact
+                (run the grid), and dislike settings only exist in push-away.
               </p>
             </>
           )}
         </Section>
       )}
 
-      {run && run.plan.kind === 'oat' && run.results.length > 0 && (
-        <Section title="Sensitivity" aside={<span style={dim}>Δ vs that mode&apos;s shipped config · ○ = shipped value</span>}>
-          {(['geometric-dislike', 'explore-and-place'] as const).map((m) => (
-            <div key={m} style={{ marginBottom: 'var(--sp-3)' }}>
-              <div style={{ marginBottom: 'var(--sp-2)' }}>{m === 'geometric-dislike' ? 'Push away' : 'Explore & place'}{m === SHIPPED.feedbackMode ? <span style={dim}> (shipped mode)</span> : null}</div>
-              {KNOBS.filter((k) => k.key !== 'feedbackMode' && (!k.onlyIn || k.onlyIn === m)).map((k) => (
-                <KnobChart key={k.key} knob={k} mode={m} results={run.results} />
-              ))}
-            </div>
-          ))}
+      {run && run.kind === 'oat' && run.results.length > 0 && (
+        <Section title="Sensitivity" aside={<span style={dim}>Δ vs that base · ○ = the base&apos;s own value</span>}>
+          {(['geometric-dislike', 'explore-and-place'] as const).flatMap((m) =>
+            (['burst', 'background'] as const).map((l) => {
+              const base = canon({ ...run.origin, feedbackMode: m, likeMode: l });
+              if (!run.results.some((r) => r.configKey === configKey(base))) return null;
+              const shown = KNOBS.filter((k) => k.key !== 'feedbackMode' && k.key !== 'likeMode' && applies(k, base));
+              return (
+                <div key={`${m}-${l}`} style={{ marginBottom: 'var(--sp-3)' }}>
+                  <div style={{ marginBottom: 'var(--sp-2)' }}>
+                    {modeName(m)} · {likeName(l)}
+                    {m === SHIPPED.feedbackMode && l === SHIPPED.likeMode ? <span style={dim}> (shipped)</span> : null}
+                  </div>
+                  {shown.map((k) => <KnobChart key={k.key} knob={k} base={base} results={run.results} />)}
+                </div>
+              );
+            }),
+          )}
         </Section>
       )}
 
       {summaries.length > 0 && (
-        <Section title="All configs" aside={shipped ? <span style={dim}>shipped scores {(shipped.score.mean * 100).toFixed(1)} ± {(shipped.score.ci * 100).toFixed(1)}</span> : null}>
+        <Section title="All configs" aside={originSummary ? <span style={dim}>{vs} scores {(originSummary.score.mean * 100).toFixed(1)} ± {(originSummary.score.ci * 100).toFixed(1)}</span> : null}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th style={th}>config (differences from shipped)</th><th style={th}>score</th><th style={th}>Δ vs shipped</th>
-                  <th style={th}>wins</th><th style={th}>place Δ</th><th style={th}>taste Δ</th><th style={th}>ms/episode</th>
+                  <th style={th}>config (differences from shipped)</th><th style={th}>score</th><th style={th}>Δ vs {vs}</th>
+                  <th style={th}>wins</th><th style={th}>place Δ</th><th style={th}>taste Δ</th>
+                  <th style={th} title="Mean movement of the playable mapping per gesture (0–1 per output). Lower = steadier instrument.">lurch</th>
+                  <th style={th} title="Error, at the end, between what the net plays where the musician liked/placed a sound and the sound they liked. Lower = teaching survived.">like error</th>
+                  <th style={th}>ms/episode</th>
                 </tr>
               </thead>
               <tbody>
                 {summaries.map((s) => (
                   <tr key={s.key}>
-                    <td style={td}>{shortDiff(s.diff)}</td>
+                    <td style={tdWrap}>{shortDiff(s.diff)}</td>
                     <td style={td}>{(s.score.mean * 100).toFixed(1)}</td>
                     <td style={td}><Delta s={s.delta} /></td>
                     <td style={td}>{(s.winRate * 100).toFixed(0)}%</td>
                     <td style={td}><Delta s={s.deltaByGoal.place} /></td>
                     <td style={td}><Delta s={s.deltaByGoal.taste} /></td>
+                    <td style={td}>{s.lurch.mean.toFixed(3)}</td>
+                    <td style={td}>{s.likeErr.n ? s.likeErr.mean.toFixed(3) : '–'}</td>
                     <td style={{ ...td, ...dim }}>{s.wallMs.toFixed(0)}</td>
                   </tr>
                 ))}

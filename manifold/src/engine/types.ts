@@ -48,6 +48,10 @@ export interface NispsModule {
   // Persist a new training-hyperparameter default on the handle (S26) — mirrors
   // nisps::ml::MLPCore::set_train_config. Does not train.
   _nisps_ml_set_train_config(ml: number, lr: number, max_iter: number, min_err: number): void;
+  // Runtime RMSProp settings (nisps::ml::OptimConfig). Defaults = shipped.
+  // `max_adj_lr` decides whether `lr` is a normalised step or saturates.
+  // Survives reshape. Ignored (no-op) for non-finite / non-positive values.
+  _nisps_ml_set_optim(ml: number, decay: number, eps: number, clip: number, max_adj_lr: number): void;
   _nisps_ml_eval_loss(ml: number): number;
   // Per-iteration loss recorded by the LAST _nisps_ml_train call on this
   // handle. Returns the TOTAL entry count and writes min(count, max) floats

@@ -5,12 +5,29 @@
  * PAIRING. Every config plays the SAME episodes: identical (seed, goal,
  * persona) triples, so the same hidden goal, the same ears and the same wander
  * path. A config's effect is then the mean of per-episode differences against
- * shipped, which cancels the (large) between-goal variance a plain comparison
- * of means would leave in.
+ * a baseline, which cancels the (large) between-goal variance a plain
+ * comparison of means would leave in.
+ *
+ * CANONICAL CONFIGS. A knob that does nothing in a config (a dislike rate in
+ * explore-and-place, a background rate in burst learning) is pinned to its
+ * shipped value (settings.canon), so configs that behave identically are one
+ * config and never get played, paired or "recommended" twice.
  */
 import type { EpisodeResult, EpisodeSpec } from './episode';
 import type { GoalKind } from './goals';
-import { configKey, describeDiff, KNOBS, SHIPPED, type KnobKey, type LabConfig } from './settings';
+import {
+  applies,
+  canon,
+  configKey,
+  describeDiff,
+  KNOBS,
+  SHIPPED,
+  type FeedbackModeId,
+  type KnobKey,
+  type LabConfig,
+  type LikeModeId,
+  type Preset,
+} from './settings';
 
 export interface SweepOptions {
   seeds: number;
@@ -22,20 +39,29 @@ export interface SweepOptions {
   personas: string[];
 }
 
+export type PlanKind = 'oat' | 'grid' | 'compare' | 'confirm';
+
 export interface Plan {
-  kind: 'oat' | 'confirm';
+  kind: PlanKind;
   configs: LabConfig[];
   specs: EpisodeSpec[];
+  /** The config the recommendation and deltas are measured against. */
+  origin: LabConfig;
 }
+
+const MODES: readonly FeedbackModeId[] = ['geometric-dislike', 'explore-and-place'];
+const LIKE_MODES: readonly LikeModeId[] = ['burst', 'background'];
 
 function uniq(cs: LabConfig[]): LabConfig[] {
   const seen = new Set<string>();
-  return cs.filter((c) => {
+  const out: LabConfig[] = [];
+  for (const c of cs) {
     const k = configKey(c);
-    if (seen.has(k)) return false;
+    if (seen.has(k)) continue;
     seen.add(k);
-    return true;
-  });
+    out.push(canon(c));
+  }
+  return out;
 }
 
 function specsFor(configs: LabConfig[], o: SweepOptions): EpisodeSpec[] {
@@ -47,32 +73,58 @@ function specsFor(configs: LabConfig[], o: SweepOptions): EpisodeSpec[] {
   return specs;
 }
 
+/** SHIPPED with some knobs overridden — the "where do we start from" config. */
+export function originFrom(overrides: Partial<LabConfig> = {}): LabConfig {
+  return { ...(SHIPPED as LabConfig), ...overrides };
+}
+
 /**
- * One-at-a-time around shipped, once per feedback mode: shipped, the shipped
- * config in the other mode, and each knob's candidates varied alone from each
- * mode's base. Mode-specific knobs are only varied in their own mode.
+ * One-at-a-time around `origin`, once per (feedback mode x like mode) base:
+ * the origin itself, the other bases, and each applicable knob's candidates
+ * alone on each base. Knobs that do nothing on a base are skipped.
  */
-export function planOat(o: SweepOptions, knobs: readonly KnobKey[] = KNOBS.map((k) => k.key)): Plan {
-  const bases: LabConfig[] = (['geometric-dislike', 'explore-and-place'] as const).map((m) => ({ ...SHIPPED, feedbackMode: m }));
-  const configs: LabConfig[] = [{ ...SHIPPED }, ...bases];
+export function planOat(
+  o: SweepOptions,
+  knobs: readonly KnobKey[] = KNOBS.map((k) => k.key),
+  origin: LabConfig = originFrom(),
+): Plan {
+  const bases: LabConfig[] = [];
+  for (const m of MODES) for (const l of LIKE_MODES) bases.push({ ...origin, feedbackMode: m, likeMode: l });
+  const configs: LabConfig[] = [origin, ...bases];
   for (const base of bases) {
     for (const k of KNOBS) {
-      if (k.key === 'feedbackMode' || !knobs.includes(k.key)) continue;
-      if (k.onlyIn && k.onlyIn !== base.feedbackMode) continue;
+      if (k.key === 'feedbackMode' || k.key === 'likeMode' || !knobs.includes(k.key) || !applies(k, base)) continue;
       for (const v of k.candidates) configs.push({ ...base, [k.key]: v } as LabConfig);
     }
   }
   const unique = uniq(configs);
-  return { kind: 'oat', configs: unique, specs: specsFor(unique, o) };
+  return { kind: 'oat', configs: unique, specs: specsFor(unique, o), origin: canon(origin) };
+}
+
+/** Every combination of two knobs' candidate values on one base. */
+export function planGrid(o: SweepOptions, a: KnobKey, b: KnobKey, base: LabConfig = originFrom()): Plan {
+  const ka = KNOBS.find((k) => k.key === a);
+  const kb = KNOBS.find((k) => k.key === b);
+  if (!ka || !kb) throw new Error(`unknown knob ${!ka ? a : b}`);
+  const configs: LabConfig[] = [base];
+  for (const va of ka.candidates) for (const vb of kb.candidates) configs.push({ ...base, [a]: va, [b]: vb } as LabConfig);
+  const unique = uniq(configs);
+  return { kind: 'grid', configs: unique, specs: specsFor(unique, o), origin: canon(base) };
+}
+
+/** Named whole configs head to head, on held-out seeds by default. */
+export function planPresets(presets: readonly Preset[], o: SweepOptions): Plan {
+  const unique = uniq([originFrom(), ...presets.map((p) => p.config)]);
+  return { kind: 'compare', configs: unique, specs: specsFor(unique, { ...o, seedBase: o.seedBase ?? CONFIRM_SEED_BASE }), origin: canon(originFrom()) };
 }
 
 export const CONFIRM_SEED_BASE = 1001;
 
-/** Shipped vs explicit candidates (e.g. the combined recommendation), on
+/** Origin vs explicit candidates (e.g. the combined recommendation), on
  *  held-out seeds unless the caller says otherwise. */
-export function planConfirm(candidates: LabConfig[], o: SweepOptions): Plan {
-  const unique = uniq([{ ...SHIPPED }, ...candidates]);
-  return { kind: 'confirm', configs: unique, specs: specsFor(unique, { ...o, seedBase: o.seedBase ?? CONFIRM_SEED_BASE }) };
+export function planConfirm(candidates: LabConfig[], o: SweepOptions, origin: LabConfig = originFrom()): Plan {
+  const unique = uniq([origin, ...candidates]);
+  return { kind: 'confirm', configs: unique, specs: specsFor(unique, { ...o, seedBase: o.seedBase ?? CONFIRM_SEED_BASE }), origin: canon(origin) };
 }
 
 // ---------------------------------------------------------------------------
@@ -99,26 +151,30 @@ export interface ConfigSummary {
   config: LabConfig;
   diff: string;
   score: Stat;
-  /** Paired per-episode score difference vs SHIPPED. */
+  /** Paired per-episode score difference vs the plan's origin. */
   delta: Stat;
-  /** Share of paired episodes where this config beat shipped (ties = half). */
+  /** Share of paired episodes where this config beat the origin (ties = half). */
   winRate: number;
   byGoal: Partial<Record<GoalKind, Stat>>;
   deltaByGoal: Partial<Record<GoalKind, Stat>>;
   qualityEnd: Stat;
+  /** Mapping movement per gesture (see EpisodeResult.lurch). */
+  lurch: Stat;
+  /** Retention error at liked places (episodes with no likes are left out). */
+  likeErr: Stat;
   wallMs: number;
 }
 
 const episodeKey = (r: EpisodeResult) => `${r.goal}|${r.persona}|${r.seed}`;
 
-export function summarise(configs: LabConfig[], results: EpisodeResult[]): ConfigSummary[] {
+export function summarise(configs: LabConfig[], results: EpisodeResult[], origin: LabConfig = originFrom()): ConfigSummary[] {
   const byConfig = new Map<string, EpisodeResult[]>();
   for (const r of results) {
     if (!byConfig.has(r.configKey)) byConfig.set(r.configKey, []);
     byConfig.get(r.configKey)!.push(r);
   }
-  const shippedKey = configKey(SHIPPED as LabConfig);
-  const shipped = new Map((byConfig.get(shippedKey) ?? []).map((r) => [episodeKey(r), r]));
+  const originKey = configKey(origin);
+  const base = new Map((byConfig.get(originKey) ?? []).map((r) => [episodeKey(r), r]));
 
   const out: ConfigSummary[] = [];
   for (const config of configs) {
@@ -132,7 +188,7 @@ export function summarise(configs: LabConfig[], results: EpisodeResult[]): Confi
     for (const r of rs) {
       if (!sGoal.has(r.goal)) sGoal.set(r.goal, []);
       sGoal.get(r.goal)!.push(r.score);
-      const b = shipped.get(episodeKey(r));
+      const b = base.get(episodeKey(r));
       if (!b) continue;
       const d = r.score - b.score;
       deltas.push(d);
@@ -150,6 +206,8 @@ export function summarise(configs: LabConfig[], results: EpisodeResult[]): Confi
       byGoal: Object.fromEntries([...sGoal].map(([g, xs]) => [g, stat(xs)])),
       deltaByGoal: Object.fromEntries([...dGoal].map(([g, xs]) => [g, stat(xs)])),
       qualityEnd: stat(rs.map((r) => r.qualityEnd)),
+      lurch: stat(rs.map((r) => r.lurch ?? 0)),
+      likeErr: stat(rs.filter((r) => r.likeErr !== null && r.likeErr !== undefined).map((r) => r.likeErr as number)),
       wallMs: rs.reduce((a, r) => a + r.wallMs, 0) / rs.length,
     });
   }
@@ -179,46 +237,57 @@ export function pairedDelta(results: EpisodeResult[], a: string, b: string): Sta
 }
 
 /**
- * From a one-at-a-time sweep: the better feedback mode (if it credibly beats
- * shipped), then — within that mode — each knob's best candidate whose paired
- * improvement over that mode's base is credible. Knobs were varied alone, so
- * the combination is a HYPOTHESIS: `proposed` must be checked with
- * planConfirm before it ships.
+ * From a one-at-a-time sweep: the best (feedback mode x like mode) base if it
+ * credibly beats the origin, then — within that base — each applicable knob's
+ * best candidate whose paired improvement over the base is credible. Knobs
+ * were varied alone, so the combination is a HYPOTHESIS: `proposed` must be
+ * checked with planConfirm before it ships.
  */
-export function recommend(results: EpisodeResult[]): { recs: Recommendation[]; proposed: LabConfig } {
+export function recommend(
+  results: EpisodeResult[],
+  origin: LabConfig = originFrom(),
+): { recs: Recommendation[]; proposed: LabConfig } {
   const keys = new Set(results.map((r) => r.configKey));
-  const shippedKey = configKey(SHIPPED as LabConfig);
+  const originKey = configKey(origin);
   const recs: Recommendation[] = [];
 
-  let mode = SHIPPED.feedbackMode;
-  const other = mode === 'geometric-dislike' ? 'explore-and-place' : 'geometric-dislike';
-  const otherKey = configKey({ ...SHIPPED, feedbackMode: other } as LabConfig);
-  if (keys.has(otherKey)) {
-    const d = pairedDelta(results, otherKey, shippedKey);
-    if (credible(d)) {
-      recs.push({ key: 'feedbackMode', from: mode, to: other, delta: d });
-      mode = other;
+  // 1. The better base, if credibly better than the origin.
+  let best: { cfg: LabConfig; d: Stat; changed: KnobKey[] } | null = null;
+  for (const m of MODES) {
+    for (const l of LIKE_MODES) {
+      const cfg = { ...origin, feedbackMode: m, likeMode: l } as LabConfig;
+      const key = configKey(cfg);
+      if (key === originKey || !keys.has(key)) continue;
+      const d = pairedDelta(results, key, originKey);
+      if (credible(d) && (!best || d.mean > best.d.mean)) {
+        best = { cfg, d, changed: [...(m !== origin.feedbackMode ? (['feedbackMode'] as KnobKey[]) : []), ...(l !== origin.likeMode ? (['likeMode'] as KnobKey[]) : [])] };
+      }
     }
   }
-  const base: LabConfig = { ...SHIPPED, feedbackMode: mode };
+  let base: LabConfig = { ...origin };
+  if (best) {
+    for (const k of best.changed) recs.push({ key: k, from: origin[k], to: best.cfg[k], delta: best.d });
+    base = best.cfg;
+  }
   const baseKey = configKey(base);
   const proposed: LabConfig = { ...base };
   if (!keys.has(baseKey)) return { recs, proposed };
 
+  // 2. Each applicable knob's best credible candidate on that base.
   for (const k of KNOBS) {
-    if (k.key === 'feedbackMode' || (k.onlyIn && k.onlyIn !== mode)) continue;
-    let best: { v: number | string; d: Stat } | null = null;
+    if (k.key === 'feedbackMode' || k.key === 'likeMode' || !applies(k, base)) continue;
+    let win: { v: number | string; d: Stat } | null = null;
     for (const v of k.candidates) {
       if (v === base[k.key]) continue;
       const key = configKey({ ...base, [k.key]: v } as LabConfig);
-      if (!keys.has(key)) continue;
+      if (!keys.has(key) || key === baseKey) continue;
       const d = pairedDelta(results, key, baseKey);
-      if (credible(d) && (!best || d.mean > best.d.mean)) best = { v, d };
+      if (credible(d) && (!win || d.mean > win.d.mean)) win = { v, d };
     }
-    if (best) {
-      recs.push({ key: k.key, from: base[k.key], to: best.v, delta: best.d });
-      (proposed as unknown as Record<string, unknown>)[k.key] = best.v;
+    if (win) {
+      recs.push({ key: k.key, from: base[k.key], to: win.v, delta: win.d });
+      (proposed as unknown as Record<string, unknown>)[k.key] = win.v;
     }
   }
-  return { recs, proposed };
+  return { recs, proposed: canon(proposed) };
 }

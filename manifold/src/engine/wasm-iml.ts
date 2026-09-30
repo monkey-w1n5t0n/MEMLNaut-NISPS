@@ -56,6 +56,15 @@ const DEFAULT_OUTPUT_SIZE = 126;
  */
 const DEFAULT_MAX_EXAMPLES = 128;
 
+/** Mirrors nisps::ml::OptimConfig's defaults (nisps/ml/training.hpp). */
+export interface OptimSettings {
+  decay?: number;
+  eps?: number;
+  clip?: number;
+  maxAdjLr?: number;
+}
+export const SHIPPED_OPTIM = { decay: 0.9, eps: 1e-6, clip: 10, maxAdjLr: 1 };
+
 /** Base-aware absolute URL for an asset served from `public/`. Resolves against
  *  `document.baseURI` (the page URL) so a `base: './'` build works under any
  *  mount path — `/`, `/next/`, etc. Resolving against `location.origin` would
@@ -726,6 +735,17 @@ export class WasmIML {
   setTrainConfig(lr: number, maxIter: number, minErr: number): void {
     this.trainConfig = { learningRate: lr, maxIterations: maxIter, minError: minErr };
     this.module._nisps_ml_set_train_config(this.mlHandle, lr, maxIter, minErr);
+  }
+
+  /**
+   * Runtime RMSProp settings. Only `maxAdjLr` is expected to move: it caps the
+   * normalised step, and at the shipped 1 every learning rate in [1e-3, 1]
+   * saturates it, so `learningRate` does nothing (the like-training default
+   * of 1.0 is an SGD-era number). Any field left out keeps the shipped value.
+   */
+  setOptim(o: OptimSettings): void {
+    const d = { ...SHIPPED_OPTIM, ...o };
+    this.module._nisps_ml_set_optim(this.mlHandle, d.decay, d.eps, d.clip, d.maxAdjLr);
   }
 
   train(
